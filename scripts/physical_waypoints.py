@@ -890,6 +890,8 @@ def validate_route_document(document):
     from scripts.waypoint_progress import _route
     from scripts.waypoint_measurements import document_measurements, parse_projection_route
     _route(document)
+    from scripts.waypoint_kinds import point_kinds
+    point_kinds(document)
     from scripts.waypoint_route_library import normalize_context
     normalize_context(document.get("routeContext"))
     if "recording" in document:
@@ -1076,6 +1078,10 @@ def launch_window(args):
         entry.grid(row=1, column=column, sticky="ew", padx=(0, 10))
         editable.append(entry)
         point_entries.append(entry)
+    kind_label = tk.StringVar(value="Pass through")
+    ttk.Label(coordinates, text="Point type", style="Surface.TLabel").grid(row=0, column=3, sticky="w")
+    kind_control = ttk.Combobox(coordinates, textvariable=kind_label, values=("Pass through", "Stop at point"), state="readonly", width=16)
+    kind_control.grid(row=1, column=3, sticky="ew")
     live_pose_option = ttk.Checkbutton(header_actions, text="Live pose (1 s)", variable=live_pose)
     live_pose_option.pack(anchor="e", pady=(7, 0))
     summary = tk.StringVar(value="Refresh position to preview the route.")
@@ -1209,6 +1215,7 @@ def launch_window(args):
     last_route = ROOT / "artifacts" / "waypoint-last-route.json"
     route_metadata = {}
     point_receipts = {}
+    point_kind_by_item = {}
     route_path = None
     route_dirty = False
     route_recovered = False
@@ -1320,6 +1327,9 @@ def launch_window(args):
 
     def route_document():
         document = {**route_metadata, "waypoints": [list(row) for row in route_points(selected_points(True))]}
+        kinds = [point_kind_by_item.get(item, "pass") for item in table.get_children()]
+        if "stop" in kinds:
+            document["pointKinds"] = kinds
         if "recording" not in route_metadata:
             receipts = [deepcopy(point_receipts.get(item)) for item in table.get_children()]
             if any(receipt is not None for receipt in receipts):
@@ -1347,7 +1357,7 @@ def launch_window(args):
         else:
             table.delete(*table.get_children())
             point_receipts.clear()
-            route_metadata = {k: v for k, v in document.items() if k != "waypoints"}
+            route_metadata = {k: v for k, v in document.items() if k not in ("waypoints", "pointKinds")}
             name.set("Point 1")
         added_selection = None
         items = table.get_children()
@@ -1373,17 +1383,21 @@ def launch_window(args):
     def show_document(document):
         nonlocal loading_route, route_metadata, route_revision
         from scripts.waypoint_measurements import document_measurements
+        from scripts.waypoint_kinds import point_kinds
+        kinds = point_kinds(document)
         parsed = route_points(document["waypoints"])
         receipts = document_measurements(document)
         loading_route = True
         try:
             table.delete(*table.get_children())
             point_receipts.clear()
-            for row, receipt in zip(parsed, receipts):
+            point_kind_by_item.clear()
+            for row, receipt, kind in zip(parsed, receipts, kinds):
                 item = add_point(*row)
+                point_kind_by_item[item] = kind
                 if receipt is not None:
                     point_receipts[item] = deepcopy(receipt)
-            route_metadata = {k: v for k, v in document.items() if k != "waypoints"}
+            route_metadata = {k: v for k, v in document.items() if k not in ("waypoints", "pointKinds")}
             fill_fields(table.selection()[0] if len(table.selection()) == 1 else None)
         finally:
             loading_route = False
@@ -1485,14 +1499,16 @@ def launch_window(args):
         points = [(item, *table.item(item, "values")) for item in table.get_children()]
         original_points = points[:]
         for number,row in enumerate(original_points,1):
-            table.item(row[0],text=str(number))
+            table.item(row[0],text=f"{number} · S" if point_kind_by_item.get(row[0]) == "stop" else str(number))
         completed, active = None, None
         if playback_view is not None:
             if playback_view["direction"] == "reverse":
                 points.reverse()
             index = max(0, min(len(points), playback_view["nextIndex"]))
             completed = {row[0] for row in points[:index]}
-            active = points[index][0] if index < len(points) else None
+            observed = playback_view.get("observedWaypoint")
+            active_index = observed - 1 if isinstance(observed, int) and 1 <= observed <= len(points) else index
+            active = points[active_index][0] if active_index < len(points) else None
         elif explore_controls is not None:
             guidance = explore_controls.navigation_state()
             if guidance["status"] in ("active", "complete"):
@@ -1774,14 +1790,21 @@ def launch_window(args):
                 document, direction = points
                 results, cursor = play_route(adapter, document, stop, emit, runner=runner,
                                              checkpoint=checkpoint, direction=direction,
-                                             resume=operation == "resume", face_waypoints=face_walk, approach_start=True)
+                                             resume=operation == "resume", face_waypoints=face_walk, approach_start=True,
+                                             height_aware=(engine == "continuous" and "heights" in document),
+                                             pass_through=(engine == "continuous"))
                 outcome = results
                 events.put({"status": "route-complete", "waypointCount": len(results),
                             "nextWaypoint": cursor.next_index, "totalWaypoints": len(cursor.ordered_points),
                             "position": results[-1]["position"], "bearing": results[-1]["bearing"],
                             "distance": results[-1]["distance"]})
             else:
-                results = runner(adapter, points, stop, emit, face_waypoints=face_walk)
+                options = {"face_waypoints": face_walk}
+                if isinstance(points, dict):
+                    if engine == "continuous":
+                        options["point_kinds"] = points["pointKinds"]
+                    points = points["waypoints"]
+                results = runner(adapter, points, stop, emit, **options)
                 outcome = results
                 events.put({"status": "route-complete", "waypointCount": len(results),
                             "position": results[-1]["position"], "bearing": results[-1]["bearing"],
@@ -1869,7 +1892,8 @@ def launch_window(args):
         if draft_pending() and operation in ("go", "face", "face-bearing", "play", "resume", "teach", "record", "map", "target", "save", "map-go"):
             state.set("Apply or Reset fields before starting another action.")
             return
-        if operation in ("go", "teach") and (not points or len(points) > MAX_WAYPOINTS):
+        route_rows = points.get("waypoints") if isinstance(points, dict) and operation == "go" else points
+        if operation in ("go", "teach") and (not route_rows or len(route_rows) > MAX_WAYPOINTS):
             messagebox.showinfo("Choose waypoints", f"Select a waypoint, or add up to {MAX_WAYPOINTS} points for a route.")
             return
         if operation == "face" and (not points or len(points) != 1):
@@ -1880,6 +1904,7 @@ def launch_window(args):
                 state.set("Markers are closing; try the action again when they are hidden.")
             return
         busy = True
+        kind_control.configure(state="disabled")
         if operation in ("go", "face", "face-bearing", "play", "resume", "teach", "map-go", "record"):
             stop.clear()
         if operation != "release":
@@ -1895,6 +1920,7 @@ def launch_window(args):
             except Exception as exc:
                 diagnostics.exception("Unable to start foreground safety monitor", exc=exc, operation=operation)
                 busy = False
+                update_edit_state()
                 state.set("Cannot start safely: " + str(exc))
                 return
         if operation in ("play", "resume"):
@@ -1913,7 +1939,7 @@ def launch_window(args):
             redraw()
         if operation == "record":
             recording_restore = ([(item, table.item(item, "values")) for item in table.get_children()],
-                                 tuple(table.selection()), deepcopy(route_metadata))
+                                 tuple(table.selection()), deepcopy(route_metadata), deepcopy(point_kind_by_item))
             recording = True
             recording_progress = {"sampleCount": 0, "observedPathLength": 0.0}
             record_stop.clear()
@@ -1975,15 +2001,33 @@ def launch_window(args):
             if form_item is not None:
                 label, px, pz = table.item(form_item, "values")
                 name.set(label); x.set(px); z.set(pz)
+                kind_label.set("Stop at point" if point_kind_by_item.get(form_item) == "stop" else "Pass through")
                 added_selection = None
                 form_baseline = (name.get(), x.get(), z.get())
                 table.see(form_item)
             else:
                 name.set(f"Point {len(table.get_children()) + 1}"); x.set(""); z.set("")
+                kind_label.set("Pass through")
                 form_baseline = None
         finally:
             form_loading = False
         update_edit_state()
+
+    def change_kind(_=None):
+        selected = table.selection()
+        if busy or closing or cli_action is not None or draft_pending() or len(selected) != 1:
+            fill_fields(selected[0] if len(selected) == 1 else None)
+            return
+        item = selected[0]
+        kind = "stop" if kind_label.get() == "Stop at point" else "pass"
+        if point_kind_by_item.get(item, "pass") != kind:
+            remember_edit()
+            invalidate_progress(clear_metadata=False)
+            point_kind_by_item[item] = kind
+            redraw()
+            state.set("Point type updated; save the route to keep this edit. The final destination always stops.")
+
+    kind_control.bind("<<ComboboxSelected>>", change_kind)
 
     def reset_fields():
         selection = table.selection()
@@ -2048,6 +2092,7 @@ def launch_window(args):
             if label in allowed:
                 button.configure(state="normal" if idle and allowed[label] else "disabled")
         undo_button.configure(state="normal" if idle and edit_history and not draft["pending"] else "disabled")
+        kind_control.configure(state="readonly" if idle and single and not draft["pending"] else "disabled")
         if draft["pending"]:
             draft_notice_text.set(f"Unapplied edit · point {draft['point']}")
             if not draft_notice.winfo_manager(): draft_notice.pack(side="right",after=status_details,padx=(8,0))
@@ -2064,10 +2109,10 @@ def launch_window(args):
         elif single:
             receipt = point_receipts.get(selected[0])
             evidence = f"Measured Y {receipt['position']['y']:.3f}" if receipt else "Estimated / unknown height"
-            edit_hint.set(f"Point {index+1} of {count} · {evidence} · Enter applies · Alt+↑/↓ reorders · edits are undoable")
+            edit_hint.set(f"Point {index+1} of {count} · {evidence} · S marks stop points; final destination always stops · edits are undoable")
         else:
             edit_hint.set(f"{len(selected)} selected · Select one to edit; Remove supports multiple points." if selected
-                          else "Select a waypoint to edit, or enter X / Z and choose Add X / Z.")
+                          else "Select a waypoint to edit, or enter X / Z and choose Add X / Z. Pulse movement stops at every point.")
         if not draft["pending"]:
             draft_notice.pack_forget()
             workflow.tab(edit_tab,text="Edit waypoint")
@@ -2266,6 +2311,7 @@ def launch_window(args):
             invalidate_progress()
         for item in selected:
             point_receipts.pop(item, None)
+            point_kind_by_item.pop(item, None)
         table.delete(*selected)
         redraw()
 
@@ -2289,9 +2335,15 @@ def launch_window(args):
             invalidate_progress()
         table.delete(*table.get_children())
         point_receipts.clear()
+        point_kind_by_item.clear()
         fill_fields()
         redraw()
         state.set("Waypoint list cleared.")
+
+    def direct_route(all_points=False):
+        items = table.get_children() if all_points else table.selection()
+        return {"waypoints": [table.item(item, "values") for item in items],
+                "pointKinds": [point_kind_by_item.get(item, "pass") for item in items]}
 
     def playback(direction=None):
         try:
@@ -2707,9 +2759,9 @@ def launch_window(args):
     compact_style.configure("Direct.TButton", padding=(7, 2), font=("Segoe UI", 9, "bold"))
     compact_style.configure("Direct.TCheckbutton", padding=(2, 0), font=("Segoe UI", 9))
     for label, row, column, span, callback in (
-            ("Go Selected", 0, 0, 1, lambda: start("go", selected_points())),
+            ("Go Selected", 0, 0, 1, lambda: start("go", direct_route())),
             ("Face Selected", 0, 1, 1, lambda: start("face", selected_points())),
-            ("Run Route", 1, 0, 2, lambda: start("go", selected_points(True)))):
+            ("Run Route", 1, 0, 2, lambda: start("go", direct_route(True)))):
         button = ttk.Button(controls, text=label, command=callback, style="Direct.TButton")
         button.grid(row=row, column=column, columnspan=span, sticky="ew", padx=(0, 5), pady=(0, 2))
         editable.append(button)
@@ -2995,6 +3047,7 @@ def launch_window(args):
                     "Close and discard it? Choose No to save a segment in Explore first.", parent=window):
                 return
         closing = True
+        kind_control.configure(state="disabled")
         explore_controls.shutdown()
         close_nearby_picker()
         request_stop()
@@ -3791,6 +3844,10 @@ def launch_window(args):
                         return cli_dispatch(command, values, rid)
                     return cli_wait(rid, ready)
             if command.startswith("route."):
+                if command in ("route.add", "route.update") and values.get("kind") is not None:
+                    kind = values["kind"]
+                    if not isinstance(kind, str) or kind not in ("pass", "stop"):
+                        raise CliError("invalid-kind", "Point kind must be pass or stop", exit_code=2)
                 if values.get("revision") is not None and values["revision"] != route_revision:
                     raise CliError("route-changed", "Route revision changed", "Read route list and retry with its revision", 4)
                 if command in ("route.list", "route.validate"):
@@ -3840,8 +3897,11 @@ def launch_window(args):
                     if len(table.get_children()) >= MAX_WAYPOINTS: raise CliError("route-full", f"Routes support at most {MAX_WAYPOINTS} points", exit_code=4)
                     if values.get("current") or values.get("target"):
                         label=values.get("name") or (None if values.get("target") else f"Point {len(table.get_children())+1}")
-                        return cli_begin(rid,"target" if values.get("target") else "save",label,command=command)
-                    add_point(values.get("name") or f"Point {len(table.get_children())+1}", values["x"], values["z"])
+                        pending = cli_begin(rid,"target" if values.get("target") else "save",label,command=command)
+                        cli_action["pointKind"] = values.get("kind")
+                        return pending
+                    item = add_point(values.get("name") or f"Point {len(table.get_children())+1}", values["x"], values["z"])
+                    point_kind_by_item[item] = values.get("kind") or "pass"
                 elif command in ("route.select", "route.update", "route.remove", "route.reorder"):
                     if command=="route.select" and values.get("clear"):
                         if values.get("point") is not None:
@@ -3865,14 +3925,28 @@ def launch_window(args):
                             table.selection_set(item)
                             select_point(None, discard_draft=True)
                             label = route_points([(values.get("name") or old[0], old[1], old[2])])[0][0]
-                            return cli_begin(rid, "save", dict(item=item, revision=route_revision, label=label), command=command)
-                        route_points([(values.get("name", old[0]), values.get("x",old[1]), values.get("z",old[2]))])
+                            pending = cli_begin(rid, "save", dict(item=item, revision=route_revision, label=label), command=command)
+                            cli_action["pointKind"] = values.get("kind")
+                            return pending
+                        route_points([(values.get("name") if values.get("name") is not None else old[0],
+                                       values.get("x") if values.get("x") is not None else old[1],
+                                       values.get("z") if values.get("z") is not None else old[2])])
                     table.selection_set(item)
                     select_point(None, force_name=True, discard_draft=True)
                     if command == "route.update":
                         for key,var in (("name",name),("x",x),("z",z)):
                             if values.get(key) is not None: var.set(values[key])
+                        requested_kind = values.get("kind")
+                        old_kind = point_kind_by_item.get(item, "pass")
                         change = update_selected()
+                        if requested_kind is not None and requested_kind != old_kind:
+                            if not change or not (change.get("nameChanged") or change.get("coordinatesChanged")):
+                                remember_edit()
+                                invalidate_progress(clear_metadata=False)
+                            point_kind_by_item[item] = requested_kind
+                            fill_fields(item)
+                            redraw()
+                            state.set("Point type updated; save the route to keep this edit. The final destination always stops.")
                         return cli_ok(dict(revision=route_revision, document=cli_document(), change=change,
                                            selected=[table.index(i)+1 for i in table.selection()]))
                     elif command == "route.remove": remove_points()
@@ -3890,8 +3964,11 @@ def launch_window(args):
                     direction = values.get("direction", "forward")
                     index = values.get("from_point", 1 if direction == "forward" else len(rows))-1
                     if not 0 <= index < len(rows): raise CliError("point-out-of-range", "Choose an existing starting point")
+                    from scripts.waypoint_kinds import point_kinds
+                    kinds = point_kinds(route_document())
                     rows = rows[index:] if direction == "forward" else list(reversed(rows[:index+1]))
-                    return cli_begin(rid, "go", rows, command=command)
+                    kinds = kinds[index:] if direction == "forward" else list(reversed(kinds[:index+1]))
+                    return cli_begin(rid, "go", {"waypoints": rows, "pointKinds": kinds}, command=command)
                 else: raise CliError("unsupported-command", command)
                 return cli_ok(dict(revision=route_revision, document=cli_document()))
             if command.startswith("radar."):
@@ -4470,7 +4547,9 @@ def launch_window(args):
                         progress_text.set("No saved progress; choose Play Forward or Play Reverse.")
                 select_pending_progress()
                 if recording_restore is not None:
-                    old_rows, old_selection, route_metadata = recording_restore
+                    old_rows, old_selection, route_metadata, old_kinds = recording_restore
+                    point_kind_by_item.clear()
+                    point_kind_by_item.update(old_kinds)
                     table.delete(*table.get_children())
                     for item, values in old_rows:
                         table.insert("", "end", iid=item, values=values)
@@ -4548,11 +4627,18 @@ def launch_window(args):
                 failure = event.get("failure")
                 state.set((f"{failure['status']}: {failure['reason']} — " if failure else "") + text)
                 continue
-            if "nextWaypoint" in event:
+            if status == "route-progress" and playback_view is not None:
+                observed = event.get("observedWaypoint")
+                if isinstance(observed, int):
+                    playback_view["observedWaypoint"] = observed
+                    progress_text.set(f"Passing guide {observed} / {event.get('waypointCount', '?')} · live observation")
+                    redraw()
+            if "nextWaypoint" in event and status != "route-progress":
                 count = event.get("totalWaypoints", event.get("waypointCount"))
                 progress_text.set(f"Completed {event['nextWaypoint']} / {count} waypoints")
                 if playback_view is not None:
                     playback_view["nextIndex"] = event["nextWaypoint"]
+                    playback_view.pop("observedWaypoint", None)
                     redraw()
             if "recordingProgress" in event:
                 recording_progress = event["recordingProgress"]
@@ -4561,6 +4647,7 @@ def launch_window(args):
                 if status == "recording":
                     preview = event.get("preview")
                     if recording and not record_cancel.is_set() and isinstance(preview, dict):
+                        point_kind_by_item.clear()
                         table.delete(*table.get_children())
                         for index, row in enumerate(preview["waypoints"]):
                             table.insert("", "end", iid=f"record-preview-{index}", values=row)
@@ -4608,6 +4695,8 @@ def launch_window(args):
                     invalidate_progress()
                     table.item(item, values=(replacement["label"], f"{point['x']:.6f}", f"{point['z']:.6f}"))
                     point_receipts[item] = event["measurement"]
+                    if cli_action is not None and cli_action.get("pointKind") is not None:
+                        point_kind_by_item[item] = cli_action["pointKind"]
                     table.selection_set(item)
                     fill_fields(item)
                     if cli_action is not None: cli_action["change"] = deepcopy(last_edit_change)
@@ -4615,17 +4704,27 @@ def launch_window(args):
                     redraw()
                 else:
                     item = add_point(event.get("newLabel") or name.get() or "Waypoint", event["position"]["x"], event["position"]["z"])
+                if item is not None and cli_action is not None and cli_action.get("pointKind") is not None:
+                    point_kind_by_item[item] = cli_action["pointKind"]
+                    fill_fields(item)
+                    redraw()
                 if item is not None and event.get("measurement") is not None:
                     point_receipts[item] = event["measurement"]
                     redraw()
             if "waypoint" in event:
                 item = add_point(*event["waypoint"])
+                if item is not None and cli_action is not None and cli_action.get("pointKind") is not None:
+                    point_kind_by_item[item] = cli_action["pointKind"]
+                    fill_fields(item)
+                    redraw()
                 if item is not None and event.get("measurement") is not None:
                     point_receipts[item] = event["measurement"]
                     redraw()
             text = (f"Route complete — {event['waypointCount']} waypoint{'s' if event['waypointCount'] != 1 else ''}, "
                     f"{event['distance']:.3f} units from the final point."
                     if status == "route-complete" else
+                    f"Passing guide {event.get('observedWaypoint', event.get('observedPointNumber', '?'))} / {event.get('waypointCount', '?')} · live observation" if status == "route-progress" else
+                    f"Passed guide {event.get('nextWaypoint', '?')} / {event.get('waypointCount', '?')}" if status == "passed" else
                     f"{status}: {event['reason']}" if "reason" in event else
                     f"{status}: {abs(event['headingError']):.2f}° from requested facing" if "headingError" in event else
                     f"{status}: {event['distance']:.3f} units remaining" if "distance" in event else
@@ -4966,6 +5065,8 @@ def main(argv=None):
     mode.add_argument("--run-route", type=Path, help="run a saved waypoint JSON with --execute")
     mode.add_argument("--play-route", type=Path, help="approach a recorded route start within 20 units, then replay with --execute")
     mode.add_argument("--face-bearing", type=float, help="face this +Z-to-+X bearing without walking")
+    parser.add_argument("--goal-y", type=float,
+                        help="require this final height for a direct continuous --go (within 0.5 units)")
     parser.add_argument("--face-waypoints", action="store_true", help="turn toward each waypoint and walk forward")
     parser.add_argument("--movement-engine", choices=("continuous", "pulse"), default="continuous",
                         help="continuous forward travel (default) or the original bounded pulse controller; teaching uses pulse")
@@ -4983,6 +5084,15 @@ def main(argv=None):
         parser.error("--reverse / --resume / --progress requires --play-route")
     if args.record_to is not None and args.go is None and args.run_route is None:
         parser.error("--record-to requires --go or --run-route")
+    if args.goal_y is not None:
+        if args.go is None:
+            parser.error("--goal-y requires a direct --go")
+        if not math.isfinite(args.goal_y):
+            parser.error("--goal-y must be finite")
+        if args.movement_engine != "continuous":
+            parser.error("--goal-y requires --movement-engine continuous")
+        if args.record_to is not None:
+            parser.error("--goal-y cannot be combined with --record-to")
     if not cli_action:
         launch_window(args)
         return 0
@@ -5008,6 +5118,7 @@ def main(argv=None):
             if args.run_route is not None or args.play_route is not None or args.record_to is not None:
                 path = args.play_route or args.run_route
                 document = json.loads(path.read_text(encoding="utf-8")) if path else {"waypoints": [("Waypoint", *args.go)]}
+                validate_route_document(document)
                 points = route_points(document["waypoints"])
                 started = time.monotonic()
                 if args.play_route:
@@ -5015,7 +5126,10 @@ def main(argv=None):
                     checkpoint = args.progress or args.play_route.with_suffix(".progress.json")
                     legs, _ = play_route(adapter, document, stop, emit, runner=runner,
                                         checkpoint=checkpoint, direction="reverse" if args.reverse else "forward",
-                                        resume=args.resume, face_waypoints=args.face_waypoints, approach_start=True)
+                                        resume=args.resume, face_waypoints=args.face_waypoints, approach_start=True,
+                                        height_aware=(args.movement_engine == "continuous"
+                                                      and "heights" in document),
+                                        pass_through=(args.movement_engine == "continuous"))
                 elif args.record_to:
                     from scripts.waypoint_playback import teach_route
                     legs, recorded = teach_route(adapter, points, stop, emit, runner=run_route,
@@ -5023,7 +5137,13 @@ def main(argv=None):
                     args.record_to.write_text(json.dumps(recorded, indent=2), encoding="utf-8")
                     emit({"status": "recorded", "path": str(args.record_to), "points": len(recorded["waypoints"])})
                 else:
-                    legs = runner(adapter, points, stop, emit, face_waypoints=args.face_waypoints)
+                    options = {"face_waypoints": args.face_waypoints}
+                    if args.movement_engine == "continuous":
+                        from scripts.waypoint_kinds import point_kinds
+                        options["point_kinds"] = point_kinds(document)
+                        if "heights" in document:
+                            options["goal_heights"] = document["heights"]
+                    legs = runner(adapter, points, stop, emit, **options)
                 held = [leg.get("totalHoldMs") for leg in legs]
                 result = {"status": "arrived", "waypointCount": len(legs),
                           "position": legs[-1]["position"], "bearing": legs[-1]["bearing"],
@@ -5036,10 +5156,14 @@ def main(argv=None):
                           "allInputsReleased": True,
                           "allPulsesReleased": True if args.record_to or args.movement_engine == "pulse" else None}
             else:
-                result = (run_facing(adapter, stop, emit, bearing=args.face_bearing)
-                          if args.face_bearing is not None else
-                          runner(adapter, [("Waypoint", *args.go)], stop, emit,
-                                    face_waypoints=args.face_waypoints)[0])
+                if args.face_bearing is not None:
+                    result = run_facing(adapter, stop, emit, bearing=args.face_bearing)
+                elif args.goal_y is not None:
+                    from scripts.continuous_move import move_to
+                    result = move_to(adapter, *args.go, stop, emit, goal_y=args.goal_y)
+                else:
+                    result = runner(adapter, [("Waypoint", *args.go)], stop, emit,
+                                    face_waypoints=args.face_waypoints)[0]
         output = ROOT / "artifacts" / ("waypoint-run-" + uuid.uuid4().hex + ".json")
         output.write_text(json.dumps(result, indent=2), encoding="utf-8")
         print(json.dumps({"status": result["status"], "receipt": str(output)}))

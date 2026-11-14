@@ -104,7 +104,7 @@ def validate_playback_document(document, identity):
 
 def play_route(adapter, document, stop, emit, *, runner, checkpoint,
                direction="forward", resume=False, face_waypoints=True,
-               approach_start=False):
+               height_aware=False, approach_start=False, pass_through=False):
     identity = adapter.binding["runtimeIdentity"]
     validate_playback_document(document, identity)
     cursor = (RouteProgress.load(checkpoint, document, identity) if resume else
@@ -115,6 +115,7 @@ def play_route(adapter, document, stop, emit, *, runner, checkpoint,
         raise ProgressError("route already complete")
 
     approach = None
+    initial_index = cursor.next_index
 
     def enter(position):
         nonlocal approach
@@ -132,13 +133,25 @@ def play_route(adapter, document, stop, emit, *, runner, checkpoint,
 
     def progress(event):
         nonlocal approach
-        if event["status"] == "arrived":
+        if event["status"] == "route-progress":
+            index = event.get("index")
+            if type(index) is not int or not 0 <= index < len(cursor.ordered_points)-initial_index:
+                raise ProgressError("Observed route progress index is invalid")
+            emit(dict(event, observedWaypoint=initial_index+index+1,
+                      nextWaypoint=cursor.next_index, waypointCount=len(cursor.ordered_points)))
+            return
+        passed = event["status"] == "passed"
+        if event["status"] == "arrived" or passed:
+            if passed and (not pass_through or event.get("passageVerified") is not True
+                           or event.get("releaseSucceeded") is not True
+                           or event.get("desktopInputsDown") != []):
+                raise ProgressError("Route guide passage is unverified")
             expected = cursor.remaining_points()[0]
             goal = event["goal"]
             if (event.get("name"), goal["x"], goal["z"]) != expected:
                 raise ProgressError("Runner arrival does not match the route cursor")
             actual = _position(event["position"])
-            if math.hypot(actual["x"]-expected[1], actual["z"]-expected[2]) > .30 + 1e-9:
+            if math.hypot(actual["x"]-expected[1], actual["z"]-expected[2]) > (.50 if passed else .30) + 1e-9:
                 raise ProgressError("Settled position is outside the waypoint arrival radius")
             heights = document.get("heights")
             if heights is not None:
@@ -154,11 +167,14 @@ def play_route(adapter, document, stop, emit, *, runner, checkpoint,
                     released = event.get("allPulsesReleased") is True
                 if not released:
                     raise ProgressError("Route start approach input release is unverified")
-                if stop.is_set():
+                if stop.is_set() and not passed:
                     from scripts.physical_waypoints import Stopped
                     raise Stopped("Stopped before route start approach was confirmed")
-                cursor.begin(actual)
-            cursor.confirm_arrival(cursor.next_index, expected)
+                cursor.begin(actual, pass_through=passed)
+            if passed:
+                cursor.confirm_passage(cursor.next_index, expected, actual)
+            else:
+                cursor.confirm_arrival(cursor.next_index, expected)
             cursor.save(checkpoint)
             if approach is not None:
                 emit(dict(event, status="route-approach-complete", approachDistance=approach["distance"],
@@ -166,6 +182,14 @@ def play_route(adapter, document, stop, emit, *, runner, checkpoint,
                 approach = None
         emit(dict(event, nextWaypoint=cursor.next_index, waypointCount=len(cursor.ordered_points)))
 
-    legs = runner(adapter, cursor.remaining_points(), stop, progress,
-                  face_waypoints=face_waypoints, entry_check=enter)
+    options = {"face_waypoints": face_waypoints, "entry_check": enter}
+    if pass_through:
+        kinds = cursor.kinds if direction == "forward" else list(reversed(cursor.kinds))
+        options["point_kinds"] = kinds[cursor.next_index:]
+    if height_aware:
+        ordered_heights = (cursor.heights if direction == "forward" else
+                           list(reversed(cursor.heights))) if cursor.heights is not None else (
+                           [None] * len(cursor.ordered_points))
+        options["goal_heights"] = ordered_heights[cursor.next_index:]
+    legs = runner(adapter, cursor.remaining_points(), stop, progress, **options)
     return legs, cursor

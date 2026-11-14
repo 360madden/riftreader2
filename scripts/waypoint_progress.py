@@ -1,7 +1,7 @@
 """Durable, explicit progress for short recorded waypoint routes.
 
 This module never reads the game or sends input. The caller supplies fresh pose,
-confirms settled waypoint arrivals, and stops if a checkpoint cannot be saved.
+confirms arrivals or verified passages, and stops if a checkpoint cannot be saved.
 """
 from __future__ import annotations
 
@@ -104,10 +104,16 @@ class RouteProgress:
                          "gameBuildSha256": identity["gameBuildSha256"].casefold(),
                          "unitKey": identity["unitKey"]}
         self.points, self.heights = _route(document)
+        from scripts.waypoint_kinds import point_kinds
+        self.kinds = point_kinds(document)
         self.document = json.loads(_canonical(document))
         self.direction = direction
-        self.route_hash = hashlib.sha256(_canonical({"waypoints": self.points, "heights": self.heights,
-                                                      "direction": direction}).encode("utf-8")).hexdigest()
+        fingerprint = {"waypoints": self.points, "heights": self.heights, "direction": direction}
+        # Preserve existing checkpoints for untyped/all-pass routes. Explicit stops
+        # change playback behavior and must invalidate a checkpoint from another plan.
+        if any(kind != "pass" for kind in self.kinds):
+            fingerprint["pointKinds"] = self.kinds
+        self.route_hash = hashlib.sha256(_canonical(fingerprint).encode("utf-8")).hexdigest()
         self.next_index = 0
         self.start = None
 
@@ -130,14 +136,16 @@ class RouteProgress:
     def ordered_points(self):
         return [tuple(self.points[i]) for i in self._ordered()]
 
-    def begin(self, current_position):
+    def begin(self, current_position, *, pass_through=False):
         """Admit a fresh stationary pose; no movement starts here."""
         current = _position(current_position)
         if self.next_index >= len(self.points):
             raise ProgressError("route already complete")
         goal = self._point(self.next_index)
         if self.start is None:
-            if _distance(current, goal) > 0.30 + 1e-9:
+            original = self._ordered()[self.next_index]
+            passage = pass_through and self.kinds[original] == "pass" and self.next_index < len(self.points)-1
+            if _distance(current, goal) > (0.50 if passage else 0.30) + 1e-9:
                 raise ProgressError("start is too far from the route endpoint")
             start = current
         else:
@@ -177,6 +185,21 @@ class RouteProgress:
         if not isinstance(goal, (list, tuple)) or len(goal) != 3 or tuple(goal) != expected:
             raise ProgressError("arrival goal does not match unfinished waypoint")
         self.next_index += 1
+
+    def confirm_passage(self, index, goal, position):
+        """Advance a guide from a validated native passage, never a stop/destination."""
+        if index != self.next_index or index >= len(self.points)-1:
+            raise ProgressError("Passage does not match an unfinished route guide")
+        original = self._ordered()[index]
+        if self.kinds[original] != "pass":
+            raise ProgressError("A stop point requires settled arrival")
+        actual = _position(position)
+        expected = self._point(index)
+        if _distance(actual, expected) > .50 + 1e-9:
+            raise ProgressError("Passage is outside the route guide corridor")
+        if "y" in expected and ("y" not in actual or abs(actual["y"]-expected["y"]) > 1):
+            raise ProgressError("Passed guide is on a different height")
+        self.confirm_arrival(index, goal)
 
     def save(self, path):
         if self.start is None:

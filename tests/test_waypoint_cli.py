@@ -114,6 +114,41 @@ class WaypointCliTests(unittest.TestCase):
         window.assert_not_called()
         self.stop_guard.assert_not_called()
 
+    def test_goal_height_validation_precedes_adapter_and_action(self):
+        cases = [
+            (["--goal-y", "3", "--execute"], "requires a direct --go"),
+            (["--go", "1", "2", "--goal-y", "nan", "--execute"], "must be finite"),
+            (["--go", "1", "2", "--goal-y", "3", "--movement-engine", "pulse",
+              "--execute"], "requires --movement-engine continuous"),
+        ]
+        for extra, reason in cases:
+            with self.subTest(reason=reason), \
+                 patch.object(waypoint, "PhysicalAdapter") as adapter, \
+                 redirect_stderr(io.StringIO()) as error, \
+                 self.assertRaises(SystemExit) as caught:
+                waypoint.main(["--expected-host", "AMD-DESKTOP", "--physical-pid", "123",
+                               *extra])
+            self.assertEqual(2, caught.exception.code)
+            self.assertIn(reason, error.getvalue())
+            adapter.assert_not_called()
+
+    def test_direct_continuous_goal_height_calls_height_aware_mover(self):
+        adapter = SimpleNamespace(binding={"runtimeIdentity": {"processId": 123}},
+                                  input_receipt_path=self.test_root / "inputs.jsonl")
+        result = {"status": "arrived", "position": {"x": 1, "y": 3.5, "z": 2},
+                  "bearing": 0.0, "distance": 0.0}
+        output = io.StringIO()
+        with patch.object(waypoint, "PhysicalAdapter", return_value=adapter), \
+             patch("scripts.continuous_move.move_to", return_value=result) as mover, \
+             redirect_stdout(output):
+            code = waypoint.main(["--expected-host", "AMD-DESKTOP", "--physical-pid", "123",
+                                  "--go", "1", "2", "--goal-y", "3.5", "--execute"])
+        self.assertEqual(0, code)
+        self.assertEqual(3.5, mover.call_args.kwargs["goal_y"])
+        self.assertEqual((adapter, 1.0, 2.0), mover.call_args.args[:3])
+        saved = json.loads(Path(json.loads(output.getvalue().splitlines()[-1])["receipt"]).read_text())
+        self.assertEqual(3.5, saved["position"]["y"])
+
     def test_window_route_rejects_each_cli_action_before_startup(self):
         actions = [
             ["--go", "1", "2"],
@@ -155,6 +190,49 @@ class WaypointCliTests(unittest.TestCase):
             self.assertLessEqual(result["distance"], .3)
             self.assertEqual(len(adapter.calls), result["pulses"])
             self.stop_guard.return_value.close.assert_called_once()
+
+    def test_continuous_run_route_forwards_validated_parallel_heights(self):
+        route = self.test_root / "measured-route.json"
+        route.write_text(json.dumps({
+            "waypoints": [["Slope", 1, 2], ["Camp", 3, 4]],
+            "heights": [877.1, None]}), encoding="utf-8")
+        adapter = SimpleNamespace(binding={"runtimeIdentity": {"processId": 123}},
+                                  input_receipt_path=self.test_root / "inputs.jsonl")
+        legs = [
+            {"status": "arrived", "name": "Slope", "position": {"x": 1, "y": 877.1, "z": 2},
+             "bearing": 0, "distance": 0, "pulses": 1, "totalHoldMs": 10},
+            {"status": "arrived", "name": "Camp", "position": {"x": 3, "y": 877.1, "z": 4},
+             "bearing": 0, "distance": 0, "pulses": 1, "totalHoldMs": 10},
+        ]
+        output = io.StringIO()
+        with patch.object(waypoint, "PhysicalAdapter", return_value=adapter), \
+             patch("scripts.continuous_move.run_continuous_route", return_value=legs) as runner, \
+             redirect_stdout(output):
+            code = waypoint.main(["--expected-host", "AMD-DESKTOP", "--physical-pid", "123",
+                                  "--run-route", str(route), "--execute"])
+        self.assertEqual(0, code)
+        self.assertEqual([877.1, None], runner.call_args.kwargs["goal_heights"])
+
+    def test_continuous_play_route_enables_cursor_height_awareness(self):
+        route = self.test_root / "play-height-route.json"
+        route.write_text(json.dumps({"waypoints": [["Camp", 3, 4]],
+                                     "heights": [877.1]}), encoding="utf-8")
+        adapter = SimpleNamespace(binding={"runtimeIdentity": {
+                                      "machine": "AMD-DESKTOP", "gameBuildSha256": "a" * 64,
+                                      "unitKey": "1", "processId": 123}},
+                                  input_receipt_path=self.test_root / "inputs.jsonl")
+        leg = {"status": "arrived", "name": "Camp",
+               "position": {"x": 3, "y": 877.1, "z": 4},
+               "bearing": 0, "distance": 0, "pulses": 1, "totalHoldMs": 10}
+        output = io.StringIO()
+        with patch.object(waypoint, "PhysicalAdapter", return_value=adapter), \
+             patch("scripts.waypoint_playback.play_route",
+                   return_value=([leg], SimpleNamespace(next_index=1))) as playback, \
+             redirect_stdout(output):
+            code = waypoint.main(["--expected-host", "AMD-DESKTOP", "--physical-pid", "123",
+                                  "--play-route", str(route), "--execute"])
+        self.assertEqual(0, code)
+        self.assertIs(playback.call_args.kwargs["height_aware"], True)
 
     def test_bad_route_coordinates_send_no_input(self):
         adapter = SimulatedRift()

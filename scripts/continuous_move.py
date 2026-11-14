@@ -11,10 +11,11 @@ from contextlib import nullcontext
 import ctypes
 from ctypes import wintypes
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import json
 import math
 import os
+import queue
 from pathlib import Path
 import subprocess
 import sys
@@ -86,6 +87,50 @@ def _drain(stream, output):
         output.append(stream.read())
     except (OSError, ValueError) as exc:
         output.append(exc)
+
+
+def _drain_lines(stream, output, progress):
+    try:
+        for line in stream:
+            output.append(line)
+            try:
+                value = json.loads(line)
+                if isinstance(value, dict) and value.get("status") == "waypoint-passed":
+                    progress.put(value)
+            except (ValueError, TypeError):
+                pass
+    except (OSError, ValueError) as exc:
+        output.append(exc)
+
+
+def _validate_passes(receipt, guides, started):
+    if not guides:
+        return []
+    passes = receipt.get("passedWaypoints")
+    if not isinstance(passes, list) or len(passes) > len(guides):
+        raise ValueError("Native waypoint passage evidence is unavailable")
+    if receipt["status"] == "arrived" and len(passes) != len(guides):
+        raise ValueError("Native arrival omitted waypoint passages")
+    previous = started - timedelta(seconds=1)
+    now = datetime.now(timezone.utc) + timedelta(seconds=1)
+    for index, item in enumerate(passes):
+        guide = guides[index]
+        if not isinstance(item, dict) or type(item.get("index")) is not int or item["index"] != index or item.get("name") != guide["name"]:
+            raise ValueError("Native waypoint passage order or name changed")
+        position = item.get("position")
+        if not isinstance(position, dict):
+            raise ValueError("Native waypoint passage position is unavailable")
+        px, py, pz = (_finite(position.get(axis), "passage " + axis) for axis in ("x", "y", "z"))
+        if math.hypot(px - guide["x"], pz - guide["z"]) > .5 + 1e-9 or ("y" in guide and abs(py - guide["y"]) > .5 + 1e-9):
+            raise ValueError("Native waypoint passage is outside the guide")
+        try:
+            observed = datetime.fromisoformat(item["observedAtUtc"].replace("Z", "+00:00"))
+            if observed.tzinfo is None or not previous <= observed <= now:
+                raise ValueError()
+        except (KeyError, TypeError, ValueError):
+            raise ValueError("Native waypoint passage timestamp is stale or unordered")
+        previous = observed
+    return passes
 
 
 def _parse_final(stdout):
@@ -165,6 +210,12 @@ def _validate_receipt(receipt, adapter, goal, stop_path, owner, returncode):
             or _finite(returned_goal.get("z"), "goal Z") != goal[1]
             or Path(str(receipt.get("stopFile", ""))).absolute() != stop_path):
         raise ValueError("Native movement goal or STOP ownership changed")
+    expected_goal_y = goal[2]
+    if expected_goal_y is None:
+        if "y" in returned_goal:
+            raise ValueError("Native movement returned an unrequested goal height")
+    elif _finite(returned_goal.get("y"), "goal Y") != expected_goal_y:
+        raise ValueError("Native movement goal height changed")
     target = receipt.get("target")
     expected = adapter.target
     if target is not None:
@@ -375,7 +426,7 @@ def preview_move(adapter, x, z, stop):
 def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Popen,
             native_exe=None, owner_identity=None, max_seconds=MAX_TRIP_SECONDS,
             stop_path=None, expected_origin=None, reservation=None,
-            recovery_run=subprocess.run, survival_guard=False):
+            recovery_run=subprocess.run, survival_guard=False, goal_y=None, path_points=None):
     """Run one native continuous destination movement under Python ownership."""
     from scripts.physical_waypoints import read_stationary, Stopped, WaypointError
     adapter._continuous_move_launched = False
@@ -386,6 +437,16 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
     adapter._continuous_move_recovery = None
     adapter._continuous_move_untrusted = None
     x, z = _finite(x, "goal X"), _finite(z, "goal Z")
+    goal_y = None if goal_y is None else _finite(goal_y, "goal Y")
+    guides = []
+    for point in path_points or []:
+        if not isinstance(point, dict) or not isinstance(point.get("name"), str) or not point["name"]:
+            raise ValueError("Guide requires a name and coordinates")
+        guide = {"name": point["name"], "x": _finite(point.get("x"), "guide X"),
+                 "z": _finite(point.get("z"), "guide Z")}
+        if point.get("y") is not None:
+            guide["y"] = _finite(point["y"], "guide Y")
+        guides.append(guide)
     if (type(max_seconds) is not int or not 1 <= max_seconds <= MAX_TRIP_SECONDS):
         raise WaypointError(f"Movement time must be 1-{MAX_TRIP_SECONDS} seconds")
     if stop.is_set():
@@ -430,6 +491,15 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
                    "--owner-start-ticks", str(owner[1]), "--x", repr(x), "--z", repr(z),
                    "--stop-file", str(stop_path), "--max-seconds", str(max_seconds),
                    "--execute", "--json"]
+        if guides:
+            path_file = (ROOT / "artifacts" / ("continuous-route-" + uuid.uuid4().hex + ".json")).absolute()
+            path_file.parent.mkdir(parents=True, exist_ok=True)
+            with path_file.open("x", encoding="utf-8") as stream:
+                json.dump({"waypoints": guides}, stream, allow_nan=False, separators=(",", ":"))
+            command[command.index("--stop-file"):command.index("--stop-file")] = ["--path-file", str(path_file)]
+        if goal_y is not None:
+            insertion = command.index("--stop-file")
+            command[insertion:insertion] = ["--goal-y", repr(goal_y)]
         if survival_guard:
             command.insert(command.index("--execute"), "--survival-interrupt")
             if survival_guard == "retreat":
@@ -438,15 +508,20 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
             insertion = command.index("--execute")
             command[insertion:insertion] = ["--expect-x", repr(origin[0]),
                 "--expect-z", repr(origin[1]), "--expect-bearing", repr(origin[2])]
-        emit({"status": "moving", "name": "CLI destination", "goal": {"x": x, "z": z},
+        event_goal = {"x": x, "z": z}
+        if goal_y is not None:
+            event_goal["y"] = goal_y
+        emit({"status": "moving", "name": "CLI destination", "goal": event_goal,
               "start": asdict(start.position), "position": asdict(start.position),
               "bearing": start.bearing, "distance": initial_distance, "acquired": start.acquired})
+        started_utc = datetime.now(timezone.utc)
         child = popen(command, cwd=ROOT, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                       stderr=subprocess.PIPE, text=True,
                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         adapter._continuous_move_launched = True
         stdout, stderr = [], []
-        readers = [threading.Thread(target=_drain, args=(child.stdout, stdout), daemon=True),
+        progress = queue.Queue()
+        readers = [threading.Thread(target=_drain_lines, args=(child.stdout, stdout, progress), daemon=True),
                    threading.Thread(target=_drain, args=(child.stderr, stderr), daemon=True)]
         for reader in readers:
             reader.start()
@@ -456,6 +531,8 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
         forced_exit_reason = None
         while child.poll() is None:
             try:
+                while not progress.empty():
+                    emit(dict(progress.get_nowait(), status="route-progress", trusted=False))
                 now = time.monotonic()
                 if (stop.is_set() or now >= deadline) and stop_requested_at is None:
                     stop_requested_at = now
@@ -492,24 +569,33 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
         try:
             for reader in readers:
                 reader.join(timeout=5)
+            while not progress.empty():
+                emit(dict(progress.get_nowait(), status="route-progress", trusted=False))
             if any(reader.is_alive() for reader in readers):
                 raise ValueError("Native movement output did not close after process exit")
             if forced_exit_reason is not None:
                 raise ValueError(forced_exit_reason)
             if not stdout or isinstance(stdout[0], Exception):
                 raise ValueError(f"Native movement result unavailable (exit code {child.returncode})")
-            if not isinstance(stdout[0], str) or not stdout[0].strip():
+            if not all(isinstance(part, str) for part in stdout) or not "".join(stdout).strip():
                 detail = stderr[0].strip()[:4000] if stderr and isinstance(stderr[0], str) else ""
                 raise ValueError(f"Native movement result unavailable (exit code {child.returncode})"
                                  + (": " + detail if detail else ""))
-            parsed_receipt = _parse_final(stdout[0])
-            receipt = _validate_receipt(parsed_receipt, adapter, (x, z), stop_path,
+            raw_output = "".join(stdout)
+            lines = [line for line in raw_output.splitlines() if line.strip()]
+            for line in lines[:-1]:
+                progress_record = _parse_final(line)
+                if not isinstance(progress_record, dict) or progress_record.get("status") != "waypoint-passed":
+                    raise ValueError("Unexpected native movement output")
+            parsed_receipt = _parse_final(lines[-1])
+            receipt = _validate_receipt(parsed_receipt, adapter, (x, z, goal_y), stop_path,
                                         owner, child.returncode)
+            passes = _validate_passes(receipt, guides, started_utc)
             receipt_path = _retain(adapter, receipt)
             adapter._continuous_move_receipt_trusted = True
             adapter._continuous_input_release_fault = False
         except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            raw_stdout = stdout[0] if stdout else None
+            raw_stdout = "".join(value for value in stdout if isinstance(value, str)) if stdout else None
             raw_stderr = stderr[0] if stderr else None
             _retain_untrusted(adapter, returncode=child.returncode,
                               stdout=raw_stdout, stderr=raw_stderr,
@@ -526,7 +612,8 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
         held_ms = _held_input_milliseconds(events)
         observed_at = receipt["path"][-1]["observedAtUtc"] if receipt.get("path") else None
         result = dict(receipt, name="CLI destination", start=asdict(start.position),
-                      goal={"x": x, "y": start.position.y, "z": z}, position=position,
+                      goal={"x": x, "y": goal_y if goal_y is not None else start.position.y,
+                            "z": z}, position=position,
                       bearing=(float(receipt["bodyBearingDegreesCandidate"])
                                if receipt.get("bodyBearingDegreesCandidate") is not None else None),
                       distance=(float(receipt["finalDistance"])
@@ -535,6 +622,14 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
                       heldInputMilliseconds=held_ms,
                       motionMode="held-forward",
                       autorunQualification="Game autorun is not started, detected, or cancelled by this operation")
+        for item in passes:
+            guide = guides[item["index"]]
+            emit({"status": "passed", "index": item["index"], "name": guide["name"],
+                  "goal": dict(guide), "position": item["position"],
+                  "observedAtUtc": item["observedAtUtc"], "releaseSucceeded": True,
+                  "source": item.get("source", "pose"),
+                  "desktopInputsDown": [], "passageVerified": True,
+                  "inputReceiptPath": str(receipt_path)})
         if receipt["status"] == "arrived":
             if stop.is_set():
                 raise Stopped("Stopped after native arrival; native release verified")
@@ -544,6 +639,9 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
             settled_distance = math.hypot(x - settled.position.x, z - settled.position.z)
             if settled_distance > .30 + 1e-9:
                 raise WaypointError("Fresh post-release pose no longer confirms destination arrival")
+            if goal_y is not None and abs(settled.position.y - goal_y) > .5 + 1e-9:
+                raise WaypointError(
+                    "Fresh post-release pose no longer confirms destination height")
             result.update(position=asdict(settled.position), bearing=settled.bearing,
                           distance=settled_distance, acquired=settled.acquired)
         final_event = {key: result[key] for key in
@@ -568,12 +666,13 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
 
 
 def run_continuous_route(adapter, points, stop, emit=lambda event: None, *,
-                         face_waypoints=True, entry_check=None, survival_guard=False):
+                         face_waypoints=True, entry_check=None, survival_guard=False,
+                         goal_heights=None, point_kinds=None):
     """Follow real route waypoints with one reservation and one shared deadline.
 
-    The native backend performs continuous turn/forward control for each real
-    waypoint. It does not insert synthetic short targets. Arrival events retain
-    the runner contract used by durable playback checkpoints.
+    Ordinary guides share one native forward run. Explicit stops and the final
+    destination end a span with settled arrival. Live observations are separate
+    from passage events validated after release for durable checkpoints.
     """
     from scripts.physical_waypoints import read_stationary, route_points, Stopped, WaypointError
     if getattr(adapter, "_continuous_input_release_fault", False):
@@ -583,6 +682,21 @@ def run_continuous_route(adapter, points, stop, emit=lambda event: None, *,
     rows = route_points(points)
     if not 1 <= len(rows) <= MAX_WAYPOINTS:
         raise WaypointError(f"Route must have 1-{MAX_WAYPOINTS} waypoints")
+    if goal_heights is None:
+        heights = [None] * len(rows)
+    elif not isinstance(goal_heights, (list, tuple)) or len(goal_heights) != len(rows):
+        raise WaypointError("Route goal heights must match its waypoints")
+    else:
+        heights = [None if value is None else _finite(value, "route goal height")
+                   for value in goal_heights]
+    if point_kinds is None:
+        kinds = ["pass"] * len(rows)
+    elif (not isinstance(point_kinds, (list, tuple)) or len(point_kinds) != len(rows)
+          or any(kind not in ("pass", "stop") for kind in point_kinds)):
+        raise WaypointError("Route point kinds must match its waypoints and be pass or stop")
+    else:
+        kinds = list(point_kinds)
+    kinds[-1] = "stop"
     started = time.monotonic()
     with adapter.reserve() as lease:
         initial = read_stationary(adapter, stop)
@@ -595,7 +709,18 @@ def run_continuous_route(adapter, points, stop, emit=lambda event: None, *,
         if planned > MAX_ROUTE_DISTANCE:
             raise WaypointError(f"Route exceeds {MAX_ROUTE_DISTANCE:g} world units")
         legs = []
-        for label, x, z in rows:
+        batch_start = 0
+        for end, kind in enumerate(kinds):
+            if kind != "stop":
+                continue
+            label, x, z = rows[end]
+            goal_y = heights[end]
+            guides = []
+            for index in range(batch_start, end):
+                guide = {"name": rows[index][0], "x": rows[index][1], "z": rows[index][2]}
+                if heights[index] is not None:
+                    guide["y"] = heights[index]
+                guides.append(guide)
             if stop.is_set():
                 raise Stopped("Stopped; no further input")
             remaining = math.floor(MAX_TRIP_SECONDS - (time.monotonic() - started))
@@ -603,10 +728,31 @@ def run_continuous_route(adapter, points, stop, emit=lambda event: None, *,
                 raise WaypointError(f"Trip exceeded {MAX_TRIP_SECONDS} seconds")
 
             def named(event):
-                emit(dict(event, name=label))
+                if event.get("status") == "passed":
+                    legs.append(dict(event, elapsedSeconds=None, totalHoldMs=None,
+                                     nativeReceipt=adapter.last_input_receipt))
+                    emit(event)
+                elif event.get("status") == "route-progress":
+                    index = event.get("index")
+                    position = event.get("position")
+                    if (type(index) is not int or not 0 <= index < len(guides)
+                            or event.get("name") != guides[index]["name"]
+                            or not isinstance(position, dict)):
+                        return
+                    try:
+                        for axis in ("x", "y", "z"):
+                            _finite(position.get(axis), "progress " + axis)
+                    except ValueError:
+                        return
+                    emit(dict(event, batchIndex=index, index=batch_start + index,
+                              waypointCount=len(rows), observedPointNumber=batch_start + index + 1,
+                              source=event.get("source", "pose")))
+                else:
+                    emit(dict(event, name=label))
 
             leg = move_to(adapter, x, z, stop, named, reservation=lease,
-                          max_seconds=remaining, survival_guard=survival_guard)
+                          max_seconds=remaining, survival_guard=survival_guard,
+                          goal_y=goal_y, path_points=guides)
             leg = dict(leg, name=label,
                        elapsedSeconds=round(float(leg.get("elapsedMilliseconds", 0)) / 1000, 3),
                        totalHoldMs=(float(leg["heldInputMilliseconds"])
@@ -614,6 +760,7 @@ def run_continuous_route(adapter, points, stop, emit=lambda event: None, *,
                                         and math.isfinite(leg["heldInputMilliseconds"])) else None),
                        nativeReceipt=adapter.last_input_receipt)
             legs.append(leg)
+            batch_start = end + 1
         return legs
 
 

@@ -1,6 +1,6 @@
 # Joey D's Waypoints
 
-The desktop helper and console frontend share **Joey D's Waypoints v1.2.0**
+The desktop helper and console frontend share **Joey D's Waypoints v1.3.0**
 branding. The red panda in the header is also the window icon. Existing
 `Waypoints.cmd` and `rr2-waypoints.cmd` entry points stay compatible.
 
@@ -45,6 +45,42 @@ nearby points and route coverage. All true nodes remain selectable. Explore's
 compact radar retains its separate local ranges.
 
 ## Movement modes and map destinations
+
+### Route guides and stops
+
+In continuous playback, ordinary recorded waypoints are **pass-through guides**.
+They describe the route's shape and progress; the controller follows the polyline
+with lookahead while keeping forward input held through those guides. It does
+not brake and settle at every recorded sample. The destination always requires
+a released, settled arrival within 0.30 units. A declared **stop point** also
+ends a continuous span and requires that precise arrival before continuing.
+
+Use **Edit waypoint → Point type** to choose Pass through or Stop at point.
+Rows marked `S` are explicit stops. The same operation is available in the CLI:
+
+```powershell
+.\rr2-waypoints.cmd route update 8 --kind stop
+.\rr2-waypoints.cmd route update 8 --kind pass
+```
+
+Saved `pointKinds` values follow the waypoint order; old files without them
+default to pass-through guides. Reverse playback reverses their order and stops
+at its own destination. Editing explicit stops invalidates incompatible saved
+progress. Live guide observations update the display, while durable progress
+advances only from validated passage evidence after input release. STOP remains
+latched and Resume rechecks the unfinished route corridor.
+
+This changes continuous playback; pulse fallback and survival playback retain
+their existing per-point stopping behavior. It adds no obstacle planner. Tight
+turns still have to fit the guarded route corridor; smooth playback does not
+authorize cutting corners through unknown ground. Physical acceptance of the
+new pass-through controller remains pending.
+
+Focused native simulations passed dense guides with one forward hold, two
+25-degree bends at 6.25 units/second and two 90-degree bends at 3.5 units/second,
+including modeled key-release coast. A 90-degree turn at 6.25 units/second
+correctly halted at the corridor guard and advised using a Stop point. These
+are controller checks, not evidence of physical RIFT camera smoothness.
 
 New Waypoints windows start with **Continuous travel** enabled. Continuous mode
 holds RR2's owned forward key while repeatedly checking fresh position, progress,

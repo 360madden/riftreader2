@@ -132,7 +132,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
         reader = unittest.mock.Mock(side_effect=lambda **kwargs: current["pose"])
         self.launch(SimpleNamespace(read=reader, pid=123), route)
         self.assertNotEqual("disabled", str(self.button("Play Forward")["state"]))
-        self.assertEqual("disabled", str(self.button("Play Reverse")["state"]))
+        self.assertNotEqual("disabled", str(self.button("Play Reverse")["state"]))
         before = reader.call_count
         table = self.route_table()
         table.selection_set(table.get_children()[0])
@@ -146,7 +146,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
             if all(not thread.is_alive() for thread in self.threads) and str(self.button("Refresh")["state"]) != "disabled":
                 break
             time.sleep(.01)
-        self.assertEqual("disabled", str(self.button("Play Forward")["state"]))
+        self.assertNotEqual("disabled", str(self.button("Play Forward")["state"]))
         self.assertNotEqual("disabled", str(self.button("Play Reverse")["state"]))
 
     def test_play_endpoint_height_and_point_three_boundary(self):
@@ -176,10 +176,10 @@ class PlaybackWindowStateTests(unittest.TestCase):
         self.assertEqual("disabled", str(self.button("Play Reverse")["state"]))
         self.assertEqual(1, reader.call_count)
 
-    def test_play_rejects_just_outside_endpoint_radius(self):
+    def test_play_rejects_outside_automatic_approach_limit(self):
         route = self.path / "route.json"
         route.write_text(json.dumps({"waypoints": [["Start", 0, 0], ["End", 2, 0]]}), encoding="utf-8")
-        pose = app.Snapshot(app.Position(.300001, 0, 0), 0, time.monotonic(), "fake")
+        pose = app.Snapshot(app.Position(-20.0001, 0, 0), 0, time.monotonic(), "fake")
         self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123), route)
         self.assertEqual("disabled", str(self.button("Play Forward")["state"]))
 

@@ -104,6 +104,17 @@ unless an observed movement failure blocks it. Establish the actual current
 build/learned actions for the first fight, then expand to the per-level plan.
 A full future build planner must not delay the first useful defensive response.
 
+**Dense-route correction, November 14:** The reported stop at every recorded
+point is a movement defect, not a reason to reduce recording detail. Continuous
+playback now distinguishes pass-through route guides from explicit stops and the
+final destination. It follows each continuous span in one native operation;
+STOP and durable Resume remain shared. First qualify dense straight points,
+corners, explicit stops and mid-span STOP/Resume on a suitable known route, then
+return to the ranked combat work below. Pulse and survival playback still use
+their earlier per-point movement; propagating flow into survival is remaining
+integration work, not covered by prior combat acceptance. Offline checks do not
+establish physical camera or traversal acceptance for this new controller.
+
 The subsequently reported camera-shake defect was brought forward under that
 failure-driven rule. Sparse travel steering and settled initial alignment now
 have a complete live 72.802-unit courtyard loop with eight legs/corners, zero

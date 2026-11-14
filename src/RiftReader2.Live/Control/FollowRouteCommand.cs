@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Text.Json;
 using RiftReader2.Application;
 using RiftReader2.Infrastructure;
 
@@ -21,7 +22,18 @@ internal static class FollowRouteCommand
         long ExpectedHwnd, ulong ExpectedPlayerKey, int OwnerPid, long OwnerStartTicks,
         double X, double Z, string StopFile, int MaxSeconds, bool Execute, bool Json,
         double? ExpectedX = null, double? ExpectedZ = null, double? ExpectedBearing = null,
-        bool SurvivalInterrupt = false, bool SurvivalRetreat = false);
+        bool SurvivalInterrupt = false, bool SurvivalRetreat = false, double? GoalY = null,
+        RoutePoint[]? RoutePoints = null);
+
+    internal sealed record RoutePoint(string Name, double X, double Z, double? Y = null);
+    internal sealed record WaypointPass(int Index, string Name, ReceiptPosition Position,
+        DateTimeOffset ObservedAtUtc, string Source = "pose",
+        PassSample? CrossingBefore = null, PassSample? CrossingAfter = null);
+    internal sealed record PassSample(ReceiptPosition Position, DateTimeOffset ObservedAtUtc)
+    {
+        public static PassSample From(Pose pose) =>
+            new(new(pose.X, pose.Y, pose.Z), pose.CompletedAtUtc.ToUniversalTime());
+    }
 
     internal sealed record SurvivalSnapshot(string Status, long? HealthCurrent,
         long? HealthMaximum, bool? CombatCandidate, byte? RawCombat,
@@ -45,7 +57,7 @@ internal static class FollowRouteCommand
     internal sealed record Result(string Status, string? Reason, Pose? FinalPose,
         double InitialDistance, double FinalDistance, int ReadCount, PathPoint[] Path,
         double ElapsedMilliseconds, bool InputSent, bool ReleaseSucceeded,
-        SurvivalSnapshot? SurvivalSnapshot = null);
+        SurvivalSnapshot? SurvivalSnapshot = null, WaypointPass[]? PassedWaypoints = null);
     internal sealed record ReceiptPosition(double X, double Y, double Z);
     internal sealed record ResultReceiptProjection(
         ReceiptPosition? Position,
@@ -60,7 +72,7 @@ internal static class FollowRouteCommand
         double ElapsedMilliseconds,
         bool InputSent,
         bool ReleaseSucceeded,
-        SurvivalSnapshot? SurvivalSnapshot);
+        SurvivalSnapshot? SurvivalSnapshot, WaypointPass[] PassedWaypoints);
 
     internal interface IInput
     {
@@ -91,8 +103,8 @@ internal static class FollowRouteCommand
         {
             "--expected-host", "--pid", "--expect-start-ticks", "--expect-sha256",
             "--expect-hwnd", "--expect-player-key", "--owner-pid", "--owner-start-ticks",
-            "--x", "--z", "--stop-file", "--max-seconds",
-            "--expect-x", "--expect-z", "--expect-bearing"
+            "--x", "--z", "--goal-y", "--stop-file", "--max-seconds",
+            "--expect-x", "--expect-z", "--expect-bearing", "--path-file"
         };
         var unknown = values.Keys.FirstOrDefault(key => !allowed.Contains(key));
         if (unknown is not null) throw new InvalidDataException("Unknown option: " + unknown);
@@ -138,7 +150,22 @@ internal static class FollowRouteCommand
             originCount == 0 ? null : Finite(values["--expect-x"], "--expect-x"),
             originCount == 0 ? null : Finite(values["--expect-z"], "--expect-z"),
             originCount == 0 ? null : Finite(values["--expect-bearing"], "--expect-bearing"),
-            survivalInterrupt, survivalRetreat);
+            survivalInterrupt, survivalRetreat, values.TryGetValue("--goal-y", out var y) ? Finite(y, "--goal-y") : null,
+            values.TryGetValue("--path-file", out var file) ? ReadRoutePoints(file) : null);
+    }
+
+    private static RoutePoint[] ReadRoutePoints(string file)
+    {
+        using var stream = File.OpenRead(file);
+        using var document = JsonDocument.Parse(stream);
+        var items = document.RootElement.GetProperty("waypoints");
+        if (items.GetArrayLength() > 499)
+            throw new InvalidDataException("A route supports at most 499 intermediate waypoints.");
+        return items.EnumerateArray().Select(item => new RoutePoint(
+            item.GetProperty("name").GetString() ?? "",
+            item.GetProperty("x").GetDouble(), item.GetProperty("z").GetDouble(),
+            item.TryGetProperty("y", out var y) && y.ValueKind != JsonValueKind.Null
+                ? y.GetDouble() : null)).ToArray();
     }
 
     internal static string SurvivalMode(Options options) => options.SurvivalRetreat
@@ -159,7 +186,7 @@ internal static class FollowRouteCommand
             result?.ReadCount ?? 0, result?.Path ?? [],
             Finite(result?.ElapsedMilliseconds) ?? 0,
             result?.InputSent ?? false, result?.ReleaseSucceeded ?? true,
-            result?.SurvivalSnapshot);
+            result?.SurvivalSnapshot, result?.PassedWaypoints ?? []);
     }
 
     internal static void ValidateExpectedOrigin(Options options, Pose pose)
@@ -172,6 +199,55 @@ internal static class FollowRouteCommand
 
     internal static double Distance(Pose pose, double x, double z) =>
         Math.Sqrt(Math.Pow(x - pose.X, 2) + Math.Pow(z - pose.Z, 2));
+    private static object ReceiptGoal(Options options) => options.GoalY is double y
+        ? new { x = options.X, y, z = options.Z } : new { x = options.X, z = options.Z };
+
+    private static void ValidateGoalHeight(Options options, Pose start)
+    {
+        if (options.GoalY is not double y) return;
+        if (!double.IsFinite(y) || Math.Abs(y - start.Y) > Math.Min(50, Distance(start, options.X, options.Z)))
+            throw new InvalidDataException("Expected goal height exceeds the grade or 50-unit height bound.");
+    }
+
+    private static Options GuideLeg(Options options, RoutePoint guide) =>
+        options with { X = guide.X, Z = guide.Z, GoalY = guide.Y };
+
+    private static void ValidateRoute(Options options, Pose start)
+    {
+        var guides = options.RoutePoints ?? [];
+        if (guides.Length > 499)
+            throw new InvalidDataException("A route supports at most 499 intermediate waypoints.");
+        var length = 0.0;
+        foreach (var guide in guides)
+        {
+            if (guide is null || string.IsNullOrWhiteSpace(guide.Name)
+                || !double.IsFinite(guide.X) || !double.IsFinite(guide.Z))
+                throw new InvalidDataException("Intermediate waypoints require a name and finite coordinates.");
+            ValidateGoalHeight(GuideLeg(options, guide), start);
+            length += Distance(start, guide.X, guide.Z);
+            start = start with { X = guide.X, Y = guide.Y ?? start.Y, Z = guide.Z };
+        }
+        ValidateGoalHeight(options, start);
+        length += Distance(start, options.X, options.Z);
+        if (!double.IsFinite(length) || length > MaximumDistance)
+            throw new InvalidDataException("Route exceeds 1000 world units or has invalid coordinates.");
+    }
+
+    private static bool WithinHeightEnvelope(Pose pose, Pose start, Options options)
+    {
+        var expected = start.Y;
+        if (options.GoalY is double goalY)
+        {
+            var dx = options.X - start.X;
+            var dz = options.Z - start.Z;
+            var lengthSquared = dx * dx + dz * dz;
+            var along = lengthSquared == 0 ? 0 : Math.Clamp(
+                ((pose.X - start.X) * dx + (pose.Z - start.Z) * dz) / lengthSquared, 0, 1);
+            expected += along * (goalY - start.Y);
+        }
+        return Math.Abs(pose.Y - expected) <= 1.5;
+    }
+
     internal static double BearingTo(Pose pose, double x, double z) =>
         Math.Atan2(x - pose.X, z - pose.Z) * 180 / Math.PI;
     internal static double HeadingError(double target, double current) =>
@@ -214,6 +290,75 @@ internal static class FollowRouteCommand
         var z = start.Z + dz * ahead / length;
         return BearingTo(pose, x, z);
     }
+    // Aim through the next bend only as far as a straight approach can stay
+    // close to its vertex. Never target a point beyond the adjoining leg.
+    private static double GuideBearing(Pose pose, Pose start, Options leg, Options next, double speed, double turnRate)
+    {
+        var remaining = Distance(pose, leg.X, leg.Z);
+        var dx = next.X - leg.X;
+        var dz = next.Z - leg.Z;
+        var length = Math.Sqrt(dx * dx + dz * dz);
+        var ahead = Math.Min(3 - remaining, length);
+        if (ahead <= 0 || (leg.X - start.X) * dx + (leg.Z - start.Z) * dz < 0)
+            return CorridorBearing(pose, start, leg.X, leg.Z);
+        // For a substantial bend the actor takes time to turn. Start the
+        // curved transition before reaching the vertex, aiming down the exit
+        // when a constant-rate turn would meet that segment's corridor.
+        var entryBearing = BearingTo(start, leg.X, leg.Z);
+        var exitBearing = Math.Atan2(dx, dz) * 180 / Math.PI;
+        var bend = Math.Abs(HeadingError(exitBearing, entryBearing)) * Math.PI / 180;
+        if (bend > Math.PI / 12 && length > .50)
+        {
+            var radius = (speed > .1 ? speed : 5.8) / (turnRate * Math.PI / 180);
+            var tangent = radius * Math.Tan(bend / 2);
+            var along = ((leg.X - pose.X) * (leg.X - start.X) + (leg.Z - pose.Z) * (leg.Z - start.Z))
+                / Math.Max(.001, Distance(start, leg.X, leg.Z));
+            var lead = Math.Min(tangent, length) - Math.Clamp((radius - 1) * .34, .05, .35);
+            if (along <= lead) return exitBearing;
+            // Keep the entry line until the position-based turn point.
+            return CorridorBearing(pose, start, leg.X, leg.Z);
+        }
+        while (ahead > .025)
+        {
+            var target = pose with { X = leg.X + ahead * dx / length, Z = leg.Z + ahead * dz / length };
+            if (SegmentDistanceToGoal(pose, target, leg.X, leg.Z) <= .45)
+                return BearingTo(pose, target.X, target.Z);
+            ahead *= .5;
+        }
+        return BearingTo(pose, leg.X, leg.Z);
+    }
+
+    // With a coarse sample a short, forward crossing of the waypoint plane
+    // can establish passage even when both native samples missed its disk.
+    private static Pose? WaypointObservation(Pose before, Pose after, Pose start, Options leg,
+        out string source)
+    {
+        source = "pose";
+        var length = Distance(start, leg.X, leg.Z);
+        var radius = Math.Min(.50, length * .5);
+        var dx = leg.X - start.X;
+        var dz = leg.Z - start.Z;
+        var motion = (after.X - before.X) * dx + (after.Z - before.Z) * dz;
+        var afterPlane = (after.X - leg.X) * dx + (after.Z - leg.Z) * dz;
+        if (Distance(after, leg.X, leg.Z) <= radius &&
+            (length == 0 || motion > 0 || Distance(after, leg.X, leg.Z) <= .001))
+            return after;
+        var seconds = (after.CompletedAtUtc - before.CompletedAtUtc).TotalSeconds;
+        if (motion <= 0 || afterPlane < 0 || afterPlane > motion || seconds <= 0
+            || seconds > .20 || Distance(after, before.X, before.Z) > Math.Min(2, 15 * seconds + .1))
+            return null;
+        var fraction = 1 - afterPlane / motion;
+        var crossing = after with {
+            X = before.X + fraction * (after.X - before.X),
+            Y = before.Y + fraction * (after.Y - before.Y),
+            Z = before.Z + fraction * (after.Z - before.Z),
+            CompletedAtUtc = before.CompletedAtUtc + (after.CompletedAtUtc - before.CompletedAtUtc) * fraction
+        };
+        if (Distance(crossing, leg.X, leg.Z) > .50) return null;
+        source = "segment-crossing";
+        return crossing;
+    }
+
     private static bool FinitePose(Pose pose) =>
         double.IsFinite(pose.X) && double.IsFinite(pose.Y) && double.IsFinite(pose.Z)
         && double.IsFinite(pose.Bearing) && pose.PlayerKey != 0
@@ -226,13 +371,18 @@ internal static class FollowRouteCommand
     internal static async Task<Result> FollowAsync(
         Options options, Func<CancellationToken, Task<Pose>> readPose, IInput input,
         Func<string?> safetyReason, Func<TimeSpan, CancellationToken, Task>? delay = null,
-        CancellationToken token = default)
+        CancellationToken token = default, Action<WaypointPass>? onWaypointPassed = null)
     {
         delay ??= Task.Delay;
         var clock = Stopwatch.StartNew();
         var down = new HashSet<string>(StringComparer.Ordinal);
         var gate = new object();
         var path = new List<PathPoint>();
+        var guides = options.RoutePoints ?? [];
+        var corridorReason = guides.Length == 0 ? "Cross-track drift exceeded the direct-path guard."
+            : "Cross-track drift exceeded the route corridor. Mark a tight turn as a Stop point.";
+        var passed = new List<WaypointPass>();
+        var leg = options;
         var reads = 0;
         var inputSent = false;
         var releaseSucceeded = true;
@@ -384,6 +534,7 @@ internal static class FollowRouteCommand
             previousPoseCompleted = pose.CompletedAtUtc;
             Volatile.Write(ref lastPoseTick, Stopwatch.GetTimestamp());
             reads++;
+            var previous = finalPose;
             finalPose = pose;
             finalDistance = Distance(pose, options.X, options.Z);
             // The first accepted pose is also the admission metric. Establish it
@@ -416,6 +567,10 @@ internal static class FollowRouteCommand
                 CancelOperation();
                 throw new OperationCanceledException(operationToken);
             }
+            if (leg.GoalY.HasValue && previous is not null
+                && pose.CompletedAtUtc - previous.CompletedAtUtc <= TimeSpan.FromMilliseconds(200)
+                && Math.Abs(pose.Y - previous.Y) > .75)
+                throw new InvalidDataException("Abrupt vertical step exceeded the expected-height guard.");
             return pose;
         }
 
@@ -456,10 +611,64 @@ internal static class FollowRouteCommand
             var pose = await Read();
             ValidateExpectedOrigin(options, pose);
             initialDistance = finalDistance;
-            if (initialDistance > MaximumDistance)
-                throw new InvalidDataException("Destination exceeds 1000 world units.");
-            if (initialDistance <= ArrivalRadius)
+            ValidateRoute(options, pose);
+            Options LegAt(int index) => index < guides.Length ? GuideLeg(options, guides[index]) : options;
+            leg = LegAt(0);
+            var travelStart = pose;
+            var heightStart = pose;
+            void AdvanceGuides(Pose before, Pose after, bool admission = false)
+            {
+                // Verify the entire observed step before publishing any guide on it.
+                var stepStart = before;
+                List<WaypointPass>? pending = null;
+                var index = passed.Count;
+                while (index < guides.Length)
+                {
+                    string source = "pose";
+                    var observation = admission && index == 0 && Distance(after, leg.X, leg.Z) <= .50
+                        ? after : WaypointObservation(before, after, travelStart, leg, out source);
+                    if (observation is null) break;
+                    if (!WithinHeightEnvelope(observation, heightStart, leg)
+                        || leg.GoalY is double height && Math.Abs(observation.Y - height) > .50)
+                        throw new InvalidOperationException("Waypoint passage exceeded its expected height.");
+                    var sample = PassSample.From(observation);
+                    (pending ??= []).Add(new(index, guides[index].Name, sample.Position, sample.ObservedAtUtc,
+                        source, source == "segment-crossing" ? PassSample.From(stepStart) : null,
+                        source == "segment-crossing" ? PassSample.From(after) : null));
+                    travelStart = heightStart = observation with { X = leg.X, Z = leg.Z, Y = leg.GoalY ?? observation.Y };
+                    leg = LegAt(++index);
+                    ValidateGoalHeight(leg, heightStart);
+                    before = observation;
+                }
+                if (pending is null) return;
+                if (CrossTrack(after, travelStart, leg.X, leg.Z) > .50)
+                    throw new InvalidOperationException(corridorReason);
+                if (!WithinHeightEnvelope(after, heightStart, leg))
+                    throw new InvalidOperationException("Vertical drift exceeded the direct-path guard.");
+                foreach (var pass in pending)
+                {
+                    passed.Add(pass);
+                    onWaypointPassed?.Invoke(pass);
+                }
+            }
+            AdvanceGuides(pose, pose, admission: true);
+            if (passed.Count == guides.Length && finalDistance <= ArrivalRadius)
+            {
+                if (options.GoalY is double requiredY && Math.Abs(pose.Y - requiredY) > .5)
+                    throw new InvalidOperationException("Admission pose exceeds the expected arrival height.");
+                if (guides.Length > 0)
+                {
+                    // A compact route may reach its last guide at admission, with no
+                    // owned key to release. Still verify a stable final position.
+                    await delay(TimeSpan.FromMilliseconds(75), operationToken);
+                    var confirmed = await Read();
+                    if (Distance(confirmed, options.X, options.Z) > ArrivalRadius
+                        || Distance(confirmed, pose.X, pose.Z) > .05 || Math.Abs(confirmed.Y - pose.Y) > .10
+                        || options.GoalY is double goalY && Math.Abs(confirmed.Y - goalY) > .50)
+                        throw new InvalidOperationException("post-release-arrival-not-settled");
+                }
                 status = "arrived";
+            }
             else
             {
                 // Align first. Once forward starts, W remains continuously held
@@ -468,7 +677,7 @@ internal static class FollowRouteCommand
                 // Budget 90% of the arrival radius for initial lateral error. Keep a
                 // one-degree floor for finite turn pulses; long legs still use corridor feedback.
                 var alignmentTolerance = Math.Clamp(
-                    Math.Atan2(ArrivalRadius * .90, finalDistance) * 180 / Math.PI, 1, 2);
+                    Math.Atan2(ArrivalRadius * .90, Distance(pose, leg.X, leg.Z)) * 180 / Math.PI, 1, 2);
                 var alignmentStarted = clock.Elapsed;
                 var unresponsiveTurns = 0;
                 var residualNudges = 0;
@@ -498,7 +707,7 @@ internal static class FollowRouteCommand
                         GuardAlignmentPose(pose);
                         var bearingMotion = Math.Abs(HeadingError(pose.Bearing, previous.Bearing));
                         var remaining = Math.Abs(HeadingError(
-                            BearingTo(pose, options.X, options.Z), pose.Bearing));
+                            BearingTo(pose, leg.X, leg.Z), pose.Bearing));
                         if (bearingMotion <= .75 && remaining <= alignmentTolerance)
                             return true;
                         previous = pose;
@@ -507,7 +716,7 @@ internal static class FollowRouteCommand
                 }
                 while (Volatile.Read(ref terminalReason) is null)
                 {
-                    var error = HeadingError(BearingTo(pose, options.X, options.Z), pose.Bearing);
+                    var error = HeadingError(BearingTo(pose, leg.X, leg.Z), pose.Bearing);
                     if (alignmentKey is null && Math.Abs(error) <= alignmentTolerance)
                     {
                         if (!alignmentRequiresSettlement || await ObserveSettledAlignment())
@@ -562,7 +771,7 @@ internal static class FollowRouteCommand
                         if (rate is >= 20 and <= 400)
                             observedTurnRate = observedTurnRate * .65 + rate * .35;
                     }
-                    var nextError = Math.Abs(HeadingError(BearingTo(pose, options.X, options.Z), pose.Bearing));
+                    var nextError = Math.Abs(HeadingError(BearingTo(pose, leg.X, leg.Z), pose.Bearing));
                     if (Math.Abs(delta) < .05 || Math.Abs(delta) > 45
                         || turn == "a" && delta <= 0 || turn == "d" && delta >= 0
                         || nextError >= previousError - .05)
@@ -576,8 +785,12 @@ internal static class FollowRouteCommand
                 SetKey("a", false);
                 SetKey("d", false);
                 if (Volatile.Read(ref terminalReason) is null) SetKey("w", true);
-                var travelStart = pose;
-                var best = finalDistance;
+                if (passed.Count == 0)
+                {
+                    travelStart = pose;
+                    heightStart = leg.GoalY.HasValue ? alignmentAnchor : travelStart;
+                }
+                var best = Distance(pose, leg.X, leg.Z);
                 var lastProgress = clock.Elapsed;
                 var divergence = 0;
                 var nextSteeringAt = clock.Elapsed;
@@ -585,12 +798,15 @@ internal static class FollowRouteCommand
                 string? lastSteeringKey = null;
                 Pose? lastSteeringPose = null;
                 var observedSpeed = 0.0;
-                var arrivalObserved = finalDistance <= ArrivalRadius;
+                var downhillBrake = false;
+                var nearMissBrake = false;
+                string? routeSteeringKey = null;
+                var arrivalObserved = passed.Count == guides.Length && finalDistance <= ArrivalRadius;
                 while (Volatile.Read(ref terminalReason) is null && !arrivalObserved)
                 {
                     var previousTravelPose = pose;
                     await delay(TimeSpan.FromMilliseconds(
-                        finalDistance <= 2 ? 25 : 75), operationToken);
+                        routeSteeringKey is not null || Distance(pose, leg.X, leg.Z) <= (guides.Length > 0 ? 3 : 2) ? 25 : 75), operationToken);
                     if (Volatile.Read(ref terminalReason) is not null) break;
                     pose = await Read();
                     var sampleSeconds = (pose.CompletedAtUtc - previousTravelPose.CompletedAtUtc).TotalSeconds;
@@ -601,45 +817,87 @@ internal static class FollowRouteCommand
                         if (sampleSpeed is > .05 and < 30)
                             observedSpeed = observedSpeed == 0 ? sampleSpeed : observedSpeed * .65 + sampleSpeed * .35;
                     }
+                    var oldIndex = passed.Count;
+                    if (oldIndex < guides.Length) AdvanceGuides(previousTravelPose, pose);
+                    var guiding = passed.Count < guides.Length;
+                    var legDistance = Distance(pose, leg.X, leg.Z);
+                    if (oldIndex != passed.Count)
+                    {
+                        best = legDistance;
+                        divergence = 0;
+                        lastProgress = clock.Elapsed;
+                    }
+                    var plannedDescent = !guiding && leg.GoalY is double goalHeight
+                        && heightStart.Y - goalHeight >= .15 * Distance(heightStart, leg.X, leg.Z);
                     // Project only a small part of the observed sample interval.
                     // Segment crossing remains the fail-safe for a skipped disk;
                     // this margin must not turn a .75-unit shortfall into arrival.
                     var brakingMargin = observedSpeed == 0 ? 0
                         : Math.Min(.12, observedSpeed * Math.Min(.02, sampleSeconds * .20));
+                    // On a measured descent the released body can coast for ~250 ms.
+                    // Only brake ahead when both the requested leg and its observed
+                    // travel descend appreciably. A brake still requires settled arrival.
+                    if (plannedDescent && finalDistance <= 2 && observedSpeed > .1
+                        && travelStart.Y - pose.Y >= Math.Max(.10,
+                            .15 * Distance(pose, travelStart.X, travelStart.Z)))
+                    {
+                        downhillBrake = true;
+                        brakingMargin = Math.Max(brakingMargin, Math.Min(1.50, observedSpeed * .25));
+                    }
                     var brakingRadius = ArrivalRadius + brakingMargin;
-                    arrivalObserved = finalDistance <= brakingRadius
-                        || SegmentDistanceToGoal(previousTravelPose, pose, options.X, options.Z) <= ArrivalRadius;
-                    if (arrivalObserved)
+                    arrivalObserved = !guiding && (finalDistance <= brakingRadius
+                        || oldIndex == passed.Count
+                        && SegmentDistanceToGoal(previousTravelPose, pose, options.X, options.Z) <= ArrivalRadius);
+                    // A shallow heading residual can carry a straight leg beside the disk.
+                    // Brake within one measured sample of the goal plane while still on the
+                    // admitted corridor, then use the stationary finish. This is not arrival.
+                    if (!guiding && !arrivalObserved && finalDistance <= .50)
+                    {
+                        var dx = pose.X - previousTravelPose.X;
+                        var dz = pose.Z - previousTravelPose.Z;
+                        var step = Math.Sqrt(dx * dx + dz * dz);
+                        if (step > .01)
+                        {
+                            var gx = options.X - pose.X;
+                            var gz = options.Z - pose.Z;
+                            var ahead = (gx * dx + gz * dz) / step;
+                            var lateral = Math.Abs(gx * dz - gz * dx) / step;
+                            nearMissBrake = lateral > ArrivalRadius && ahead <= Math.Min(step, .25);
+                        }
+                    }
+                    if (arrivalObserved || nearMissBrake)
                     {
                         SetKey("a", false);
                         SetKey("d", false);
                         SetKey("w", false);
-                        if (Math.Abs(pose.Y - travelStart.Y) > 1.5)
+                        if (!WithinHeightEnvelope(pose, heightStart, leg))
                             Interlocked.CompareExchange(ref terminalReason,
                                 "Vertical drift exceeded the direct-path guard.", null);
-                        else if (CrossTrack(pose, travelStart, options.X, options.Z) > .50)
+                        else if (CrossTrack(pose, travelStart, leg.X, leg.Z) > .50)
                             Interlocked.CompareExchange(ref terminalReason,
-                                "Cross-track drift exceeded the direct-path guard.", null);
+                                corridorReason, null);
                         break;
                     }
-                    if (Math.Abs(pose.Y - travelStart.Y) > 1.5)
+                    if (!WithinHeightEnvelope(pose, heightStart, leg))
                         throw new InvalidOperationException("Vertical drift exceeded the direct-path guard.");
-                    if (CrossTrack(pose, travelStart, options.X, options.Z) > .50)
-                        throw new InvalidOperationException("Cross-track drift exceeded the direct-path guard.");
-                    var error = HeadingError(
-                        CorridorBearing(pose, travelStart, options.X, options.Z), pose.Bearing);
-                    var crossTrack = CrossTrack(pose, travelStart, options.X, options.Z);
+                    if (CrossTrack(pose, travelStart, leg.X, leg.Z) > .50)
+                        throw new InvalidOperationException(corridorReason);
+                    var targetBearing = guiding
+                        ? GuideBearing(pose, travelStart, leg, LegAt(passed.Count + 1), observedSpeed, observedTurnRate)
+                        : CorridorBearing(pose, travelStart, leg.X, leg.Z, guides.Length > 0 ? 1.25 : 3);
+                    var error = HeadingError(targetBearing, pose.Bearing);
+                    var crossTrack = CrossTrack(pose, travelStart, leg.X, leg.Z);
                     var displacement = Distance(pose, previousTravelPose.X, previousTravelPose.Z);
                     var projectedCrossTrack = crossTrack;
                     if (displacement >= .10)
                     {
-                        var lookahead = Math.Min(1.5, finalDistance);
+                        var lookahead = Math.Min(1.5, legDistance);
                         var projected = pose with
                         {
                             X = pose.X + (pose.X - previousTravelPose.X) / displacement * lookahead,
                             Z = pose.Z + (pose.Z - previousTravelPose.Z) / displacement * lookahead
                         };
-                        projectedCrossTrack = CrossTrack(projected, travelStart, options.X, options.Z);
+                        projectedCrossTrack = CrossTrack(projected, travelStart, leg.X, leg.Z);
                     }
                     var nextSteeringKey = error > 0 ? "a" : "d";
                     var departingCorridor = crossTrack >= .22 && projectedCrossTrack >= .32
@@ -649,7 +907,30 @@ internal static class FollowRouteCommand
                     // Keep forward travel quiet: one brief nudge, then allow
                     // key-up and body response to settle before reconsidering.
                     // Small errors and final approach do not chase A/D at all.
-                    if (finalDistance > NearGoalStraightDistance
+                    // Guide bends need heading feedback before lateral drift grows.
+                    // On the exit leg, continue turning until aligned with that leg.
+                    if (guides.Length > 0)
+                    {
+                        // Follow curvature with a held turn while W is down. Read the
+                        // next pose promptly and release A/D before its observed coast.
+                        var releaseAngle = Math.Clamp(observedTurnRate * .055, 5, 12);
+                        if (routeSteeringKey is not null && (routeSteeringKey != nextSteeringKey
+                            || Math.Abs(error) <= releaseAngle))
+                        {
+                            SetKey(routeSteeringKey, false);
+                            routeSteeringKey = null;
+                            nextSteeringAt = clock.Elapsed + TimeSpan.FromMilliseconds(60);
+                            nextOppositeSteeringAt = clock.Elapsed + TimeSpan.FromMilliseconds(150);
+                        }
+                        if (routeSteeringKey is null && Math.Abs(error) >= releaseAngle + 2
+                            && clock.Elapsed >= nextSteeringAt && (lastSteeringKey == nextSteeringKey
+                                || clock.Elapsed >= nextOppositeSteeringAt))
+                        {
+                            SetKey(nextSteeringKey, true);
+                            routeSteeringKey = lastSteeringKey = nextSteeringKey;
+                        }
+                    }
+                    else if (finalDistance > NearGoalStraightDistance
                         && clock.Elapsed >= nextSteeringAt
                         && (lastSteeringPose is null || Distance(pose, lastSteeringPose.X, lastSteeringPose.Z) >= 1.5)
                         && (lastSteeringKey is null || lastSteeringKey == nextSteeringKey || clock.Elapsed >= nextOppositeSteeringAt)
@@ -663,44 +944,58 @@ internal static class FollowRouteCommand
                         lastSteeringKey = nextSteeringKey;
                         lastSteeringPose = pose;
                     }
-                    if (finalDistance + .03 < best)
+                    if (legDistance + .03 < best)
                     {
-                        best = finalDistance;
+                        best = legDistance;
                         lastProgress = clock.Elapsed;
                         divergence = 0;
                     }
-                    else if (finalDistance > best + .50 && ++divergence >= 5)
+                    else if (legDistance > best + .50 && ++divergence >= 5)
                         Interlocked.CompareExchange(ref terminalReason, "movement-diverged", null);
                     if (clock.Elapsed - lastProgress > TimeSpan.FromSeconds(8))
                         Interlocked.CompareExchange(ref terminalReason, "no-progress", null);
                 }
-                if (arrivalObserved && Volatile.Read(ref terminalReason) is null)
+                if ((arrivalObserved || nearMissBrake) && Volatile.Read(ref terminalReason) is null)
                 {
-                    await delay(TimeSpan.FromMilliseconds(75), operationToken);
-                    var settledOne = await Read();
-                    await delay(TimeSpan.FromMilliseconds(75), operationToken);
-                    var settledTwo = await Read();
-                    var settledMotion = Math.Sqrt(Math.Pow(settledTwo.X - settledOne.X, 2)
-                        + Math.Pow(settledTwo.Z - settledOne.Z, 2));
+                    bool OnDirectPath(Pose p) => WithinHeightEnvelope(p, heightStart, options)
+                        && CrossTrack(p, travelStart, options.X, options.Z) <= .50;
+                    static bool Stationary(Pose a, Pose b) => Distance(b, a.X, a.Z) <= .05
+                        && Math.Abs(a.Y - b.Y) <= .10;
+                    async Task<(Pose, Pose)> ReadSettledPair()
+                    {
+                        await delay(TimeSpan.FromMilliseconds(75), operationToken);
+                        var first = await Read();
+                        await delay(TimeSpan.FromMilliseconds(75), operationToken);
+                        var second = await Read();
+                        // The first two observations can both be in the downhill coast.
+                        // Stop waiting immediately if any sampled pose leaves the corridor.
+                        for (var extra = 0; downhillBrake && extra < 6 && OnDirectPath(first)
+                            && OnDirectPath(second) && !Stationary(first, second); extra++)
+                        {
+                            first = second;
+                            await delay(TimeSpan.FromMilliseconds(75), operationToken);
+                            second = await Read();
+                        }
+                        return (first, second);
+                    }
+                    var brakePose = pose;
+                    var (settledOne, settledTwo) = await ReadSettledPair();
                     var settleOneDistance = Distance(settledOne, options.X, options.Z);
                     var settleTwoDistance = Distance(settledTwo, options.X, options.Z);
-                    var stationary = settledMotion <= .05 && Math.Abs(settledTwo.Y - settledOne.Y) <= .10;
-                    var settledOnDirectPath = Math.Abs(settledOne.Y - travelStart.Y) <= 1.5
-                        && Math.Abs(settledTwo.Y - travelStart.Y) <= 1.5
-                        && CrossTrack(settledOne, travelStart, options.X, options.Z) <= .50
-                        && CrossTrack(settledTwo, travelStart, options.X, options.Z) <= .50;
-                    if (stationary && settleOneDistance > ArrivalRadius && settleTwoDistance > ArrivalRadius
-                        && settledOnDirectPath
-                        && settleTwoDistance <= .75)
+                    var stationary = Stationary(settledOne, settledTwo);
+                    var settledOnDirectPath = OnDirectPath(settledOne) && OnDirectPath(settledTwo);
+                    double AlongPastGoal(Pose p) => (p.X - options.X) * (options.X - travelStart.X)
+                        + (p.Z - options.Z) * (options.Z - travelStart.Z);
+                    var returnFromOvershoot = false;
+                    for (var finish = 0; finish < 2 && (finish == 0 || returnFromOvershoot)
+                        && Volatile.Read(ref terminalReason) is null && stationary && settledOnDirectPath
+                        && settleOneDistance > ArrivalRadius && settleTwoDistance > ArrivalRadius
+                        && settleTwoDistance <= (downhillBrake ? 1.80 : .75); finish++)
                     {
-                        // Braking can stop a few centimetres beyond the goal,
-                        // leaving the body pointed away from the tiny remaining
-                        // vector.  Turn in place and prove the turn has settled
-                        // before the one bounded finish-forward pulse.  This is
-                        // not moving steering: no W is held during alignment.
+                        // Each finish starts with released keys and a confirmed stationary bearing.
                         var finishAnchor = settledTwo;
                         var finishAligned = false;
-                        for (var attempt = 0; attempt < 8
+                        for (var attempt = 0; attempt < (returnFromOvershoot ? 16 : 8)
                             && Volatile.Read(ref terminalReason) is null; attempt++)
                         {
                             var finishError = HeadingError(
@@ -713,7 +1008,7 @@ internal static class FollowRouteCommand
                                 var bearingMotion = Math.Abs(HeadingError(confirmed.Bearing, settledTwo.Bearing));
                                 var confirmedError = Math.Abs(HeadingError(
                                     BearingTo(confirmed, options.X, options.Z), confirmed.Bearing));
-                                var confirmedOnPath = Math.Abs(confirmed.Y - travelStart.Y) <= 1.5
+                                var confirmedOnPath = WithinHeightEnvelope(confirmed, heightStart, options)
                                     && CrossTrack(confirmed, travelStart, options.X, options.Z) <= .50;
                                 settledTwo = confirmed;
                                 if (positionMotion <= .10 && bearingMotion <= .75
@@ -725,15 +1020,18 @@ internal static class FollowRouteCommand
                                 continue;
                             }
                             var finishTurn = finishError > 0 ? "a" : "d";
+                            // A side miss or measured downhill overshoot can require a large turn.
+                            var pulseLimit = (nearMissBrake || returnFromOvershoot)
+                                && Math.Abs(finishError) >= 25 ? 180 : 20;
                             var pulseMilliseconds = Math.Clamp(
-                                Math.Abs(finishError) / Math.Max(100, observedTurnRate) * 600, 6, 20);
+                                Math.Abs(finishError) / Math.Max(100, observedTurnRate) * 600, 6, pulseLimit);
                             SetKey(finishTurn, true);
                             await delay(TimeSpan.FromMilliseconds(pulseMilliseconds), operationToken);
                             SetKey(finishTurn, false);
                             await delay(TimeSpan.FromMilliseconds(50), operationToken);
                             settledTwo = await Read();
                             if (Distance(settledTwo, finishAnchor.X, finishAnchor.Z) > .10
-                                || Math.Abs(settledTwo.Y - travelStart.Y) > 1.5
+                                || !WithinHeightEnvelope(settledTwo, heightStart, options)
                                 || CrossTrack(settledTwo, travelStart, options.X, options.Z) > .50)
                                 break;
                         }
@@ -746,27 +1044,51 @@ internal static class FollowRouteCommand
                         {
                             settleTwoDistance = Distance(settledTwo, options.X, options.Z);
                             SetKey("w", true);
-                            var correctionMilliseconds = observedSpeed > .1
-                                ? Math.Clamp((settleTwoDistance - .20) / observedSpeed * 1000, 20, 120)
-                                : 50;
-                            await delay(TimeSpan.FromMilliseconds(correctionMilliseconds), operationToken);
+                            if (downhillBrake && !returnFromOvershoot)
+                            {
+                                // Measure the first release on this leg. A slope with little
+                                // coast can leave a longer shortfall: finish under feedback
+                                // with one held W, then verify its release independently.
+                                var coast = Distance(finishAnchor, brakePose.X, brakePose.Z);
+                                var finishBrakeRadius = Math.Clamp(coast + .15, .20, 1.65);
+                                var finishClock = Stopwatch.StartNew();
+                                for (var sample = 0; sample < 16 && finishClock.ElapsedMilliseconds < 500; sample++)
+                                {
+                                    await delay(TimeSpan.FromMilliseconds(25), operationToken);
+                                    var next = await Read();
+                                    if (!OnDirectPath(next))
+                                        throw new InvalidOperationException("Downhill finish left the direct-path guard.");
+                                    if (Distance(next, options.X, options.Z) <= finishBrakeRadius
+                                        || SegmentDistanceToGoal(settledTwo, next, options.X, options.Z) <= ArrivalRadius)
+                                        break;
+                                    settledTwo = next;
+                                }
+                            }
+                            else
+                            {
+                                var correctionMilliseconds = observedSpeed > .1
+                                    ? Math.Clamp((settleTwoDistance - .20) / observedSpeed * 1000, 20, 120)
+                                    : 50;
+                                await delay(TimeSpan.FromMilliseconds(correctionMilliseconds), operationToken);
+                            }
                             SetKey("w", false);
-                            await delay(TimeSpan.FromMilliseconds(75), operationToken);
-                            settledOne = await Read();
-                            await delay(TimeSpan.FromMilliseconds(75), operationToken);
-                            settledTwo = await Read();
-                            settledMotion = Distance(settledTwo, settledOne.X, settledOne.Z);
+                            (settledOne, settledTwo) = await ReadSettledPair();
                             settleOneDistance = Distance(settledOne, options.X, options.Z);
                             settleTwoDistance = Distance(settledTwo, options.X, options.Z);
-                            stationary = settledMotion <= .05 && Math.Abs(settledTwo.Y - settledOne.Y) <= .10;
-                            settledOnDirectPath = Math.Abs(settledOne.Y - travelStart.Y) <= 1.5
-                                && Math.Abs(settledTwo.Y - travelStart.Y) <= 1.5
-                                && CrossTrack(settledOne, travelStart, options.X, options.Z) <= .50
-                                && CrossTrack(settledTwo, travelStart, options.X, options.Z) <= .50;
+                            stationary = Stationary(settledOne, settledTwo);
+                            settledOnDirectPath = OnDirectPath(settledOne) && OnDirectPath(settledTwo);
+                            // A downhill finish can coast across the goal after release. Only that
+                            // measured crossing permits one short return pulse toward the uphill goal.
+                            returnFromOvershoot = downhillBrake && finish == 0 && AlongPastGoal(finishAnchor) < 0
+                                && AlongPastGoal(settledOne) > 0 && AlongPastGoal(settledTwo) > 0
+                                && settleOneDistance <= .50 && settleTwoDistance <= .50
+                                && options.GoalY >= settledTwo.Y;
                         }
                     }
                     if (settleOneDistance > ArrivalRadius || settleTwoDistance > ArrivalRadius
-                        || !stationary || !settledOnDirectPath)
+                        || !stationary || !settledOnDirectPath
+                        || options.GoalY is double requiredY && (Math.Abs(settledOne.Y - requiredY) > .5
+                            || Math.Abs(settledTwo.Y - requiredY) > .5))
                         Interlocked.CompareExchange(ref terminalReason, "post-release-arrival-not-settled", null);
                 }
                 status = terminalReason is null ? "arrived"
@@ -809,7 +1131,7 @@ internal static class FollowRouteCommand
                 finalPose.OpticalCameraStatus));
         return new(status, terminalReason, finalPose, initialDistance, finalDistance,
             reads, path.ToArray(), clock.Elapsed.TotalMilliseconds, inputSent, releaseSucceeded,
-            survivalSnapshot);
+            survivalSnapshot, passed.ToArray());
     }
 
     internal static async Task<int> RunAsync(string[] args, CancellationToken token)
@@ -849,8 +1171,7 @@ internal static class FollowRouteCommand
             // focus can change. Default one-point CLI use may omit this triplet.
             var preFocusPose = await reader.ReadAsync(token);
             ValidateExpectedOrigin(options, preFocusPose);
-            if (Distance(preFocusPose, options.X, options.Z) > MaximumDistance)
-                throw new InvalidOperationException("Destination exceeds 1000 world units.");
+            ValidateRoute(options, preFocusPose);
             string? Safety()
             {
                 if (File.Exists(options.StopFile)) return "stop-file-requested";
@@ -867,7 +1188,7 @@ internal static class FollowRouteCommand
                 {
                     status = "preview-only", target,
                     playerKey = options.ExpectedPlayerKey.ToString(CultureInfo.InvariantCulture),
-                    goal = new { x = options.X, z = options.Z },
+                    goal = ReceiptGoal(options),
                     position = new { x = preFocusPose.X, y = preFocusPose.Y, z = preFocusPose.Z },
                     bodyBearingDegreesCandidate = preFocusPose.Bearing,
                     opticalCameraBearingDegreesCandidate = preFocusPose.OpticalCameraBearingDegreesCandidate,
@@ -877,6 +1198,7 @@ internal static class FollowRouteCommand
                     survivalInterrupt = options.SurvivalInterrupt,
                     survivalMode = SurvivalMode(options),
                     survivalSnapshot = preFocusPose.Survival,
+                    passedWaypoints = Array.Empty<WaypointPass>(),
                     initialDistance = Distance(preFocusPose, options.X, options.Z),
                     finalDistance = Distance(preFocusPose, options.X, options.Z),
                     stopFile = options.StopFile,
@@ -908,7 +1230,13 @@ internal static class FollowRouteCommand
                 if (options.SurvivalInterrupt)
                     reader.ForceSurvivalSample();
                 var result = await FollowAsync(options, reader.ReadAsync,
-                    new KeyInputAdapter(keyInput), Safety, token: token);
+                    new KeyInputAdapter(keyInput), Safety, token: token, onWaypointPassed: pass =>
+                    {
+                        MoveKeyCommand.Report(true, new { status = "waypoint-passed",
+                            pass.Index, pass.Name, pass.Position, pass.ObservedAtUtc, pass.Source,
+                            pass.CrossingBefore, pass.CrossingAfter });
+                        Console.Out.Flush();
+                    });
                 completedResult = result;
                 completedTarget = ready;
                 var receipt = ProjectResult(result);
@@ -916,7 +1244,7 @@ internal static class FollowRouteCommand
                 {
                     result.Status, result.Reason, target = ready,
                     playerKey = options.ExpectedPlayerKey.ToString(CultureInfo.InvariantCulture),
-                    goal = new { x = options.X, z = options.Z }, receipt.Position,
+                    goal = ReceiptGoal(options), receipt.Position,
                     receipt.BodyBearingDegreesCandidate,
                     receipt.OpticalCameraBearingDegreesCandidate,
                     receipt.OpticalCameraPitchDegreesCandidate,
@@ -925,7 +1253,7 @@ internal static class FollowRouteCommand
                     survivalInterrupt = options.SurvivalInterrupt,
                     survivalMode = SurvivalMode(options),
                     receipt.SurvivalSnapshot,
-                    receipt.InitialDistance, receipt.FinalDistance, receipt.ReadCount, receipt.Path,
+                    receipt.InitialDistance, receipt.FinalDistance, receipt.ReadCount, receipt.Path, receipt.PassedWaypoints,
                     receipt.ElapsedMilliseconds, receipt.InputSent, receipt.ReleaseSucceeded,
                     keySendEvents = timeline.Snapshot(), releaseFallbacks = keyInput.ReleaseFallbacks,
                     desktopInputsDown = WindowsControlDesktop.ReadPressedInputs(),
@@ -952,7 +1280,7 @@ internal static class FollowRouteCommand
                 target = completedTarget,
                 playerKey = completedTarget is null ? null
                     : options?.ExpectedPlayerKey.ToString(CultureInfo.InvariantCulture),
-                goal = options is null ? null : new { x = options.X, z = options.Z },
+                goal = options is null ? null : ReceiptGoal(options),
                 receipt.Position,
                 receipt.BodyBearingDegreesCandidate,
                 receipt.OpticalCameraBearingDegreesCandidate,
@@ -966,6 +1294,7 @@ internal static class FollowRouteCommand
                 receipt.FinalDistance,
                 receipt.ReadCount,
                 receipt.Path,
+                receipt.PassedWaypoints,
                 receipt.ElapsedMilliseconds,
                 keySendEvents = Array.Empty<object>(),
                 releaseFallbacks = 0,

@@ -15,6 +15,27 @@ ROUTE = {"waypoints": [["A", 0, 0], ["B", 3, 0], ["C", 3, 4]]}
 
 
 class ProgressTests(unittest.TestCase):
+    def test_passage_keeps_order_corridor_and_stop_semantics(self):
+        route = {**ROUTE, "pointKinds": ["pass", "stop", "pass"]}
+        cursor = RouteProgress(route, identity=IDENTITY)
+        cursor.begin({"x": .4, "z": 0}, pass_through=True)
+        cursor.confirm_passage(0, cursor.ordered_points[0], {"x": .4, "z": 0})
+        with self.assertRaisesRegex(ProgressError, "stop point"):
+            cursor.confirm_passage(1, cursor.ordered_points[1], {"x": 3, "z": 0})
+        cursor.confirm_arrival(1, cursor.ordered_points[1])
+        with self.assertRaisesRegex(ProgressError, "guide"):
+            cursor.confirm_passage(2, cursor.ordered_points[2], {"x": 3, "z": 4})
+        self.assertEqual(2, cursor.next_index)
+
+    def test_stop_edit_invalidates_checkpoint_but_default_pass_is_compatible(self):
+        plain = RouteProgress(ROUTE, identity=IDENTITY)
+        declared = RouteProgress({**ROUTE, "pointKinds": ["pass"]*3}, identity=IDENTITY)
+        self.assertEqual(plain.route_hash, declared.route_hash)
+        self.assertNotEqual(plain.route_hash,
+            RouteProgress({**ROUTE, "pointKinds": ["pass", "stop", "pass"]}, identity=IDENTITY).route_hash)
+        with self.assertRaises(ValueError):
+            RouteProgress({**ROUTE, "pointKinds": ["pass"]}, identity=IDENTITY)
+
     def test_forward_and_reverse_order_and_cursor(self):
         for direction, initial, order in (("forward", {"x": 0, "z": 0}, ["A", "B", "C"]),
                                           ("reverse", {"x": 3, "z": 4}, ["C", "B", "A"])):

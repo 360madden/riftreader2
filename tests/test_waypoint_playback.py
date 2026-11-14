@@ -19,6 +19,45 @@ class BoundSim(SimulatedRift):
 
 
 class PlaybackTests(unittest.TestCase):
+    def test_flow_progress_is_observed_then_confirmed_after_release(self):
+        document = {"waypoints": [["A", 0, 0], ["B", 1, 0], ["End", 2, 0]]}
+        events = []
+        def runner(adapter, points, stop, emit, **options):
+            self.assertEqual(["pass"]*3, options["point_kinds"])
+            options["entry_check"](Position(0, 10, 0))
+            emit({"status": "route-progress", "index": 1})
+            self.assertEqual(0, json.loads(self.checkpoint.read_bytes())["nextIndex"])
+            for index, (name, x, z) in enumerate(points):
+                emit({"status": "passed" if index < 2 else "arrived", "name": name,
+                      "goal": {"x": x, "z": z}, "position": {"x": x, "y": 10, "z": z},
+                      "passageVerified": True, "releaseSucceeded": True, "desktopInputsDown": []})
+            return []
+        _, cursor = play_route(BoundSim(), document, threading.Event(), events.append,
+            runner=runner, checkpoint=self.checkpoint, pass_through=True)
+        self.assertEqual(3, cursor.next_index)
+        self.assertEqual(2, next(e for e in events if e["status"]=="route-progress")["observedWaypoint"])
+
+    def test_flow_stop_saves_verified_guides_but_unverified_passage_cannot_advance(self):
+        document = {"waypoints": [["A", 0, 0], ["End", 2, 0]]}
+        for verified in (False, True):
+            with self.subTest(verified=verified):
+                stop = threading.Event()
+                def runner(adapter, points, signal, emit, **options):
+                    options["entry_check"](Position(4, 10, 0))
+                    signal.set()
+                    emit({"status": "passed", "name": "A", "goal": {"x": 0, "z": 0},
+                          "position": {"x": .4, "y": 10, "z": 0}, "passageVerified": verified,
+                          "releaseSucceeded": True, "desktopInputsDown": []})
+                    raise Stopped("operator STOP")
+                self.checkpoint.write_bytes(b"old progress")
+                with self.assertRaises((Stopped, ProgressError)):
+                    play_route(BoundSim(), document, stop, lambda _: None, runner=runner,
+                        checkpoint=self.checkpoint, pass_through=True, approach_start=True)
+                if verified:
+                    self.assertEqual(1, json.loads(self.checkpoint.read_bytes())["nextIndex"])
+                else:
+                    self.assertEqual(b"old progress", self.checkpoint.read_bytes())
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -129,6 +168,23 @@ class PlaybackTests(unittest.TestCase):
                        runner=wrong_floor_runner, checkpoint=self.checkpoint)
         payload = json.loads(self.checkpoint.read_text(encoding="utf-8"))
         self.assertEqual(payload["nextIndex"], 0)
+
+    def test_height_aware_resume_passes_only_remaining_ordered_heights(self):
+        document = {"waypoints": [["A", 0, 0], ["B", 1, 0], ["C", 2, 0]],
+                    "heights": [10, 11, 12]}
+        cursor = RouteProgress(document, "forward", BoundSim.binding["runtimeIdentity"])
+        cursor.begin({"x": 0, "y": 10, "z": 0})
+        cursor.confirm_arrival(0, ("A", 0.0, 0.0))
+        cursor.save(self.checkpoint)
+        captured = {}
+        def runner(_adapter, points, _stop, _emit, **options):
+            captured.update(points=points, options=options)
+            return []
+        play_route(BoundSim(), document, threading.Event(), lambda _: None,
+                   runner=runner, checkpoint=self.checkpoint, resume=True,
+                   height_aware=True)
+        self.assertEqual([("B", 1.0, 0.0), ("C", 2.0, 0.0)], captured["points"])
+        self.assertEqual([11.0, 12.0], captured["options"]["goal_heights"])
 
     def test_forward_and_reverse_approach_share_one_runner_and_confirm_real_endpoint_once(self):
         doc = {"waypoints": [["A", 0, 0], ["B", 2, 0]], "heights": [10, 10.5]}

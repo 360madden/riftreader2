@@ -361,6 +361,7 @@ def build_parser():
     arg("route.update", "--current", action="store_true",
         help="replace coordinates and height with a fresh measured player XYZ capture; may be combined with --name, not --x/--z")
     for op in ("route.add", "route.update"):
+        arg(op, "--kind", choices=("pass", "stop"), help="point traversal type; final destination always stops")
         for axis in "xz": arg(op, "--" + axis, type=number, help=f"world {axis.upper()} units; finite")
     for op in ("route.update", "route.remove", "route.reorder"):
         arg(op, "point", type=positive, help="one-based waypoint number")
@@ -1056,7 +1057,7 @@ def main(argv=None):
             explicit = args.x is not None or args.z is not None
             if args.current and explicit:
                 raise UsageError("route update --current cannot be combined with --x/--z")
-            if not args.current and all(getattr(args,k) is None for k in ("name","x","z")):
+            if not args.current and all(getattr(args,k) is None for k in ("name","x","z","kind")):
                 raise UsageError("route update requires --name, --current, or a manual --x/--z coordinate change")
         if command == "trail.save" and args.segment != "latest": args.segment = positive(args.segment)
         if command in {"route.list", "route.validate"} and args.file:

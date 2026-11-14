@@ -125,6 +125,166 @@ public sealed class FollowRouteCommandTests
     }
 
     [Fact]
+    public async Task DenseGuidesAndAdmissionUseOneHoldAndOrderedReceipts()
+    {
+        var input = new Input();
+        var streamed = new List<FollowRouteCommand.WaypointPass>();
+        var options = Options(z: 3) with { RoutePoints = [
+            new("start", 0, .1), new("one", 0, .45), new("two", 0, .8), new("three", 0, 1.1)] };
+        var result = await FollowRouteCommand.FollowAsync(options,
+            Reader(Pose(0, 0), Pose(0, .4), Pose(0, .75), Pose(0, 1.06),
+                Pose(0, 2.8), Pose(0, 2.8), Pose(0, 2.8)),
+            input, () => null, NoDelay, onWaypointPassed: p =>
+            {
+                if (p.Index > 0) Assert.Equal(new[] { "down:w" }, input.Events);
+                streamed.Add(p);
+            });
+        Assert.Equal("arrived", result.Status);
+        Assert.Equal(new[] { "down:w", "up:w" }, input.Events);
+        Assert.Equal(new[] { "start", "one", "two", "three" }, streamed.Select(p => p.Name));
+        Assert.Equal(streamed, result.PassedWaypoints);
+        Assert.Equal(streamed, FollowRouteCommand.ProjectResult(result).PassedWaypoints);
+        Assert.Empty(FollowRouteCommand.ProjectResult(null).PassedWaypoints);
+    }
+
+    [Theory]
+    [InlineData(3.5, 90.0)]
+    [InlineData(6.25, 25.0)]
+    [InlineData(6.25, 90.0)]
+    public async Task SimulatedTwoBendsKeepForwardHeldWithinCorridor(double speed, double angle)
+    {
+        var input = new Input();
+        var turnAngle = angle * Math.PI / 180;
+        var bendX = 5 * Math.Sin(turnAngle);
+        var bendZ = 5 + 5 * Math.Cos(turnAngle);
+        var options = Options(bendX, bendZ + 5) with { RoutePoints = [
+            new("north", 0, 5), new("bend", bendX, bendZ)] };
+        double x = 0, z = 0, bearing = 0;
+        var count = 0;
+        var lastTurn = 0;
+        var coast = 0.0;
+        var forwardCoast = 0.0;
+        var simulatedTime = DateTimeOffset.UtcNow;
+        bool Held(string key) => input.Events.LastOrDefault(e => e.EndsWith(":" + key)) == "down:" + key;
+        async Task Delay(TimeSpan duration, CancellationToken _)
+        {
+            var seconds = duration.TotalSeconds;
+            var turn = (Held("a") ? 1 : 0) - (Held("d") ? 1 : 0);
+            if (turn != 0) { lastTurn = turn; coast = .045; }
+            var turningFor = turn == 0 ? Math.Min(coast, seconds) : seconds;
+            var delta = lastTurn * 175 * turningFor;
+            if (turn == 0) coast -= turningFor;
+            var mid = (bearing + delta / 2) * Math.PI / 180;
+            var forward = Held("w");
+            if (forward) forwardCoast = .025;
+            var movingFor = forward ? seconds : Math.Min(forwardCoast, seconds);
+            x += speed * movingFor * Math.Sin(mid);
+            z += speed * movingFor * Math.Cos(mid);
+            if (!forward) forwardCoast -= movingFor;
+            bearing += delta;
+            simulatedTime += duration;
+            var wait = simulatedTime - DateTimeOffset.UtcNow;
+            if (wait > TimeSpan.Zero) await Task.Delay(wait);
+        }
+        Task<FollowRouteCommand.Pose> Read(CancellationToken _)
+        {
+            if (++count > 500) throw new InvalidOperationException("Simulation read bound.");
+            return Task.FromResult(Pose(x, z, bearing) with { StartedAtUtc = simulatedTime,
+                CompletedAtUtc = simulatedTime });
+        }
+        var result = await FollowRouteCommand.FollowAsync(options, Read, input, () => null, Delay,
+            onWaypointPassed: _ =>
+            {
+                Assert.Equal(1, input.Events.Count(e => e == "down:w"));
+                Assert.DoesNotContain("up:w", input.Events);
+            });
+        if (speed > 6 && angle == 90 && result.Status == "halted")
+        {
+            Assert.Contains("route corridor", result.Reason);
+            Assert.True(result.ReleaseSucceeded);
+            Assert.Contains("up:w", input.Events);
+            return;
+        }
+        Assert.True(result.Status == "arrived", $"{result.Reason}; {x:F2},{z:F2}, bearing {bearing:F1}");
+        Assert.Equal(new[] { "north", "bend" }, result.PassedWaypoints!.Select(p => p.Name));
+        Assert.Contains("down:a", input.Events);
+        Assert.Contains("down:d", input.Events);
+        Assert.Equal(input.Events.Count(e => e == "down:w"), input.Events.Count(e => e == "up:w"));
+        Assert.True(result.ReleaseSucceeded);
+    }
+
+    [Fact]
+    public async Task CrossingBetweenSamplesHasBoundedEvidenceAndOneRelease()
+    {
+        var input = new Input();
+        var options = Options(z: 3) with { RoutePoints = [new("gate", 0, 1.4)] };
+        var at = DateTimeOffset.UtcNow.AddMilliseconds(-620);
+        var samples = new Queue<(double Z, int Time)>([(0, 0), (.82, 100), (2, 200),
+            (2.85, 300), (2.85, 400), (2.85, 500)]);
+        Task<FollowRouteCommand.Pose> Read(CancellationToken _)
+        {
+            var (z, ms) = samples.Dequeue();
+            return Task.FromResult(Pose(0, z) with { StartedAtUtc = at.AddMilliseconds(ms),
+                CompletedAtUtc = at.AddMilliseconds(ms) });
+        }
+        var result = await FollowRouteCommand.FollowAsync(options, Read, input, () => null, NoDelay);
+        Assert.Equal("arrived", result.Status);
+        var pass = Assert.Single(result.PassedWaypoints!);
+        Assert.Equal("segment-crossing", pass.Source);
+        Assert.Equal(1.4, pass.Position.Z, 5);
+        Assert.Equal(.82, pass.CrossingBefore!.Position.Z);
+        Assert.Equal(2, pass.CrossingAfter!.Position.Z);
+        Assert.InRange(pass.ObservedAtUtc, pass.CrossingBefore.ObservedAtUtc, pass.CrossingAfter.ObservedAtUtc);
+        Assert.Equal(new[] { "down:w", "up:w" }, input.Events);
+    }
+
+    [Fact]
+    public async Task StopAfterPassReleasesAndReceiptsOnlyTheVerifiedPrefix()
+    {
+        var input = new Input();
+        bool stop = false;
+        var read = Reader(Pose(0, 0), Pose(0, 1));
+        var result = await FollowRouteCommand.FollowAsync(Options() with
+            { RoutePoints = [new("one", 0, 1), new("two", 0, 3)] }, read, input,
+            () => stop ? "stop-file-requested" : null,
+            (delay, ct) => stop ? Task.Delay(Timeout.InfiniteTimeSpan, ct) : Task.CompletedTask,
+            onWaypointPassed: _ => stop = true);
+        Assert.Equal("stopped", result.Status);
+        Assert.Equal("one", Assert.Single(result.PassedWaypoints!).Name);
+        Assert.Equal(new[] { "down:w", "up:w" }, input.Events);
+        Assert.True(result.ReleaseSucceeded);
+    }
+
+    [Fact]
+    public async Task PolylineLengthAndEachPlannedGradeAreBoundedBeforeInput()
+    {
+        foreach (var point in new FollowRouteCommand.RoutePoint[] {
+            new("far", 0, 506), new("steep", 0, 1, 12), new("invalid", double.NaN, 0) })
+        {
+            var input = new Input();
+            var result = await FollowRouteCommand.FollowAsync(Options() with { RoutePoints = [point] },
+                Reader(Pose(0, 0)), input, () => null, NoDelay);
+            Assert.Equal("blocked", result.Status);
+            Assert.Empty(input.Events);
+        }
+    }
+
+    [Fact]
+    public async Task HairpinCannotSkipOutgoingGuideOrCreditOffPathPass()
+    {
+        var input = new Input();
+        var options = Options(z: 4) with { RoutePoints = [new("out", 0, 3), new("back", 0, .5)] };
+        var result = await FollowRouteCommand.FollowAsync(options,
+            Reader(Pose(0, 0), Pose(0, .5), Pose(0, 1.5), Pose(0, 2.8), Pose(.51, 3)),
+            input, () => null, NoDelay);
+        Assert.Equal("halted", result.Status);
+        Assert.Contains("Cross-track drift", result.Reason);
+        Assert.Equal("out", Assert.Single(result.PassedWaypoints!).Name);
+        Assert.True(result.ReleaseSucceeded);
+        Assert.Contains("up:w", input.Events);
+    }
+
+    [Fact]
     public async Task AlignmentObservesTurnInertiaBeforeStartingForward()
     {
         var input = new Input();
@@ -747,6 +907,29 @@ public sealed class FollowRouteCommandTests
     }
 
     [Fact]
+    public async Task ShallowLongLegNearMissBrakesAndCompletesStationarySideTurn()
+    {
+        var input = new Input();
+        var delays = new List<TimeSpan>();
+        // Rotate actual 24.56u leg into route coordinates. At <1 degree
+        // residual the path passes beside the .30u disk at about .40u.
+        var result = await FollowRouteCommand.FollowAsync(Options(z:24.56),
+            Reader(Pose(0,0,.924), Pose(.36,22.40,.924), Pose(.386,24.10,.924),
+                Pose(.394,24.30,.924), Pose(.396,24.48,.924),
+                Pose(.398,24.53,.924), Pose(.398,24.53,.924),
+                Pose(.398,24.53,-30), Pose(.398,24.53,-61),
+                Pose(.398,24.53,-78), Pose(.398,24.53,-85.7), Pose(.398,24.53,-85.7),
+                Pose(.18,24.55,-85.7), Pose(.18,24.55,-85.7)), input, () => null,
+            (duration, token) => { delays.Add(duration); return Task.CompletedTask; });
+        Assert.Equal("arrived", result.Status);
+        Assert.Equal(2, input.Events.Count(e => e == "down:w"));
+        Assert.True(input.Events.IndexOf("down:d") > input.Events.IndexOf("up:w"));
+        Assert.DoesNotContain("down:a",input.Events);
+        Assert.Contains(TimeSpan.FromMilliseconds(180), delays);
+        Assert.True(result.FinalDistance <= FollowRouteCommand.ArrivalRadius && result.ReleaseSucceeded);
+    }
+
+    [Fact]
     public void CorridorLookaheadExposesSmallLongRouteLateralDrift()
     {
         var start = Pose(0, 0);
@@ -805,6 +988,154 @@ public sealed class FollowRouteCommandTests
             _ => Task.FromResult(queue.Dequeue()), new Input(), () => null, NoDelay);
         Assert.Equal("halted", result.Status);
         Assert.Contains("sample order", result.Reason);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(-1)]
+    public async Task ExpectedHeightAllowsContinuousMeasuredGradeInEitherDirection(int sign)
+    {
+        var input = new Input();
+        const double length = 10.77;
+        const double startY = 873.267;
+        var poses = Enumerable.Range(0, 22).Select(i =>
+            Pose(0, i * .5, y: startY + sign * i * .5 * .355)).ToList();
+        poses.AddRange(Enumerable.Repeat(poses[^1], 2));
+        var result = await FollowRouteCommand.FollowAsync(Options(z: length) with
+            { GoalY = startY + sign * length * .355 }, Reader(poses.ToArray()), input, () => null, NoDelay);
+        Assert.Equal("arrived", result.Status);
+        Assert.Equal(new[] { "down:w", "up:w" }, input.Events);
+        Assert.True(result.ReleaseSucceeded);
+    }
+
+    [Theory]
+    [InlineData(true, false, "arrived")]
+    [InlineData(false, false, "arrived")]
+    [InlineData(false, true, "halted")]
+    public async Task MeasuredDownhillBrakeSettlesCoastOrMakesOneBoundedFinish(
+        bool coasts, bool finishStalled, string expectedStatus)
+    {
+        var input = new Input();
+        double[] travel = [0, .45, .90, 1.35, 1.95];
+        // The 11.3-unit physical leg coasted ~1.50 units between W-up
+        // and the independent stationary verification, ~.95 by +150 ms.
+        var postRelease = new List<double>();
+        if (coasts) postRelease.AddRange([2.41, 2.90, 3.30, 3.44, 3.44]);
+        else
+        {
+            postRelease.AddRange([1.95, 1.95, 1.95]); // settled + stationary bearing
+            if (finishStalled) postRelease.AddRange(Enumerable.Repeat(1.95, 18));
+            else postRelease.AddRange([2.10, 2.25, 2.40, 2.55, 2.70, 2.85, 3.00, 3.15,
+                3.31, 3.33, 3.33]);
+        }
+        var start = DateTimeOffset.UtcNow.AddMilliseconds(-650);
+        var index = 0;
+        Task<FollowRouteCommand.Pose> Read(CancellationToken _)
+        {
+            var beforeRelease = index < travel.Length;
+            var post = index - travel.Length;
+            var z = beforeRelease ? travel[index] : postRelease[post];
+            if (post == 0) Assert.Equal(new[] { "down:w", "up:w" }, input.Events);
+            var at = start.AddMilliseconds(beforeRelease ? z * 1000 / 6 : 335 + (post + 1) * 10);
+            index++;
+            return Task.FromResult(Pose(0, z, y: 7 - z * .29) with
+                { StartedAtUtc = at, CompletedAtUtc = at });
+        }
+        var result = await FollowRouteCommand.FollowAsync(Options(z: 3.5) with { GoalY = 7 - 3.5 * .29 },
+            Read, input, () => null, NoDelay);
+        Assert.Equal(expectedStatus, result.Status);
+        Assert.True(result.ReleaseSucceeded);
+        Assert.Equal(coasts ? new[] { "down:w", "up:w" } : ["down:w", "up:w", "down:w", "up:w"],
+            input.Events);
+        if (expectedStatus == "arrived") Assert.InRange(result.FinalDistance, 0, .30);
+        else Assert.Equal("post-release-arrival-not-settled", result.Reason);
+    }
+
+    [Theory]
+    [InlineData(.473, true, "arrived")]
+    [InlineData(.473, false, "halted")]
+    [InlineData(.51, false, "halted")]
+    public async Task DownhillFinishCrossingAllowsOneStationaryUphillReturn(
+        double overshoot, bool returnMoves, string expectedStatus)
+    {
+        var input = new Input();
+        const double goal = 3.78;
+        var stopZ = goal + overshoot;
+        var samples = new List<(double Z, double Bearing, int Ms)>();
+        void Sample(double z, double bearing = 0) =>
+            samples.Add((z, bearing, samples.Count == 0 ? 0 : samples[^1].Ms + 10));
+        foreach (var z in new[] { 0.0, .45, .90, 1.35, 1.80, 2.19 })
+            samples.Add((z, 0, (int)(z / 6 * 1000)));
+        foreach (var z in new[] { 2.50, 2.50, 2.50, 2.68, 2.86, 3.04, 3.22, 3.42,
+            goal + .18, stopZ, stopZ }) Sample(z);
+        if (overshoot <= .50)
+        {
+            foreach (var bearing in new[] { -30, -60, -90, -120, -150, -170, -176, -179, -179 })
+                Sample(stopZ, bearing);
+            Sample(returnMoves ? goal + .14 : stopZ, -179);
+            Sample(returnMoves ? goal + .14 : stopZ, -179);
+        }
+        var at = DateTimeOffset.UtcNow.AddMilliseconds(-705);
+        var index = 0;
+        Task<FollowRouteCommand.Pose> Read(CancellationToken _)
+        {
+            var (z, bearing, ms) = samples[index++];
+            return Task.FromResult(Pose(0, z, bearing, y: 7 - z * .30) with
+                { StartedAtUtc = at.AddMilliseconds(ms), CompletedAtUtc = at.AddMilliseconds(ms) });
+        }
+        var result = await FollowRouteCommand.FollowAsync(Options(z: goal) with { GoalY = 7 - goal * .30 },
+            Read, input, () => null, NoDelay);
+        Assert.Equal(expectedStatus, result.Status);
+        if (expectedStatus == "halted") Assert.Equal("post-release-arrival-not-settled", result.Reason);
+        var expectedHolds = overshoot <= .50 ? 3 : 2;
+        Assert.Equal(expectedHolds, input.Events.Count(e => e == "down:w"));
+        Assert.Equal(expectedHolds, input.Events.Count(e => e == "up:w"));
+        var holdingW = false;
+        foreach (var e in input.Events)
+        {
+            if (e == "down:w") holdingW = true;
+            else if (e == "up:w") holdingW = false;
+            else Assert.False(holdingW);
+        }
+        Assert.True(result.ReleaseSucceeded);
+    }
+
+    [Theory]
+    [InlineData(20, 21)]
+    [InlineData(200, 51)]
+    public async Task ExpectedHeightRejectsExcessiveGradeOrDeltaBeforeInput(double z, double rise)
+    {
+        var input = new Input();
+        var result = await FollowRouteCommand.FollowAsync(Options(z: z) with { GoalY = 7 + rise },
+            Reader(Pose(0,0)), input, () => null, NoDelay);
+        Assert.Equal("blocked",result.Status);
+        Assert.Contains("height bound",result.Reason);
+        Assert.Empty(input.Events);
+    }
+
+    [Fact]
+    public async Task ExpectedHeightStillHaltsAbruptFallWithinInterpolatedEnvelope()
+    {
+        var input = new Input();
+        var result = await FollowRouteCommand.FollowAsync(Options(z:10) with { GoalY=9 },
+            Reader(Pose(0,0),Pose(0,.2,y:6.1)),input,() => null,NoDelay);
+        Assert.Equal("halted",result.Status);
+        Assert.Contains("Abrupt vertical step",result.Reason);
+        Assert.True(result.ReleaseSucceeded);
+    }
+
+    [Fact]
+    public async Task ExpectedHeightRejectsWrongGradualFloorAndOffHeightSettledArrival()
+    {
+        var floor = await FollowRouteCommand.FollowAsync(Options(z:10) with { GoalY=10 },
+            Reader(Pose(0,0),Pose(0,2),Pose(0,4),Pose(0,6)),new Input(),() => null,NoDelay);
+        Assert.Contains("Vertical drift",floor.Reason);
+        var finish = await FollowRouteCommand.FollowAsync(Options(z:5) with { GoalY=8 },
+            Reader(Pose(0,0),Pose(0,2),Pose(0,4.9),Pose(0,4.9),Pose(0,4.9)),
+            new Input(),() => null,NoDelay);
+        Assert.Equal("halted",finish.Status);
+        Assert.Equal("post-release-arrival-not-settled",finish.Reason);
+        Assert.True(finish.ReleaseSucceeded);
     }
 
     [Fact]

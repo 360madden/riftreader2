@@ -3,6 +3,7 @@ import json
 import threading
 import time
 import unittest
+from datetime import datetime, timezone
 from contextlib import nullcontext, redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
@@ -138,6 +139,55 @@ class ContinuousMoveTests(unittest.TestCase):
                           self.adapter.last_input_receipt["kind"],
                           self.adapter.last_input_receipt["status"]))
         self.assertEqual(json.loads(self.adapter.input_receipt_path.read_text()), self.adapter.last_input_receipt)
+        self.assertNotIn("--goal-y", command)
+        self.assertNotIn("y", self.adapter.last_input_receipt["goal"])
+
+    def test_explicit_goal_height_is_pinned_and_freshly_rechecked(self):
+        final = receipt()
+        final["goal"]["y"] = 10.0
+        stop_path = self.root / "height.stop"
+        final["stopFile"] = str(stop_path.absolute())
+        children = []
+        settled = SimpleNamespace(position=Position(100, 10, 0), bearing=90.0,
+                                  acquired=time.monotonic(), source="fresh-after-release")
+        with patch("scripts.physical_waypoints.read_stationary",
+                   side_effect=[self.start, settled]):
+            result = move.move_to(
+                self.adapter, 100, 0, threading.Event(),
+                popen=lambda command, **kwargs: children.append(
+                    FakeProcess(command, final)) or children[-1],
+                native_exe=self.root / "native.exe", owner_identity=(55, 66),
+                stop_path=stop_path, goal_y=10)
+        command = children[0].command
+        self.assertEqual("10.0", command[command.index("--goal-y") + 1])
+        self.assertEqual(10.0, self.adapter.last_input_receipt["goal"]["y"])
+        self.assertEqual(10.0, result["goal"]["y"])
+        self.assertEqual(10, result["position"]["y"])
+
+    def test_explicit_goal_height_rejects_fresh_off_height_pose(self):
+        final = receipt()
+        final["goal"]["y"] = 10.0
+        stop_path = self.root / "off-height.stop"
+        final["stopFile"] = str(stop_path.absolute())
+        off_height = SimpleNamespace(position=Position(100, 10.51, 0), bearing=90.0,
+                                     acquired=time.monotonic(), source="fresh-after-release")
+        with patch("scripts.physical_waypoints.read_stationary",
+                   side_effect=[self.start, off_height]), \
+             self.assertRaisesRegex(Exception, "destination height"):
+            move.move_to(
+                self.adapter, 100, 0, threading.Event(),
+                popen=lambda command, **kwargs: FakeProcess(command, final),
+                native_exe=self.root / "native.exe", owner_identity=(55, 66),
+                stop_path=stop_path, goal_y=10)
+        self.assertEqual("arrived", self.adapter.last_input_receipt["status"])
+
+    def test_nonfinite_goal_height_never_reads_or_launches(self):
+        with patch("scripts.physical_waypoints.read_stationary") as read, \
+             patch("subprocess.Popen") as popen, \
+             self.assertRaisesRegex(ValueError, "goal Y must be finite"):
+            move.move_to(self.adapter, 1, 2, threading.Event(), goal_y=float("nan"))
+        read.assert_not_called()
+        popen.assert_not_called()
 
     def test_stop_file_created_only_after_stop_and_stopped_receipt_retained(self):
         stopped = threading.Event()
@@ -511,7 +561,13 @@ class ContinuousMoveTests(unittest.TestCase):
         events, calls = [], []
         entry = Mock()
         def one_leg(adapter, x, z, stop, emit, **kwargs):
-            calls.append((x, z, kwargs["reservation"], kwargs["max_seconds"]))
+            calls.append((x, z, kwargs["reservation"], kwargs["max_seconds"],
+                          kwargs["goal_y"], kwargs["path_points"]))
+            adapter.last_input_receipt = {"version": 1, "status": "arrived"}
+            for index, guide in enumerate(kwargs["path_points"]):
+                emit({"status": "passed", "index": index, "name": guide["name"],
+                      "goal": guide, "position": {"x": guide["x"], "y": guide.get("y", 10), "z": guide["z"]},
+                      "releaseSucceeded": True, "desktopInputsDown": [], "passageVerified": True})
             result = {"status": "arrived", "name": "CLI destination",
                       "start": {"x": x - 2, "y": 10, "z": z},
                       "goal": {"x": x, "y": 10, "z": z},
@@ -524,11 +580,15 @@ class ContinuousMoveTests(unittest.TestCase):
         with patch("scripts.physical_waypoints.read_stationary", return_value=self.start), \
              patch.object(move, "move_to", side_effect=one_leg):
             legs = move.run_continuous_route(self.adapter, points, threading.Event(),
-                                             events.append, entry_check=entry)
-        self.assertEqual((31, 31, 1), (len(legs), len(calls), self.adapter.reservations))
+                                             events.append, entry_check=entry,
+                                             goal_heights=[10 + index / 10
+                                                           for index in range(len(points))])
+        self.assertEqual((31, 1, 1), (len(legs), len(calls), self.adapter.reservations))
         self.assertEqual([row["name"] for row in legs], [row[0] for row in points])
         self.assertEqual([event["name"] for event in events], [row[0] for row in points])
         self.assertTrue(all(call[2] is calls[0][2] for call in calls))
+        self.assertEqual([10 + index / 10 for index in range(len(points))],
+                         [guide["y"] for guide in calls[0][5]] + [calls[0][4]])
         self.assertEqual((75, .1), (legs[-1]["totalHoldMs"], legs[-1]["elapsedSeconds"]))
         entry.assert_called_once_with(self.start.position)
 
@@ -540,6 +600,82 @@ class ContinuousMoveTests(unittest.TestCase):
                     [["Start", 0, 0], ["Too far", 1001, 0]], threading.Event())
         native.assert_not_called()
 
+    def test_explicit_stops_split_batches_and_final_always_stops(self):
+        calls, events = [], []
+        def batch(adapter, x, z, stop, emit, **kwargs):
+            calls.append((x, [p["name"] for p in kwargs["path_points"]]))
+            for index, guide in enumerate(kwargs["path_points"]):
+                emit({"status": "route-progress", "index": index, "name": guide["name"],
+                      "position": {"x": guide["x"], "y": 10, "z": guide["z"]}, "trusted": False})
+                emit({"status": "route-progress", "index": index, "name": guide["name"],
+                      "position": {"x": float("nan"), "y": 10, "z": guide["z"]}})
+                emit({"status": "passed", "index": index, "name": guide["name"],
+                      "goal": guide, "position": {"x": guide["x"], "y": 10, "z": guide["z"]}})
+            adapter.last_input_receipt = {"status": "arrived"}
+            return {"status": "arrived", "heldInputMilliseconds": 0}
+        with patch("scripts.physical_waypoints.read_stationary", return_value=self.start), \
+             patch.object(move, "move_to", side_effect=batch):
+            legs = move.run_continuous_route(self.adapter,
+                [["A", 1, 0], ["B", 2, 0], ["C", 3, 0], ["D", 4, 0]],
+                threading.Event(), events.append, point_kinds=["pass", "stop", "pass", "pass"])
+        self.assertEqual([(2.0, ["A"]), (4.0, ["C"])], calls)
+        self.assertEqual(["A", "B", "C", "D"], [leg["name"] for leg in legs])
+        progress = [event for event in events if event["status"] == "route-progress"]
+        self.assertEqual([(0, 1, 4), (2, 3, 4)],
+                         [(event["index"], event["observedPointNumber"], event["waypointCount"]
+                           ) for event in progress])
+
+    def test_guides_require_valid_final_release_before_passage_events(self):
+        for valid in (True, False):
+            with self.subTest(valid=valid):
+                final = receipt("stopped", reason="operator STOP")
+                final["releaseSucceeded"] = valid
+                stop_path = self.root / f"pass-{valid}.stop"
+                final["stopFile"] = str(stop_path.absolute())
+                passage = {"index": 0, "name": "A", "position": {"x": 5, "y": 10, "z": 0},
+                           "observedAtUtc": datetime.now(timezone.utc).isoformat(),
+                           "source": "segment-crossing"}
+                final["passedWaypoints"] = [passage]
+                events, paths = [], []
+                def launch(command, **kwargs):
+                    path = Path(command[command.index("--path-file") + 1])
+                    paths.append(path)
+                    self.assertEqual({"waypoints": [{"name": "A", "x": 5.0, "z": 0.0, "y": 10.0}]},
+                                     json.loads(path.read_text()))
+                    return FakeProcess(command, final)
+                with patch("scripts.physical_waypoints.read_stationary", return_value=self.start), \
+                     self.assertRaises(Exception):
+                    move.move_to(self.adapter, 100, 0, threading.Event(), events.append,
+                                 popen=launch, native_exe=self.root / "native.exe",
+                                 owner_identity=(55, 66), stop_path=stop_path,
+                                 recovery_run=successful_recovery,
+                                 path_points=[{"name": "A", "x": 5, "z": 0, "y": 10}])
+                passed = [event for event in events if event["status"] == "passed"]
+                self.assertEqual(1 if valid else 0, len(passed))
+                if valid:
+                    self.assertTrue(passed[0]["passageVerified"])
+                    self.assertTrue(passed[0]["releaseSucceeded"])
+                    self.assertEqual("segment-crossing", passed[0]["source"])
+                for path in paths:
+                    path.unlink()
+
+    def test_partial_passes_are_ordered_fresh_and_within_height(self):
+        started = datetime.now(timezone.utc)
+        guides = [{"name": "A", "x": 5, "z": 0, "y": 10},
+                  {"name": "B", "x": 10, "z": 0}]
+        passage = {"index": 0, "name": "A", "position": {"x": 5, "y": 10, "z": 0},
+                   "observedAtUtc": started.isoformat()}
+        value = {"status": "stopped", "passedWaypoints": [passage]}
+        self.assertEqual([passage], move._validate_passes(value, guides, started))
+        with self.assertRaisesRegex(ValueError, "omitted"):
+            move._validate_passes(dict(value, status="arrived"), guides, started)
+        for changed in (dict(passage, index=1), dict(passage, name="B"),
+                        dict(passage, position={"x": 5, "y": 11, "z": 0}),
+                        dict(passage, observedAtUtc="2000-01-01T00:00:00Z")):
+            with self.subTest(changed=changed), self.assertRaises(ValueError):
+                move._validate_passes({"status": "stopped", "passedWaypoints": [changed]},
+                                      guides, started)
+
     def test_playback_stop_then_resume_uses_saved_real_waypoint_cursor(self):
         from scripts.physical_waypoints import Stopped
         from scripts.waypoint_playback import play_route
@@ -548,9 +684,17 @@ class ContinuousMoveTests(unittest.TestCase):
         checkpoint = self.root / "progress.json"
         stop_once = {"value": True}
         def one_leg(adapter, x, z, stop, emit, **kwargs):
-            if x == 30 and stop_once["value"]:
+            if stop_once["value"]:
                 stop_once["value"] = False
+                guide = kwargs["path_points"][0]
+                emit({"status": "passed", "index": 0, "name": guide["name"],
+                      "goal": guide, "position": {"x": guide["x"], "y": 10, "z": guide["z"]},
+                      "releaseSucceeded": True, "desktopInputsDown": [], "passageVerified": True})
                 raise Stopped("operator STOP")
+            for index, guide in enumerate(kwargs["path_points"]):
+                emit({"status": "passed", "index": index, "name": guide["name"],
+                      "goal": guide, "position": {"x": guide["x"], "y": 10, "z": guide["z"]},
+                      "releaseSucceeded": True, "desktopInputsDown": [], "passageVerified": True})
             result = {"status": "arrived", "name": "CLI destination",
                       "start": {"x": 0, "y": 10, "z": 0},
                       "goal": {"x": x, "y": 10, "z": z},
@@ -563,13 +707,13 @@ class ContinuousMoveTests(unittest.TestCase):
              patch.object(move, "move_to", side_effect=one_leg):
             with self.assertRaises(Stopped):
                 play_route(self.adapter, document, threading.Event(), lambda event: None,
-                           runner=move.run_continuous_route, checkpoint=checkpoint)
+                           runner=move.run_continuous_route, checkpoint=checkpoint, pass_through=True)
             saved = RouteProgress.load(checkpoint, document,
                                        self.adapter.binding["runtimeIdentity"])
             self.assertEqual((1, "B"), (saved.next_index, saved.remaining_points()[0][0]))
             legs, completed = play_route(self.adapter, document, threading.Event(),
                 lambda event: None, runner=move.run_continuous_route,
-                checkpoint=checkpoint, resume=True)
+                checkpoint=checkpoint, resume=True, pass_through=True)
         self.assertEqual((2, 3), (len(legs), completed.next_index))
 
     def test_preview_cli_path_is_input_free(self):
