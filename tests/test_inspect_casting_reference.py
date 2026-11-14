@@ -72,6 +72,15 @@ def wire(value) -> bytes:
 
 
 class CastingReferenceInspectionTests(unittest.TestCase):
+    def test_compact_addon_version_preserves_observation_only_contract(self):
+        value = snapshot()
+        value["addonVersion"] = "0.5.0"
+        result = inspect.decode_wire(wire(value))
+        self.assertFalse(result["snapshot"]["actionAllowed"])
+        value["actionAllowed"] = True
+        with self.assertRaises(inspect.CastingReferenceError):
+            inspect.decode_wire(wire(value))
+
     def test_current_ready_wire_decodes_without_action_claim(self):
         result = inspect.decode_wire(wire(snapshot()))
         self.assertTrue(result["referenceIdentityMatched"])

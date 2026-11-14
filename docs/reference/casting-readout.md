@@ -1,5 +1,45 @@
 # Casting readout and bounded dummy test
 
+## Current interface — 0.5.0
+
+The current addon uses a shared command service and a compact 344-by-226 HUD.
+Use `/rr2cast list [page] [size]`, `/rr2cast select EXACT_ID`, `/rr2cast status`,
+`/rr2cast record` and `/rr2cast trial` without opening the ability picker or
+showing the HUD. Prefix service commands with `json` for structured results.
+`/rr2cast abilities` remains the optional graphical picker; `show`, `hide`,
+`toggle`, `move X Y` and `reset` control the compact view. Visibility and position
+are saved per character. The GUI selects and records through the same service.
+
+Other loaded addons use the versioned `RiftReader2CastingAPI.Execute(request)`
+and `Snapshot()` interface. See the [command service documentation](../../addon/RiftReader2Casting/README.md)
+for request fields, pagination, response semantics and survival configuration.
+Selection uses the character's actual learned catalog; resource checks and
+status support the observed resource types rather than assuming Warrior Power.
+This does not qualify every class, build or ability mechanic.
+
+Command acceptance is separate from game input and observed effect. The service
+does not activate protected frames, cast or clear the external runtime's STOP
+latch. The Cast/Stop attack frames and the survival toolbar's cancel control
+retain their existing protected action path and measured control geometry.
+External RR2 actions continue through the guarded native action backend. There
+is no general physical OS-to-addon slash-command transport in this increment.
+Detailed timing/resource/trial information is available through commands instead
+of a large always-visible panel. Historical implementation and trial notes follow.
+
+**November 14 physical check (AMD-DESKTOP):** the installed 0.5.0 addon reloaded
+successfully, returned JSON from a 55-ability learned catalog, accepted exact
+Shield of the Chosen selection while hidden, and started a 60-second observation
+without showing the HUD or casting. Hidden visibility survived a subsequent UI
+reload. Two advancing physical telemetry captures marked hidden Cast/Stop
+rectangles unmapped and shown rectangles mapped. A later paint-only fix assigned
+explicit context layers; live picker open/close then left both protected footer
+buttons visible. The final HUD was placed using `/rr2cast reset` and left shown.
+The verification did not execute casts, movement, a combat encounter or Resume.
+The 160-test addon/telemetry slice and 78-test action/runtime/STOP slice passed.
+Local captures, the previous installed files and screenshot are under
+`artifacts/casting-compact-20261114/`. Full-game restart and all-class live
+acceptance remain separate from this UI-reload check.
+
 See [SpellDump API reuse](spelldump-api-reuse.md) for the inspected existing
 batch ability catalog and the distinction between game facts and addon filters.
 

@@ -1,5 +1,5 @@
 local addonInfo, private = ...
-local FALLBACK_VERSION = "0.4.2"
+local FALLBACK_VERSION = "0.5.0"
 local function versionFromMetadata(info)
     local toc = type(info) == "table" and info.toc
     local value = type(toc) == "table" and toc.Version
@@ -11,7 +11,10 @@ local addonVersion = versionFromMetadata(addonInfo)
 local model = private.Casting.New(Inspect)
 private.Instance = model
 local context = UI.CreateContext("RR2Casting")
-local DEFAULT_PX, DEFAULT_PY, PW, PH = 286, 72, 584, 602
+-- Contexts inherit Frame:SetLayer; equal-layer draw order is unspecified.
+context:SetLayer(0)
+local DEFAULT_PX, DEFAULT_PY, PW, PH = 340, 284, 344, 226
+local CAST_X, STOP_X, ACTION_Y = 12, 221, 180
 local PX, PY = DEFAULT_PX, DEFAULT_PY
 local colors = {
     background = {0.039, 0.067, 0.090, 0.98},
@@ -102,73 +105,52 @@ end
 
 local panel = UI.CreateFrame("Frame", "RR2CastingPanel", context)
 panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", PX, PY)
-panel:SetWidth(PW); panel:SetHeight(PH); background(panel, colors.background)
-block("RR2CastingLeftAccent", panel, 0, 0, 4, PH, colors.accent)
-local header = block("RR2CastingHeader", panel, 4, 0, PW - 4, 66, colors.header)
-local dragHandle = block("RR2CastingDragHandle", header, 0, 0, 450, 66, {0, 0, 0, 0})
+panel:SetWidth(PW); panel:SetHeight(PH)
+-- Leave the restricted footer outside the normal context's opaque background.
+local backdrop = block("RR2CastingBackdrop", panel, 0, 0, PW, 176, colors.background)
+backdrop:SetLayer(-1); backdrop:SetMouseMasking("limited")
+local header = block("RR2CastingHeader", panel, 0, 0, PW, 36, colors.header)
+local dragHandle = block("RR2CastingDragHandle", header, 0, 0, 274, 36, {0, 0, 0, 0})
 dragHandle:SetLayer(1); dragHandle:SetMouseMasking("full")
-label("RR2CastingTitle", panel, 24, 9, 408, 22, "RR2 CASTING  v" .. addonVersion, colors.text)
-label("RR2CastingSubtitle", panel, 24, 43, 420, 13, "Drag header to move  /  /rr2cast help", colors.muted)
+label("RR2CastingTitle", header, 12, 3, 208, 20, "Casting", colors.text)
+label("RR2CastingVersion", header, 92, 8, 116, 14, "v" .. addonVersion, colors.muted)
 
-surface("RR2CastingStatusBackground", panel, 16, 76, 552, 82, colors.header)
-local statusAccent = block("RR2CastingStatusAccent", panel, 16, 76, 4, 82, colors.amber)
-local statusText = label("RR2CastingStatus", panel, 28, 85, 178, 20, "BLOCKED", colors.amber)
-local statusReason = label("RR2CastingReason", panel, 208, 91, 344, 14, "Choose an ability and target", colors.text)
-surface("RR2CastingFacingChip", panel, 28, 122, 246, 28, colors.section)
-surface("RR2CastingLosChip", panel, 284, 122, 272, 28, colors.section)
-label("RR2CastingFacing", panel, 38, 125, 226, 13, "FACING   UNVERIFIED", colors.amber)
-label("RR2CastingLineOfSight", panel, 294, 125, 254, 13, "LINE OF SIGHT   UNVERIFIED", colors.amber)
-
-surface("RR2CastingSelectionCard", panel, 16, 168, 552, 82, colors.header)
-label("RR2CastingTargetLabel", panel, 28, 175, 244, 13, "Target", colors.muted)
-local targetText = label("RR2CastingTarget", panel, 28, 195, 244, 18, "No target selected", colors.text)
-label("RR2CastingAbilityLabel", panel, 300, 175, 248, 13, "Ability", colors.muted)
-local abilityText = label("RR2CastingAbility", panel, 300, 195, 248, 18, "Choose an ability", colors.text)
-
-local function metric(name, x, y, caption)
-    surface(name .. "Card", panel, x, y, 270, 64, colors.header)
-    label(name .. "Caption", panel, x + 12, y + 6, 246, 13, caption, colors.muted)
-    return label(name .. "Value", panel, x + 12, y + 29, 246, 18, "Unknown", colors.text)
-end
-local rangeText = metric("RR2CastingRange", 16, 260, "Range  /  Min - Max")
-local castText = metric("RR2CastingCastTime", 298, 260, "Cast time  /  Channel")
-local cooldownText = metric("RR2CastingCooldown", 16, 332, "Cooldown  /  Ability + GCD")
-local powerText = metric("RR2CastingPower", 298, 332, "Power  /  Cost")
-
-surface("RR2CastingTrialBackground", panel, 16, 404, 552, 58, colors.header)
-local trialState = label("RR2CastingTrialState", panel, 28, 410, 526, 17, "NOT RECORDING", colors.accent)
-local trialDetail = label("RR2CastingTrialDetail", panel, 28, 434, 526, 13,
-    "Choose an ability and a target, then record.", colors.muted)
-
-surface("RR2CastingManualTray", panel, 4, 521, PW - 4, 81, colors.header)
-label("RR2CastingManualLabel", panel, 24, 529, 376, 13, "MANUAL ACTIONS  /  RIFT-PROTECTED", colors.muted)
-local sequenceText = label("RR2CastingSequence", panel, 414, 529, 150, 13, "SEQ --", colors.muted)
+surface("RR2CastingStatusBackground", panel, 12, 43, 320, 36, colors.section)
+local statusAccent = block("RR2CastingStatusAccent", panel, 12, 43, 4, 36, colors.amber)
+local statusText = label("RR2CastingStatus", panel, 22, 49, 110, 16, "WAITING", colors.amber)
+local statusReason = label("RR2CastingReason", panel, 137, 50, 188, 14, "Choose an ability", colors.text)
+label("RR2CastingAbilityLabel", panel, 12, 86, 65, 15, "Ability", colors.muted)
+local abilityText = label("RR2CastingAbility", panel, 82, 83, 250, 18, "Choose an ability", colors.text)
+label("RR2CastingTargetLabel", panel, 12, 114, 65, 15, "Target", colors.muted)
+local targetText = label("RR2CastingTarget", panel, 82, 111, 250, 18, "No target selected", colors.text)
 
 local picker = UI.CreateFrame("Frame", "RR2CastingPicker", context)
 picker:SetPoint("TOPLEFT", UIParent, "TOPLEFT", PX, PY)
-picker:SetWidth(PW); picker:SetHeight(519)
+picker:SetWidth(PW); picker:SetHeight(176)
 background(picker, colors.background)
 picker:SetLayer(10); picker:SetVisible(false)
--- Empty-background clicks are absorbed; picker never overlays secure controls.
+local pickerOpen = false
+local function showPicker(visible)
+    picker:SetVisible(visible)
+    pickerOpen = visible
+end
 picker:EventAttach(Event.UI.Input.Mouse.Left.Click, function() end, "RR2 casting picker backdrop")
-block("RR2CastingPickerAccent", picker, 0, 0, PW, 4, colors.accent)
-label("RR2CastingPickerTitle", picker, 24, 17, 440, 22, "Choose an ability", colors.text)
-label("RR2CastingPickerSubtitle", picker, 24, 49, 530, 13,
-    "Supported manual-cast abilities from the current RIFT API catalog", colors.muted)
-local pickerDragHandle = block("RR2CastingPickerDragHandle", picker, 0, 4, PW, 76, {0, 0, 0, 0})
+local pickerDragHandle = block("RR2CastingPickerDragHandle", picker, 0, 0, PW, 36, colors.header)
 pickerDragHandle:SetLayer(1); pickerDragHandle:SetMouseMasking("full")
-local pageText = label("RR2CastingPage", picker, 273, 474, 162, 13, "PAGE 1 / 1", colors.muted)
-local emptyText = label("RR2CastingPickerEmpty", picker, 32, 223, 516, 16,
-    "No supported abilities reported by RIFT.", colors.muted)
+label("RR2CastingPickerTitle", picker, 12, 4, 218, 19, "Choose an ability", colors.text)
+local pageText = label("RR2CastingPage", picker, 237, 9, 98, 14, "Page 1 / 1", colors.muted)
+local emptyText = label("RR2CastingPickerEmpty", picker, 16, 69, 310, 15,
+    "No supported abilities available.", colors.muted)
 emptyText:SetVisible(false)
 local choices, page, rows = {}, 1, {}
 local evidence = {schemaVersion = 1, source = "RIFT Lua API", addonVersion = addonVersion,
-    trials = {}, hudPosition = {x = PX, y = PY}}
+    trials = {}, hudVisible = true, hudPosition = {x = PX, y = PY}}
 local savedLoaded = false -- Preserve saved evidence until its exact load-end event.
 
 -- The actual macro targets are styled restricted Frames, not decorative click
 -- proxies. Text and accents have no mouse handlers; only EventMacroSet casts.
 local castContext = UI.CreateContext("RR2CastingSecure")
+castContext:SetLayer(1)
 castContext:SetSecureMode("restricted")
 local function secureButton(name, value, left, top, width, role, parent, height)
     height = height or 40
@@ -190,9 +172,9 @@ local function secureButton(name, value, left, top, width, role, parent, height)
     return frame, centeredLabel(name .. "Label", frame, width, height, value)
 end
 local castButton, castCaption = secureButton("RR2CastingSecureButton",
-    "SELECT AN ABILITY", PX + 16, PY + 552, 350, "primary")
+    "Select an ability", PX + CAST_X, PY + ACTION_Y, 203, "primary", nil, 38)
 local stopButton, stopCaption = secureButton("RR2CastingStopButton",
-    "Stop attack", PX + 374, PY + 552, 194, "danger")
+    "Stop attack", PX + STOP_X, PY + ACTION_Y, 111, "danger", nil, 38)
 local stopOk, stopResult = pcall(stopButton.EventMacroSet,
     stopButton, Event.UI.Input.Mouse.Left.Click, "stopattack")
 if not stopOk or stopResult == false then
@@ -244,8 +226,8 @@ local function setPosition(x, y, restoring)
     end
     local oldX, oldY = PX, PY
     local changes = {
-        {castButton, oldX + 16, oldY + 552, newX + 16, newY + 552},
-        {stopButton, oldX + 374, oldY + 552, newX + 374, newY + 552},
+        {castButton, oldX + CAST_X, oldY + ACTION_Y, newX + CAST_X, newY + ACTION_Y},
+        {stopButton, oldX + STOP_X, oldY + ACTION_Y, newX + STOP_X, newY + ACTION_Y},
         {panel, oldX, oldY, newX, newY},
         {picker, oldX, oldY, newX, newY}
     }
@@ -316,7 +298,8 @@ attachDrag(dragHandle, "")
 attachDrag(pickerDragHandle, " picker")
 
 local panelVisible = true
-local function setPanelVisible(visible)
+local visibilityEditedBeforeLoad, pendingVisibility = false, nil
+local function setPanelVisible(visible, restoring)
     if type(visible) ~= "boolean" then return false, "invalid-visibility" end
     if not nonSecure() then return false, "combat-lock" end
     local before = panelVisible
@@ -332,16 +315,22 @@ local function setPanelVisible(visible)
         safeVisible(stopButton, before)
         return false, "panel-visibility-rejected"
     end
-    panelVisible = visible
-    if not visible then drag.active = false end
+    panelVisible, pendingVisibility = visible, nil
+    evidence.hudVisible = visible
+    if not savedLoaded and not restoring then visibilityEditedBeforeLoad = true end
+    if not visible then drag.active, pickerOpen = false, false end
     return true
 end
 local function selectAbility(id)
-    if model.trial and model.trial.status == "recording" then return false end
-    if not nonSecure() then return false end
+    if model.trial and model.trial.status == "recording" then return false, "recording-active" end
+    if not nonSecure() then return false, "combat-lock" end
     local abilityApi = type(Inspect) == "table" and type(Inspect.Ability) == "table" and Inspect.Ability or nil
     local newApi = abilityApi and type(abilityApi.New) == "table" and abilityApi.New or nil
-    local detail = newApi and newApi.Detail
+    if not newApi or type(newApi.List) ~= "function" then return false, "learned-catalog-unavailable" end
+    local listed, learned = pcall(newApi.List)
+    if not listed or type(learned) ~= "table" then return false, "learned-catalog-unavailable" end
+    if not learned[id] then return false, "ability-not-learned" end
+    local detail = newApi.Detail
     if type(detail) ~= "function" then return false end
     local ok, d = pcall(detail, id)
     if not ok or type(d)~="table" or type(d.name)~="string" or #d.name==0 or #d.name>120 or
@@ -352,11 +341,11 @@ local function selectAbility(id)
     local attached, accepted = pcall(castButton.EventMacroSet,
         castButton, Event.UI.Input.Mouse.Left.Click, macro)
     if not attached or accepted == false then model.selected = previous; return false end
-    castCaption:SetText("CAST  " .. shortName(d.name, 25))
+    castCaption:SetText("Cast  " .. shortName(d.name, 16))
     evidence.castButton = {abilityId = id, abilityName = d.name, macro = macro}
     return true
 end
-private.SelectAbility = selectAbility
+private.SelectAbility = function(id) return (selectAbility(id)) end
 
 -- Export the actual restricted frames in UIParent coordinates. The external
 -- reader owns process/window binding and the conversion to client pixels.
@@ -502,13 +491,23 @@ local function toolbarStatus(slot,state)
     end)
     if ok then slot.lastStatus=state end
 end
+local function hudRect(frame, bound, w, h)
+    local rect = actionRect(frame, false)
+    rect.mapped = bound == true and panelVisible and not pickerOpen and not drag.active and
+        not pendingPosition and pendingVisibility == nil and not evidence.layoutWarning and
+        w ~= nil and PX >= 0 and PY >= 0 and PX + PW <= w and PY + PH <= h and
+        rect.left ~= nil and rect.left >= 0 and rect.top >= 0 and
+        rect.left + rect.width <= w and rect.top + rect.height <= h
+    return rect
+end
 local function survivalControls(playerId,targetId)
     local bound = evidence.castButton
+    local width, height = viewport()
     local mapped = type(bound) == "table" and type(model.selected) == "string" and
         bound.abilityId == model.selected
-    local cast = actionRect(castButton, mapped)
-    if mapped then cast.abilityId, cast.abilityName, cast.macro = bound.abilityId, bound.abilityName, bound.macro end
-    local width, height = viewport()
+    local cast = hudRect(castButton, mapped, width, height)
+    local stop = hudRect(stopButton, stopOk and stopResult ~= false, width, height)
+    if cast.mapped then cast.abilityId, cast.abilityName, cast.macro = bound.abilityId, bound.abilityName, bound.macro end
     local actions = {}
     for i, slot in pairs(profileSlots) do
         if slot.id then
@@ -534,7 +533,7 @@ local function survivalControls(playerId,targetId)
         cancel.macro="stopcasting\nstopattack"; cancel.effectQualification="unverified"
     end
     return {visible = panelVisible, space = "UIParent", viewportWidth = width, viewportHeight = height,
-        actions=actions,cancel=cancel,cast = cast, stop = actionRect(stopButton, stopOk and stopResult ~= false)}
+        actions=actions,cancel=cancel,cast=cast,stop=stop}
 end
 if private.Survival then
     private.Survival.Start(Inspect, model, selectAbility, survivalControls, prepareSlot,toolbarUnlocked)
@@ -563,9 +562,14 @@ if type(Inspect.Documentation) == "function" then
         table.sort(evidence.relevantApiNames)
     end
 end
-local message = "Choose an ability and select a target."
+local noticeText, noticeUntil
+local function showNotice(value)
+    local ok, now = pcall(Inspect.Time.Frame)
+    if ok and coordinate(now) then noticeText, noticeUntil = value, now + 2 end
+end
 local lastUpdate = -1
-local perPage = 20
+local service
+local perPage = 4
 local function showChoices()
     evidence.abilities = model:Abilities()
     choices = {}
@@ -578,35 +582,41 @@ local function showChoices()
     end
     local pages = math.max(1, math.ceil(#choices / perPage))
     page = math.min(page, pages)
-    pageText:SetText("PAGE " .. page .. " / " .. pages)
+    pageText:SetText("Page " .. page .. " / " .. pages)
     emptyText:SetVisible(#choices == 0)
     for i = 1, perPage do
         local item = choices[(page - 1) * perPage + i]
-        rows[i]:SetText(item and shortName(item.name or item.lookupId, 27) or "-")
+        rows[i]:SetText(item and shortName(item.name or item.lookupId, 17) or "-")
         rows[i]:SetVisible(item ~= nil)
     end
-    picker:SetVisible(true)
+    showPicker(true)
 end
 for i = 1, perPage do
     local index = i
     rows[i] = button("RR2CastingChoice" .. i, "-", picker,
-        16 + ((i - 1) % 2) * 282, 84 + math.floor((i - 1) / 2) * 36, 270, 34, function()
+        12 + ((i - 1) % 2) * 163, 43 + math.floor((i - 1) / 2) * 39, 157, 34, function()
         local item = choices[(page - 1) * perPage + index]
-        if item and selectAbility(item.lookupId) then
-            message = "Selected " .. shortName(item.name, 42)
-            picker:SetVisible(false)
+        local accepted
+        if item and service then
+            accepted = service.Execute({schemaVersion=1,command="select",abilityId=item.lookupId}).accepted
+        elseif item then accepted = selectAbility(item.lookupId) end
+        if accepted then
+            showPicker(false)
+        elseif item then
+            showPicker(false)
+            showNotice("Selection unavailable")
         end
     end)
 end
-button("RR2CastingPrev", "Previous", picker, 16, 461, 112, 40, function()
+button("RR2CastingPrev", "Previous", picker, 12, 132, 103, 32, function()
     page = math.max(1, page - 1); showChoices()
 end)
-button("RR2CastingNext", "Next", picker, 136, 461, 112, 40, function()
+button("RR2CastingNext", "Next", picker, 121, 132, 95, 32, function()
     if page * perPage < #choices then page = page + 1 end
     showChoices()
 end)
-button("RR2CastingClose", "Close", picker, 450, 461, 118, 40,
-    function() picker:SetVisible(false) end)
+button("RR2CastingClose", "Close", picker, 237, 132, 95, 32,
+    function() showPicker(false) end)
 local function openPicker()
     if not nonSecure() then return false, "combat-lock" end
     if not panelVisible then
@@ -624,23 +634,22 @@ local function beginRecording()
     if ok then
         evidence.trials[#evidence.trials + 1] = model.trial
         if #evidence.trials > 8 then table.remove(evidence.trials, 1) end
-        message = "Recording only. Review readiness before clicking Cast."
     else
-        message = "Not recording: " .. (reason or "unavailable")
+        showNotice("Record: " .. (reason or "unavailable"))
     end
     return ok, reason
 end
-button("RR2CastingAbilities", "Choose ability", panel, 16, 473, 270, 40, function()
+button("RR2CastingAbilities", "Choose ability", panel, 12, 141, 157, 32, function()
     local ok, reason = openPicker()
-    if not ok then message = "Picker unavailable: " .. (reason or "unknown") end
+    if not ok then showNotice(reason or "Picker unavailable") end
 end)
-button("RR2CastingRecord", "Record 60s", panel, 298, 473, 270, 40, function()
-    beginRecording()
+local recordButton = button("RR2CastingRecord", "Record 60s", panel, 175, 141, 157, 32, function()
+    if service then service.Execute({schemaVersion=1,command="record"}) else beginRecording() end
 end, "primary")
-button("RR2CastingHide", "Hide", header, 480, 16, 84, 38,
+button("RR2CastingHide", "Hide", header, 278, 4, 54, 28,
     function()
         local ok, reason = setPanelVisible(false)
-        if not ok then message = "Cannot hide: " .. (reason or "unavailable") end
+        if not ok then showNotice(reason or "Cannot hide") end
     end, "ghost")
 
 local function finite(v) return type(v) == "number" and v == v and math.abs(v) < math.huge end
@@ -654,7 +663,7 @@ local function channel(v)
     return v and "yes" or "no"
 end
 local reasonLabels = {
-    ["observed-ready"] = "Target, power and cooldown checks passed",
+    ["observed-ready"] = "Facing / LOS unverified",
     ["no-target"] = "Select a target in RIFT",
     ["select-ability"] = "Choose an ability",
     ["player-unavailable"] = "Player data unavailable",
@@ -693,6 +702,38 @@ local function trialOutcome(t)
     end
     return "No exact-target damage or healing confirmed"
 end
+-- All commands run in the addon event loop. Macro activation belongs to the restricted frames.
+local function stateSnapshot()
+    local r = evidence.last
+    if type(r) ~= "table" then return nil, "no-readout-sample" end
+    if r.abilityId ~= model.selected then return nil, "awaiting-selected-ability-sample" end
+    local ok, clock = pcall(Inspect.Time.Frame)
+    if not ok or not finite(clock) or not finite(r.clock) or clock < r.clock or clock-r.clock > 1 then
+        return nil, "readout-stale"
+    end
+    return r
+end
+local function trialSnapshot()
+    local t = model.trial
+    if not t then return {status="idle"} end
+    return {status=t.status, reason=t.reason, playerId=t.playerId, targetId=t.targetId,
+        abilityId=t.abilityId, started=t.started, deadline=t.deadline, outcome=trialOutcome(t)}
+end
+if private.CastingCommands then
+    service = private.CastingCommands.Create({
+        snapshot=stateSnapshot, listLearned=function() return model:Abilities() end,
+        selectAbility=selectAbility, record=beginRecording, trialStatus=trialSnapshot,
+        survival=private.Survival and function(action, args)
+            return private.Survival.Command(action .. (#args > 0 and " " .. table.concat(args," ") or ""))
+        end,
+        stopStatus=function()
+            local w,h=viewport()
+            return {hudStopAttackMapped=hudRect(stopButton, stopOk and stopResult ~= false, w,h).mapped, hudVisible=panelVisible,
+                globalStopLatch="unobserved"}
+        end
+    })
+    private.CastingCommands.InstallGlobal(service)
+end
 local function update()
     local now = Inspect.Time.Frame()
     if not finite(now) then error("frame-clock-unavailable") end
@@ -708,35 +749,24 @@ local function update()
     evidence.last = r; evidence.trial = model.trial
     if savedLoaded then RiftReader2CastingEvidence = evidence end
 
-    sequenceText:SetText("SEQ " .. r.sequence .. "  /  " .. f(r.clock))
     statusText:SetText(r.status == "ready" and "API READY" or string.upper(r.status))
     local tint = r.status == "ready" and colors.green or
         (r.status == "waiting" and colors.amber or colors.red)
     statusText:SetFontColor(tint[1], tint[2], tint[3], tint[4])
     background(statusAccent, tint)
-    statusReason:SetText(shortName(humanReason(r.reason), 43))
+    if noticeUntil and (now >= noticeUntil or now < noticeUntil - 2) then noticeText, noticeUntil = nil, nil end
+    statusReason:SetText(shortName(noticeText or humanReason(r.reason), 26))
     targetText:SetText(shortName(r.target.name, 25) ~= "unknown" and shortName(r.target.name, 25) or "No target selected")
     abilityText:SetText(shortName(r.ability.name, 25) ~= "unknown" and shortName(r.ability.name, 25) or "Choose an ability")
-    rangeText:SetText(f(r.ability.rangeMin) .. "  /  " .. f(r.ability.rangeMax))
-    castText:SetText(castTime(r.ability.castingTime) .. "  /  " .. channel(r.ability.channeled))
-    cooldownText:SetText(f(r.ability.currentCooldownRemaining) ..
-        (finite(r.ability.currentCooldownRemaining) and "s" or ""))
-    powerText:SetText(f(r.player.power) .. "  /  " .. f(r.ability.costPower))
-
     local t = model.trial
-    if not t then
-        trialState:SetText("NOT RECORDING")
-        trialDetail:SetText(shortName(message, 67))
-    else
-        if t.status == "recording" then
-            trialState:SetText("RECORDING  /  " .. math.max(0, math.ceil(t.deadline - now)) .. "s left")
-        else
-            trialState:SetText(string.upper(t.status) .. "  /  " .. shortName(humanReason(t.reason), 38))
-        end
-        trialDetail:SetText(shortName(trialOutcome(t), 67))
-    end
+    recordButton:SetText(t and t.status == "recording" and
+        ("Recording " .. math.max(0, math.ceil(t.deadline - now)) .. "s") or "Record 60s")
+
 end
 Command.Event.Attach(Event.System.Update.Begin, function()
+    if pendingVisibility ~= nil and nonSecure() then
+        setPanelVisible(pendingVisibility, true)
+    end
     if pendingPosition and nonSecure() then
         local pending = pendingPosition
         local moved, failure = setPosition(pending.x, pending.y, true)
@@ -756,8 +786,7 @@ Command.Event.Attach(Event.System.Update.Begin, function()
         statusText:SetFontColor(colors.red[1], colors.red[2], colors.red[3], colors.red[4])
         background(statusAccent, colors.red)
         statusReason:SetText("Readout update failed")
-        trialState:SetText("ABORTED / READOUT ERROR")
-        trialDetail:SetText("No readiness claim; see saved evidence error.")
+        recordButton:SetText("Readout error")
         lastUpdate = -1
     end
 end, "RR2 casting readout")
@@ -877,6 +906,15 @@ Command.Event.Attach(Event.Addon.SavedVariables.Load.End, function(_, id)
             loadWarnings[#loadWarnings + 1] = "invalid-saved-hud-position"
         end
     end
+    if not visibilityEditedBeforeLoad and type(prior) == "table" and type(prior.hudVisible) == "boolean" then
+        local restored, failure = setPanelVisible(prior.hudVisible, true)
+        if not restored then
+            if failure == "combat-lock" then
+                pendingVisibility = prior.hudVisible
+                evidence.hudVisible = prior.hudVisible
+            else loadWarnings[#loadWarnings + 1] = "hud-visibility-restore-failed" end
+        end
+    end
     local savedBar=type(prior)=="table" and prior.survivalToolbarPosition
     if not evidence.survivalToolbarPosition and type(savedBar)=="table" and coordinate(savedBar.x) and coordinate(savedBar.y) then
         evidence.survivalToolbarPosition={x=savedBar.x,y=savedBar.y}
@@ -910,15 +948,16 @@ end
 local function commandHelp()
     cliOutput("RR2 CASTING v" .. addonVersion .. "  /  COMMAND GUIDE", "success")
     cliOutput("/rr2cast (or show) - show dashboard; hide/toggle also available", "info")
-    cliOutput("/rr2cast abilities | record - picker / 60s observation", "info")
+    cliOutput("/rr2cast abilities | record | trial - picker, 60s observation, trial result", "info")
+    cliOutput("/rr2cast list [page] [size] | select EXACT_ID - learned abilities", "info")
+    cliOutput("/rr2cast capabilities | survival status | json COMMAND", "info")
     cliOutput("/rr2cast status | info - API checks / feature limits", "info")
     cliOutput("/rr2cast position - coordinates and drag instructions", "info")
     cliOutput("/rr2cast move X Y | reset - place HUD / restore default", "info")
     cliOutput("Drag the header or picker title. Cast and Stop require manual clicks.", "caution")
     cliOutput("Facing and hostile LOS are UNVERIFIED; API READY is not a clear-shot claim.", "caution")
 end
-local function commandStatus()
-    local r = evidence.last
+local function commandStatus(r)
     if type(r) ~= "table" then
         cliOutput("RR2 Casting v" .. addonVersion .. " | No readout sample yet.", "caution")
     else
@@ -937,8 +976,14 @@ local function commandStatus()
         cliOutput("Range: " .. f(ability.rangeMin) .. " - " .. f(ability.rangeMax) ..
             "  |  Cast: " .. castTime(ability.castingTime) ..
             "  |  Channel: " .. channel(ability.channeled), "info")
-        cliOutput("Ability/GCD cooldown: " .. f(ability.currentCooldownRemaining) ..
-            "s  |  Power: " .. f(player.power) .. " / " .. f(ability.costPower), "info")
+        cliOutput("Ability/GCD cooldown: " .. f(ability.currentCooldownRemaining) .. "s", "info")
+        for _, pair in ipairs({{"costPower","power","Power"}, {"costMana","mana","Mana"},
+            {"costEnergy","energy","Energy"}, {"costCharge","charge","Charge"},
+            {"costSpirit","spirit","Spirit"}, {"costPlanarCharge","planar","Planar charge"}}) do
+            if ability[pair[1]] ~= nil then
+                cliOutput(pair[3] .. ": " .. f(player[pair[2]]) .. "  /  cost " .. f(ability[pair[1]]), "info")
+            end
+        end
     end
     local trial = model.trial
     local trialStatus = type(trial) == "table" and trial.status or "not recording"
@@ -960,7 +1005,54 @@ local function parseCommand(raw)
     end
     return tokens
 end
+local serviceVerbs = {json=true, status=true, list=true, select=true, record=true, trial=true,
+    ["trial-status"]=true, capabilities=true, survival=true}
+local function serviceOutput(reply)
+    if reply.outputFormat == "json" then
+        local ok, json = pcall(private.CastingCommands.EncodeResponse, reply)
+        if not ok or type(json) ~= "string" then
+            cliOutput("Command result encoding unavailable", "error")
+            return
+        end
+        local console = Command.Console
+        if type(console) == "table" and type(console.Display) == "function" then
+            local shown, accepted = pcall(console.Display, "general", true, json, false)
+            if shown and accepted ~= false then return end
+        end
+        if type(print) == "function" then pcall(print, json) end
+        return
+    end
+    if not reply.accepted then
+        cliOutput(safeCli(reply.reason, 96), "caution")
+        return
+    end
+    local result = reply.result
+    if reply.command == "status" then
+        commandStatus(result.state.value)
+    elseif reply.command == "list" then
+        cliOutput("Learned abilities  " .. result.page .. " / " .. result.pages, "info")
+        for _,ability in ipairs(result.entries) do
+            cliOutput(safeCli(ability.name, 52) .. "  " .. safeCli(ability.id, 128), "info")
+        end
+    elseif reply.command == "select" then
+        cliOutput("Selected " .. safeCli(result.abilityId,128), "success")
+    elseif reply.command == "record" then
+        cliOutput("Recording 60s. Casting still requires a manual click.", "success")
+    elseif reply.command == "trial-status" then
+        local t = result.value
+        cliOutput("Trial: " .. safeCli(t.status, 30) .. (t.outcome and "  /  " .. safeCli(t.outcome, 96) or ""), "info")
+    elseif reply.command == "survival" then
+        cliOutput(safeCli(result.message, 180), "info")
+    elseif reply.command == "capabilities" then
+        cliOutput(table.concat(result.commands, "  /  "), "info")
+    end
+end
 local function slashCommand(raw)
+    local first = type(raw) == "string" and raw:match("^%s*(%S+)")
+    if service and first and serviceVerbs[string.lower(first)] then
+        serviceOutput(private.CastingCommands.DispatchText(service, raw))
+        return
+    end
     local tokens = parseCommand(raw)
     if not tokens then
         cliOutput("Invalid command arguments. Use /rr2cast help.", "error")
@@ -978,7 +1070,7 @@ local function slashCommand(raw)
     if verb == "help" then
         commandHelp()
     elseif verb == "status" then
-        commandStatus()
+        commandStatus(stateSnapshot())
     elseif verb == "info" then
         cliOutput("RR2 Casting v" .. addonVersion .. " | RIFT Lua diagnostics and bounded trials.", "success")
         cliOutput("API READY means available target/resource/range/cooldown checks passed.", "info")

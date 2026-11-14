@@ -266,7 +266,7 @@ def decode_frame(data: bytes, expected_nonce: str, expected_player: str) -> dict
     _require(isinstance(frame, dict), "invalid-survival-frame-object")
     _require(frame.get("schemaVersion") == 1
              and frame.get("addon") == "RiftReader2Casting"
-             and frame.get("addonVersion") == "0.4.2"
+             and frame.get("addonVersion") in ("0.4.2", "0.5.0")
              and frame.get("source") == "rift-api",
              "unexpected-survival-frame-contract")
     _require(frame.get("eventScope") in (None, "selected-or-self/1"),

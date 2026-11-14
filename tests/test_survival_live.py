@@ -64,6 +64,18 @@ class SurvivalLiveTests(unittest.TestCase):
     def selector(**_kwargs):
         return {"status": "ready", "target": deepcopy(TARGET)}
 
+    def test_compact_addon_version_keeps_nonce_and_schema_checks(self):
+        value = frame()
+        value["addonVersion"] = "0.5.0"
+        self.assertEqual("0.5.0", live.decode_frame(wire(value), NONCE, PLAYER)["frame"]["addonVersion"])
+        value["sessionId"] = "f" * 32
+        with self.assertRaisesRegex(live.SurvivalLiveError, "nonce-mismatch"):
+            live.decode_frame(wire(value), NONCE, PLAYER)
+        value["sessionId"] = NONCE
+        value["addonVersion"] = "0.5.1"
+        with self.assertRaisesRegex(live.SurvivalLiveError, "unexpected-survival-frame-contract"):
+            live.decode_frame(wire(value), NONCE, PLAYER)
+
     def test_decode_preserves_false_zero_and_case_insensitive_player(self):
         value = frame()
         value["player"].update({"combat": False, "power": 0})

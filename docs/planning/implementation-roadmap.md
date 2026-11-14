@@ -73,6 +73,7 @@ requires its applicable authority and fresh identity/ownership checks.
 
 | Area | What is delivered | Evidence boundary |
 | --- | --- | --- |
+| Casting operator interface (0.5.0) | Shared slash/Lua command service, JSON responses, learned-ID selection, hidden-HUD recording, class-neutral resource summaries and a compact 344-by-226 HUD with saved visibility/position. | AMD live command and layout checks; protected action paths and STOP remain separate. This is reusable operator scaffolding, not all-class combat-policy acceptance or a general external slash-command transport. [Interface](../reference/casting-readout.md). |
 | Foundation and retained knowledge | Modular .NET core/CLI/Windows reader, bounded native capture, field catalog, pointer/value searches, deterministic replay, source-hashed compilation, JSON/CSV/JSONL exports and offline Discovery Explorer. | Implemented and tested; old captures preserve their original build/session, not current live qualification. [Compilation milestone](discovery-compilation-roadmap.md). |
 | Hybrid addon | RR2-owned Lua producer, strict C# decoder, typed frames, nonce/freshness lifecycle and shared contract checks. | Historical Lab 1 RR2R1 acceptance passed 64/64 advancing comparisons. Physical RR2R1 loaded/bound producer and advancing-reference acceptance remain separate. [Standalone reference](../reference/self-contained-api-reference.md). |
 | Physical acquisition | Exact-host/PID native commands, position/body-facing/camera readers and reusable same-build movement calibration. | AMD physical movement/turning, feedback and specific full-game restart recovery cases are recorded; other fields retain their own limits. [Waypoints workflow](../workflows/physical-waypoints.md). |
@@ -86,6 +87,13 @@ requires its applicable authority and fresh identity/ownership checks.
 | Level/XP research | Native player/target level branches and experience seed/value readers exist, including accumulated/needed XP and explicit unavailable states. | No demonstrated current physical kill-to-XP correlation or working leveling loop. Hostility, attacker/aggro and elite/rank classification are missing; a combat byte or target level is insufficient. [Player/target/experience findings](../reference/native-player-context-candidates.md). |
 
 ## Remaining work, ranked
+
+**Casting interface checkpoint, November 14:** the shared command service and
+compact HUD now remove the picker/visible-panel dependency from routine setup
+and observation. This improves test operation without closing combat acceptance.
+The next priority remains the suitable encounter, recovery and route-resume
+outcome below; broad class/build policies and a general external slash-command
+transport follow demonstrated needs rather than delaying that result.
 
 **Reassessed after the completed movement milestone, November 14:** Combat and
 survival are next. The first integrated outcome is one suitable encounter,
