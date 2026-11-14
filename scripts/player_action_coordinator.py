@@ -163,8 +163,11 @@ class PlayerActionCoordinator:
 
     def _halt(self, reason):
         if not self._releasing or self._latch is None:
-            self._latch = reason
-            self._touch()
+            # A later STOP must not erase a confirmed death or missing critical
+            # state. Only explicit Resume/new_run can clear that terminal latch.
+            if self._latch not in {"death", "critical-unavailable"}:
+                self._latch = reason
+                self._touch()
         if self._active is not None and not self._releasing:
             self._release_active(reason)
         return self.snapshot()

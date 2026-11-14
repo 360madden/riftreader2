@@ -133,6 +133,20 @@ class PlayerActionCoordinatorTests(unittest.TestCase):
         self.assertEqual(("movement", "uncertain-release"), (state["activeAction"], state["latchReason"]))
         self.combat_start.assert_not_called()
 
+    def test_stop_cannot_erase_terminal_death_or_unavailable_latch(self):
+        for reason in ("death", "critical-unavailable"):
+            with self.subTest(reason=reason):
+                coordinator = PlayerActionCoordinator()
+                release = Mock(return_value=released())
+                coordinator.new_run(Mock(), release)
+                terminal = coordinator.critical(reason)
+                self.assertEqual(terminal["latchReason"], reason)
+                self.assertIsNone(terminal["activeAction"])
+                stopped = coordinator.operator_stop()
+                self.assertEqual(stopped["latchReason"], reason)
+                self.assertIsNone(stopped["activeAction"])
+                release.assert_called_once_with(reason)
+
     def test_start_failure_remains_owned_and_latched_for_release(self):
         def fail():
             raise RuntimeError("partial start")

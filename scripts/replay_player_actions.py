@@ -106,16 +106,19 @@ def replay(plan):
                     "final": coordinator.snapshot(), "states": states, "callbackTrace": trace,
                     "gameInputSent": False}
     final = coordinator.snapshot()
-    # A transition can refuse release without throwing. Even after a successful
-    # release retry the uncertainty latch requires explicit Resume/new run;
-    # never report such a truncated action plan as a completed handoff.
-    unresolved = final["latchReason"] in {"uncertain-release", "action-start-failed"}
+    # A transition can refuse release without throwing. Likewise, a terminal
+    # death/critical-state halt must not be reported as a successful run just
+    # because key release completed. An intentional operator STOP is distinct.
+    latch = final["latchReason"]
+    unresolved = latch in {"uncertain-release", "action-start-failed"}
+    terminal = latch in {"death", "critical-unavailable"}
     result = {"schemaVersion": 1, "mode": "offline-scripted-receipts-only",
-              "status": "blocked" if unresolved else "complete", "final": final,
-              "states": states, "callbackTrace": trace, "gameInputSent": False}
-    if unresolved:
+              "status": "blocked" if unresolved or terminal else "complete",
+              "final": final, "states": states, "callbackTrace": trace,
+              "gameInputSent": False}
+    if unresolved or terminal:
         result.update(failedStep=len(states), event=states[-1]["event"],
-                      reason="unresolved-" + final["latchReason"])
+                      reason=("unresolved-" if unresolved else "terminal-") + latch)
     return result
 
 

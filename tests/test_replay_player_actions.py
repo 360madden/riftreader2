@@ -94,6 +94,37 @@ class ReplayPlayerActionsTests(unittest.TestCase):
         self.assertEqual(recovered["status"], "complete")
         self.assertEqual(recovered["final"]["latchReason"], "operator-stop")
 
+    def test_terminal_death_or_critical_unavailable_cannot_complete(self):
+        for reason in ("death", "critical-unavailable"):
+            with self.subTest(reason=reason):
+                result = self.run_plan(
+                    event("new-run"), {"action": "critical", "reason": reason})
+                self.assertEqual(result["status"], "blocked")
+                self.assertEqual(result["reason"], "terminal-" + reason)
+                self.assertEqual(result["final"]["latchReason"], reason)
+                self.assertEqual(result["final"]["activeAction"], None)
+                self.assertFalse(result["gameInputSent"])
+
+    def test_subsequent_operator_stop_does_not_mask_terminal_failure(self):
+        result = self.run_plan(
+            event("new-run"), {"action": "critical", "reason": "death"},
+            {"action": "operator-stop"})
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["reason"], "terminal-death")
+        self.assertEqual(result["final"]["latchReason"], "death")
+
+    def test_headless_cli_exits_nonzero_on_terminal_death(self):
+        with TemporaryDirectory() as temp:
+            source = Path(temp) / "death.json"
+            source.write_text(json.dumps({"schemaVersion": 1, "events": [
+                event("new-run"), {"action": "critical", "reason": "death"}]}),
+                encoding="utf-8")
+            capture = StringIO()
+            with redirect_stdout(capture):
+                code = cli.main(["--events", str(source)])
+            self.assertEqual(code, 2)
+            self.assertEqual(json.loads(capture.getvalue())["reason"], "terminal-death")
+
     def test_input_bounds_and_duplicate_json_fail_closed(self):
         with self.assertRaisesRegex(ValueError, "invalid-action-plan"):
             cli.replay({"schemaVersion": 1, "events": [event("new-run")] * 65})
