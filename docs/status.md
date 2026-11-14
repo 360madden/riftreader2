@@ -11,6 +11,12 @@ receipt reports successful release and no pressed inputs; two later poses were
 identical. No deliberate encounter was started, and movement remains stopped
 pending diagnosis and explicit Resume. The cached RiftWorld detour is preview
 context; only actual native walked receipts can become the retreat corridor.
+The trace attributes the miss to a 1.61-degree initial residual accepted by the
+old two-degree departure limit. A distance-aware initial alignment limit now
+reduces this leg's tolerance to 1.209 degrees before W starts, without changing
+moving steering, the drift guard or the arrival radius. The trace-shaped
+regression and 135 neighboring Release tests pass; the active Debug helper is
+rebuilt. This correction still needs physical acceptance after explicit Resume.
 Evidence: `artifacts/hunt-loop-20261114/live-051-report.json`,
 `artifacts/waypoint-run-e701dbbbf36b4e168809545dd5d5c97d.json` and its input receipt.
 

@@ -465,6 +465,10 @@ internal static class FollowRouteCommand
                 // Align first. Once forward starts, W remains continuously held
                 // until arrival or a releasing terminal condition.
                 var alignmentAnchor = pose;
+                // Budget 90% of the arrival radius for initial lateral error. Keep a
+                // one-degree floor for finite turn pulses; long legs still use corridor feedback.
+                var alignmentTolerance = Math.Clamp(
+                    Math.Atan2(ArrivalRadius * .90, finalDistance) * 180 / Math.PI, 1, 2);
                 var alignmentStarted = clock.Elapsed;
                 var unresponsiveTurns = 0;
                 var residualNudges = 0;
@@ -495,7 +499,7 @@ internal static class FollowRouteCommand
                         var bearingMotion = Math.Abs(HeadingError(pose.Bearing, previous.Bearing));
                         var remaining = Math.Abs(HeadingError(
                             BearingTo(pose, options.X, options.Z), pose.Bearing));
-                        if (bearingMotion <= .75 && remaining <= 2)
+                        if (bearingMotion <= .75 && remaining <= alignmentTolerance)
                             return true;
                         previous = pose;
                     }
@@ -504,7 +508,7 @@ internal static class FollowRouteCommand
                 while (Volatile.Read(ref terminalReason) is null)
                 {
                     var error = HeadingError(BearingTo(pose, options.X, options.Z), pose.Bearing);
-                    if (alignmentKey is null && Math.Abs(error) <= 2)
+                    if (alignmentKey is null && Math.Abs(error) <= alignmentTolerance)
                     {
                         if (!alignmentRequiresSettlement || await ObserveSettledAlignment())
                             break;

@@ -731,6 +731,22 @@ public sealed class FollowRouteCommandTests
     }
 
     [Fact]
+    public async Task LongStraightLegRejectsShallowSettledMissBeforeForwardStarts()
+    {
+        var input = new Input();
+        // The physical 12.79u leg's 1.61-degree residual projected a .36u miss.
+        // One stationary nudge brings the heading within the arrival budget.
+        var result = await FollowRouteCommand.FollowAsync(Options(z: 12.79),
+            Reader(Pose(0, 0, 1.61), Pose(0, 0, .5), Pose(0, 0, .5),
+                Pose(.05, 6, .5), Pose(.11, 12.65, .5),
+                Pose(.11, 12.65, .5), Pose(.11, 12.65, .5)),
+            input, () => null, NoDelay);
+        Assert.Equal("arrived", result.Status);
+        Assert.Equal(new[] { "down:d", "up:d", "down:w", "up:w" }, input.Events);
+        Assert.True(result.ReleaseSucceeded);
+    }
+
+    [Fact]
     public void CorridorLookaheadExposesSmallLongRouteLateralDrift()
     {
         var start = Pose(0, 0);
