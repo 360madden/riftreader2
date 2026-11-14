@@ -923,7 +923,7 @@ def read_route_context(adapter):
 
 def launch_window(args):
     import tkinter as tk
-    from tkinter import filedialog, messagebox, ttk
+    from tkinter import filedialog, messagebox, simpledialog, ttk
 
     from scripts.waypoint_diagnostics import Diagnostics
     from scripts.waypoint_brand import APP_NAME, APP_VERSION, APP_TITLE
@@ -2028,6 +2028,7 @@ def launch_window(args):
                    "Up": single and index > 0 and not draft["pending"],
                    "Down": single and index < count-1 and not draft["pending"],
                    "Remove": bool(selected) and not draft["pending"], "Clear": count > 0 and not draft["pending"],
+                   "New Route…": not draft["pending"],
                    "Load": not draft["pending"], "Save Route": count>0 and not draft["pending"],
                    "Save As": count>0 and not draft["pending"],
                    "Add X / Z": draft["valid"] and count < MAX_WAYPOINTS and not draft["pending"],
@@ -2190,6 +2191,39 @@ def launch_window(args):
         except (ValueError, KeyError, TypeError, OSError) as exc:
             diagnostics.exception("Unable to load route", exc=exc)
             messagebox.showerror("Cannot load route", str(exc))
+
+    def begin_new_route(label=None):
+        nonlocal route_metadata, route_path, route_dirty, route_recovered
+        nonlocal playback_view, pending_progress_selection, route_revision
+        table.delete(*table.get_children())
+        point_receipts.clear()
+        edit_history.clear()
+        route_metadata = {"routeName": label.strip()} if label and label.strip() else {}
+        context = zone_state()["context"]
+        if context is not None:
+            route_metadata["routeContext"] = context
+        route_path, route_dirty, route_recovered = None, False, False
+        playback_view, pending_progress_selection = None, False
+        route_revision += 1
+        fill_fields()
+        progress_text.set("New route; add waypoints before playback.")
+        update_route_status()
+        redraw()
+        state.set("New route ready. Add waypoints, then Save Route to create its JSON file.")
+
+    def new_route():
+        if busy or closing or cli_action is not None or draft_pending():
+            return
+        label = simpledialog.askstring("New Route", "Route name:", initialvalue="New route", parent=window)
+        if label is None:
+            return
+        if route_dirty:
+            decision = messagebox.askyesnocancel(
+                "Unsaved route changes", "Save changes to the current route before starting a new route?",
+                parent=window)
+            if decision is None or (decision and not save_route()):
+                return
+        begin_new_route(label)
 
     def load_route():
         path = filedialog.askopenfilename(filetypes=[("Waypoint JSON", "*.json")])
@@ -2614,7 +2648,8 @@ def launch_window(args):
             ("Set selected to current", buttons_selected, capture_selected),
             ("Reset fields", buttons_selected, reset_fields), ("Up", buttons_selected, lambda: move_point(-1)),
             ("Down", buttons_selected, lambda: move_point(1)), ("Remove", buttons_selected, remove_points),
-            ("Clear", buttons, clear_points), ("Load", file_toolbar, load_route),
+            ("Clear", buttons, clear_points), ("New Route…", file_toolbar, new_route),
+            ("Load", file_toolbar, load_route),
             ("Save Route", file_toolbar, save_route), ("Save As", file_toolbar, lambda: save_route(True))):
         button = ttk.Button(parent, text=label, command=callback,
                             style="Primary.TButton" if label in ("Save Route", "Update Selected") else "TButton")
@@ -3757,11 +3792,7 @@ def launch_window(args):
                         mark_saved(path)
                         cache_route(document, "Route loaded: " + str(path))
                     else:
-                        clear_points()
-                        route_metadata = {"routeName": values["name"]} if values.get("name") else {}
-                        if zone_state()["context"] is not None: route_metadata["routeContext"] = zone_state()["context"]
-                        route_path, route_dirty, route_recovered = None, False, False
-                        update_route_status()
+                        begin_new_route(values.get("name"))
                     return cli_ok(cli_snapshot()["route"])
                 if command == "route.save":
                     if draft_pending(): raise CliError("unapplied-edit", "Apply or Reset fields before saving", exit_code=4)
