@@ -114,5 +114,50 @@ class PhysicalPlayerContextTests(unittest.TestCase):
             self.assertIn("candidate-only", result["qualification"])
 
 
+    def test_rejects_duplicate_keys_and_nonfinite_native_json(self):
+        selection = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": {
+            "hostName": "AMD-DESKTOP", "processId": 44888,
+            "processStartUtcTicks": str(TICKS), "executableSha256": SHA,
+        }}
+        source = json.dumps(report())
+        with TemporaryDirectory() as folder:
+            executable = Path(folder) / "RiftReader2.Live.exe"
+            executable.write_bytes(b"MZ")
+            for label in ("duplicate-source", "nonfinite-source", "overflow-source",
+                          "duplicate-receipt", "nonfinite-receipt", "overflow-receipt"):
+                with self.subTest(label=label):
+                    output = Path(folder) / (label + ".json")
+                    receipt = json.dumps({
+                        "recordType": physical.NATIVE_RECEIPTS["player-context"],
+                        "status": "complete", "output": str(output),
+                    })
+                    raw_report = source
+                    if label == "duplicate-source":
+                        raw_report = source.replace('"schemaVersion": 1,',
+                                                    '"schemaVersion": 1, "schemaVersion": 1,', 1)
+                    elif label == "nonfinite-source":
+                        raw_report = source[:-1] + ', "unverifiedMetric": NaN}'
+                    elif label == "overflow-source":
+                        raw_report = source[:-1] + ', "unverifiedMetric": 1e999}'
+                    elif label == "duplicate-receipt":
+                        receipt = receipt.replace('"status": "complete",',
+                                                  '"status": "complete", "status": "complete",', 1)
+                    elif label == "nonfinite-receipt":
+                        receipt = receipt[:-1] + ', "unverifiedMetric": Infinity}'
+                    else:
+                        receipt = receipt[:-1] + ', "unverifiedMetric": 1e999}'
+
+                    def fake_run(command, **_):
+                        output.write_text(raw_report, encoding="utf-8")
+                        return subprocess.CompletedProcess(command, 0, receipt, "")
+
+                    with patch.object(physical, "NATIVE_EXE", executable), \
+                         patch.object(physical.socket, "gethostname", return_value="AMD-DESKTOP"), \
+                         patch.object(physical.subprocess, "run", side_effect=fake_run):
+                        result = physical.read_native(selection, "player-context", output)
+                    self.assertEqual("blocked", result["status"])
+                    self.assertEqual("invalid-native-reader-receipt" if "receipt" in label
+                                     else "invalid-native-reader-report", result["reason"])
+
 if __name__ == "__main__":
     unittest.main()

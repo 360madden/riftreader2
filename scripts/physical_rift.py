@@ -1248,6 +1248,29 @@ def _valid_unit_keys(keys):
             and len(set(keys)) == len(keys))
 
 
+def _strict_native_json(data):
+    """Refuse ambiguous/invalid numbers before projecting any physical native receipt."""
+    def unique_keys(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate-native-json-key")
+            result[key] = value
+        return result
+
+    def reject_nonfinite(_):
+        raise ValueError("nonfinite-native-json-number")
+
+    def finite_float(value):
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError("overflow-native-json-number")
+        return number
+
+    return json.loads(data, object_pairs_hook=unique_keys, parse_constant=reject_nonfinite,
+                      parse_float=finite_float)
+
+
 def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
                 include_position=False, include_transform_sources=False, include_target=False,
                 unit_limit=None, start_bucket=None, unit_keys=None):
@@ -1344,7 +1367,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
     try:
         # Position emits per-sample JSON lines before its final summary receipt.
         lines = completed.stdout.splitlines()
-        summary = json.loads(lines[-1]) if lines else None
+        summary = _strict_native_json(lines[-1]) if lines else None
     except (ValueError, TypeError):
         return dict(selection, status="blocked", reason="invalid-native-reader-receipt")
     if (not isinstance(summary, dict) or not path.is_file()
@@ -1356,7 +1379,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
         return dict(selection, status="blocked", reason="invalid-native-reader-receipt")
     try:
         report_bytes = path.read_bytes()
-        report = json.loads(report_bytes.decode("utf-8"))
+        report = _strict_native_json(report_bytes.decode("utf-8"))
         observation = report.get("observation")
         identity = report.get("identity") or (observation.get("identity")
                                                 if isinstance(observation, dict) else None)
