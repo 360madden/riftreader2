@@ -2,9 +2,16 @@
 
 Updated **November 13, 2026 (America/New_York)** from checkout
 `C:\work\riftreader2`, branch `codex/modular-foundation`, implementation through
-`b91e2b4`. Review host: **AMD-DESKTOP**. This is the current overall roadmap;
+`6fe3f29` (longer routes in `b91e2b4`, composite-source guard in `570414c`).
+Review host: **AMD-DESKTOP**. This is the current overall roadmap;
 older discovery dispatch plans and the foundation history below are references.
 Existing uncommitted native research is work in progress, not a delivered result.
+
+The latest native integrity fix verifies each vitals burst's source digest,
+build, process epoch, self key and sample count before composite publication.
+Its focused checks and retained-source replay passed; it adds no new live field
+semantics or game observation. See the Nov 13 23:54 entry in the
+[RRE intake record](../workflows/rre-discovery-intake.md).
 
 RR2's purpose remains useful RIFT discovery and repeatable retrieval for other
 programs. The authorized Waypoints work is a working consumer of those readers.
