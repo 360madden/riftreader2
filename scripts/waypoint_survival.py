@@ -98,7 +98,8 @@ class WaypointSurvivalRunner:
     STATES = {"travel", "encounter", "fight", "retreat", "recover", "rejoin", "halt"}
 
     def __init__(self, profile: VerifiedBindingProfile, ports: SurvivalPorts,
-                 *, coordinator=None, checkpoint=None, pending_leg=None):
+                 *, coordinator=None, checkpoint=None, pending_leg=None,
+                 finish_after_retreat=False):
         if not isinstance(profile, VerifiedBindingProfile) or not isinstance(ports, SurvivalPorts):
             raise TypeError("verified profile and survival ports are required")
         self.profile, self.ports = profile, ports
@@ -111,6 +112,8 @@ class WaypointSurvivalRunner:
         self.steps = 0
         self.interrupted_state = None
         self.failure_detail = None
+        self.finish_after_retreat = finish_after_retreat is True
+        self.safe_retreat_completed = False
 
     def snapshot(self):
         return {"version": 1, "state": self.state, "checkpoint": deepcopy(self.checkpoint),
@@ -118,6 +121,7 @@ class WaypointSurvivalRunner:
                 "lastAction": deepcopy(self.last_action), "steps": self.steps,
                 "interruptedState": self.interrupted_state,
                 "failureDetail": self.failure_detail,
+                "safeRetreatCompleted": self.safe_retreat_completed,
                 "coordinator": self.coordinator.snapshot(), "inputSent": False}
 
     def _start_move(self, mode, points):
@@ -289,6 +293,26 @@ class WaypointSurvivalRunner:
         self.coordinator.combat_ready(self._start_move("retreat", points),
                                       self.ports.release_movement)
 
+    def begin_safe_retreat(self):
+        """Start a caller-qualified safeward retreat without another combat action."""
+        if not self.finish_after_retreat or self.state != "travel":
+            raise SurvivalPolicyError("terminal safe retreat is unavailable")
+        try:
+            _, player, _encounter, _abilities = self._telemetry()
+        except (SurvivalPolicyError, KeyError, TypeError, ValueError) as exc:
+            self._critical("critical-unavailable", exc)
+            return self.snapshot()
+        if player["dead"]:
+            self._critical("death")
+            return self.snapshot()
+        points = self._reverse_trail()
+        if not self._reachable(points):
+            self._critical("critical-unavailable")
+            return self.snapshot()
+        self.state = "retreat"
+        self.ports.redirect_movement("retreat", points, deepcopy(self.pending_leg))
+        return self.snapshot()
+
     def _begin_recovery_from_movement(self):
         # The coordinator has no movement→recovery shortcut.  Use its two
         # confirmed handoffs; the combat start callback does not send an action.
@@ -371,6 +395,11 @@ class WaypointSurvivalRunner:
                 if (player["healthPct"] < self.profile.recover_health
                         or not self._resource_recovered(player)):
                     self._begin_recovery_from_movement()
+                elif self.finish_after_retreat:
+                    self.state = "travel"
+                    self.safe_retreat_completed = True
+                    self.ports.redirect_movement(
+                        "travel", [], deepcopy(self.pending_leg))
                 else:
                     self.state = "rejoin"
                     self.ports.redirect_movement(
@@ -381,13 +410,19 @@ class WaypointSurvivalRunner:
                      and player["healthPct"] >= self.profile.recover_health
                      and self._resource_recovered(player))
             if ready:
-                points = self._reverse_trail()
-                if not self._reachable(points):
-                    self._critical("critical-unavailable")
+                if self.finish_after_retreat:
+                    self.state = "travel"
+                    self.safe_retreat_completed = True
+                    self.coordinator.recovery_ready(
+                        self._start_move("travel", []), self.ports.release_movement)
                 else:
-                    self.state = "rejoin"
-                    self.coordinator.recovery_ready(self._start_move("rejoin", points),
-                                                    self.ports.release_movement)
+                    points = self._reverse_trail()
+                    if not self._reachable(points):
+                        self._critical("critical-unavailable")
+                    else:
+                        self.state = "rejoin"
+                        self.coordinator.recovery_ready(self._start_move("rejoin", points),
+                                                        self.ports.release_movement)
 
         elif self.state == "rejoin":
             if encounter["present"]:

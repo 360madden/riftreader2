@@ -112,7 +112,8 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
                        entry_check=None, mover=None, encounter_error=None,
                        clock=time.monotonic, wait_seconds=.05,
                        max_seconds=MAX_TRIP_SECONDS, retreat_max_seconds=30,
-                       minimum_trail_points=1):
+                       minimum_trail_points=1, initial_retreat_trail=None,
+                       assess_before_travel=False, finish_after_retreat=False):
     """Run one pending real route leg at a time with a shared trip budget.
 
     The injected mover has ``continuous_move.move_to``'s contract. Encounter
@@ -142,6 +143,29 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
     if entry_check is not None:
         entry_check(initial.position)
     current = _position(initial)
+    seeded_trail = None
+    if initial_retreat_trail is not None:
+        if (not isinstance(initial_retreat_trail, (list, tuple))
+                or not 2 <= len(initial_retreat_trail) <= 500):
+            raise WaypointError("Initial retreat trail must contain 2-500 retained points")
+        seeded_trail = []
+        seeded_distance = 0.0
+        for item in initial_retreat_trail:
+            point = _position(item)
+            if seeded_trail:
+                seeded_distance += math.hypot(point["x"]-seeded_trail[-1]["x"],
+                                              point["z"]-seeded_trail[-1]["z"])
+            seeded_trail.append(point)
+        if seeded_distance > MAX_ROUTE_DISTANCE:
+            raise WaypointError("Initial retreat trail exceeds the route distance limit")
+        if not _corridor_arrival(current, seeded_trail[-1]["x"],
+                                 seeded_trail[-1]["y"], seeded_trail[-1]["z"]):
+            raise WaypointError("Current pose is not at the retained retreat trail endpoint")
+        safe = seeded_trail[0]
+        if not _corridor_arrival(safe, rows[-1][1], safe["y"], rows[-1][2]):
+            raise WaypointError("Return route does not end at the retained safe endpoint")
+    if finish_after_retreat and seeded_trail is None:
+        raise WaypointError("Terminal safe retreat requires a retained trail")
     original_distance = math.hypot(rows[0][1] - current["x"], rows[0][2] - current["z"])
     original_distance += sum(math.hypot(b[1] - a[1], b[2] - a[2])
                              for a, b in zip(rows, rows[1:]))
@@ -149,8 +173,12 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
         raise WaypointError(f"Route exceeds {MAX_ROUTE_DISTANCE:g} world units")
 
     requested_moves = []
-    movement_release = {"releaseSucceeded": False,
-                        "reason": "No verified native encounter release"}
+    movement_release = ({"releaseSucceeded": True, "desktopInputsDown": [],
+                         "inputSent": False,
+                         "reason": "No route movement input launched before initial assessment"}
+                        if assess_before_travel else
+                        {"releaseSucceeded": False,
+                         "reason": "No verified native encounter release"})
 
     def request_move(mode, requested, pending):
         if mode == "rejoin":
@@ -203,7 +231,8 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
         action_backend.corridor_reachable)
     all_encounters = []
     policy = WaypointSurvivalRunner(profile, ports, checkpoint=0,
-                                    pending_leg=list(rows[0]))
+                                    pending_leg=list(rows[0]),
+                                    finish_after_retreat=finish_after_retreat)
     last_published_state = None
 
     def publish_policy_state(snapshot=None):
@@ -224,7 +253,8 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
             "inputSent": False,
         }})
 
-    policy.record_route_trail_point((current["x"], current["y"], current["z"]))
+    for point in (seeded_trail or [current]):
+        policy.record_route_trail_point((point["x"], point["y"], point["z"]))
     policy.start()
     publish_policy_state()
     requested_moves.clear()  # The outer loop owns ordinary forward travel.
@@ -394,6 +424,36 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
         raise WaypointError("Survival policy step budget exceeded")
 
     results = []
+    if assess_before_travel:
+        if finish_after_retreat:
+            state = policy.begin_safe_retreat()
+            if state["state"] == "halt":
+                detail = state.get("failureDetail")
+                raise WaypointError("Safe retreat admission halted: "
+                    + str(state["coordinator"].get("latchReason") or "unknown")
+                    + ("; " + detail if isinstance(detail,str) and detail else ""))
+            execute_requested_moves()
+        handle_encounter()
+        if policy.safe_retreat_completed:
+            safe = seeded_trail[0]
+            # Recovery may outlast the last movement receipt. Reacquire after
+            # recovery so knockback or outside displacement cannot inherit the
+            # earlier safe pose.
+            final_stationary = read_stationary(adapter, stop)
+            current = _position(final_stationary)
+            if not _corridor_arrival(current, safe["x"], safe["y"], safe["z"]):
+                raise WaypointError("Safe retreat did not finish at the retained safe endpoint")
+            if not _release_confirmed(movement_release):
+                raise WaypointError("Safe retreat input release is unverified")
+            label, x, z = rows[-1]
+            verified = dict(movement_release, status="arrived", name=label,
+                            goal={"x":x,"z":z}, position=dict(current), safeRetreat=True,
+                            survival={"encounters":all_encounters,"state":policy.snapshot(),
+                                      "sharedElapsedSeconds":round(clock()-started,3),
+                                      "plannedRouteDistance":original_distance,
+                                      "auxiliaryDistance":auxiliary_distance})
+            emit(verified)
+            return [verified]
     for index, row in enumerate(rows):
         policy.pending_leg = list(row)
         encounter_start = len(all_encounters)

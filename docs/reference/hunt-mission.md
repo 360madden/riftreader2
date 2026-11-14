@@ -128,6 +128,73 @@ show verified input release with no desktop inputs down. This proves only the
 walked corridor retained in that run; it is not general pathfinding or a claim
 that all future traversals are safe.
 
+### Low-health retreat is not yet mission-qualified
+
+The deliberate encounter refuses another action when player health is at or
+below the profile's `retreatBelowPct`, or when its existing losing-threat check
+fires. It returns blocked with reason `selected-encounter-unsafe` after cleanup.
+The mission admits that reason only when release is verified, then seeds a new
+survival policy with the actual retained safe→hunt corridor from the same
+outbound run.
+
+This special path is also used when the local bounded hunt time expires with
+verified cleanup. It performs fresh survival assessment before ordinary return
+travel, forces the existing movement backend along the reversed retained trail
+toward the safe anchor, and uses the existing recovery thresholds and ownership
+handoffs. After recovery it obtains a new stationary pose; the earlier movement
+receipt cannot stand in for the final location. It terminates at safe instead of
+rejoining the hostile point. STOP, overall mission-deadline expiry, stale
+telemetry, an unknown release or a fresh final pose outside the safe-anchor
+tolerance all refuse completion. A local hunt timeout does not extend the
+overall mission deadline. The retreat does not add kill credit and reports
+`retreated-no-qualified-kill` after a verified safe recovery.
+
+This behavior has focused offline coverage for safeward direction, initial
+assessment before ordinary travel, recovery, STOP during recovery and the final
+safe pose. It has not been physically accepted against a hostile, so it is not
+yet evidence of a generally reliable fight-or-retreat mission.
+
+Automatic return is deliberately narrow. Besides a qualified completed kill,
+only `kill-credit-unverified` after a recovered ended encounter,
+`selected-encounter-unsafe`, and the local `encounter-deadline` may proceed.
+Selection changes, identity or
+freshness failures, manual takeover, STOP and other blocked reasons do not gain
+return authority merely because a result repeats the expected target ID.
+
+## Next-target cycling contract
+
+The native helper now has an offline-tested, hard-bounded Tab cycle command:
+
+```text
+target-cycle --expected-host HOST --pid PID
+  --expect-start-ticks TICKS --expect-sha256 SHA256 --expect-hwnd HWND
+  --expect-player-key DECIMAL --owner-pid OWNER_PID
+  --owner-start-ticks OWNER_TICKS --stop-file ABSOLUTE_PATH
+  [--expect-target-key DECIMAL] [--execute] --json
+```
+
+All identity and owner fields and the absolute, initially absent stop file are
+mandatory. `--expect-target-key 0` means the reviewed state explicitly had no
+selected unit. Omitting that option still requires the old selection to be
+readable before the pulse. Execution is one 40 ms Tab pulse with no request to
+take focus. The receipt reports `ready`, `completed`, `blocked` or `halted`, plus
+`inputSent`, `keyDownInserted`, `releaseSucceeded`, `desktopInputsDown`, decimal
+string `playerKey` and `selectedTargetKeyBefore`, `selectionReadAtUtc`, pinned
+target/owner/stop evidence, `releaseFallback`, `holdMilliseconds: 40`, and
+`responseVerified: false`.
+
+This command establishes only a bounded key attempt and release. It does not
+establish that RIFT consumed Tab or that a new target is hostile, attackable,
+suitable, inside the hunt radius or even different. A future mission integration
+must reacquire and qualify the resulting exact target through the ordinary
+fresh native/addon admission before any action; it must stop on no target,
+unchanged target, friendly/unknown relation, identity change, out-of-radius
+position, STOP or unverified release. It must never promote a name or species to
+instance authority. The current hunt orchestrator does not call `target-cycle`
+and still handles one explicitly selected target only. Native focused tests and
+a Release build pass; physical Tab delivery and mission integration remain
+pending.
+
 ## STOP, deadline and Resume
 
 Ctrl+C/F8 and the existing STOP path share one latch. The same deadline-aware

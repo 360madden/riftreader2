@@ -1,5 +1,20 @@
 # Current status
 
+**November 14 — hunt safety retreat wired and tested offline; live Resume pending.**
+After verified encounter cleanup, low health/losing conditions or the local
+two-minute hunt timeout now use the same run's retained outbound corridor toward
+the safe anchor. The existing survival controller assesses current telemetry
+before movement, retreats, recovers and finishes at safety without rejoining
+the hostile point. A fresh stationary pose after recovery must still match the
+anchor. This path reports `retreated-no-qualified-kill`; arbitrary blocked
+outcomes, identity/selection changes, unknown release, STOP and the global trip
+deadline cannot authorize return movement. The root's combined Python gate
+passed 81 mission/runtime/policy/route-runner tests, and the combined native
+movement/input gate passed 156 tests. Physical round-trip and hostile
+retreat/recovery acceptance remain pending. The one-shot target-cycle CLI is
+implemented and tested separately; the mission does not yet use it, and its
+live Tab response remains unverified. [Mission operations](reference/hunt-mission.md).
+
 **November 14 — Casting 0.5.1 activated; camp approach stopped safely before the hunt.**
 On AMD-DESKTOP, the backed-up local installation loaded 0.5.1 and published two
 advancing nonce/player-bound survival frames, including `deathScope=exact-unit-death/1`.
@@ -9,7 +24,7 @@ verified release. A subsequent 12.79-unit leg missed the 0.30-unit arrival radiu
 and halted on the unchanged drift guard, 0.635 units from its goal. Its native
 receipt reports successful release and no pressed inputs; two later poses were
 identical. No deliberate encounter was started, and movement remains stopped
-pending diagnosis and explicit Resume. The cached RiftWorld detour is preview
+pending explicit Resume and physical acceptance. The cached RiftWorld detour is preview
 context; only actual native walked receipts can become the retreat corridor.
 The trace attributes the miss to a 1.61-degree initial residual accepted by the
 old two-degree departure limit. A distance-aware initial alignment limit now
@@ -17,8 +32,12 @@ reduces this leg's tolerance to 1.209 degrees before W starts, without changing
 moving steering, the drift guard or the arrival radius. The trace-shaped
 regression and 135 neighboring Release tests pass; the active Debug helper is
 rebuilt. This correction still needs physical acceptance after explicit Resume.
+The failed leg nevertheless used one W hold and no moving A/D events; 34
+forward-motion samples had a 0.005574-degree optical camera yaw candidate range.
+That is retained candidate evidence, not visual or universal camera acceptance.
 Evidence: `artifacts/hunt-loop-20261114/live-051-report.json`,
-`artifacts/waypoint-run-e701dbbbf36b4e168809545dd5d5c97d.json` and its input receipt.
+`artifacts/waypoint-run-e701dbbbf36b4e168809545dd5d5c97d.json`, its input receipt,
+and `artifacts/hunt-loop-20261114/approach-halt-camera.json`.
 
 **November 14 — bounded hunt mission CLI implemented offline; physical acceptance pending.**
 The new CLI validates a hash-bound safe anchor, outbound route, survival profile,

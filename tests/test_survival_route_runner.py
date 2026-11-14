@@ -364,6 +364,71 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
                         minimum_trail_points=3)
         self.assertEqual([(10.0, 0.0)], calls)
 
+    def test_initial_unsafe_encounter_retreats_safeward_and_recovers_before_route_travel(self):
+        unsafe=observed(present=True,combat=True); unsafe["player"]["healthPct"]=20
+        recovering=observed(); recovering["player"]["healthPct"]=50
+        backend=Backend([observed(present=True,combat=True),unsafe,recovering,observed()])
+        calls=[]; current=[4.0,0.0]
+        def mover(adapter,x,z,stop,emit,**options):
+            calls.append((x,z,options["survival_guard"]))
+            result=arrived(x,z,*current); current[:]=[x,z]; emit(result); return result
+        events=[]
+        with patch("scripts.physical_waypoints.read_stationary",
+                   side_effect=[pose(4,0),pose(0,0)]):
+            results=run_survival_route(object(),[("hunt",4,0),("safe",0,0)],
+                threading.Event(),events.append,profile=PROFILE,telemetry=backend.telemetry,
+                action_backend=backend,mover=mover,encounter_error=Interrupted,wait_seconds=0,
+                initial_retreat_trail=[{"x":0,"y":5,"z":0},{"x":2,"y":5,"z":0},
+                                       {"x":4,"y":5,"z":0}],
+                assess_before_travel=True,finish_after_retreat=True)
+        self.assertEqual([(0.0,0.0,"retreat")],calls)
+        self.assertTrue(results[0]["safeRetreat"])
+        self.assertEqual({"x":0.0,"y":5.0,"z":0.0},results[0]["position"])
+        self.assertIn(("recovery-start",),backend.calls)
+        self.assertEqual("safe",results[0]["name"])
+
+    def test_post_recovery_fresh_pose_off_safe_anchor_refuses_completion(self):
+        unsafe=observed(present=True,combat=True); unsafe["player"]["healthPct"]=20
+        recovering=observed(); recovering["player"]["healthPct"]=50
+        backend=Backend([observed(present=True,combat=True),unsafe,recovering,observed()])
+        current=[4.0,0.0]
+        def mover(adapter,x,z,stop,emit,**options):
+            result=arrived(x,z,*current); current[:]=[x,z]; emit(result); return result
+        with patch("scripts.physical_waypoints.read_stationary",
+                   side_effect=[pose(4,0),pose(1,0)]):
+            with self.assertRaisesRegex(Exception,"did not finish at the retained safe endpoint"):
+                run_survival_route(object(),[("hunt",4,0),("safe",0,0)],threading.Event(),
+                    profile=PROFILE,telemetry=backend.telemetry,action_backend=backend,
+                    mover=mover,encounter_error=Interrupted,wait_seconds=0,
+                    initial_retreat_trail=[{"x":0,"y":5,"z":0},{"x":2,"y":5,"z":0},
+                                           {"x":4,"y":5,"z":0}],
+                    assess_before_travel=True,finish_after_retreat=True)
+
+    def test_stop_during_terminal_safe_recovery_never_starts_ordinary_return(self):
+        unsafe=observed(present=True,combat=True); unsafe["player"]["healthPct"]=20
+        recovering=observed(); recovering["player"]["healthPct"]=50
+        backend=Backend([observed(present=True,combat=True),unsafe,recovering,observed()])
+        stop=threading.Event(); telemetry_calls=[0]; original=backend.telemetry
+        def telemetry():
+            telemetry_calls[0]+=1; value=original()
+            if telemetry_calls[0] == 4: stop.set()
+            return value
+        backend.telemetry=telemetry
+        calls=[]; current=[4.0,0.0]
+        def mover(adapter,x,z,ignored_stop,emit,**options):
+            calls.append((x,z,options["survival_guard"]))
+            result=arrived(x,z,*current); current[:]=[x,z]; emit(result); return result
+        with patch("scripts.physical_waypoints.read_stationary",return_value=pose(4,0)):
+            with self.assertRaisesRegex(Exception,"Stopped"):
+                run_survival_route(object(),[("hunt",4,0),("safe",0,0)],stop,
+                    profile=PROFILE,telemetry=backend.telemetry,action_backend=backend,
+                    mover=mover,encounter_error=Interrupted,wait_seconds=0,
+                    initial_retreat_trail=[{"x":0,"y":5,"z":0},{"x":2,"y":5,"z":0},
+                                           {"x":4,"y":5,"z":0}],
+                    assess_before_travel=True,finish_after_retreat=True)
+        self.assertEqual([(0.0,0.0,"retreat")],calls)
+        self.assertTrue(stop.is_set())
+
     def test_healthy_retreat_rejoins_any_retained_sample_and_resumes_pending_leg(self):
         from scripts.waypoint_survival_runtime import _PolicyBackend
 

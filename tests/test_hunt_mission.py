@@ -85,8 +85,11 @@ class HuntMissionTests(unittest.TestCase):
             from scripts.waypoint_progress import RouteProgress
             cursor = RouteProgress(document, "forward", adapter.binding["runtimeIdentity"])
             cursor.begin({"x":4.0,"y":5.0,"z":6.0})
-            return ([{"status":"arrived","position":{"x":1.0,"y":5.0,"z":2.0}}],
-                    SimpleNamespace(next_index=1,direction="forward",ordered_points=document["waypoints"]))
+            return ([{"status":"arrived","releaseSucceeded":True,"desktopInputsDown":[],
+                      "position":{"x":4.0,"y":5.0,"z":6.0}},
+                     {"status":"arrived","releaseSucceeded":True,"desktopInputsDown":[],
+                      "position":{"x":1.0,"y":5.0,"z":2.0}}],
+                    SimpleNamespace(next_index=2,direction="forward",ordered_points=document["waypoints"]))
         leg={"status":"arrived","position":{"x":4.0,"y":5.0,"z":6.0},
              "releaseSucceeded":True,"desktopInputsDown":[],
              "path":[{"x":1.0,"y":5.0,"z":2.0},{"x":2.0,"y":5.0,"z":3.3},
@@ -170,6 +173,25 @@ class HuntMissionTests(unittest.TestCase):
                 profile_path=self.profile,checkpoint=self.checkpoint,adapter=Adapter(),runtime=Runtime(),
                 stop=threading.Event(),playback=self.playback,emit=self.outputs.append,
                 resume=True,clock=lambda:10.0)
+
+    def test_selection_or_identity_failure_cannot_become_automatic_return(self):
+        for reason in ("selection-changed-during-recovery","survival-frame-target-mismatch",
+                       "selected-hostile-alive-target-required"):
+            with self.subTest(reason=reason):
+                mission,route,_=cli.load_definition(self.mission,self.route,self.profile)
+                checkpoint=self.root/(reason+".json")
+                runtime=Runtime({"status":"blocked","reason":reason,
+                    "selectedTargetId":TARGET,"releaseSucceeded":True,
+                    "desktopInputsDown":[],"killProof":{"qualified":False}})
+                calls=[]
+                def playback(*args,**kwargs):
+                    calls.append("return" if args[1].get("provenance") else "outbound")
+                    return self.playback(*args,**kwargs)
+                with self.assertRaisesRegex(cli.MissionError,"not authorized for automatic return"):
+                    cli.run_mission(mission=mission,route_document=route,route_path=self.route,
+                        profile_path=self.profile,checkpoint=checkpoint,adapter=Adapter(),runtime=runtime,
+                        stop=threading.Event(),playback=playback,emit=self.outputs.append,clock=lambda:10.0)
+                self.assertEqual(["outbound"],calls)
 
     def test_stop_and_discontinuous_path_refuse(self):
         mission,route,_=cli.load_definition(self.mission,self.route,self.profile)
@@ -256,6 +278,70 @@ class HuntMissionTests(unittest.TestCase):
         self.assertEqual(["outbound"],play_stages)
         self.assertEqual(["controls-enter","controls-exit"],[item[0] for item in calls])
         self.assertIs(calls[0][1],shared_stop); self.assertIs(calls[1][1],shared_stop)
+
+    def test_unsafe_encounter_uses_verified_safeward_trail_before_any_normal_return(self):
+        encounter={"status":"blocked","reason":"selected-encounter-unsafe",
+            "selectedTargetId":TARGET,"releaseSucceeded":True,"desktopInputsDown":[],
+            "killProof":{"qualified":False}}
+        class RetreatRuntime(Runtime):
+            def route_runner(self,adapter,points,stop,emit,**kwargs):
+                self.calls.append(("safe-retreat",points,kwargs))
+                self.assertions=(points,kwargs)
+                return [{"status":"arrived","safeRetreat":True,"releaseSucceeded":True,
+                    "desktopInputsDown":[],"position":{"x":1.0,"y":5.0,"z":2.0}}]
+        runtime=RetreatRuntime(encounter); playback_calls=[]
+        def playback(*args,**kwargs):
+            playback_calls.append("return" if args[1].get("provenance") else "outbound")
+            return self.playback(*args,**kwargs)
+        mission,route,_=cli.load_definition(self.mission,self.route,self.profile)
+        result=cli.run_mission(mission=mission,route_document=route,route_path=self.route,
+            profile_path=self.profile,checkpoint=self.checkpoint,adapter=Adapter(),runtime=runtime,
+            stop=threading.Event(),playback=playback,emit=self.outputs.append,clock=lambda:10.0)
+        self.assertEqual(["outbound"],playback_calls)
+        points,options=runtime.assertions
+        self.assertEqual([["Return 1",4.0,6.0],["Return 2",1.0,2.0]],points)
+        self.assertEqual([(1.0,5.0,2.0),(4.0,5.0,6.0)],
+            [(p["x"],p["y"],p["z"]) for p in options["initial_retreat_trail"]])
+        self.assertTrue(options["assess_before_travel"] and options["finish_after_retreat"])
+        self.assertEqual("retreated-no-qualified-kill",result["status"])
+        self.assertEqual(0,result["killCount"]); self.assertTrue(result["safeReturned"])
+
+    def test_safe_retreat_corridor_identity_is_exact(self):
+        document={"provenance":{"runtimeIdentity":dict(
+            Adapter.binding["runtimeIdentity"],unitKey="2")}}
+        with self.assertRaisesRegex(cli.MissionError,"another runtime identity"):
+            cli._verify_return_identity(document,Adapter())
+
+    def test_local_hunt_deadline_retreats_but_global_deadline_forbids_return(self):
+        mission,route,_=cli.load_definition(self.mission,self.route,self.profile)
+        local={"status":"blocked","reason":"encounter-deadline","selectedTargetId":TARGET,
+               "releaseSucceeded":True,"desktopInputsDown":[],"killProof":{"qualified":False}}
+        class DeadlineRuntime(Runtime):
+            def route_runner(self,adapter,points,stop,emit,**kwargs):
+                self.calls.append(("safe-retreat",kwargs))
+                return [{"status":"arrived","safeRetreat":True,"releaseSucceeded":True,
+                    "desktopInputsDown":[],"position":{"x":1.0,"y":5.0,"z":2.0}}]
+        runtime=DeadlineRuntime(local)
+        result=cli.run_mission(mission=mission,route_document=route,route_path=self.route,
+            profile_path=self.profile,checkpoint=self.checkpoint,adapter=Adapter(),runtime=runtime,
+            stop=threading.Event(),playback=self.playback,emit=self.outputs.append,clock=lambda:10.0)
+        self.assertEqual("retreated-no-qualified-kill",result["status"])
+        self.assertEqual(1,len([call for call in runtime.calls if call[0]=="safe-retreat"]))
+
+        checkpoint=self.root/"global-deadline.json"; now=[10.0]; runtime=Runtime(local)
+        original=runtime.selected_encounter
+        def encounter(*args,**kwargs):
+            value=original(*args,**kwargs); now[0]=1810.0; return value
+        runtime.selected_encounter=encounter; playback_calls=[]
+        def playback(*args,**kwargs):
+            playback_calls.append("return" if args[1].get("provenance") else "outbound")
+            return self.playback(*args,**kwargs)
+        stop=threading.Event()
+        with self.assertRaisesRegex(cli.MissionError,"deadline expired during encounter"):
+            cli.run_mission(mission=mission,route_document=route,route_path=self.route,
+                profile_path=self.profile,checkpoint=checkpoint,adapter=Adapter(),runtime=runtime,
+                stop=stop,playback=playback,emit=self.outputs.append,clock=lambda:now[0])
+        self.assertEqual(["outbound"],playback_calls); self.assertTrue(stop.is_set())
 
 
 if __name__=="__main__": unittest.main()

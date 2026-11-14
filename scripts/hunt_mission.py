@@ -190,17 +190,44 @@ def _walked_corridor(legs):
     return retained
 
 
-def _return_document(corridor):
+def _return_document(corridor, identity=None):
     # RouteProgress.begin admits a new route at its first waypoint.
     destinations = list(reversed(corridor))
     if not destinations: raise MissionError("verified return corridor has no destination")
+    provenance={"kind":"native-retained-walked-corridor","retainedPoints":len(corridor)}
+    if identity is not None: provenance["runtimeIdentity"]=deepcopy(identity)
     return {"waypoints": [[f"Return {i}", p[0], p[2]] for i,p in enumerate(destinations,1)],
         "heights": [p[1] for p in destinations],
-        "provenance": {"kind": "native-retained-walked-corridor", "retainedPoints": len(corridor)}}
+        "provenance": provenance}
+
+
+def _verify_return_identity(document, adapter):
+    expected=((document.get("provenance") or {}).get("runtimeIdentity")
+              if isinstance(document,dict) else None)
+    actual=((getattr(adapter,"binding",None) or {}).get("runtimeIdentity"))
+    keys=("machine","gameBuildSha256","unitKey")
+    if (not isinstance(expected,dict) or not isinstance(actual,dict)
+            or any(not isinstance(expected.get(key),str) or not expected[key]
+                   or expected[key].casefold() != str(actual.get(key,"")).casefold()
+                   for key in keys)):
+        raise MissionError("verified return corridor belongs to another runtime identity")
 
 
 def _release_verified(value):
     return isinstance(value, dict) and value.get("releaseSucceeded") is True and value.get("desktopInputsDown") == []
+
+
+def _verify_return(legs, cursor):
+    if not isinstance(legs,list) or not legs:
+        raise MissionError("return route produced no verified legs")
+    for leg in legs:
+        if not isinstance(leg,dict) or leg.get("status") != "arrived":
+            raise MissionError("return leg is not a verified arrival")
+        if not _release_verified(leg) or leg.get("allInputsReleased",True) is not True:
+            raise MissionError("return leg input release is unverified")
+    if (not hasattr(cursor,"next_index") or not hasattr(cursor,"ordered_points")
+            or cursor.next_index != len(cursor.ordered_points)):
+        raise MissionError("return route is incomplete")
 
 
 def _kill_proof(value, expected):
@@ -229,10 +256,11 @@ def _load_progress(path, mission):
     if (value.get("schema") != CHECKPOINT_SCHEMA or value.get("missionBinding") != mission["binding"]
             or value.get("mission") != mission["name"]):
         raise MissionError("mission checkpoint does not match this mission")
-    if value.get("stage") not in {"outbound","encounter","encounter-started","return","complete"}:
+    if value.get("stage") not in {"outbound","encounter","encounter-started","return",
+                                  "safe-retreat-started","complete"}:
         raise MissionError("mission checkpoint stage is invalid")
-    if value.get("stage") == "encounter-started":
-        raise MissionError("prior encounter outcome is ambiguous; do not retry or count a kill")
+    if value.get("stage") in {"encounter-started","safe-retreat-started"}:
+        raise MissionError("prior encounter or retreat outcome is ambiguous; do not retry or count a kill")
     return value
 
 
@@ -274,7 +302,8 @@ def run_mission(*, mission, route_document, route_path, profile_path, checkpoint
                 or abs(corridor[0][1]-safe["y"]) > safe["heightTolerance"]):
             raise MissionError("retained outbound corridor does not reach the safe anchor")
         progress.update(stage="encounter", outboundNextIndex=cursor.next_index,
-                        returnDocument=_return_document(corridor)); write_json_atomic(checkpoint, progress)
+                        returnDocument=_return_document(
+                            corridor,adapter.binding["runtimeIdentity"])); write_json_atomic(checkpoint, progress)
     if progress["stage"] == "encounter":
         if clock() >= deadline: raise MissionError("mission deadline expired before encounter")
         progress["stage"]="encounter-started"; write_json_atomic(checkpoint, progress)
@@ -290,6 +319,12 @@ def run_mission(*, mission, route_document, route_path, profile_path, checkpoint
         if encounter.get("status") in {"stopped", "halted"}:
             mission_stop.set()
             raise MissionError("encounter stopped or halted; return movement blocked")
+        status, reason = encounter.get("status"), encounter.get("reason")
+        if not (status == "completed" or
+                status == "blocked" and reason in {
+                    "kill-credit-unverified", "selected-encounter-unsafe",
+                    "encounter-deadline"}):
+            raise MissionError("encounter outcome is not authorized for automatic return")
         selected = encounter.get("selectedTargetId")
         target_matches = (isinstance(selected, str)
                           and selected.casefold() == hunt["expectedTargetId"].casefold())
@@ -298,19 +333,48 @@ def run_mission(*, mission, route_document, route_path, profile_path, checkpoint
             write_json_atomic(checkpoint, progress)
             raise MissionError("encounter selected target changed after input or without verified release")
         proof=_kill_proof(encounter,hunt["expectedTargetId"]) if target_matches else None
+        if status == "completed" and proof is None:
+            raise MissionError("completed encounter has no qualified kill proof")
         if proof is not None: progress["killProofs"].append(proof); progress["killCount"]+=1
         if not _release_verified(encounter):
             write_json_atomic(checkpoint,progress)
             raise MissionError("encounter input release is unverified; return movement blocked")
-        progress["stage"]="return"; write_json_atomic(checkpoint,progress)
+        progress["stage"]=("safe-retreat-started" if encounter.get("reason") in {
+                           "selected-encounter-unsafe","encounter-deadline"} else "return")
+        write_json_atomic(checkpoint,progress)
+    if progress["stage"] == "safe-retreat-started":
+        document=progress.get("returnDocument")
+        if not isinstance(document,dict): raise MissionError("verified return corridor is unavailable")
+        _verify_return_identity(document,adapter)
+        waypoints=document.get("waypoints"); heights=document.get("heights")
+        if (not isinstance(waypoints,list) or not isinstance(heights,list)
+                or len(waypoints) != len(heights)):
+            raise MissionError("verified safe-retreat corridor is invalid")
+        trail=[{"x":point[1],"y":height,"z":point[2]}
+               for point,height in zip(reversed(waypoints),reversed(heights))]
+        legs=runtime.route_runner(adapter,waypoints,mission_stop,event("safe-retreat"),
+            face_waypoints=True,initial_retreat_trail=trail,
+            assess_before_travel=True,finish_after_retreat=True)
+        require_budget("safe retreat")
+        if not legs or legs[-1].get("safeRetreat") is not True:
+            raise MissionError("unsafe encounter did not complete the verified safe retreat")
+        point=_point(legs[-1].get("position"),"safe retreat final position")
+        safe=mission["safeAnchor"]
+        if (math.hypot(point["x"]-safe["x"],point["z"]-safe["z"])>safe["planarTolerance"]
+                or abs(point["y"]-safe["y"])>safe["heightTolerance"]):
+            raise MissionError("safe retreat did not finish at the safe anchor")
+        progress.update(stage="complete",completed=True,finalPosition=point,
+                        safeRetreat=deepcopy(legs[-1])); write_json_atomic(checkpoint,progress)
     if progress["stage"] == "return":
         if clock() >= deadline: raise MissionError("mission deadline expired before return")
         document=progress.get("returnDocument")
         if not isinstance(document,dict): raise MissionError("verified return corridor is unavailable")
+        _verify_return_identity(document,adapter)
         legs,cursor=playback(adapter,document,mission_stop,event("return"),runner=runtime.route_runner,
             checkpoint=return_checkpoint,direction="forward",
             resume=resume and return_checkpoint.is_file(),face_waypoints=True)
         require_budget("return")
+        _verify_return(legs,cursor)
         final=legs[-1].get("position") if legs else None; point=_point(final,"return final position")
         safe=mission["safeAnchor"]
         if (math.hypot(point["x"]-safe["x"],point["z"]-safe["z"])>safe["planarTolerance"]
@@ -318,7 +382,9 @@ def run_mission(*, mission, route_document, route_path, profile_path, checkpoint
             raise MissionError("return did not finish at safe anchor")
         progress.update(stage="complete",completed=True,returnNextIndex=cursor.next_index,
                         finalPosition=point); write_json_atomic(checkpoint,progress)
-    outcome = "completed" if progress.get("killCount",0) > 0 else "returned-no-qualified-kill"
+    outcome = ("completed" if progress.get("killCount",0) > 0 else
+               "retreated-no-qualified-kill" if progress.get("safeRetreat") else
+               "returned-no-qualified-kill")
     return {"status":outcome,"mission":mission["name"],"safeReturned":progress.get("completed") is True,
         "killCount":progress.get("killCount",0),"maximumKills":mission["hunt"]["maximumKills"],
         "additionalTargetSelection":"unsupported-explicit-selected-target-only",

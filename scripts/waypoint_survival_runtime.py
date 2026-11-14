@@ -1011,7 +1011,8 @@ class WaypointSurvivalRuntime:
         return result
 
     def route_runner(self, adapter, points, stop, emit, face_waypoints=True,
-                     entry_check=None):
+                     entry_check=None, initial_retreat_trail=None,
+                     assess_before_travel=False, finish_after_retreat=False):
         self.preflight(adapter, stop)
         with self._lock:
             self._active, self._state, self._owner = True, "travel", "movement"
@@ -1029,7 +1030,10 @@ class WaypointSurvivalRuntime:
                 face_waypoints=face_waypoints, entry_check=entry_check,
                 wait_seconds=self._profile["timing"]["pollMilliseconds"] / 1000,
                 retreat_max_seconds=self._profile["retreat"]["maximumSeconds"],
-                minimum_trail_points=self._profile["retreat"]["minimumTrailPoints"])
+                minimum_trail_points=self._profile["retreat"]["minimumTrailPoints"],
+                initial_retreat_trail=initial_retreat_trail,
+                assess_before_travel=assess_before_travel,
+                finish_after_retreat=finish_after_retreat)
         except BaseException as exc:
             from scripts.physical_waypoints import Stopped
             terminal = "stopped" if isinstance(exc, Stopped) else "halted"
