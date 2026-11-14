@@ -16,16 +16,16 @@ internal static class CurrentBuildFacingSampleCommand
             pid, ticks, CurrentBuildPlayerLookup.GameSha256, TimeSpan.FromSeconds(3), token),
         static async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(
             pid, ticks, CurrentBuildPlayerLookup.GameSha256, token),
-        CurrentBuildFacingCandidateReader.Read,
-        readPacedObservation: session => CurrentBuildFacingCandidateReader.ReadStableObservation(session, ct));
+        session => CurrentBuildFacingCandidateReader.ReadStableObservation(session, ct),
+        CurrentBuildFacingCandidateReader.Read);
 
     internal static async Task<int> RunAsync(IReadOnlyDictionary<string, string> options,
         TextWriter output, CancellationToken ct,
         Func<int, long, CancellationToken, Task<IAsyncDisposable>> acquireLease,
         Func<int, long, CancellationToken, Task<IReadOnlyNativeMemorySession>> open,
-        Func<IReadOnlyNativeMemorySession, CurrentBuildFacingCandidate> read,
-        Func<IReadOnlyNativeMemorySession, CurrentBuildPairedPositionObservation>? readTarget = null,
-        Func<IReadOnlyNativeMemorySession, CurrentBuildFacingCandidate>? readPacedObservation = null)
+        Func<IReadOnlyNativeMemorySession, CurrentBuildFacingCandidate> readObservation,
+        Func<IReadOnlyNativeMemorySession, CurrentBuildFacingCandidate> readStrict,
+        Func<IReadOnlyNativeMemorySession, CurrentBuildPairedPositionObservation>? readTarget = null)
     {
         if (!options.TryGetValue("--pid", out var rawPid) ||
             !int.TryParse(rawPid, NumberStyles.None, CultureInfo.InvariantCulture, out var pid) || pid <= 0 ||
@@ -48,8 +48,9 @@ internal static class CurrentBuildFacingSampleCommand
                            StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Facing session identity mismatch.");
         var observations = new List<CurrentBuildFacingCandidate>(count);
-        var sampleReader = count > 1 && interval > 0 && !includeTarget && readPacedObservation is not null
-            ? readPacedObservation : read;
+        // A target pair must stay inside its original two strict facing reads.
+        // Every independent pose can reacquire its entire sample on payload drift.
+        var sampleReader = includeTarget ? readStrict : readObservation;
         for (var index = 0; index < count; index++)
         {
             ct.ThrowIfCancellationRequested();
@@ -59,7 +60,7 @@ internal static class CurrentBuildFacingSampleCommand
             if (includeTarget)
             {
                 var pair = readTarget is null ? CurrentBuildPairedPositionCandidateReader.Read(session) : readTarget(session);
-                var after = read(session);
+                var after = readStrict(session);
                 sample = AttachTargetBracket(sample, pair, after, identity, timer.Elapsed);
             }
             if (sample.Identity != identity || session.Identity != identity || sample.PlayerKey == 0 ||

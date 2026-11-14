@@ -115,6 +115,52 @@ public sealed class CurrentBuildFacingTests
         public override long GetTimestamp() => Milliseconds;
     }
 
+    [Theory]
+    [InlineData(0x320, false, 2)]
+    [InlineData(0x320, true, 3)]
+    [InlineData(0x3F8, false, 1)]
+    public async Task SinglePoseReacquiresOnlyTransientPayloadAndPublishesOnlyCompleteObservation(
+        int changedOffset, bool persistent, int expectedAttempts)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"rr2-single-facing-{Guid.NewGuid():N}.json");
+        var session = new Fake { ChangeOnSecondRead = changedOffset, ChangeEveryReread = persistent };
+        var attempts = 0;
+        try
+        {
+            var options = new Dictionary<string, string> { ["--pid"] = "123", ["--start-ticks"] = "456",
+                ["--samples"] = "1", ["--output"] = path };
+            var result = CurrentBuildFacingSampleCommand.RunAsync(options, new StringWriter(), default,
+                (_, _, _) => Task.FromResult<IAsyncDisposable>(new Lease(() => Assert.True(session.Disposed))),
+                (_, _, _) => Task.FromResult<IReadOnlyNativeMemorySession>(session),
+                source => CurrentBuildFacingCandidateReader.ReadStableObservation(check =>
+                {
+                    attempts++;
+                    if (attempts == 2) session.Float(0x320, 108);
+                    return CurrentBuildFacingCandidateReader.Read(source,
+                        _ => new(42, Entity, SystemAddress, () => { }), Orientation, check);
+                }, default, new ManualClock()),
+                _ => throw new InvalidOperationException("Single pose entered target bracket."));
+
+            if (changedOffset == 0x320 && !persistent)
+            {
+                Assert.Equal(0, await result);
+                using var report = JsonDocument.Parse(await File.ReadAllTextAsync(path));
+                var observation = report.RootElement.GetProperty("observation");
+                Assert.Equal(expectedAttempts, observation.GetProperty("captureAttempts").GetInt32());
+                Assert.InRange(observation.GetProperty("positionCandidate").GetProperty("x").GetDouble(),
+                    107.99, 108.01);
+                Assert.Equal(1, session.Revalidations);
+            }
+            else
+            {
+                await Assert.ThrowsAsync<InvalidDataException>(() => result);
+                Assert.False(File.Exists(path));
+            }
+            Assert.Equal(expectedAttempts, attempts);
+        }
+        finally { File.Delete(path); }
+    }
+
     [Fact]
     public void ReportsPrimaryGetterYawSeparatelyFromSecondaryBodyAngle()
     {
@@ -170,7 +216,8 @@ public sealed class CurrentBuildFacingTests
                         Assert.True(session.Disposed);
                         leaseReleased = true;
                     })),
-                    (_, _, _) => Task.FromResult<IReadOnlyNativeMemorySession>(session), read);
+                    (_, _, _) => Task.FromResult<IReadOnlyNativeMemorySession>(session), read,
+                    _ => throw new InvalidOperationException("Unpaced observations entered target bracket."));
             Assert.Equal(0, await Run(_ => { reads++; return Read(session); }));
             Assert.Equal(3, reads);
             Assert.Equal(1, session.Revalidations);
@@ -233,7 +280,8 @@ public sealed class CurrentBuildFacingTests
             }
             var run = CurrentBuildFacingSampleCommand.RunAsync(options, new StringWriter(), CancellationToken.None,
                 (_, _, _) => Task.FromResult<IAsyncDisposable>(new Lease(() => Assert.True(session.Disposed))),
-                (_, _, _) => Task.FromResult<IReadOnlyNativeMemorySession>(session), Facing, Target);
+                (_, _, _) => Task.FromResult<IReadOnlyNativeMemorySession>(session),
+                _ => throw new InvalidOperationException("Target bracket entered pose reacquisition."), Facing, Target);
             if (fault == 2)
             {
                 await Assert.ThrowsAsync<InvalidDataException>(() => run);
@@ -273,6 +321,7 @@ public sealed class CurrentBuildFacingTests
         public byte[] Raw { get; } = new byte[0x400];
         public CurrentBuildXyz ComponentPosition { get; init; } = new(100, 20, 200);
         public int? ChangeOnSecondRead { get; init; }
+        public bool ChangeEveryReread { get; init; }
         public bool OwnerVerified { get; set; }
         public bool Disposed { get; private set; }
         public int Revalidations { get; private set; }
@@ -303,7 +352,8 @@ public sealed class CurrentBuildFacingTests
             var offset = checked((int)(address - SystemAddress));
             var value = Raw.AsSpan(offset, length).ToArray();
             counts[offset] = counts.GetValueOrDefault(offset) + 1;
-            if (offset == ChangeOnSecondRead && counts[offset] > 1) value[0] ^= 1;
+            if (offset == ChangeOnSecondRead && (ChangeEveryReread ? counts[offset] % 2 == 0 : counts[offset] > 1))
+                value[0] ^= 1;
             return new("success", value, null, null);
         }
         public ValueTask<string?> RevalidateAsync(CancellationToken ct)

@@ -110,3 +110,13 @@ This is partial physical acceptance: reverse completion, visual camera
 smoothness, survival recovery/rejoin and swept clearance remain open. The
 reader's existing bounded whole-sample reacquisition policy is being evaluated
 for one-shot reads. No stale sample reuse or drift-limit relaxation is intended.
+
+The one-shot correction is now implemented and built: non-target reads use the
+existing three-attempt/100 ms whole-observation reacquisition. Target brackets
+remain strict; owner and structural failures abort immediately. Forty-seven
+facing/stream tests passed, including command-level transient/persistent drift
+and owner-change cases. The separately authorized new reverse run completed
+24/24 and verified release and zero post-run position/yaw drift; evidence is
+`artifacts/navigation-live-1794689309713092900/result.json`. The prior interrupted
+checkpoint remains unchanged. Camera smoothness, survival recovery/rejoin and
+actual swept clearance remain open.
