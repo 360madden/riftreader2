@@ -2,7 +2,8 @@
 
 Updated **November 14, 2026 (America/New_York)** from checkout
 `C:\work\riftreader2`, branch `codex/modular-foundation`, implementation through
-`6fe3f29` (longer routes in `b91e2b4`, composite-source guard in `570414c`).
+`a394022` (Waypoints v1.2.0 movement milestone; longer routes in `b91e2b4`,
+composite-source guard in `570414c`).
 Review host: **AMD-DESKTOP**. This is the current overall roadmap;
 older discovery dispatch plans and the foundation history below are references.
 Existing uncommitted native research is work in progress, not a delivered result.
@@ -85,6 +86,14 @@ requires its applicable authority and fresh identity/ownership checks.
 
 ## Remaining work, ranked
 
+**Reassessed after the completed movement milestone, November 14:** Combat and
+survival are next. The first integrated outcome is one suitable encounter,
+verified recovery and continuation of the saved route. Reuse the accepted
+continuous helper; further movement polish and optional autorun come after this
+unless an observed movement failure blocks it. Establish the actual current
+build/learned actions for the first fight, then expand to the per-level plan.
+A full future build planner must not delay the first useful defensive response.
+
 The next product outcome is a character that can judge encounters, win suitable
 fights, gain useful experience and preserve its route. Avoiding a fight can be
 the correct decision; a reactive fight loop alone cannot make an over-levelled
@@ -97,12 +106,12 @@ specific freshness/meaning and action feedback they depend on.
 
 | Rank | Work | Current gap and useful completion point |
 | --- | --- | --- |
-| **1** | **Local runtime, combat essentials and encounter assessment** | Reuse current readers and input controls in a small local observe/decide/act/verify loop; no model/human decisions per action. Supply usable alive/HP/resource/combat/level/target/readiness state. Assess level difference, known hostility/elite/group status, nearby enemies, readiness and outcomes before engaging. Prefer suitable isolated targets and safer known routes/leveling areas. Establish bounded normal-input actions with actual target/cast feedback. Missing/stale decision data halts the dependent action; it is not evidence that an encounter is safe. |
+| **1** | **Usable survival state and encounter assessment** | Establish fresh same-player alive/dead, HP/max-HP, required resources, combat state, level, target identity and action readiness for the first supported encounter. Reuse current readers; baseline candidate values need the independent meaning/change evidence required by decisions. Compare enemy level, known hostility/elite/group status, nearby danger and character readiness. Unknown critical danger is grounds to avoid/refuse engagement. Deliver only the data and bounded normal-input action feedback needed for the first suitable encounter; acquire additional fields as actual decisions require them. |
 | **2** | **One shared local runtime and input owner** | Put route travel, combat, recovery and later progression behind one local coordinator and the existing exclusive action owner. Treat the continuous helper as a bounded clear-path travel actuator, not a second controller or a terrain planner. One STOP/safety latch must halt every mode and stay latched until explicit Resume/new run; no subsystem may silently clear it or advance another subsystem's checkpoint. |
-| **3** | **Plan skills and build progression for the actual character** | Establish the current class/soul/role/build, learned abilities/ranks, unspent points and applicable prerequisites. Start with one solo-leveling/survival build and a per-level plan for skill/talent choices, passives, unlocks and training where applicable. Balance useful damage, sustain, defense and synergy; a future unlock is not currently usable. Detect level-up/build changes, reconcile the plan with actual learned state and refresh action choices. Applying a plan requires a supported, verified game interaction; proposing an allocation does not prove allocation automation exists. |
-| **4** | **Choose effective combat actions and recover** | Implement a conditional priority policy for the initial build: emergency survival, necessary defensive/healing/interrupt actions, useful setup, damage/finishing actions and sustainable fallback as applicable. Consider actual learned rank, target state, expected useful damage/healing, cast/channel/GCD time, cooldowns/charges, resources and recovery cost. Re-evaluate after confirmed outcomes/state changes instead of blindly repeating a sequence. Win and recover from one suitable encounter, with bounded retreat/help for a losing fight. Use the detailed requirements below; expand after useful operation. |
-| **5** | **A bounded leveling loop with observed progress** | Select suitable reachable XP targets; fight, verify XP, recover and continue while ready and within the trip objective/limits. Detect level-up, reconcile skill/build progression and newly available abilities, refresh stats/resources and reassess suitable enemies. Do not assume every kill rewards XP or that accumulated XP is monotonic across a level-up. Track whole-cycle progress and downtime rather than kills or peak damage alone. |
-| **6** | **Autonomous travel, threat avoidance, leveling and continuation** | Preserve genuine route progress during fights/XP detours. Use known traversable alternatives/return paths; kills do not advance the route cursor. Within an authorized run, automatically continue ordinary combat/recovery/travel transitions only when alive/out-of-combat, readiness, identity, freshness, path/context and budgets pass. Operator STOP, safety latch, death, unavailable critical state or failed recovery halts all modes; explicit Resume/new run is required after the halt. Never auto-clear STOP. |
+| **3** | **One working defensive encounter and recovery** | Bind the actual current class/soul/role and learned abilities/ranks. Implement a small local conditional policy: emergency defense/heal or retreat, useful interrupt/setup, suitable damage and sustainable fallback. Respect target identity, range, resources, cooldown/GCD/cast/channel occupancy and verify outcomes. Survive and finish one suitable isolated encounter, recover to readiness, and stop/retreat when losing or evidence is unavailable. Use current learned actions; the full future build plan is rank 5. Tune useful damage, costs and downtime from observed results rather than requiring every mechanic before this works. |
+| **4** | **Travel/combat/recovery handoff and continuation** | Interrupt an owned movement leg, verify key release and retain the pending waypoint before combat takes input. Avoid unsuitable fights using known traversable alternatives or halt when no safe option is known. After an ordinary supported encounter, automatically continue only after alive/out-of-combat, recovery, identity, freshness, path/context and budget checks pass. Death, failed recovery, unavailable critical state and operator STOP remain latched until explicit Resume/new run. Fights and later XP detours never advance a route checkpoint. |
+| **5** | **Plan skills and build progression for the actual character** | Establish the current class/soul/role/build, learned abilities/ranks, unspent points and applicable prerequisites. Start with one solo-leveling/survival build and a per-level plan for skill/talent choices, passives, unlocks and training where applicable. Balance useful damage, sustain, defense and synergy; a future unlock is not currently usable. Detect level-up/build changes, reconcile the plan with actual learned state and refresh action choices. Applying a plan requires a supported, verified game interaction; proposing an allocation does not prove allocation automation exists. |
+| **6** | **A bounded leveling loop with observed progress** | Select suitable reachable XP targets; fight, verify XP, recover and continue while ready and within the trip objective/limits. Detect level-up, reconcile skill/build progression and newly available abilities, refresh stats/resources and reassess suitable enemies. Do not assume every kill rewards XP or that accumulated XP is monotonic across a level-up. Track whole-cycle progress and downtime rather than kills or peak damage alone. |
 | **7** | **Prove useful longer travel and progression** | Use a recorded known-traversable 50–100-unit route with corners: record/save/load, reject an unsuitable encounter, win a suitable one using the build's action policy, observe XP, recover and Resume. Success means arriving alive with valid progress and released input, with actual XP reported separately from level-up. Include level-up/build reconciliation when one occurs. Retain STOP-mid-leg, Reverse and same-build restart/Resume as useful. Fix real failures, then expand; full 1,000-unit capacity is not a mandatory first trial. |
 | **8** | **Make route location and height context dependable** | Zone tags and measured/estimated height cues already work. Cover actual floors/elevation and zone/world/instance changes; preserve measured corners and refuse inappropriate route/Resume. Move a specific context check earlier when an XP detour requires it. Combat/level advantage does not establish walkability. |
 | **9** | **Broaden retrieval and expose useful data to consumers** | Extend beyond the survival/build/progression essentials with coherent nearby-unit detail, more stats and ability/cooldown/cast/buff outputs, retaining consistent source/time/identity/availability contracts. Reuse physical commands, the composite reader, catalog and exports. Prove useful requests before adding a service/SDK/framework. |
@@ -163,7 +172,7 @@ autonomous runtime or its combat/progression features is implemented today.
 
 ## Skill progression and combat decision requirements
 
-These are required parts of ranks 3–5, not delivered capabilities. Implement the
+These are required parts of ranks 3, 5 and 6, not delivered capabilities. Implement the
 first useful character/build profile with existing readers and input controls;
 do not wait for a universal simulator or an AI training system.
 

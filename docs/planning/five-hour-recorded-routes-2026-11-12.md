@@ -6,7 +6,8 @@ and priority list; it does not activate a timed goal or start game input.
 
 The [overall ranked RR2 roadmap](implementation-roadmap.md) owns cross-project
 priority. This document owns the Waypoints inventory and its remaining gaps,
-including the longer-route implementation through `b91e2b4`.
+including the longer-route implementation in `b91e2b4` and the Waypoints v1.2.0
+movement milestone in `a394022`.
 
 The original November 12 five-hour run and its extension through 19:44 EST are
 historical. The recorded-route baseline and overlay extension have delivered the
@@ -128,57 +129,57 @@ connecting segment. Full saved world mapping remains later work.
 
 ## Remaining Waypoints work, ranked
 
-1. **Local autonomous combat and survival decisions.** A route is not successful if the
-   character dies along the way. Assess encounters before engagement; low-level
-   characters must avoid high-level hostiles rather than blindly fight them.
-   Enemy level alone is insufficient: consider current readiness, additional
-   enemies and elite/hostility information where available; do not assume unknown
-   targets are safe. Supply state/actions for a suitable first fight and bounded
-   recovery. This capability is missing; casting diagnostics and
-   ability catalogs do not supply a working combat controller. The
-   [overall roadmap](implementation-roadmap.md#remaining-work-ranked) ranks its
-   prerequisite and implementation slices first.
-2. **One shared local runtime and input owner.** Connect travel interruption,
-   checkpoint preservation, combat, recovery and normal automatic continuation
-   behind one coordinator. The continuous held-W helper is one bounded actuator,
-   not an independent controller, game autorun or terrain navigator. STOP must
-   override every mode and remain latched until explicit Resume/new run; no
-   subsystem may silently clear it or advance unrelated route progress.
-3. **Skill progression and effective ability priorities.** Use one actual
-   character/build profile with a valid per-level skill/point plan and actual
-   learned/unlocked state. Choose combat actions conditionally using survival,
-   target health, useful damage/healing, costs, cast/channel/GCD occupancy,
-   cooldowns, effects/combinations and recovery downtime. Update the policy after
-   level-up/build changes. Existing catalogs/readiness panels do not provide a
-   build planner or an action-selection engine. Follow the
-   [detailed build/combat requirements](implementation-roadmap.md#skill-progression-and-combat-decision-requirements).
-4. **Useful leveling along the way.** Select suitable reachable XP targets,
-   verify actual XP gain, recover and reconcile skills/abilities after level-up.
-   Measure survival and XP over travel, fights and recovery. An unsafe
-   destination may need a safer known route or leveling in a suitable area first.
-   Preserve the travel objective and genuine checkpoint during bounded detours;
-   return through known traversable ground and pass route admission before
-   automatic continuation within the authorized run. Never auto-clear STOP.
-   Existing level/XP candidates are not yet a functioning progression system.
-5. **One useful longer taught route in the real game.** Record a known-traversable
-   50–100-unit path with corners, save/load it, run Forward, STOP mid-leg, Resume
-   and Reverse. Add unsuitable-target rejection plus suitable combat, measured XP,
-   recovery and automatic continuation before calling it dependable leveling travel.
-   Label AI-assisted versus locally autonomous decisions accurately; use AI
-   scaffolding where useful, and verify local decisions once implemented;
-   distance-only clear-ground checks remain separately useful.
-   Check operator STOP/explicit Resume and full-game restart/Resume separately
-   when appropriate and authorized.
-   Fix actual failures and expand distance/complexity as useful; a 1,000-unit first
-   trial and a broad stress sweep are not required.
-6. **Location and height context for saved-route reuse.** Test actual slopes,
-   different floors and zone/world/instance transitions. Keep measured and
-   estimated heights distinct; reject inappropriate context before movement.
-7. **Resolve observed presentation/recovery failures during use.** Large-route
-   display limiting is implemented; extended sessions, camera/window variations
-   and mixed-DPI transitions have incomplete live coverage. Address a concrete
-   failing case when it affects the next useful route rather than starting
-   another general UI-polish project.
+1. **Usable survival and threat state.** Supply fresh alive/HP/resource/combat,
+   target level and threat/readiness evidence for local decisions. Low-level
+   characters must refuse unknown or unsuitable encounters rather than treating
+   missing hostility, elite/group or nearby-enemy data as safe. A route is not
+   successful if the character dies along the way.
+2. **One shared local action owner.** Put travel, combat and recovery behind one
+   coordinator and the existing exclusive input owner. Continuous held-W is one
+   bounded clear-path actuator, not game autorun or a separate controller. STOP
+   must halt every mode and stay latched until explicit Resume/new run; no mode
+   may silently advance another mode's checkpoint.
+3. **Minimum defensive encounter and recovery using current learned abilities.**
+   With the abilities the character already has, implement the smallest useful
+   conditional policy for survival, a suitable fight, verified outcomes and
+   recovery or bounded retreat. A complete per-level build plan must not delay
+   this first defensive encounter. Casting diagnostics and catalogs alone are
+   not a working controller.
+4. **Route/combat/recovery handoff and ordinary automatic continuation.** Preserve
+   the genuine route cursor during a fight or recovery; kills do not advance it.
+   Within an authorized run, continue only after alive/out-of-combat, readiness,
+   identity, freshness, known path/context and budget checks pass. Death, failed
+   recovery or a safety latch requires explicit Resume/new run.
+5. **Per-level skill and build plan.** Establish the actual class/soul/role,
+   learned ranks, unspent points and prerequisites, then maintain one practical
+   solo-survival plan and refresh the action policy after verified build changes.
+   Follow the [detailed build/combat requirements](implementation-roadmap.md#skill-progression-and-combat-decision-requirements).
+6. **Bounded leveling with ability reconciliation.** Choose suitable reachable XP
+   targets, verify XP, recover, and reconcile level-up, learned abilities, stats
+   and resources before continuing. Preserve the travel objective and checkpoint
+   during bounded detours; existing XP candidates are not a leveling loop.
+7. **Integrated 50–100-unit route/combat/XP proof.** Use a known traversable route
+   with corners; reject an unsuitable encounter, win a suitable one, measure XP,
+   recover and continue to arrival with valid progress and released input. Keep
+   STOP/explicit Resume and restart/Resume checks; a 1,000-unit first trial is
+   unnecessary. Label AI-assisted versus locally autonomous decisions accurately.
+8. **Dependable location and height context.** Test actual slopes, different floors
+   and zone/world/instance transitions. Keep measured and estimated heights
+   distinct and reject inappropriate route or Resume context.
+9. **Broader retrieval for useful consumers.** Extend coherent nearby-unit,
+   stat, ability/cooldown/cast and buff outputs after the survival and encounter
+   fields needed above work; preserve source/time/identity/availability contracts.
+10. **Physical-addon reference acceptance when needed.** Qualify the RR2R1
+    producer/session as an independent reference or fallback when a concrete
+    combat, build or XP need warrants it; unrelated addon completion does not
+    block native work.
+
+Waypoints-specific follow-up remains below those cross-project priorities:
+extended sessions, camera/window variations and mixed-DPI transitions have
+incomplete coverage. Fix a concrete presentation or recovery failure when it
+affects the next useful route rather than starting a general UI-polish project.
+The [overall roadmap](implementation-roadmap.md#remaining-work-ranked) owns any
+future reordering.
 
 These are planning recommendations, not new game-input or restart authority.
 
