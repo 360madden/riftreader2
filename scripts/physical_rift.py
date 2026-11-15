@@ -394,8 +394,81 @@ def _unit_name_values(report):
                 rows=reduced, qualification=qualification)
 
 
+def _stats_values(report):
+    """Expose only validated raw current-build stat candidates; never infer API semantics."""
+    expected = (
+        ("armor", 37), ("powerAttack", 24), ("powerSpell", 32),
+        ("critAttack", 26), ("critSpell", 33), ("strength", 5),
+        ("dexterity", 1), ("intelligence", 3), ("wisdom", 4),
+        ("endurance", 2), ("resistLife", 35), ("resistDeath", 36),
+        ("resistFire", 38), ("resistWater", 39), ("resistEarth", 40),
+        ("resistAir", 41), ("hit", 31), ("critPower", 83),
+        ("block", 27), ("dodge", 30),
+    )
+    qualification = "raw typed stat candidates; API availability, units, freshness and restart unverified"
+    observation = report.get("observation")
+    if (report.get("schemaVersion") != 1
+            or report.get("contractVersion") != "native-current-stats-candidate/1"
+            or report.get("status") != "complete"
+            or not isinstance(observation, dict)
+            or observation.get("qualification") != qualification):
+        raise ValueError("invalid-native-stats-contract")
+    key = observation.get("unitKey")
+    if type(key) is not int or not 0 < key < 2**64:
+        raise ValueError("invalid-native-stats-self-key")
+    first = _utc_tick_order_key(observation.get("startedAtUtc"))
+    last = _utc_tick_order_key(observation.get("completedAtUtc"))
+    if first > last:
+        raise ValueError("invalid-native-stats-time")
+    rows = observation.get("stats")
+    if not isinstance(rows, list) or len(rows) not in (5, 20):
+        raise ValueError("invalid-native-stats-rows")
+    mapping = observation.get("selectorMapCandidate")
+    if mapping is not None and (not isinstance(mapping, list) or len(mapping) != 84
+                                or any(type(v) is not int or not -(2**31) <= v < 2**31
+                                       for v in mapping)):
+        raise ValueError("invalid-native-stats-selector-map")
+    projected = []
+    for row, (name, selector) in zip(rows, expected):
+        if (not isinstance(row, dict) or row.get("name") != name
+                or type(row.get("selector")) is not int or row["selector"] != selector
+                or type(row.get("mappedIndex")) is not int
+                or not -(2**31) <= row["mappedIndex"] < 2**31
+                or (mapping is not None and mapping[selector] != row["mappedIndex"])):
+            raise ValueError("invalid-native-stats-selector")
+        selected = {"name": name, "selector": selector, "mappedIndex": row["mappedIndex"]}
+        for kind in ("ordinary", "unbuffed"):
+            source = row.get(kind)
+            if not isinstance(source, dict):
+                raise ValueError("invalid-native-stats-value")
+            status, raw = source.get("status"), source.get("rawSigned64")
+            if status == "index-unavailable":
+                if any(source.get(field) is not None
+                       for field in ("rawSigned64", "doubleCandidate", "precision")):
+                    raise ValueError("invalid-native-stats-unavailable")
+            elif status == "raw-candidate":
+                converted = source.get("doubleCandidate")
+                precision = ("exact-integer-range" if -(2**53) <= raw <= 2**53
+                             else "may-round") if type(raw) is int else None
+                if (row["mappedIndex"] < 0 or type(raw) is not int
+                        or not -(2**63) <= raw < 2**63
+                        or type(converted) not in (float, int)
+                        or not math.isfinite(converted) or float(raw) != converted
+                        or source.get("precision") != precision):
+                    raise ValueError("invalid-native-stats-value")
+            else:
+                raise ValueError("invalid-native-stats-status")
+            selected[kind] = {"status": status, "rawSigned64": raw}
+        projected.append(selected)
+    return {"status": "candidate-only", "unitKey": str(key),
+            "selectorCount": len(projected), "stats": projected,
+            "sampledAtUtc": observation["completedAtUtc"], "qualification": qualification}
+
+
 def _native_values(kind, report, *, expect_position=False, expect_translation_sources=False):
     """Project immediate useful values; preserve exact large unit keys as text."""
+    if kind == "stats":
+        return _stats_values(report)
     if kind == "unit-names":
         return _unit_name_values(report)
     if kind == "target-name":
@@ -1443,7 +1516,8 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
     return dict(selection, status="complete", nativeRead=kind,
                 nativeOutput=str(path), nativeSummary=summary, nativeValues=values,
                 qualification="candidate-only; changed-state/freshness/restart-unverified",
-                **({"nativeSourceSha256": hashlib.sha256(report_bytes).hexdigest()} if timed_read else {}),
+                **({"nativeSourceSha256": hashlib.sha256(report_bytes).hexdigest()}
+                    if timed_read or kind == "stats" else {}),
                 **({"nativeBurstSummary": burst_summary} if burst_summary is not None else {}))
 
 
