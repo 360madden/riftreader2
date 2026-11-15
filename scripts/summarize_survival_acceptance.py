@@ -312,10 +312,21 @@ def summarize(route_rows, telemetry_rows=None):
     incoming, outgoing = _events(samples, "incoming", True), _events(samples, "outgoing", False)
     incoming_correlation = _correlation(self_drops, incoming)
     outgoing_correlation = _correlation(target_drops, outgoing)
-    interrupted_checkpoints = {sample["checkpoint"] for sample in samples
-                               if sample["policyState"] not in (None, "travel")}
-    checkpoint_status = ("unavailable" if not interrupted_checkpoints else
-                         "preserved" if len(interrupted_checkpoints) == 1 else "changed-while-interrupted")
+    interrupted_checkpoints = [sample["checkpoint"] for sample in samples
+                               if sample["policyState"] not in (None, "travel")]
+    # Missing or empty checkpoints cannot prove preservation. Compare by value,
+    # not set membership: a real policy checkpoint may be a JSON object/list.
+    def checkpoint_known(value):
+        return (value is not None and type(value) is not bool
+                and (not isinstance(value, (str, dict, list, tuple)) or
+                     bool(value.strip() if isinstance(value, str) else value)))
+    if not interrupted_checkpoints or not all(map(checkpoint_known, interrupted_checkpoints)):
+        checkpoint_status = "unavailable"
+    elif all(type(value) is type(interrupted_checkpoints[0])
+             and value == interrupted_checkpoints[0] for value in interrupted_checkpoints):
+        checkpoint_status = "preserved"
+    else:
+        checkpoint_status = "changed-while-interrupted"
     stops = [sample["stopSet"] for sample in samples if type(sample["stopSet"]) is bool]
     stop_status = ("unavailable" if not stops else "latched-throughout" if all(stops)
                    else "clear-throughout" if not any(stops) else "changed")

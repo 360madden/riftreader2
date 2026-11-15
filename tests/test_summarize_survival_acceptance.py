@@ -360,6 +360,38 @@ class SurvivalAcceptanceSummaryTests(unittest.TestCase):
         observed = summary.summarize([{"status": "stopped"}], telemetry)
         self.assertEqual("preserved", observed["acceptance"]["recoveryResumeInvariant"])
 
+    def test_missing_checkpoint_does_not_claim_retreat_preservation(self):
+        states = ("travel", "retreat", "rejoin", "travel")
+        telemetry = [self.sample(10 + index, 100, 100, state=state, checkpoint=None)
+                     for index, state in enumerate(states)]
+        observed = summary.summarize([{"status": "stopped"}], telemetry)
+        self.assertEqual("unavailable", observed["acceptance"]["checkpointInvariant"])
+        self.assertEqual("violated", observed["acceptance"]["recoveryResumeInvariant"])
+
+    def test_partial_or_empty_checkpoint_cannot_prove_preservation(self):
+        states = ("travel", "retreat", "rejoin", "travel")
+        for checkpoints in ((2, None, 2, 2), (2, "", 2, 2),
+                            (2, {}, 2, 2), (2, [], 2, 2)):
+            with self.subTest(checkpoints=checkpoints):
+                telemetry = [self.sample(10 + index, 100, 100, state=state,
+                                         checkpoint=checkpoints[index])
+                             for index, state in enumerate(states)]
+                observed = summary.summarize([{"status": "stopped"}], telemetry)
+                self.assertEqual("unavailable", observed["acceptance"]["checkpointInvariant"])
+                self.assertEqual("violated", observed["acceptance"]["recoveryResumeInvariant"])
+
+    def test_structured_checkpoint_is_comparable_without_hashing(self):
+        states = ("travel", "retreat", "rejoin", "travel")
+        for last, expected in (({"nextWaypoint": 2, "route": [1, 2]}, "preserved"),
+                               ({"nextWaypoint": 3, "route": [1, 2]}, "changed-while-interrupted")):
+            with self.subTest(last=last):
+                telemetry = [self.sample(10 + index, 100, 100, state=state,
+                                         checkpoint=last if index == 2 else
+                                         {"nextWaypoint": 2, "route": [1, 2]})
+                             for index, state in enumerate(states)]
+                observed = summary.summarize([{"status": "stopped"}], telemetry)
+                self.assertEqual(expected, observed["acceptance"]["checkpointInvariant"])
+
     def test_route_only_never_claims_damage_and_cli_writes_new_summary(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
