@@ -118,6 +118,43 @@ def verified_state(filename):
     }
 
 
+def _compare_stats(a, b):
+    """Compare only raw stat slots with matching selectors in two verified receipts."""
+    left = a["candidateValues"].get("stats")
+    right = b["candidateValues"].get("stats")
+    if not isinstance(left, dict) or not isinstance(right, dict):
+        return {"status": "not-captured"}
+    rows_a, rows_b = left.get("stats"), right.get("stats")
+    if (left.get("status") != right.get("status") or
+            left.get("status") != "candidate-only" or
+            not isinstance(rows_a, list) or not isinstance(rows_b, list) or
+            len(rows_a) != len(rows_b) or
+            left.get("selectorCount") != right.get("selectorCount") or
+            left.get("selectorCount") != len(rows_a) or
+            any((x.get("name"), x.get("selector"), x.get("mappedIndex")) !=
+                (y.get("name"), y.get("selector"), y.get("mappedIndex"))
+                for x, y in zip(rows_a, rows_b))):
+        return {"status": "incompatible-selector-layout"}
+    changed, compared, unavailable = [], 0, 0
+    for old, new in zip(rows_a, rows_b):
+        for flavor in ("ordinary", "unbuffed"):
+            first, second = old[flavor], new[flavor]
+            if (first.get("status") != "raw-candidate" or
+                    second.get("status") != "raw-candidate"):
+                unavailable += 1
+                continue
+            before, after = first["rawSigned64"], second["rawSigned64"]
+            compared += 1
+            if before != after:
+                changed.append({"name": old["name"], "variant": flavor,
+                                "beforeRawSigned64": before,
+                                "afterRawSigned64": after,
+                                "rawNumericDifference": after - before})
+    return {"status": "comparable-candidate", "selectorCount": len(rows_a),
+            "rawValuesCompared": compared, "rawValuesUnavailable": unavailable,
+            "rawValuesChanged": len(changed), "changed": changed}
+
+
 def _compare_states(a, b):
     """Compare two previously verified native observations."""
     require(a["summarySha256"] != b["summarySha256"], "same-source")
@@ -149,6 +186,7 @@ def _compare_states(a, b):
         "positionDeltaCandidate": delta,
         "planarDistanceCandidate": math.hypot(delta["x"], delta["z"]),
         "healthDeltaCandidate": health_delta,
+        "nativeStatsComparison": _compare_stats(a, b),
         "qualification": "Same-epoch candidate change only; no movement causation, Lua validation or freshness proof.",
     }
 
@@ -185,6 +223,7 @@ def history(summaries):
             "positionDeltaCandidate": edge["positionDeltaCandidate"],
             "planarDistanceCandidate": edge["planarDistanceCandidate"],
             "healthDeltaCandidate": edge["healthDeltaCandidate"],
+            "nativeStatsComparison": edge["nativeStatsComparison"],
         } for edge in edges],
         "sumPlanarChordsCandidate": sum(e["planarDistanceCandidate"] for e in edges),
         "netPositionDeltaCandidate": delta,
@@ -222,6 +261,7 @@ def main(argv=None):
                       "summarySha256": result.get("summarySha256"),
                       "sourceCount": len(result["sources"]) if "sources" in result else None,
                       "captureCount": result.get("captureCount"),
+                       "nativeStatsComparison": result.get("nativeStatsComparison"),
                       "output": str(args.output) if args.output else None}))
     return 0
 

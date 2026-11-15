@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+from contextlib import redirect_stdout
 from datetime import datetime, timedelta
 from pathlib import Path
 import shutil
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from scripts import replay_physical_player_state as replay
 
@@ -192,7 +195,7 @@ class StateReplayTests(unittest.TestCase):
 class ComparisonUnitTests(unittest.TestCase):
     """Synthetic pair mathematics; independent of ignored local artifacts."""
 
-    def pair(self, *, same=False, overlap=False, changed=False, missing_health=False):
+    def pair(self, *, same=False, overlap=False, changed=False, missing_health=False, stats=None):
         from unittest.mock import patch
         first = {
             "summarySha256": "A", "target": {"processId": 42, "start": 100},
@@ -212,6 +215,23 @@ class ComparisonUnitTests(unittest.TestCase):
         second["candidateValues"]["vitals"]["health"] = (
             {"status": "unavailable", "current": None} if missing_health
             else {"status": "calculated-candidate", "current": 85})
+        if stats is not None:
+            row = {"name": "armor", "selector": 37, "mappedIndex": 0,
+                   "ordinary": {"status": "raw-candidate", "rawSigned64": 100},
+                   "unbuffed": {"status": "raw-candidate", "rawSigned64": 100}}
+            first["candidateValues"]["stats"] = {
+                "status": "candidate-only", "selectorCount": 1, "stats": [row]}
+            second["candidateValues"]["stats"] = json.loads(
+                json.dumps(first["candidateValues"]["stats"]))
+            if stats == "changed":
+                second["candidateValues"]["stats"]["stats"][0]["ordinary"]["rawSigned64"] = 106
+            elif stats == "layout":
+                second["candidateValues"]["stats"]["stats"][0]["mappedIndex"] = 1
+            elif stats == "unavailable":
+                second["candidateValues"]["stats"]["stats"][0]["ordinary"] = {
+                    "status": "index-unavailable", "rawSigned64": None}
+            elif stats == "missing":
+                second["candidateValues"].pop("stats")
         with patch.object(replay, "verified_state", side_effect=[first, second]):
             return replay.compare("first", "second")
 
@@ -236,6 +256,39 @@ class ComparisonUnitTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "same-source"):
             self.pair(same=True)
 
+
+
+    def test_matching_raw_stat_slots_report_exact_candidate_deltas(self):
+        stats = self.pair(stats="changed")["nativeStatsComparison"]
+        self.assertEqual(stats["status"], "comparable-candidate")
+        self.assertEqual((stats["rawValuesCompared"], stats["rawValuesChanged"]), (2, 1))
+        self.assertEqual(stats["changed"], [{
+            "name": "armor", "variant": "ordinary", "beforeRawSigned64": 100,
+            "afterRawSigned64": 106, "rawNumericDifference": 6}])
+
+    def test_selector_layout_change_never_claims_comparable_stats(self):
+        self.assertEqual(self.pair(stats="layout")["nativeStatsComparison"],
+                         {"status": "incompatible-selector-layout"})
+
+    def test_missing_stats_or_unavailable_slots_never_invent_delta(self):
+        self.assertEqual(self.pair()["nativeStatsComparison"]["status"], "not-captured")
+        self.assertEqual(self.pair(stats="missing")["nativeStatsComparison"]["status"],
+                         "not-captured")
+        unknown = self.pair(stats="unavailable")["nativeStatsComparison"]
+        self.assertEqual((unknown["rawValuesCompared"], unknown["rawValuesUnavailable"],
+                          unknown["rawValuesChanged"]), (1, 1, 0))
+
+
+    def test_pair_cli_returns_raw_stat_comparison_to_headless_caller(self):
+        with patch.object(replay, "compare", return_value={
+            "status": "candidate-only", "evidenceKind": "amd-physical-player-state-pair/1",
+            "nativeStatsComparison": {"status": "comparable-candidate",
+                                      "rawValuesChanged": 1}}), \
+             redirect_stdout(io.StringIO()) as printed:
+            self.assertEqual(replay.main([
+                "--summary", "offline-before", "--after", "offline-after"]), 0)
+        report = json.loads(printed.getvalue())
+        self.assertEqual(report["nativeStatsComparison"]["rawValuesChanged"], 1)
 
 
 class HistoryUnitTests(unittest.TestCase):
