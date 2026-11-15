@@ -70,7 +70,9 @@ def _publication(candidate_path, receipt_path, *, catalog_path, destination, sta
                  validator=None):
     candidate, candidate_hash = _read(candidate_path)
     review = inspect_candidate(candidate)
-    receipt, _ = _read(receipt_path)
+    receipt, receipt_hash = _read(receipt_path)
+    publication_refs = {"candidate": {"path": str(candidate_path), "sha256": candidate_hash},
+                        "receipt": {"path": str(receipt_path), "sha256": receipt_hash}}
     catalog, _ = _read(catalog_path)
     entry = next((row for row in catalog.get("destinations", [])
                   if isinstance(row, dict) and row.get("id") == destination), None)
@@ -107,7 +109,16 @@ def _publication(candidate_path, receipt_path, *, catalog_path, destination, sta
     if receipt["schema"] == "riftworld.destination-query-receipt/2":
         if validator is None:
             raise ValueError("source-destination-receipt-requires-authoritative-validation")
-        validator(candidate, receipt)
+        validator(candidate, receipt, publication_refs)
+    # Authoritative source validation can take substantial time. Retain the
+    # original hashes, including candidate/receipt bytes used to build the
+    # parsed objects, rather than accepting newly hashed replacement files.
+    for name, reference in inputs.items():
+        if _hash(reference["path"]).casefold() != str(reference["sha256"]).casefold():
+            raise ValueError("planning-input-changed-during-validation: " + name)
+    for name, reference in publication_refs.items():
+        if _hash(reference["path"]).casefold() != reference["sha256"].casefold():
+            raise ValueError("destination-publication-changed-during-validation: " + name)
     return candidate, receipt, review
 
 
@@ -179,7 +190,7 @@ def _prepared_handoff(path, *, request_path, index_path, inputs, profile_path=No
 
 
 def _validated_destination(python, world_root, candidate_path, receipt_path, inputs, runner,
-                           candidate, receipt, prepared=None):
+                           candidate, receipt, prepared=None, publication_refs=None):
     result = runner([str(python), "-m", "riftworld", "validate-destination-receipt",
                      "--candidate", str(candidate_path), "--receipt", str(receipt_path)],
                     cwd=world_root, text=True, capture_output=True, check=False)
@@ -188,13 +199,15 @@ def _validated_destination(python, world_root, candidate_path, receipt_path, inp
     validation = json.loads(result.stdout)
     if not isinstance(validation, dict):
         raise ValueError("authoritative-destination-validation-must-be-an-object")
-    expected_candidate = {**_reference(candidate_path), "candidateId": candidate["candidateId"]}
+    if publication_refs is None:
+        raise ValueError("original-destination-publication-hashes-required")
+    expected_candidate = {**publication_refs["candidate"], "candidateId": candidate["candidateId"]}
     expected_navigation = {"descriptor": inputs["build"]["path"],
                            "descriptorSha256": inputs["build"]["sha256"],
                            "buildId": candidate["planner"]["buildId"]}
     if (result.returncode != 0 or validation.get("schema") != "riftworld.destination-receipt-validation/1"
             or validation.get("candidate") != expected_candidate
-            or validation.get("receipt") != _reference(receipt_path)
+            or validation.get("receipt") != publication_refs["receipt"]
             or validation.get("patch") != receipt.get("patch")
             or validation.get("patch") != {"descriptor": inputs["patch"]["path"],
                 "descriptorSha256": inputs["patch"]["sha256"], "patchId": candidate["patchId"]}
@@ -651,9 +664,9 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
                                 "stderr": query.stderr}
         if not candidate_path.is_file() or not receipt_path.is_file():
             raise ValueError("destination-query-did-not-publish")
-        def validate_destination(candidate, receipt):
+        def validate_destination(candidate, receipt, publication_refs):
             validation = _validated_destination(python, world_root, candidate_path, receipt_path,
-                inputs, runner, candidate, receipt, prepared)
+                inputs, runner, candidate, receipt, prepared, publication_refs)
             plan["destinationValidation"] = validation
             return validation
 

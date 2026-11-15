@@ -695,6 +695,53 @@ class DestinationPlanTests(unittest.TestCase):
         self.assertIn("authoritative-destination-receipt-validation-mismatch", result["blockers"])
         self.assertNotIn("adoptedRoute", result)
 
+    def test_request_changed_during_authoritative_validation_is_not_adopted(self):
+        self.preparation_inputs()
+        self.validation_change = lambda result: self.request.write_text(json.dumps({
+            "areaRequestId": "c" * 64, "changed-during-validation": True}))
+        result = self.automatic_plan()
+        self.assertIn("planning-input-changed-during-validation: areaRequest", result["blockers"])
+        self.assertEqual("blocked", result["status"])
+        self.assertNotIn("adoptedRoute", result)
+        self.assertIn("preparedNavigation", result)
+
+    def test_changed_candidate_or_receipt_after_validation_cannot_replace_original_hashes(self):
+        self.preparation_inputs()
+        original_validator = bridge._validated_destination
+        for name in ("candidate", "receipt"):
+            def mutate_after_validation(*args, **kwargs):
+                result = original_validator(*args, **kwargs)
+                path = Path(args[2 if name == "candidate" else 3])
+                path.write_bytes(path.read_bytes() + b"\n")  # Same semantic JSON, different retained bytes.
+                return result
+
+            with self.subTest(publication=name), patch(
+                    "scripts.waypoint_destination_plan._validated_destination",
+                    side_effect=mutate_after_validation):
+                result = self.automatic_plan(output_directory=self.root / f"changed-{name}")
+            self.assertIn("destination-publication-changed-during-validation: " + name, result["blockers"])
+            self.assertEqual("blocked", result["status"])
+            self.assertNotIn("adoptedRoute", result)
+            self.assertFalse(result["inputSent"])
+
+    def test_validator_cannot_rebind_changed_files_to_new_hashes(self):
+        self.preparation_inputs()
+
+        def replace_publications(validation):
+            candidate = Path(validation["candidate"]["path"])
+            receipt = Path(validation["receipt"]["path"])
+            candidate.write_bytes(candidate.read_bytes() + b"\n")
+            document = json.loads(receipt.read_text())
+            document["candidate"]["sha256"] = bridge._hash(candidate)
+            receipt.write_text(json.dumps(document))
+            validation["candidate"].update(bridge._reference(candidate))
+            validation["receipt"] = bridge._reference(receipt)
+
+        self.validation_change = replace_publications
+        result = self.automatic_plan()
+        self.assertIn("authoritative-destination-receipt-validation-mismatch", result["blockers"])
+        self.assertNotIn("adoptedRoute", result)
+
     def source_session_runner(self, **options):
         pose_runner = self.current_runner(**options)
 
