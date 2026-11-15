@@ -360,6 +360,22 @@ class SurvivalAcceptanceSummaryTests(unittest.TestCase):
         observed = summary.summarize([{"status": "stopped"}], telemetry)
         self.assertEqual("preserved", observed["acceptance"]["recoveryResumeInvariant"])
 
+    def test_retreat_requires_ordered_recovery_rejoin_and_travel(self):
+        # A rejoin/travel pair alone must not masquerade as completed recovery.
+        # Travel before rejoin is also not a valid continuation receipt.
+        cases = (
+            ("travel", "retreat", "rejoin", "travel"),
+            ("travel", "retreat", "rejoin", "recover", "travel"),
+            ("travel", "retreat", "recover", "travel", "rejoin", "travel"),
+        )
+        for states in cases:
+            with self.subTest(states=states):
+                telemetry = [self.sample(10 + index, 100, 100, state=state)
+                             for index, state in enumerate(states)]
+                observed = summary.summarize([{"status": "stopped"}], telemetry)
+                self.assertEqual("preserved", observed["acceptance"]["checkpointInvariant"])
+                self.assertEqual("violated", observed["acceptance"]["recoveryResumeInvariant"])
+
     def test_missing_checkpoint_does_not_claim_retreat_preservation(self):
         states = ("travel", "retreat", "rejoin", "travel")
         telemetry = [self.sample(10 + index, 100, 100, state=state, checkpoint=None)

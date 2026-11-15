@@ -360,7 +360,16 @@ def summarize(route_rows, telemetry_rows=None):
             next_retreat = next((index for index in range(retreat + 1, len(condensed))
                                 if condensed[index] == "retreat"), len(condensed))
             cycle = condensed[retreat + 1:next_retreat]
-            if "rejoin" not in cycle or "travel" not in cycle[cycle.index("rejoin") + 1:]:
+            # Require each retreat's *ordered* recovery, rejoin and resumed
+            # travel; a later recovery cannot retroactively validate a rejoin.
+            try:
+                recover = cycle.index("recover")
+                rejoin = cycle.index("rejoin")
+                travel = cycle.index("travel")
+            except ValueError:
+                complete = False
+                break
+            if not recover < rejoin < travel:
                 complete = False
                 break
         resume_status = "preserved" if complete else "violated"
