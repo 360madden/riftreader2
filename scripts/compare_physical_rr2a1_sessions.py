@@ -107,6 +107,13 @@ def compare_sessions(older, newer):
     native_travel = math.hypot(native_delta["x"], native_delta["z"])
     lua_travel = math.hypot(lua_delta["x"], lua_delta["z"])
     changed = native_travel > 0.1 and lua_travel > 0.1
+    sequence_increasing = (b["sequenceWindows"][0][0] >
+                           a["sequenceWindows"][-1][-1])
+    clock_increasing = (b["clockWindows"][0][0] >
+                        a["clockWindows"][-1][-1])
+    # Same numeric epoch alone cannot identify the Lua producer lifetime.
+    counters_increasing = (a["luaEpochCandidate"] == b["luaEpochCandidate"]
+                           and sequence_increasing and clock_increasing)
     return {
         "schemaVersion": 1,
         "evidenceKind": "amd-physical-rr2a1-longitudinal-candidates/1",
@@ -118,11 +125,10 @@ def compare_sessions(older, newer):
         "playerIdCandidate": a["luaPlayerIdCandidate"],
         "luaEpochCandidates": [a["luaEpochCandidate"], b["luaEpochCandidate"]],
         "producerSequenceContinuity": (
-            "increasing" if b["sequenceWindows"][0][0] >
-                            a["sequenceWindows"][-1][-1] else "not-increasing"),
+            "increasing" if sequence_increasing else "not-increasing"),
         "producerClockContinuity": (
-            "increasing" if b["clockWindows"][0][0] >
-                            a["clockWindows"][-1][-1] else "not-increasing"),
+            "increasing" if clock_increasing else "not-increasing"),
+        "producerCountersIncreasingCandidate": counters_increasing,
         "nativeXYZCandidateDifference": native_delta,
         "luaXYZCandidateDifference": lua_delta,
         "maxPerAxisDeltaDiscrepancy": max(residual.values()),
@@ -135,7 +141,8 @@ def compare_sessions(older, newer):
             "Separate exact-process source-replayed Lua and native coordinate "
             "candidates. Producer sequence/clock continuity is reported, NOT "
             "assumed from a reused numeric epoch. No nonce-authenticated producer, "
-            "atomic freshness, action causation, heading, target or combat meaning."),
+            "atomic freshness, action causation, heading, target or combat meaning. "
+            "Even increasing counters cannot prove one uninterrupted producer session."),
     }
 
 
@@ -144,6 +151,9 @@ def main(argv=None):
     parser.add_argument("--older", type=Path, required=True)
     parser.add_argument("--newer", type=Path, required=True)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--require-increasing-counters", action="store_true",
+                        help="Reject regressed sequence/clock or changed numeric epoch; "
+                             "still unbound candidate data, not session proof")
     options = parser.parse_args(argv)
     try:
         if options.output is not None:
@@ -151,6 +161,9 @@ def main(argv=None):
                     "output-exists")
         result = compare_sessions(replay_session(options.older),
                                   replay_session(options.newer))
+        if options.require_increasing_counters:
+            require(result["producerCountersIncreasingCandidate"],
+                    "producer-counters-not-increasing")
         if options.output is not None:
             with options.output.open("x", encoding="utf-8", newline="\n") as out:
                 json.dump(result, out, indent=2, allow_nan=False)

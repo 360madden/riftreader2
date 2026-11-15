@@ -57,6 +57,40 @@ class LongitudinalCandidateTests(unittest.TestCase):
                          "consistent-candidate-change")
         self.assertIn("No nonce-authenticated", result["qualification"])
 
+    def test_counter_gate_rejects_sequence_rollback_even_with_advancing_clock(self):
+        with patch.object(longitudinal, "replay_session",
+                          side_effect=[self.old, self.new]), \
+             patch("builtins.print") as printed:
+            code = longitudinal.main([
+                "--older", "old.json", "--newer", "new.json",
+                "--require-increasing-counters"])
+        self.assertEqual(code, 2)
+        self.assertIn("producer-counters-not-increasing", printed.call_args.args[0])
+
+    def test_counter_gate_accepts_only_same_epoch_increasing_counters(self):
+        self.new["comparison"]["sequenceWindows"] = [[200, 201], [202, 203]]
+        with patch.object(longitudinal, "replay_session",
+                          side_effect=[self.old, self.new]), \
+             patch("builtins.print") as printed:
+            code = longitudinal.main([
+                "--older", "old.json", "--newer", "new.json",
+                "--require-increasing-counters"])
+        self.assertEqual(code, 0)
+        self.assertTrue(json.loads(printed.call_args.args[0])[
+            "producerCountersIncreasingCandidate"])
+
+    def test_counter_gate_rejects_epoch_change_despite_increasing_counters(self):
+        self.new["comparison"]["sequenceWindows"] = [[200, 201], [202, 203]]
+        self.new["comparison"]["luaEpochCandidate"] = 2
+        with patch.object(longitudinal, "replay_session",
+                          side_effect=[self.old, self.new]), \
+             patch("builtins.print") as printed:
+            code = longitudinal.main([
+                "--older", "old.json", "--newer", "new.json",
+                "--require-increasing-counters"])
+        self.assertEqual(code, 2)
+        self.assertIn("producer-counters-not-increasing", printed.call_args.args[0])
+
     def test_stationary_pair_does_not_claim_change(self):
         self.new["comparison"]["positionCandidates"] = copy.deepcopy(
             self.old["comparison"]["positionCandidates"])
