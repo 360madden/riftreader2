@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts import hunt_mission as mission_cli
+from scripts.waypoint_progress import ProgressError, RouteProgress
 
 
 def _required(condition, reason):
@@ -30,8 +31,24 @@ def _released(receipt):
             and receipt.get("allInputsReleased", True) is True)
 
 
-def audit(mission, route, progress):
-    """Reject inconsistent completion claims using retained checkpoint data only."""
+def _require_route_progress(receipt, document, identity, expected_index, label):
+    """Cross-check one separately persisted waypoint cursor against this mission."""
+    _required(isinstance(receipt, dict), f"{label} route progress receipt is missing")
+    try:
+        cursor = RouteProgress._from_payload(receipt, document, identity)
+    except (ProgressError, ValueError, TypeError, OverflowError, KeyError) as exc:
+        raise mission_cli.MissionError(
+            f"{label} route progress receipt is invalid: {exc}") from exc
+    _required(cursor.direction == "forward" and cursor.next_index == expected_index,
+              f"{label} route progress receipt is incomplete")
+
+
+def audit(mission, route, progress, *, outbound_receipt=None,
+          return_receipt=None, require_route_progress=False):
+    """Audit checkpoint consistency, optionally corroborated by route cursors.
+
+    Persisted route cursors establish cross-file consistency, not live arrival.
+    """
     _required(progress.get("schema") == mission_cli.CHECKPOINT_SCHEMA
               and progress.get("mission") == mission["name"]
               and progress.get("missionBinding") == mission["binding"],
@@ -116,7 +133,16 @@ def audit(mission, route, progress):
                   "normal return progress is incomplete")
         mode = "return"
 
-    return {"status": "consistent", "scope": "checkpoint-only-not-live-qualified",
+    if require_route_progress:
+        _require_route_progress(outbound_receipt, route, identity,
+                                len(route["waypoints"]), "outbound")
+        if mode == "return":
+            _require_route_progress(return_receipt, document, identity,
+                                    len(document["waypoints"]), "return")
+
+    return {"status": "consistent",
+            "scope": ("checkpoint-and-route-progress-not-live-qualified"
+                      if require_route_progress else "checkpoint-only-not-live-qualified"),
             "mission": mission["name"], "mode": mode, "killCount": count,
             "safeReturnedClaimed": True}
 
@@ -127,13 +153,26 @@ def main(argv=None):
     parser.add_argument("--route", required=True, type=Path)
     parser.add_argument("--profile", required=True, type=Path)
     parser.add_argument("--checkpoint", required=True, type=Path)
+    parser.add_argument("--require-route-progress", action="store_true",
+                        help="require matching outbound/normal-return waypoint sidecars")
     args = parser.parse_args(argv)
     try:
         mission, route, _ = mission_cli.load_definition(
             args.mission, args.route, args.profile)
         progress = mission_cli._load_json(args.checkpoint, 2 * 1024 * 1024,
                                           "mission checkpoint")
-        result = audit(mission, route, progress)
+        outbound_receipt = return_receipt = None
+        if args.require_route_progress:
+            outbound_path, return_path = mission_cli._checkpoint_paths(args.checkpoint)
+            outbound_receipt = mission_cli._load_json(
+                outbound_path, 2 * 1024 * 1024, "outbound route progress")
+            if progress.get("safeRetreat") is None:
+                return_receipt = mission_cli._load_json(
+                    return_path, 2 * 1024 * 1024, "return route progress")
+        result = audit(mission, route, progress,
+                       outbound_receipt=outbound_receipt,
+                       return_receipt=return_receipt,
+                       require_route_progress=args.require_route_progress)
         code = 0
     except (mission_cli.MissionError, OSError, ValueError, KeyError, TypeError) as exc:
         result = {"status": "blocked", "scope": "checkpoint-only-not-live-qualified",

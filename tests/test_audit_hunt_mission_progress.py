@@ -5,11 +5,14 @@ from copy import deepcopy
 from contextlib import redirect_stdout
 from io import StringIO
 import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
 from scripts import audit_hunt_mission_progress as cli
 from scripts import hunt_mission
+from scripts.waypoint_progress import RouteProgress
 
 
 TARGET = "u800000020502E041"
@@ -164,6 +167,86 @@ class HuntMissionAuditTests(unittest.TestCase):
         p["encounter"]["reason"] = "encounter-deadline"
         with self.assertRaisesRegex(hunt_mission.MissionError, "normal return"):
             self.check(p)
+
+    def route_receipt(self, document):
+        cursor = RouteProgress(document, "forward", IDENTITY)
+        first = cursor.ordered_points[0]
+        start = {"x": first[1], "z": first[2]}
+        if cursor.heights is not None:
+            start["y"] = cursor.heights[0]
+        cursor.begin(start)
+        for index, goal in enumerate(cursor.ordered_points):
+            cursor.confirm_arrival(index, goal)
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "progress.json"
+            cursor.save(path)
+            return json.loads(path.read_text(encoding="utf-8"))
+
+    def test_strict_route_progress_cross_checks_both_sidecars(self):
+        outbound = self.route_receipt(self.route)
+        returned = self.route_receipt(self.document)
+        result = cli.audit(self.mission, self.route, self.progress,
+                           outbound_receipt=outbound, return_receipt=returned,
+                           require_route_progress=True)
+        self.assertEqual("consistent", result["status"])
+        self.assertEqual("checkpoint-and-route-progress-not-live-qualified",
+                         result["scope"])
+        for side, value, reason in [
+            ("outbound", None, "outbound route progress receipt is missing"),
+            ("return", None, "return route progress receipt is missing"),
+            ("outbound", {**outbound, "nextIndex": 1}, "outbound route progress receipt is incomplete"),
+            ("return", {**returned, "routeHash": "a" * 64}, "return route progress receipt is invalid"),
+            ("return", {**returned, "identity": {**returned["identity"], "unitKey": "other"}},
+             "return route progress receipt is invalid"),
+        ]:
+            with self.subTest(side=side, reason=reason):
+                arguments = {"outbound_receipt": outbound, "return_receipt": returned}
+                arguments[side + "_receipt"] = value
+                with self.assertRaisesRegex(hunt_mission.MissionError, reason):
+                    cli.audit(self.mission, self.route, self.progress,
+                              require_route_progress=True, **arguments)
+
+    def test_safe_retreat_needs_outbound_sidecar_not_normal_return(self):
+        p = deepcopy(self.progress)
+        p["encounter"]["reason"] = "selected-encounter-unsafe"
+        p.pop("returnNextIndex")
+        p["safeRetreat"] = {"safeRetreat": True, "status": "arrived",
+                            "releaseSucceeded": True, "desktopInputsDown": [],
+                            "position": deepcopy(SAFE)}
+        result = cli.audit(self.mission, self.route, p,
+                           outbound_receipt=self.route_receipt(self.route),
+                           require_route_progress=True)
+        self.assertEqual("safe-retreat", result["mode"])
+        with self.assertRaisesRegex(hunt_mission.MissionError, "outbound route progress receipt is missing"):
+            cli.audit(self.mission, self.route, p, require_route_progress=True)
+
+    def test_strict_cli_reads_sibling_sidecars_and_refuses_missing(self):
+        outbound = self.route_receipt(self.route)
+        returned = self.route_receipt(self.document)
+        def loader(path, *_):
+            name = path.name
+            if name == "run.json":
+                return self.progress
+            if name == "run.outbound.json":
+                return outbound
+            if name == "run.return.json":
+                return returned
+            raise hunt_mission.MissionError("unexpected checkpoint")
+        argv = ["--mission", "unused", "--route", "unused",
+                "--profile", "unused", "--checkpoint", "run.json",
+                "--require-route-progress"]
+        with (patch.object(cli.mission_cli, "load_definition",
+                           return_value=(self.mission, self.route, {})),
+              patch.object(cli.mission_cli, "_load_json", side_effect=loader)):
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(0, cli.main(argv))
+            self.assertEqual("consistent", json.loads(output.getvalue())["status"])
+            returned = None
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(2, cli.main(argv))
+            self.assertEqual("blocked", json.loads(output.getvalue())["status"])
 
     def test_cli_returns_json_and_exit_code_without_process_access(self):
         with (patch.object(cli.mission_cli, "load_definition",
