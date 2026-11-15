@@ -1,5 +1,8 @@
 """Destination composition, using real receipt adoption and no game input."""
 from copy import deepcopy
+import contextlib
+from datetime import datetime, timedelta, timezone
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -25,7 +28,8 @@ class DestinationPlanTests(unittest.TestCase):
         (self.world / "tools").mkdir(parents=True)
         (self.world / "tools" / "query_destination.py").write_text("# test boundary\n")
         self.candidate = sample()
-        self.patch = self.save("patch.json", {"patchId": self.candidate["patchId"]})
+        self.patch = self.save("patch.json", {"patchId": self.candidate["patchId"],
+                                              "coordinates": deepcopy(self.candidate["coordinates"])})
         self.build = self.save("navigation.json", {"buildId": self.candidate["planner"]["buildId"]})
         self.entry = {"id": "known-courtyard-end", "label": "Known courtyard end",
             "type": "route-anchor", "assetOriginXYZ": None, "approachXYZ": [2, 1, 2],
@@ -294,6 +298,194 @@ class DestinationPlanTests(unittest.TestCase):
                 self.assertEqual("execution-unverified", result["status"])
                 self.assertNotIn("arrival", result)
                 self.assertIn("execution-receipt-route-request-or-runtime-mismatch", result["blockers"])
+
+    def current_runner(self, *, pose_changes=(), **options):
+        other = self.executing_runner(**options)
+        pose_index = 0
+
+        def run(command, **kwargs):
+            nonlocal pose_index
+            if command[2:4] != ["pose", "refresh"]:
+                return other(command, **kwargs)
+            self.calls.append((command, kwargs))
+            pose = {"status": "fresh", "sampleStatus": "fresh", "source": "existing-idle-reader",
+                    "ageSeconds": .01, "freshForSeconds": 2,
+                    "sampledAtUtc": datetime.now(timezone.utc).isoformat(),
+                    "position": {"x": 0, "y": 1, "z": 2},
+                    "target": {"machineName": "AMD-DESKTOP", "processId": 123,
+                               "processStartUtcTicks": 456, "executableSha256": "a" * 64},
+                    "runtimeIdentity": {"machine": "AMD-DESKTOP", "processId": 123,
+                        "processStartUtcTicks": 456, "gameBuildSha256": "a" * 64, "unitKey": self.player}}
+            if pose_index < len(pose_changes):
+                pose_changes[pose_index](pose)
+            pose_index += 1
+            return subprocess.CompletedProcess(command, 0, json.dumps({"ok": True,
+                "sessionId": "owned", "requestId": f"pose-{pose_index}", "data": pose}), "")
+        return run
+
+    def current_plan(self, **options):
+        return self.plan(start=None, from_current=True, session="owned", **options)
+
+    def test_current_pose_supplies_start_with_bound_fresh_provenance(self):
+        result = self.current_plan(runner=self.current_runner())
+        self.assertEqual("adoptable", result["status"])
+        self.assertEqual([0, 1, 2], result["requestedStartXYZ"])
+        self.assertEqual("current-native", result["startSource"])
+        observation = result["startObservation"]
+        self.assertEqual(self.player, observation["runtimeIdentity"]["unitKey"])
+        self.assertEqual("existing-idle-reader", observation["source"])
+        self.assertEqual("identity", observation["transformToRr2Native"]["kind"])
+        self.assertLessEqual(observation["ageSecondsAtValidation"], 2)
+        self.assertIn("postPlanningObservation", result)
+        self.assertFalse(result["inputSent"])
+        query = next(command for command, _ in self.calls if "query_destination.py" in command[1])
+        self.assertEqual("0,1,2", query[query.index("--from") + 1])
+        self.assertFalse(any("--execute" in command for command, _ in self.calls))
+
+    def test_plan_only_current_observation_preserves_latched_stop(self):
+        result = self.current_plan(native=False, runner=self.current_runner(latched=True))
+        self.assertEqual("planned", result["status"])
+        self.assertTrue(result["observationAdmission"]["stopLatched"])
+        self.assertFalse(result["inputSent"])
+
+    def test_current_start_requires_session_and_exclusive_start_selection(self):
+        with self.assertRaisesRegex(ValueError, "exact session"):
+            self.plan(start=None, from_current=True)
+        with self.assertRaisesRegex(ValueError, "exactly one"):
+            self.plan(from_current=True)
+        with self.assertRaisesRegex(ValueError, "exactly one"):
+            self.plan(start=None)
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            bridge.parser().parse_args(["--catalog", "x", "--patch", "x", "--build", "x",
+                "--destination", "x", "--from", "1,2,3", "--from-current", "--out-dir", "x"])
+        self.assertFalse(self.calls)
+
+    def test_current_start_requires_explicit_patch_identity_transform(self):
+        patch_document = json.loads(self.patch.read_text())
+        patch_document["coordinates"]["transformToRr2Native"] = {"kind": "unknown", "qualification": "unqualified"}
+        self.patch.write_text(json.dumps(patch_document))
+        result = self.current_plan(runner=self.current_runner())
+        self.assertEqual("blocked", result["status"])
+        self.assertIn("current-native-start-requires-explicit-qualified-identity-transform", result["blockers"])
+        self.assertEqual(1, len(self.calls))
+
+    def test_stale_or_wrong_target_pose_is_rejected_before_query(self):
+        changes = [lambda pose: pose.update(ageSeconds=3),
+            lambda pose: pose.update(sampledAtUtc=(datetime.now(timezone.utc)-timedelta(seconds=4)).isoformat()),
+            lambda pose: pose["runtimeIdentity"].update(processId=999),
+            lambda pose: pose["target"].update(processId=999),
+            lambda pose: pose.update(source=None)]
+        for index, change in enumerate(changes):
+            with self.subTest(case=index):
+                before = len(self.calls)
+                result = self.current_plan(output_directory=self.root / f"bad-pose-{index}",
+                    runner=self.current_runner(pose_changes=[change]))
+                self.assertEqual("blocked", result["status"])
+                self.assertEqual(2, len(self.calls)-before)
+                self.assertNotIn("candidate", result)
+
+    def test_player_change_or_displacement_during_planning_is_not_adopted(self):
+        for index, change in enumerate((lambda pose: pose["runtimeIdentity"].update(unitKey="other"),
+                                         lambda pose: pose["position"].update(x=1))):
+            result = self.current_plan(output_directory=self.root / f"changed-pose-{index}",
+                runner=self.current_runner(pose_changes=[lambda pose: None, change]))
+            self.assertEqual("blocked", result["status"])
+            self.assertNotIn("adoptedRoute", result)
+            self.assertIn("candidate", result)
+
+    def test_same_process_other_player_cannot_reuse_native_corridor_evidence(self):
+        wrong_player = lambda pose: pose["runtimeIdentity"].update(unitKey="other")
+        result = self.current_plan(runner=self.current_runner(pose_changes=[wrong_player, wrong_player]))
+        self.assertEqual("blocked", result["status"])
+        self.assertIn("current-native-player-does-not-own-adopted-evidence", result["blockers"])
+        self.assertNotIn("adoptedRoute", result)
+
+    def test_stop_epoch_change_during_current_observation_blocks_planning(self):
+        result = self.current_plan(runner=self.current_runner(stop_epochs=(0, 1)))
+        self.assertEqual("blocked", result["status"])
+        self.assertIn("session-or-stop-epoch-changed-during-pose-acquisition", result["blockers"])
+        self.assertNotIn("candidate", result)
+
+    def test_execute_from_current_still_refuses_initial_stop(self):
+        result = self.current_plan(execute=True, runner=self.current_runner(latched=True))
+        self.assertEqual("blocked", result["status"])
+        self.assertEqual(1, len(self.calls))
+
+
+class CurrentStartMailboxTests(unittest.TestCase):
+    """Real hidden Tk/mailbox pose refresh with a fake adapter; no game access."""
+    setUp = DestinationPlanTests.setUp
+    save = DestinationPlanTests.save
+    query = DestinationPlanTests.query
+    plan = DestinationPlanTests.plan
+
+    def mailbox(self):
+        from tests import test_waypoint_cli_gui as harness_module
+        from tests.test_waypoint_external_route import EXTERNAL_CHILD
+        child = EXTERNAL_CHILD.replace("'unitKey': '1'}}", "'unitKey': '1', 'processId': 123, "
+                                       "'processStartUtcTicks': '12345'}}")
+        child = child.replace("connection.idle_read = lambda adapter, *args, **kw: (adapter, pose, False)",
+            "connection.idle_read = lambda adapter, *args, **kw: (adapter, SimpleNamespace("
+            "position=Position(), bearing=45.0, acquired=time.monotonic(), source='fake-native.json'), False)")
+        harness = harness_module.GuiBridgeTests("runTest")
+        with patch("tests.test_waypoint_cli_gui.CHILD", child):
+            harness.setUp()
+        self.addCleanup(harness.cleanup_child)
+        # Native history belongs to the fake adapter's same-build player.
+        self.context["playerKey"] = self.player = "1"
+        self.zone.write_text(json.dumps({"ok": True, "data": {"context": self.context}}))
+        native = json.loads(self.native.read_text())
+        native["playerKey"] = self.player
+        self.native.write_text(json.dumps(native))
+        return harness
+
+    def mailbox_runner(self, harness):
+        from scripts import waypoint_cli_protocol as protocol
+        from scripts import waypoints_cli
+        original_discover = protocol.discover_sessions
+
+        def run(command, **options):
+            if "query_destination.py" in command[1]:
+                return self.query(command, **options)
+            stdout, stderr = io.StringIO(), io.StringIO()
+
+            def discover(helper="waypoints", root=None):
+                return original_discover(helper, harness.root / "sessions" if root is None else root)
+
+            with patch.object(protocol, "discover_sessions", discover), \
+                    contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                code = waypoints_cli.main(command[2:])
+            return subprocess.CompletedProcess(command, code, stdout.getvalue(), stderr.getvalue())
+        return run
+
+    def test_current_start_uses_actual_pose_refresh_without_changing_dirty_route(self):
+        harness = self.mailbox()
+        self.assertTrue(harness.call("route.add", {"name": "Preserved", "x": 10, "z": 20})["ok"])
+        before = harness.call("route.list")["data"]
+        result = self.plan(start=None, from_current=True, session=harness.session["sessionId"],
+                           runner=self.mailbox_runner(harness))
+        self.assertEqual("adoptable", result["status"], result["blockers"])
+        self.assertEqual([0, 1, 2], result["requestedStartXYZ"])
+        self.assertEqual("1", result["startObservation"]["runtimeIdentity"]["unitKey"])
+        self.assertFalse(result["inputSent"])
+        self.assertFalse((harness.root / "movement-called").exists())
+        after = harness.call("route.list")["data"]
+        for key in ("document", "revision", "dirty", "selected", "file"):
+            self.assertEqual(before[key], after[key], key)
+
+    def test_latched_stop_survives_actual_pose_refresh_and_plan_only(self):
+        harness = self.mailbox()
+        self.assertTrue(harness.call("stop")["ok"])
+        before = harness.call("status")["data"]["controls"]
+        self.assertTrue(before["stopLatched"])
+        result = self.plan(start=None, from_current=True, session=harness.session["sessionId"],
+                           runner=self.mailbox_runner(harness))
+        self.assertEqual("adoptable", result["status"], result["blockers"])
+        after = harness.call("status")["data"]["controls"]
+        self.assertTrue(after["stopLatched"])
+        self.assertEqual(before["stopEpoch"], after["stopEpoch"])
+        self.assertFalse(result["inputSent"])
+        self.assertFalse((harness.root / "movement-called").exists())
 
 
 if __name__ == "__main__":

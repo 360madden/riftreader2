@@ -104,7 +104,7 @@ def _publication(candidate_path, receipt_path, *, catalog_path, destination, sta
     return candidate, receipt, review
 
 
-def _session_state(session, runner):
+def _session_state(session, runner, *, allow_latched=False):
     command = [sys.executable, str(ROOT / "scripts" / "waypoints_cli.py"),
                "status", "--session", session, "--json"]
     result = runner(command, cwd=ROOT, text=True, capture_output=True, check=False)
@@ -120,16 +120,78 @@ def _session_state(session, runner):
                    != platform.node().casefold()
                 or any(target.get(key) is None for key in
                        ("processId", "processStartUtcTicks", "executableSha256"))
-                or controls.get("stopLatched") is not False
+                or type(controls.get("stopLatched")) is not bool
+                or not allow_latched and controls["stopLatched"]
                 or controls.get("ownedActionActive") is not False
                 or controls.get("inputReleaseFault") is not False
                 or data.get("app", {}).get("busy") is not False
                 or data["app"].get("closing") is not False
                 or type(epoch) not in (int, float) or not math.isfinite(epoch)):
             raise ValueError("session-not-idle-or-stop-latched")
-        return {"sessionId": session, "target": data["target"], "stopEpoch": epoch}
+        return {"sessionId": session, "target": data["target"], "stopEpoch": epoch,
+                "stopLatched": controls["stopLatched"]}
     except (ValueError, TypeError, KeyError) as exc:
         raise ValueError("execution-session-unavailable: " + str(exc)) from exc
+
+
+def _same_runtime(left, right):
+    if not isinstance(left, dict) or not isinstance(right, dict):
+        return False
+    return all(left.get(key) is not None and right.get(key) is not None and
+               (str(left[key]) == str(right[key]) if key == "unitKey" else
+                str(left[key]).casefold() == str(right[key]).casefold())
+               for key in ("machine", "processId", "processStartUtcTicks", "gameBuildSha256", "unitKey"))
+
+
+def _current_pose(session, admission, runner, *, allow_latched):
+    """Acquire one existing reader sample, with current process/player provenance."""
+    command = [sys.executable, str(ROOT / "scripts" / "waypoints_cli.py"),
+               "pose", "refresh", "--session", session, "--json"]
+    result = runner(command, cwd=ROOT, text=True, capture_output=True, check=False)
+    response = json.loads(result.stdout)
+    data = response.get("data")
+    if (result.returncode != 0 or response.get("ok") is not True
+            or response.get("sessionId") != session or not isinstance(data, dict)):
+        raise ValueError("current-native-pose-unavailable")
+    position, identity = data.get("position"), data.get("runtimeIdentity")
+    target = admission["target"]
+    if (data.get("target") != target or not isinstance(identity, dict)
+            or not isinstance(identity.get("unitKey"), str) or not identity["unitKey"]
+            or str(identity.get("machine", "")).casefold()
+               != str(target.get("machineName") or target.get("hostName", "")).casefold()
+            or str(identity.get("gameBuildSha256", "")).casefold()
+               != str(target["executableSha256"]).casefold()
+            or any(str(identity.get(key, "")) != str(target[key])
+                   for key in ("processId", "processStartUtcTicks"))):
+        raise ValueError("current-native-pose-owner-or-target-mismatch")
+    age, limit = data.get("ageSeconds"), data.get("freshForSeconds")
+    source, stamp = data.get("source"), data.get("sampledAtUtc")
+    if (data.get("status") != "fresh" or data.get("sampleStatus") != "fresh"
+            or type(age) not in (int, float) or not math.isfinite(age)
+            or type(limit) not in (int, float) or not math.isfinite(limit)
+            or not 0 < limit <= 2 or not 0 <= age <= limit
+            or not isinstance(source, str) or not source.strip()
+            or not isinstance(stamp, str)):
+        raise ValueError("current-native-pose-stale-or-provenance-unavailable")
+    try:
+        sampled = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        elapsed = (datetime.now(timezone.utc) - sampled).total_seconds()
+        if sampled.utcoffset() != timezone.utc.utcoffset(sampled) or not -.1 <= elapsed <= limit:
+            raise ValueError("current-native-pose-stale")
+    except (ValueError, TypeError) as exc:
+        raise ValueError("current-native-pose-stale-or-invalid-timestamp") from exc
+    if not isinstance(position, dict):
+        raise ValueError("current-native-position-unavailable")
+    xyz = _xyz([position.get(axis) for axis in "xyz"])
+    current = _session_state(session, runner, allow_latched=allow_latched)
+    if current != admission:
+        raise ValueError("session-or-stop-epoch-changed-during-pose-acquisition")
+    return {"nativeXYZ": xyz, "source": source, "sampledAtUtc": stamp,
+            "validatedAtUtc": datetime.now(timezone.utc).isoformat(),
+            "ageSecondsAtValidation": elapsed, "readerReportedAgeSeconds": age,
+            "freshForSeconds": limit, "runtimeIdentity": deepcopy(identity),
+            "target": deepcopy(target), "sessionId": session,
+            "poseRequestId": response.get("requestId"), "inputSent": False}
 
 
 def _dispatch(route_path, session, epoch, runner):
@@ -216,7 +278,7 @@ def _execution_result(plan, route_path):
     plan["status"] = plan["stages"]["execution"] = plan["arrival"]["status"]
 
 
-def plan_destination(*, catalog, destination, patch, build, start, output_directory,
+def plan_destination(*, catalog, destination, patch, build, output_directory, start=None, from_current=False,
                      riftworld_root=RIFTWORLD_ROOT, riftworld_python=None,
                      native_receipts=(), native_context=None, native_start=None,
                      native_end=None, candidate_start=0, candidate_end=None,
@@ -227,11 +289,13 @@ def plan_destination(*, catalog, destination, patch, build, start, output_direct
     A new output directory is mandatory. Query/adoption failures retain useful
     files and a structured plan. No operation replaces the current route.
     """
-    start = _xyz(start)
+    if bool(from_current) == (start is not None):
+        raise ValueError("choose exactly one explicit start or from-current")
+    start = _xyz(start) if start is not None else None
     if not isinstance(destination, str) or not destination.strip():
         raise ValueError("destination ID is required")
-    if execute and (not isinstance(session, str) or not session.strip()):
-        raise ValueError("execution requires an exact session")
+    if (execute or from_current) and (not isinstance(session, str) or not session.strip()):
+        raise ValueError("execution or from-current requires an exact session")
     supplied = bool(native_receipts) or any(value is not None for value in
                                           (native_context, native_start, native_end))
     if supplied and (not native_receipts or native_context is None
@@ -255,6 +319,7 @@ def plan_destination(*, catalog, destination, patch, build, start, output_direct
     plan_path, route_path = output / "plan.json", output / "adopted-route.json"
     plan = {"schema": SCHEMA, "createdAtUtc": datetime.now(timezone.utc).isoformat(),
             "status": "blocked", "destinationId": destination, "requestedStartXYZ": start,
+            "startSource": "current-native" if from_current else "explicit-source-coordinates",
             "inputs": inputs, "stages": {"query": "pending", "adoption": "not-requested",
                                           "execution": "not-requested"},
             "blockers": [], "inputSent": False, "currentRouteChanged": False,
@@ -265,15 +330,30 @@ def plan_destination(*, catalog, destination, patch, build, start, output_direct
         write_json_atomic(plan_path, plan)
         return deepcopy(plan)
 
-    command = [str(python), str(query_tool), "--catalog", str(catalog),
-               "--destination", destination, "--patch", str(patch), "--build", str(build),
-               "--from", ",".join(format(axis, ".17g") for axis in start),
-               "--out", str(candidate_path), "--receipt", str(receipt_path)]
-    if search_extent is not None:
-        command += ["--search-extent", format(search_extent, ".17g")]
     try:
-        if execute:
-            plan["executionAdmission"] = _session_state(session, runner)
+        if execute or from_current:
+            admission = _session_state(session, runner, allow_latched=not execute)
+            plan["executionAdmission" if execute else "observationAdmission"] = admission
+        if from_current:
+            patch_document, _ = _read(patch)
+            transform = patch_document.get("coordinates", {}).get("transformToRr2Native")
+            if (not isinstance(transform, dict) or transform.get("kind") != "identity"
+                    or transform.get("qualification") not in {"landmark-reprojection-candidate", "verified"}):
+                raise ValueError("current-native-start-requires-explicit-qualified-identity-transform")
+            observation = _current_pose(session, admission, runner, allow_latched=not execute)
+            observation["transformToRr2Native"] = deepcopy(transform)
+            observation["patch"] = inputs["patch"]
+            observation["qualification"] = "Native start used through this patch's explicit identity transform; " \
+                                           "no global coordinate or live world/floor qualification."
+            plan["startObservation"] = observation
+            start = observation["nativeXYZ"]
+            plan["requestedStartXYZ"] = start
+        command = [str(python), str(query_tool), "--catalog", str(catalog),
+                   "--destination", destination, "--patch", str(patch), "--build", str(build),
+                   "--from", ",".join(format(axis, ".17g") for axis in start),
+                   "--out", str(candidate_path), "--receipt", str(receipt_path)]
+        if search_extent is not None:
+            command += ["--search-extent", format(search_extent, ".17g")]
         query = runner(command, cwd=world_root, text=True, capture_output=True, check=False)
         plan["queryProcess"] = {"exitCode": query.returncode, "stdout": query.stdout,
                                 "stderr": query.stderr}
@@ -284,6 +364,14 @@ def plan_destination(*, catalog, destination, patch, build, start, output_direct
         plan.update(candidate=_reference(candidate_path), destinationReceipt=_reference(receipt_path),
                     destination=deepcopy(receipt["destination"]), review=review)
         plan["stages"]["query"] = candidate["status"]
+        if from_current:
+            after = _current_pose(session, admission, runner, allow_latched=not execute)
+            plan["postPlanningObservation"] = after
+            if not _same_runtime(observation["runtimeIdentity"], after["runtimeIdentity"]):
+                raise ValueError("current-native-player-changed-during-planning")
+            a, b = start, after["nativeXYZ"]
+            if math.hypot(a[0] - b[0], a[2] - b[2]) > .30 or abs(a[1] - b[1]) > .50:
+                raise ValueError("current-native-player-moved-during-planning")
         if candidate["status"] != "complete":
             raise ValueError("complete-candidate-required")
         if query.returncode != 0:
@@ -301,6 +389,13 @@ def plan_destination(*, catalog, destination, patch, build, start, output_direct
         route = adopt_receipt_candidate(candidate, [Path(path).resolve() for path in native_receipts],
             Path(native_context).resolve(), candidate_start=candidate_start, candidate_end=end,
             native_start=native_start, native_end=native_end, direction="forward")
+        if from_current:
+            current_owner = observation["runtimeIdentity"]
+            owner = route["candidateAdoption"]["owner"]
+            if any((current_owner[key] != owner[key] if key == "unitKey" else
+                    str(current_owner[key]).casefold() != str(owner[key]).casefold())
+                   for key in ("machine", "gameBuildSha256", "unitKey")):
+                raise ValueError("current-native-player-does-not-own-adopted-evidence")
         route["candidateAdoption"]["destinationProvenance"] = {
             "receipt": _reference(receipt_path), "destination": deepcopy(receipt["destination"]),
             "qualification": deepcopy(receipt["qualification"])}
@@ -334,7 +429,10 @@ def parser():
     for name in ("catalog", "patch", "build"):
         result.add_argument("--" + name, type=Path, required=True)
     result.add_argument("--destination", required=True)
-    result.add_argument("--from", dest="start", type=_xyz, required=True)
+    starts = result.add_mutually_exclusive_group(required=True)
+    starts.add_argument("--from", dest="start", type=_xyz)
+    starts.add_argument("--from-current", action="store_true",
+                        help="read fresh bound native XYZ through the exact --session; no game input")
     result.add_argument("--out-dir", dest="output_directory", type=Path, required=True)
     result.add_argument("--riftworld-root", type=Path, default=RIFTWORLD_ROOT)
     result.add_argument("--riftworld-python", type=Path)

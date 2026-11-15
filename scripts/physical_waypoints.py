@@ -3287,7 +3287,7 @@ def launch_window(args):
             return data
         except (OSError, ValueError, KeyError, TypeError): return None
 
-    def cli_pose():
+    def cli_pose(*, explicit_refresh=False):
         if live_pose.get() and adapter is not None and markers.running() and not markers.stop_requested:
             try:
                 from scripts.waypoint_beacon_pose import read_pose
@@ -3295,6 +3295,7 @@ def launch_window(args):
                 if pose_path is None: raise ValueError("waiting for the owned beacon reader")
                 pose=read_pose(pose_path, adapter.target, adapter.binding["runtimeIdentity"]["unitKey"])
                 return dict(pose,sampleStatus="fresh",liveEnabled=True,updating=False,
+                            runtimeIdentity=deepcopy(current_identity()), target=deepcopy(adapter.target),
                             ageSeconds=time.monotonic()-pose["acquiredMonotonic"],freshForSeconds=1)
             except (OSError, ValueError, TypeError, KeyError) as exc:
                 return dict(status="unavailable",sampleStatus="unavailable",reason=str(exc),source="owned-beacon-reader",
@@ -3304,13 +3305,15 @@ def launch_window(args):
                     qualification="Last valid sample time is historical only; the owned reader has no current pose.")
         age = time.monotonic() - displayed_acquired if displayed_acquired is not None else None
         limit = 1 if displayed_source=="owned-beacon-reader" else 2
-        fresh=last_pose is not None and adapter is not None and live_pose.get() and not identity_unavailable and age is not None and 0<=age<=limit
-        reason=("RIFT is not connected" if adapter is None else "Live pose paused" if not live_pose.get()
+        fresh=last_pose is not None and adapter is not None and (live_pose.get() or explicit_refresh) and not identity_unavailable and age is not None and 0<=age<=limit
+        reason=("RIFT is not connected" if adapter is None else "Live pose paused" if not live_pose.get() and not explicit_refresh
                 else pose_unavailable_reason if last_pose is None else "Cached sample; refresh for current pose" if not fresh else None)
         return {"status": "fresh" if fresh else "unavailable", "sampleStatus":"fresh" if fresh else "cached" if last_pose else "unavailable",
                 "source": displayed_source, "ageSeconds": age, "sampledAtUtc":displayed_stamp,"freshForSeconds":limit,
                 "liveEnabled":live_pose.get(),"updating":observing or busy,"reason":reason,
                 "position": dict(x=last_pose[0], y=last_y, z=last_pose[1]) if last_pose else None,
+                "runtimeIdentity": deepcopy(current_identity()) if fresh else None,
+                "target": deepcopy(adapter.target) if fresh else None,
                 "bearing": last_pose[2] if last_pose else None,
                 "qualification": "Native pose candidate for display; acquisition freshness is separate from action admission. Cached or paused samples must not be used for control."}
 
@@ -3687,7 +3690,7 @@ def launch_window(args):
                 data.update(route=cli_snapshot()["route"], selected=[table.index(i)+1 for i in table.selection()])
                 if job.get("change") is not None: data["change"] = job["change"]
             if operation=="refresh" and not failure:
-                data=cli_pose()
+                data=cli_pose(explicit_refresh=True)
             response = (cli_error("cancelled" if failure.get("status") == "stopped" else "operation-failed",
                                   failure["reason"], exit_code=130 if failure.get("status") == "stopped" else 1)
                         if failure else cli_ok(data))

@@ -54,9 +54,20 @@ execution keeps `inputSent:null`. The live path has not been exercised by this
 milestone. General area acquisition, novel-path adoption/clearance, automatic
 stuck replanning and service interaction remain separate incomplete work.
 
-Validation on AMD-DESKTOP: 20 destination-plan tests and six external-route tests
+To plan from the current player position, replace `--from X,Y,Z` with
+`--from-current --session EXACT_SESSION_ID`. This performs two fresh read-only
+pose acquisitions through that session's existing reader, before and after the
+query. It checks process/start/build/player identity, timestamp and sample age,
+target, STOP epoch and origin displacement. The supplied patch must explicitly
+retain its qualified identity transform to RR2 native coordinates; this does not
+establish a transform for other patches. A latched STOP permits planning and stays
+latched; execution still requires clear STOP. Explicit refresh works while the
+live display is paused without changing the display setting. No route is loaded
+or movement issued by plan-only observation.
+
+Validation on AMD-DESKTOP: 31 destination-plan tests and six external-route tests
 passed, including the real hidden Tk/mailbox path with a fake reader/mover,
-loaded-route preservation and STOP refusal. Two older GUI tests also fail on an
+loaded-route preservation, fresh current-pose planning and STOP refusal. Two older GUI tests also fail on an
 unchanged Git snapshot (record/start fixture and reverse-readiness expectation);
 their baseline output is retained under
 `artifacts/destination-plan-baseline-20261115-r1/baseline-check.txt`. This is not
