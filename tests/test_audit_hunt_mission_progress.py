@@ -90,6 +90,28 @@ class HuntMissionAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(hunt_mission.MissionError, "proof list disagree"):
             self.check(p)
 
+    def test_qualified_kill_requires_same_selected_target(self):
+        p = deepcopy(self.progress)
+        p["encounter"] = {"status": "completed", "selectedTargetId": "u0000000000000003",
+                          "inputSent": False, "releaseSucceeded": True,
+                          "desktopInputsDown": []}
+        p["killCount"] = 1
+        p["killProofs"] = [{"qualified": True, "kind": "player-kill-confirmed",
+                            "targetId": TARGET, "sequence": 3}]
+        p["encounter"]["killProof"] = deepcopy(p["killProofs"][0])
+        with self.assertRaisesRegex(hunt_mission.MissionError, "selected encounter target"):
+            self.check(p)
+        p["encounter"]["selectedTargetId"] = None
+        with self.assertRaisesRegex(hunt_mission.MissionError, "selected encounter target"):
+            self.check(p)
+        p["encounter"]["selectedTargetId"] = TARGET
+        self.assertEqual(1, self.check(p)["killCount"])
+
+    def test_unmatched_target_without_input_can_still_return_without_kill(self):
+        p = deepcopy(self.progress)
+        p["encounter"]["selectedTargetId"] = "u0000000000000003"
+        self.assertEqual(0, self.check(p)["killCount"])
+
     def test_incomplete_or_forged_completion_is_blocked(self):
         cases = [
             ("completed", False, "not complete"),

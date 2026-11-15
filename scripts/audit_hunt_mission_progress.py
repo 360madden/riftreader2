@@ -75,6 +75,8 @@ def audit(mission, route, progress):
     _required(isinstance(proofs, list) and type(count) is int
               and 0 <= count <= min(1, mission["hunt"]["maximumKills"])
               and len(proofs) == count, "kill count and proof list disagree")
+    _required(not count or target_matches,
+              "qualified kill lacks matching selected encounter target")
     for proof in proofs:
         _required(isinstance(proof, dict) and proof.get("qualified") is True
                   and proof.get("kind") == "player-kill-confirmed"
