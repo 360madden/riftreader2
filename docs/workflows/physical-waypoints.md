@@ -1,5 +1,69 @@
 # Joey D's Waypoints
 
+## Prepared-map destinations
+
+The offline destination bridge composes an existing RiftWorld catalog, exact
+WorldPatch and persisted Detour build with RR2's native-corridor adoption. It
+writes a separate plan and route; it never loads over the current or unsaved
+Waypoints route. The default sends no game input.
+
+From `C:\work\riftreader2`, reproduce the retained courtyard pilot with a fresh
+output directory:
+
+```powershell
+$worldRoot = 'C:\work\RiftWorld'
+.\.venv\Scripts\python.exe scripts\waypoint_destination_plan.py `
+  --catalog artifacts\destination-plan-20261115-r1\destinations.json `
+  --destination courtyard-walked-pilot-end `
+  --patch "$worldRoot\data\patches\44ce8571b899f2af91b5d60afec52dac31b809d512df6637d2083ea96b88452a\patch.json" `
+  --build "$worldRoot\cache\navigation\A9ED98B59570C486693BF1DE2DBD3C3B42EF71E50609CAB369CE2865C2F1B7DF\navigation.json" `
+  --from 7421.43212890625,863.597412109375,2944.64013671875 `
+  --native-receipt artifacts\movement-upgrade\10-unit-out-and-back.json `
+  --native-context artifacts\candidate-native-trial-20261114\context.json `
+  --native-start 0 --native-end 27 `
+  --out-dir artifacts\destination-plan-20261115-NEXT
+```
+
+The real CLI proof is `artifacts/destination-plan-20261115-r1/planned-cli-r2/plan.json`,
+SHA-256 `ABEAAE3440BB33BCE68ECBD7AA69F8F320C62EDA8F2B22F941FF9A84707B86EE`:
+new complete Detour query, full destination coverage, `adoptable`, no blockers,
+`inputSent:false` and `currentRouteChanged:false`. Its destination is an authored
+historically walked corridor endpoint, not a vendor or teleporter. The 0..27
+range refers to the original unsimplified native evidence; an older 0..13 pilot
+range no longer matches that representation.
+
+Without native evidence the result is a source-map plan and reports adoption
+requirements. With matching evidence the fresh bundle includes `candidate.json`,
+`destination.json`, `adopted-route.json` and `plan.json`. Unknown frames, partial
+paths, mismatched evidence and changed sources remain explicit blockers.
+
+For a separately authorized live run, `--execute --session EXACT_SESSION`
+dispatches the adopted route through the existing configured continuous or
+survival engine. The session must already be local, connected, idle and STOP
+clear. It does not change movement settings or clear STOP. A STOP epoch captured
+before planning must still match at dispatch and deferred worker admission.
+The internal CLI action is `route run --file PATH --route-sha256 HEX
+--stop-epoch TOKEN --execute`; it runs a separate adopted document without
+replacing the route table, selection, revision or saved route progress. Raw
+RiftWorld `review-candidate` waypoint exports are rejected at import/admission.
+
+The destination result checks the worker receipt's exact route/request/session,
+runtime identity, release and final XYZ before reporting `arrived-at-approach`.
+An incomplete destination scope remains `route-complete-only`, and uncertain
+execution keeps `inputSent:null`. The live path has not been exercised by this
+milestone. General area acquisition, novel-path adoption/clearance, automatic
+stuck replanning and service interaction remain separate incomplete work.
+
+Validation on AMD-DESKTOP: 20 destination-plan tests and six external-route tests
+passed, including the real hidden Tk/mailbox path with a fake reader/mover,
+loaded-route preservation and STOP refusal. Two older GUI tests also fail on an
+unchanged Git snapshot (record/start fixture and reverse-readiness expectation);
+their baseline output is retained under
+`artifacts/destination-plan-baseline-20261115-r1/baseline-check.txt`. This is not
+a claim that the complete GUI suite is green.
+
+## Waypoints workspace
+
 The desktop helper and console frontend share **Joey D's Waypoints v1.4.0**
 branding. The red panda in the header is also the window icon. Existing
 `Waypoints.cmd` and `rr2-waypoints.cmd` entry points stay compatible.

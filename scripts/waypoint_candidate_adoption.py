@@ -249,12 +249,19 @@ def _adoption_digest(document):
                     "candidateAdoption": metadata})
 
 
+def reject_review_route(document):
+    """A raw RiftWorld review export is not an ordinary or adopted route."""
+    if "riftWorldCandidate" in document:
+        raise ValueError("review-candidate-requires-scoped-adoption")
+
+
 def validate_adopted_route(document, identity, current_context, direction):
     """Gate candidate-origin playback with the supplied *fresh* context and owner.
 
     This function reads no live state. The caller must obtain fresh context and
     must enforce its normal identity, input ownership, and STOP checks.
     """
+    reject_review_route(document)
     if "candidateAdoption" not in document:
         return
     metadata = document["candidateAdoption"]

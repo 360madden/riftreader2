@@ -380,6 +380,12 @@ def build_parser():
             arg(op, "--from", dest="from_point", type=positive, help="one-based starting waypoint; guide confirms fresh arrival for 0.2 seconds")
     arg("guide.start", "--radius", type=bounded(.05, 10),
         help="arrival radius in world units; defaults to the session's configured value (0.6 at startup)")
+    arg("route.run", "--file", type=Path,
+        help="run a distinct scoped adopted route without replacing the loaded route")
+    arg("route.run", "--route-sha256",
+        help="exact SHA-256 of --file from the destination plan; both options are required together")
+    arg("route.run", "--stop-epoch", type=number,
+        help="unchanged controls.stopEpoch captured before external destination planning; a latched STOP refuses dispatch")
 
     for op in ("playback.start", "playback.resume"):
         arg(op, "--checkpoint", type=Path,

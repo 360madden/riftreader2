@@ -887,6 +887,8 @@ def run_map_move(adapter, payload, stop, emit=lambda event: None, *, mover=None)
 
 def validate_route_document(document):
     """Validate route/provenance without requiring measured heights for map points."""
+    from scripts.waypoint_candidate_adoption import reject_review_route
+    reject_review_route(document)
     from scripts.waypoint_progress import _route
     from scripts.waypoint_measurements import document_measurements, parse_projection_route
     _route(document)
@@ -908,10 +910,40 @@ def validate_route_document(document):
 
 def admit_candidate_route(adapter, document, direction="forward"):
     """Recheck adopted-route scope against a newly acquired pinned context."""
+    from scripts.waypoint_candidate_adoption import reject_review_route
+    reject_review_route(document)
     if "candidateAdoption" in document:
         from scripts.waypoint_candidate_adoption import validate_adopted_route
         validate_adopted_route(document, adapter.binding["runtimeIdentity"],
                                read_route_context(adapter), direction)
+
+
+def external_candidate_payload(path, expected_sha256, *, direction="forward", from_point=None):
+    """Snapshot one explicitly selected adopted route without changing the loaded route."""
+    from scripts.waypoint_navigation_candidate import _read_document, MAX_CANDIDATE_BYTES
+    from scripts.waypoint_candidate_adoption import validate_adopted_route
+    from scripts.waypoint_kinds import point_kinds
+    if not isinstance(expected_sha256, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", expected_sha256):
+        raise WaypointError("External route requires its exact SHA-256")
+    document, digest = _read_document(path, MAX_CANDIDATE_BYTES)
+    if digest.casefold() != expected_sha256.casefold():
+        raise WaypointError("External route changed after planning")
+    validate_route_document(document)
+    adoption = document.get("candidateAdoption")
+    if not isinstance(adoption, dict):
+        raise WaypointError("External route requires scoped candidate adoption")
+    validate_adopted_route(document, adoption.get("owner"), document.get("routeContext"), direction)
+    rows = route_points(document["waypoints"])
+    if direction not in ("forward", "reverse"):
+        raise WaypointError("Invalid external route direction")
+    first = (1 if direction == "forward" else len(rows)) if from_point is None else from_point
+    if type(first) is not int or not 1 <= first <= len(rows):
+        raise WaypointError("Choose an existing external starting point")
+    indices = list(range(first - 1, len(rows))) if direction == "forward" else list(range(first - 1, -1, -1))
+    kinds = point_kinds(document)
+    return {"waypoints": [rows[i] for i in indices], "pointKinds": [kinds[i] for i in indices],
+            "admissionDocument": document, "admissionDirection": direction, "sourceIndices": indices,
+            "externalRouteSha256": digest, "externalRouteContext": deepcopy(document.get("routeContext"))}
 
 
 def check_candidate_start(position, waypoint, height):
@@ -1674,6 +1706,7 @@ def launch_window(args):
 
     def perform_operation(operation, points=None, face_walk=False, route_context=None, request_id=None, engine="pulse"):
         nonlocal adapter, published_adapter
+        external_route_sha256 = points.get("externalRouteSha256") if isinstance(points, dict) else None
         retain = operation in ("go", "face", "face-bearing", "play", "resume", "teach", "map-go", "release")
         history, outcome, failure = [], None, None
         stop_verification = None
@@ -1890,6 +1923,7 @@ def launch_window(args):
         finally:
             if retain:
                 receipt = {"operation": operation,
+                           "requestId": request_id, "externalRouteSha256": external_route_sha256,
                            "direction": points[1] if operation in ("play", "resume") and points else None,
                            "status": failure["status"] if failure else "completed",
                            "failure": failure, "result": outcome, "events": history,
@@ -2002,7 +2036,10 @@ def launch_window(args):
                   else "Recording your movement; click Stop Recording to save this route." if operation == "record"
                   else "Saving view…" if operation == "view"
                   else "Reading current RIFT pose…")
-        context = deepcopy(route_metadata.get("routeContext")) if check_route_zone and (operation in ("go", "face", "play", "resume", "teach") or operation == "save" and isinstance(points, dict)) else None
+        if operation == "go" and isinstance(points, dict) and "externalRouteSha256" in points:
+            context = deepcopy(points["externalRouteContext"])
+        else:
+            context = deepcopy(route_metadata.get("routeContext")) if check_route_zone and (operation in ("go", "face", "play", "resume", "teach") or operation == "save" and isinstance(points, dict)) else None
         mode = True if operation in ("play", "resume") else walk_facing.get() if face_walk is None else face_walk
         request_id = cli_action["id"] if cli_action is not None else None
         engine = "continuous" if continuous_travel.get() else "pulse"
@@ -3289,7 +3326,7 @@ def launch_window(args):
 
     def cli_controls():
         listener=foreground_stop is not None
-        return dict(stop_context,stopLatched=stop.is_set(),ownedActionActive=busy,recording=recording,
+        return dict(stop_context,stopLatched=stop.is_set(),stopEpoch=cli_stop_at,ownedActionActive=busy,recording=recording,
             inputReleaseFault=bool(getattr(adapter, "_continuous_input_release_fault", False)),
             inputRecovery=deepcopy(getattr(adapter, "_continuous_move_recovery", None)),
             f8="active" if listener and getattr(foreground_stop,"registered",False) else "unavailable" if listener else "inactive",
@@ -3609,6 +3646,9 @@ def launch_window(args):
             raise CliError("rift-unavailable", "Wait for a verified RIFT connection before starting", exit_code=3)
         job = {"id": rid, "command": command or operation, "operation": operation,
                "started": False, "finished": None, "recordedFile": None, "cancelled": False}
+        if isinstance(payload, dict) and "externalRouteSha256" in payload:
+            job["externalRouteSha256"] = payload["externalRouteSha256"]
+            job["externalStopEpoch"] = payload["externalStopEpoch"]
         cli_action = job
         if operation in ("go", "face", "face-bearing", "record", "map-go", "play", "resume", "survival-preflight") and markers.running():
             stop_markers()
@@ -3616,6 +3656,9 @@ def launch_window(args):
         def advance():
             nonlocal cli_action
             if not job["started"]:
+                if "externalStopEpoch" in job and (stop.is_set() or job["externalStopEpoch"] != cli_stop_at):
+                    cli_action = None
+                    return cli_error("cancelled-by-stop", "Destination plan predates STOP; plan again after explicit Resume/new run", exit_code=130)
                 if job["cancelled"]:
                     cli_action = None
                     return cli_error("cancelled", "Cancelled before starting", exit_code=130)
@@ -3633,6 +3676,8 @@ def launch_window(args):
             failure = event.get("failure") or job.get("editFailure")
             data = dict(operation=event["operation"], receipt=event.get("receipt"), failure=failure,
                         recordedFile=job.get("recordedFile"), state=state.get())
+            if "externalRouteSha256" in job:
+                data["executedRouteSha256"] = job["externalRouteSha256"]
             if operation == "view": data.update(image=saved_view, rerun=saved_rerun)
             if operation == "zone" and not failure: data.update(zone_state())
             if operation == "survival-preflight" and not failure:
@@ -4016,6 +4061,17 @@ def launch_window(args):
                     undo_edit()
                 elif command == "route.run":
                     if values.get("execute") is not True: raise CliError("execute-required", "Movement requires --execute", exit_code=2)
+                    if values.get("file") is not None or values.get("route_sha256") is not None:
+                        if values.get("file") is None or values.get("route_sha256") is None or values.get("stop_epoch") is None:
+                            raise CliError("external-route-identity-required", "External route requires --file, --route-sha256 and --stop-epoch together", exit_code=2)
+                        if stop.is_set() or values["stop_epoch"] != cli_stop_at:
+                            raise CliError("cancelled-by-stop", "STOP changed since destination planning; plan again after explicit Resume/new run", exit_code=130)
+                        payload = external_candidate_payload(cli_file(values["file"]), values["route_sha256"],
+                            direction=values.get("direction", "forward"), from_point=values.get("from_point"))
+                        payload["externalStopEpoch"] = values["stop_epoch"]
+                        return cli_begin(rid, "go", payload, command=command)
+                    if values.get("stop_epoch") is not None:
+                        raise CliError("external-route-identity-required", "--stop-epoch requires an external route", exit_code=2)
                     rows = route_points(selected_points(True))
                     direction = values.get("direction", "forward")
                     index = values.get("from_point", 1 if direction == "forward" else len(rows))-1

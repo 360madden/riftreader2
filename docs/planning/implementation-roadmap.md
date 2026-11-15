@@ -1,5 +1,17 @@
 # RR2 roadmap
 
+**November 15 navigation integration milestone:** A CLI/shared destination-plan
+bridge now composes an existing named approach, exact RiftWorld patch/build,
+fresh Detour query and independently walked native-corridor adoption. Optional
+explicit execution uses the existing continuous/survival session through a
+separate hash-bound route, preserving the loaded route and STOP epoch. Actual
+offline courtyard acceptance passed; no new live travel was run. This is a
+prepared-map first slice, not completion of the end-to-end navigation goal.
+Next qualify the short physical destination loop when authorized, then compose
+general map preparation and bounded replanning from fresh feedback through the
+same interface. Keep CDR discovery supportive rather than a universal gate.
+See [prepared-map destination usage](../workflows/physical-waypoints.md#prepared-map-destinations).
+
 Updated **November 14, 2026 (America/New_York)** from checkout
 `C:\work\riftreader2`, branch `codex/modular-foundation`. This revision covers
 Waypoints v1.2.0 movement (`a394022`), the committed survival intake and action
