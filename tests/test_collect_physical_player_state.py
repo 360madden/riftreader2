@@ -1,6 +1,8 @@
 """No-process tests for the physical-native composite player-state collector."""
 from __future__ import annotations
 from copy import deepcopy
+from contextlib import redirect_stdout
+from io import StringIO
 import hashlib
 import json
 from pathlib import Path
@@ -219,6 +221,43 @@ class StateTests(unittest.TestCase):
             path, report = state.collect(123, Path("result"))
             self.assertEqual(path, Path(temp) / "result" / "summary.json")
             self.assertEqual(report["sources"]["position"]["samples"], 3)
+
+    def test_cli_exposes_actual_native_candidates_without_claiming_qualification(self):
+        report = {
+            "status": "complete-candidate", "selfKeyCandidate": "239816685251645959",
+            "target": OWNER, "qualification": "Native candidates only; no Lua validation.",
+            "sources": {
+                "player-context": {"sourceSha256": "a" * 64, "candidateValues": {
+                    "level": {"status": "numeric-getter-and-presentation-candidate", "rawCandidate": 45},
+                    "calling": {"rawCandidate": 1, "nameCandidate": "warrior"},
+                    "combat": {"status": "raw-byte-candidate", "candidate": False},
+                    "target": {"status": "raw-getter-zero-candidate", "unitIdCandidate": None},
+                }},
+                "position": {"sourceSha256": "b" * 64, "candidateValues": {
+                    "x": 7192.7124, "y": 874.0665, "z": 3018.9937,
+                    "refreshGuardStatus": "guard-ineligible-candidate",
+                }},
+                "vitals": {"sourceSha256": "c" * 64, "candidateValues": {
+                    "health": {"status": "calculated-candidate", "current": 18208, "maximum": 18208},
+                    "mana": {"status": "unavailable", "current": None},
+                    "energy": {"status": "unavailable", "current": None},
+                }},
+            },
+        }
+        output = StringIO()
+        with patch.object(state, "collect", return_value=(Path("fresh/summary.json"), report)), \
+             redirect_stdout(output):
+            self.assertEqual(0, state.main(["--physical-pid", "123"]))
+        shown = json.loads(output.getvalue())
+        self.assertEqual(123, shown["processId"])
+        self.assertEqual("7192.7124", str(shown["positionCandidate"]["x"]))
+        self.assertEqual(45, shown["playerContextCandidate"]["level"]["rawCandidate"])
+        self.assertEqual("raw-getter-zero-candidate", shown["playerContextCandidate"]["target"]["status"])
+        self.assertIsNone(shown["playerContextCandidate"]["target"]["unitIdCandidate"])
+        self.assertEqual(18208, shown["vitalsCandidate"]["health"]["current"])
+        self.assertEqual("unavailable", shown["vitalsCandidate"]["energy"]["status"])
+        self.assertEqual("a" * 64, shown["sources"]["player-context"])
+        self.assertEqual(report["qualification"], shown["qualification"])
 
 
 if __name__ == "__main__":

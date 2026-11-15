@@ -139,10 +139,24 @@ def main(argv=None):
     except (OSError, ValueError, KeyError, TypeError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:240]}))
         return 2
-    print(json.dumps({"status": report["status"], "summary": str(path),
-                      "selfKeyCandidate": report["selfKeyCandidate"],
-                      "sources": {k: v["sourceSha256"] for k, v in report["sources"].items()},
-                      "qualification": report["qualification"]}))
+    # Expose the already collected, source-hashed native candidates directly to
+    # headless callers. These projections are not independently qualified values.
+    values = {kind: report["sources"][kind]["candidateValues"] for kind in KINDS}
+    player = values["player-context"]
+    position = values["position"]
+    vitals = values["vitals"]
+    print(json.dumps({
+        "status": report["status"], "summary": str(path),
+        "processId": report["target"]["processId"],
+        "processStartUtcTicks": report["target"]["processStartUtcTicks"],
+        "gameBuildSha256": report["target"]["executableSha256"],
+        "selfKeyCandidate": report["selfKeyCandidate"],
+        "playerContextCandidate": {k: player.get(k) for k in ("level", "calling", "combat", "target")},
+        "positionCandidate": {k: position.get(k) for k in ("x", "y", "z", "refreshGuardStatus")},
+        "vitalsCandidate": {k: vitals.get(k) for k in ("health", "mana", "energy")},
+        "sources": {k: v["sourceSha256"] for k, v in report["sources"].items()},
+        "qualification": report["qualification"],
+    }, allow_nan=False))
     return 0
 
 
