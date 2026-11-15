@@ -234,6 +234,51 @@ class HuntMissionAuditTests(unittest.TestCase):
             outbound_receipt=outbound, return_receipt=returned,
             require_route_progress=True)["status"])
 
+    def test_strict_route_receipts_require_same_outbound_return_turnaround(self):
+        # Both sidecars individually validate, but their turnaround points
+        # disagree: the retained return walk cannot begin off the outbound end.
+        alternate = hunt_mission._return_document(
+            [(1.0, 5.0, 2.0), (2.0, 5.0, 3.3),
+             (3.0, 5.0, 4.6), (4.8, 5.0, 5.4)], IDENTITY)
+        outbound = self.route_receipt(self.route)
+        returned = self.route_receipt(alternate)
+        for retreat in (False, True):
+            with self.subTest(retreat=retreat):
+                p = deepcopy(self.progress)
+                p["returnDocument"] = alternate
+                if retreat:
+                    p["encounter"]["reason"] = "selected-encounter-unsafe"
+                    p.pop("returnNextIndex")
+                    p["safeRetreat"] = {
+                        "safeRetreat": True, "status": "arrived",
+                        "releaseSucceeded": True, "desktopInputsDown": [],
+                        "position": deepcopy(SAFE)}
+                with self.assertRaisesRegex(hunt_mission.MissionError, "turnaround"):
+                    cli.audit(self.mission, self.route, p,
+                              outbound_receipt=outbound,
+                              return_receipt=None if retreat else returned,
+                              require_route_progress=True)
+
+    def test_strict_turnaround_allows_arrival_tolerance(self):
+        near = hunt_mission._return_document(
+            [(1.0, 5.0, 2.0), (2.0, 5.0, 3.3),
+             (3.0, 5.0, 4.6), (4.3, 5.0, 5.8)], IDENTITY)
+        p = deepcopy(self.progress)
+        p["returnDocument"] = near
+        self.assertEqual("consistent", cli.audit(
+            self.mission, self.route, p,
+            outbound_receipt=self.route_receipt(self.route),
+            return_receipt=self.route_receipt(near),
+            require_route_progress=True)["status"])
+
+    def test_strict_turnaround_checks_known_route_height(self):
+        raised_route = {**self.route, "heights": [5.0, 7.0]}
+        with self.assertRaisesRegex(hunt_mission.MissionError, "turnaround height"):
+            cli.audit(self.mission, raised_route, self.progress,
+                      outbound_receipt=self.route_receipt(raised_route),
+                      return_receipt=self.route_receipt(self.document),
+                      require_route_progress=True)
+
     def test_safe_retreat_needs_outbound_sidecar_not_normal_return(self):
         p = deepcopy(self.progress)
         p["encounter"]["reason"] = "selected-encounter-unsafe"

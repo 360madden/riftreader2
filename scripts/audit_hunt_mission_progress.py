@@ -149,6 +149,19 @@ def audit(mission, route, progress, *, outbound_receipt=None,
     if require_route_progress:
         _require_route_progress(outbound_receipt, route, identity,
                                 len(route["waypoints"]), "outbound")
+        # The return corridor was reconstructed from the outbound walk, so its
+        # first point must agree with the outbound route's final waypoint.
+        # Individually valid sidecars must not be joined across different
+        # turnaround locations, including during an emergency safe retreat.
+        outbound_end = route["waypoints"][-1]
+        return_start = document["waypoints"][0]
+        _required(hypot(outbound_end[1] - return_start[1],
+                        outbound_end[2] - return_start[2]) <= .50 + 1e-9,
+                  "outbound/return turnaround is inconsistent")
+        route_heights = route.get("heights")
+        if route_heights is not None and route_heights[-1] is not None:
+            _required(abs(route_heights[-1] - document["heights"][0]) <= 1.0 + 1e-9,
+                      "outbound/return turnaround height is inconsistent")
         if mode == "return":
             _require_route_progress(return_receipt, document, identity,
                                     len(document["waypoints"]), "return")
