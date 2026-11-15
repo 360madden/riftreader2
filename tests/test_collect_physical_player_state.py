@@ -63,6 +63,103 @@ class StateTests(unittest.TestCase):
                 self.assertEqual(hashlib.sha256(Path(row["path"]).read_bytes()).hexdigest().upper(),
                                  row["sourceSha256"])
 
+    def stats_read(self, selection, kind, path, **options):
+        self.assertEqual(kind, "stats")
+        self.assertEqual(options, {})  # Stats reader does not accept burst options.
+        fields = (("armor", 37), ("powerAttack", 24), ("powerSpell", 32),
+                  ("critAttack", 26), ("critSpell", 33), ("strength", 5),
+                  ("dexterity", 1), ("intelligence", 3), ("wisdom", 4),
+                  ("endurance", 2), ("resistLife", 35), ("resistDeath", 36),
+                  ("resistFire", 38), ("resistWater", 39), ("resistEarth", 40),
+                  ("resistAir", 41), ("hit", 31), ("critPower", 83),
+                  ("block", 27), ("dodge", 30))
+        mapping = [-1] * 84
+        rows = []
+        for index, (name, selector) in enumerate(fields):
+            mapping[selector] = index
+            value = {"status": "raw-candidate", "rawSigned64": 100 + index,
+                     "doubleCandidate": float(100 + index),
+                     "precision": "exact-integer-range"}
+            rows.append({"name": name, "selector": selector, "mappedIndex": index,
+                         "ordinary": value.copy(), "unbuffed": value.copy()})
+        source = {
+            "schemaVersion": 1, "contractVersion": "native-current-stats-candidate/1",
+            "status": "complete", "observation": {
+                "identity": {"processId": OWNER["processId"],
+                             "processStartUtcTicks": int(OWNER["processStartUtcTicks"]),
+                             "executableSha256": state.BUILD_SHA,
+                             "moduleBaseAddress": 123456, "moduleSize": 1234567},
+                "unitKey": 239816685251645959,
+                "startedAtUtc": "2026-11-15T18:00:03Z",
+                "completedAtUtc": "2026-11-15T18:00:04Z",
+                "qualification": "raw typed stat candidates; API availability, units, freshness and restart unverified",
+                "selectorMapCandidate": mapping, "stats": rows,
+            },
+        }
+        path.write_text(json.dumps(source), encoding="utf-8")
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        return {"status": "complete", "nativeRead": kind, "target": selection["target"],
+                "nativeOutput": str(path), "nativeSourceSha256": digest,
+                "nativeValues": state.physical_rift._native_values("stats", source)}
+
+    def test_opt_in_stats_joins_same_owner_with_one_shot_and_pinned_values(self):
+        def fake(selection, kind, path, **options):
+            if kind == "stats":
+                return self.stats_read(selection, kind, path, **options)
+            return self.fake_read(selection, kind, path, **options)
+        with TemporaryDirectory() as temp, \
+             patch.object(state.socket, "gethostname", return_value=state.HOST), \
+             patch.object(state.physical_rift, "select_physical", return_value=SELECTION) as select, \
+             patch.object(state.physical_rift, "read_native", side_effect=fake) as read:
+            path, report = state.collect(123, Path(temp) / "out", samples=2, include_stats=True)
+            self.assertEqual(select.call_count, 9)
+            self.assertEqual(read.call_count, 4)
+            self.assertEqual(set(report["sources"]), set(state.KINDS) | {"stats"})
+            self.assertEqual(report["sources"]["stats"]["samples"], 1)
+            self.assertEqual(report["sources"]["stats"]["candidateValues"]["selectorCount"], 20)
+            self.assertEqual(json.loads(path.read_text()), report)
+
+    def test_stats_wrong_source_digest_is_refused_before_summary(self):
+        def fake(selection, kind, path, **options):
+            if kind == "stats":
+                result = self.stats_read(selection, kind, path, **options)
+                result["nativeSourceSha256"] = "0" * 64
+                return result
+            return self.fake_read(selection, kind, path, **options)
+        with TemporaryDirectory() as temp, \
+             patch.object(state.socket, "gethostname", return_value=state.HOST), \
+             patch.object(state.physical_rift, "select_physical", return_value=SELECTION), \
+             patch.object(state.physical_rift, "read_native", side_effect=fake):
+            dest = Path(temp) / "out"
+            with self.assertRaisesRegex(ValueError, "stats-source-identity-invalid"):
+                state.collect(123, dest, include_stats=True)
+            self.assertFalse((dest / "summary.json").exists())
+
+    def test_include_stats_cli_shows_all_source_pinned_raw_candidates(self):
+        report = {
+            "status": "complete-candidate", "target": OWNER,
+            "selfKeyCandidate": "239816685251645959",
+            "qualification": "Sequential read-only native candidates, unqualified",
+            "sources": {
+                "player-context": {"sourceSha256": "A" * 64, "candidateValues": {}},
+                "position": {"sourceSha256": "B" * 64, "candidateValues": {}},
+                "vitals": {"sourceSha256": "C" * 64, "candidateValues": {}},
+                "stats": {"sourceSha256": "D" * 64,
+                          "candidateValues": {"status": "candidate-only", "selectorCount": 20,
+                                              "stats": [{"name": "armor", "ordinary": {"rawSigned64": 4156}}]}},
+            },
+        }
+        output = StringIO()
+        with patch.object(state, "collect", return_value=(Path("fresh/summary.json"), report)) as collect, \
+             redirect_stdout(output):
+            self.assertEqual(0, state.main(["--physical-pid", "123", "--include-stats"]))
+        collect.assert_called_once()
+        self.assertTrue(collect.call_args.kwargs["include_stats"])
+        shown = json.loads(output.getvalue())
+        self.assertEqual(20, shown["statsCandidate"]["selectorCount"])
+        self.assertEqual(4156, shown["statsCandidate"]["stats"][0]["ordinary"]["rawSigned64"])
+        self.assertEqual("D" * 64, shown["sources"]["stats"])
+
     def test_wrong_host_or_invalid_pid_never_reads_process(self):
         with patch.object(state.socket, "gethostname", return_value="OTHER"), \
              patch.object(state.physical_rift, "select_physical") as select:

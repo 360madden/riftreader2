@@ -42,9 +42,10 @@ def pin(pid):
     return selection
 
 
-def collect(pid, output_dir, *, samples=3, interval_ms=200):
+def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False):
     require(type(samples) is int and 2 <= samples <= 10
-            and type(interval_ms) is int and 0 <= interval_ms <= 1000,
+            and type(interval_ms) is int and 0 <= interval_ms <= 1000
+            and type(include_stats) is bool,
             "invalid-sampling-bounds")
     first = pin(pid)
     owner = first["target"]
@@ -55,11 +56,12 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200):
             "new-output-directory-required")
     output_dir.mkdir()
     results, module, self_key = {}, None, None
-    for kind in KINDS:
+    for kind in KINDS + (("stats",) if include_stats else ()):
         require(pin(pid)["target"] == owner, "epoch-changed-before-read")
         path = output_dir / (kind + ".json")
-        result = physical_rift.read_native(first, kind, path,
-                                           samples=samples, interval_ms=interval_ms)
+        # Stats is a one-shot existing native reader, not a burst command.
+        options = {} if kind == "stats" else {"samples": samples, "interval_ms": interval_ms}
+        result = physical_rift.read_native(first, kind, path, **options)
         require(result.get("status") == "complete"
                 and result.get("nativeRead") == kind
                 and result.get("target") == owner
@@ -71,7 +73,9 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200):
         # Use the same duplicate-key/nonfinite-rejecting source parser as replay.
         # Never publish a receipt that a subsequent independent replay must refuse.
         report, source_sha = context.load(path)
-        identity = report.get("identity")
+        observation = report.get("observation")
+        identity = (observation.get("identity") if kind == "stats" and isinstance(observation, dict)
+                    else report.get("identity"))
         require(isinstance(identity, dict)
                 and identity.get("processId") == pid
                 and str(identity.get("processStartUtcTicks")) == owner["processStartUtcTicks"]
@@ -80,7 +84,10 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200):
                 and type(identity.get("moduleSize")) is int
                 and identity["moduleBaseAddress"] > 0 and identity["moduleSize"] > 0
                 and report.get("status") == "complete"
-                and report.get("completedSamples") == samples,
+                and ((kind == "stats" and report.get("contractVersion") == "native-current-stats-candidate/1"
+                      and isinstance(observation, dict)
+                      and result.get("nativeSourceSha256", "").upper() == source_sha)
+                     or (kind != "stats" and report.get("completedSamples") == samples)),
                 kind + "-source-identity-invalid")
         current_module = (identity["moduleBaseAddress"], identity["moduleSize"])
         if module is None:
@@ -106,7 +113,7 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200):
         require(pin(pid)["target"] == owner, "epoch-changed-after-read")
         results[kind] = {
             "path": str(path), "sourceSha256": source_sha,
-            "samples": samples, "candidateValues": values,
+            "samples": 1 if kind == "stats" else samples, "candidateValues": values,
             **({"burstSummary": result["nativeBurstSummary"]}
                if "nativeBurstSummary" in result else {}),
         }
@@ -130,18 +137,21 @@ def main(argv=None):
     parser.add_argument("--physical-pid", type=int, required=True)
     parser.add_argument("--samples", type=int, default=3)
     parser.add_argument("--interval-ms", type=int, default=200)
+    parser.add_argument("--include-stats", action="store_true",
+                        help="also acquire one source-pinned 20-stat native candidate snapshot")
     parser.add_argument("--output-dir", type=Path,
                         default=ROOT / "artifacts" / ("physical-state-" + uuid.uuid4().hex))
     args = parser.parse_args(argv)
     try:
         path, report = collect(args.physical_pid, args.output_dir,
-                               samples=args.samples, interval_ms=args.interval_ms)
+                               samples=args.samples, interval_ms=args.interval_ms,
+                               include_stats=args.include_stats)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:240]}))
         return 2
     # Expose the already collected, source-hashed native candidates directly to
     # headless callers. These projections are not independently qualified values.
-    values = {kind: report["sources"][kind]["candidateValues"] for kind in KINDS}
+    values = {kind: source["candidateValues"] for kind, source in report["sources"].items()}
     player = values["player-context"]
     position = values["position"]
     vitals = values["vitals"]
@@ -154,6 +164,7 @@ def main(argv=None):
         "playerContextCandidate": {k: player.get(k) for k in ("level", "calling", "combat", "target")},
         "positionCandidate": {k: position.get(k) for k in ("x", "y", "z", "refreshGuardStatus")},
         "vitalsCandidate": {k: vitals.get(k) for k in ("health", "mana", "energy")},
+        **({"statsCandidate": values["stats"]} if "stats" in values else {}),
         "sources": {k: v["sourceSha256"] for k, v in report["sources"].items()},
         "qualification": report["qualification"],
     }, allow_nan=False))

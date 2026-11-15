@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 import shutil
 from tempfile import TemporaryDirectory
@@ -40,6 +41,63 @@ class StateReplayTests(unittest.TestCase):
             digest = hashlib.sha256(path.read_bytes()).hexdigest().upper()
             self.edit_summary(lambda s: s["sources"][kind].update(sourceSha256=digest))
         return report
+
+    def attach_stats(self):
+        """Make an independent synthetic one-shot fourth receipt after vitals."""
+        summary = json.loads(self.summary.read_text())
+        vitals = json.loads((self.home / "vitals.json").read_text())
+        identity = vitals["identity"]
+        last = datetime.fromisoformat(vitals["observations"][-1]["completedAtUtc"].replace("Z", "+00:00"))
+        fields = (("armor", 37), ("powerAttack", 24), ("powerSpell", 32),
+                  ("critAttack", 26), ("critSpell", 33))
+        rows = []
+        for i, (name, selector) in enumerate(fields):
+            value = {"status": "raw-candidate", "rawSigned64": 100 + i,
+                     "doubleCandidate": float(100 + i), "precision": "exact-integer-range"}
+            rows.append({"name": name, "selector": selector, "mappedIndex": i,
+                         "ordinary": value.copy(), "unbuffed": value.copy()})
+        report = {"schemaVersion": 1, "contractVersion": "native-current-stats-candidate/1",
+                  "status": "complete", "observation": {
+                      "identity": identity,
+                      "unitKey": int(summary["selfKeyCandidate"]),
+                      "startedAtUtc": (last + timedelta(seconds=1)).isoformat(),
+                      "completedAtUtc": (last + timedelta(seconds=2)).isoformat(),
+                      "qualification": "raw typed stat candidates; API availability, units, freshness and restart unverified",
+                      "stats": rows}}
+        path = self.home / "stats.json"
+        path.write_text(json.dumps(report), encoding="utf-8")
+        digest = hashlib.sha256(path.read_bytes()).hexdigest().upper()
+        self.edit_summary(lambda x: x["sources"].update(stats={
+            "path": str(path), "sourceSha256": digest, "samples": 1,
+            "candidateValues": replay._native_values("stats", report)}))
+        return report
+
+    def test_optional_stats_source_replays_and_original_sources_remain(self):
+        self.attach_stats()
+        result = replay.verified_state(self.summary)
+        self.assertEqual(set(result["sources"]), set(replay.state.KINDS) | {"stats"})
+        self.assertEqual(result["sources"]["stats"]["samples"], 1)
+        self.assertEqual(result["candidateValues"]["stats"]["selectorCount"], 5)
+
+    def test_optional_stats_source_tamper_refused(self):
+        self.attach_stats()
+        self.edit_source("stats", lambda r: r["observation"].update(unitKey=12), repin=False)
+        with self.assertRaisesRegex(ValueError, "source-sha-mismatch"):
+            replay.verified_state(self.summary)
+
+    def test_optional_stats_wrong_self_or_time_refused_even_when_rehashed(self):
+        for field in ("self", "time"):
+            with self.subTest(field=field):
+                self.attach_stats()
+                if field == "self":
+                    self.edit_source("stats", lambda r: r["observation"].update(unitKey=12))
+                    message = "stats-sample-owner"
+                else:
+                    self.edit_source("stats", lambda r: r["observation"].update(
+                        startedAtUtc="2026-11-01T00:00:00Z"))
+                    message = "stats-sample-time-order"
+                with self.assertRaisesRegex(ValueError, message):
+                    replay.verified_state(self.summary)
 
     def test_original_composite_three_reader_sources_replay(self):
         result = replay.verified_state(self.summary)

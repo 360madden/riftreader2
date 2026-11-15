@@ -29,6 +29,8 @@ def verified_state(filename):
     filename = Path(filename)
     receipt, receipt_sha = context.load(filename)
     owner = receipt.get("target")
+    kinds = state.KINDS + (("stats",) if isinstance(receipt.get("sources"), dict)
+                           and "stats" in receipt["sources"] else ())
     require(receipt.get("schemaVersion") == 1
             and receipt.get("evidenceKind") == "amd-physical-player-state-candidate/1"
             and receipt.get("status") == "complete-candidate"
@@ -39,7 +41,7 @@ def verified_state(filename):
             and str(owner.get("processStartUtcTicks", "")).isdecimal()
             and str(owner.get("executableSha256", "")).upper() == state.BUILD_SHA
             and isinstance(receipt.get("sources"), dict)
-            and set(receipt["sources"]) == set(state.KINDS)
+            and set(receipt["sources"]) == set(kinds)
             and isinstance(receipt.get("selfKeyCandidate"), str)
             and receipt["selfKeyCandidate"].isdecimal()
             and int(receipt["selfKeyCandidate"]) > 0,
@@ -48,25 +50,32 @@ def verified_state(filename):
     require(all(type(v) is int and v > 0 for v in module), "invalid-module")
     values, hashes = {}, {}
     previous_end, first_time, last_time = None, None, None
-    for kind in state.KINDS:
+    for kind in kinds:
         saved = receipt["sources"][kind]
         require(isinstance(saved, dict)
-                and type(saved.get("samples")) is int and 2 <= saved["samples"] <= 10
+                and type(saved.get("samples")) is int
+                and (saved["samples"] == 1 if kind == "stats" else 2 <= saved["samples"] <= 10)
                 and isinstance(saved.get("sourceSha256"), str)
                 and Path(str(saved.get("path", ""))).name == kind + ".json",
                 kind + "-invalid-source-pin")
         # Resolve fixed local filenames, NOT arbitrary absolute paths from receipts.
         report, actual_sha = context.load(filename.parent / (kind + ".json"),
                                           saved["sourceSha256"])
-        identity, rows = report.get("identity"), report.get("observations")
+        if kind == "stats":
+            observation = report.get("observation")
+            identity = observation.get("identity") if isinstance(observation, dict) else None
+            rows = [observation] if isinstance(observation, dict) else None
+        else:
+            identity, rows = report.get("identity"), report.get("observations")
         require(isinstance(identity, dict)
                 and identity.get("processId") == owner["processId"]
                 and str(identity.get("processStartUtcTicks")) == owner["processStartUtcTicks"]
                 and str(identity.get("executableSha256", "")).upper() == state.BUILD_SHA
                 and (identity.get("moduleBaseAddress"), identity.get("moduleSize")) == module
                 and report.get("status") == "complete"
-                and report.get("requestedSamples") == saved["samples"]
-                and report.get("completedSamples") == saved["samples"]
+                and ((kind == "stats" and report.get("contractVersion") == "native-current-stats-candidate/1")
+                     or (kind != "stats" and report.get("requestedSamples") == saved["samples"]
+                         and report.get("completedSamples") == saved["samples"]))
                 and isinstance(rows, list) and len(rows) == saved["samples"]
                 and (report.get("observation") == rows[-1] if kind != "position"
                      else report.get("observation") is None),
