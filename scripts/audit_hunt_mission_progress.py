@@ -41,6 +41,19 @@ def _require_route_progress(receipt, document, identity, expected_index, label):
             f"{label} route progress receipt is invalid: {exc}") from exc
     _required(cursor.direction == "forward" and cursor.next_index == expected_index,
               f"{label} route progress receipt is incomplete")
+    # _from_payload validates the saved cursor and route hash, but does not
+    # re-run begin()'s start-location admission. Do not accept a completed
+    # sidecar whose claimed origin was never on this route.
+    from math import hypot
+    first = cursor._point(0)
+    start = cursor.start
+    pass_guide = cursor.kinds[0] == "pass" and len(cursor.points) > 1
+    tolerance = .50 if pass_guide else .30
+    _required(hypot(start["x"] - first["x"], start["z"] - first["z"])
+              <= tolerance + 1e-9
+              and ("y" not in first or
+                   ("y" in start and abs(start["y"] - first["y"]) <= 1.0)),
+              f"{label} route origin is inconsistent")
 
 
 def audit(mission, route, progress, *, outbound_receipt=None,

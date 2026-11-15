@@ -206,6 +206,34 @@ class HuntMissionAuditTests(unittest.TestCase):
                     cli.audit(self.mission, self.route, self.progress,
                               require_route_progress=True, **arguments)
 
+    def test_strict_sidecar_origin_requires_a_real_route_start(self):
+        outbound = self.route_receipt(self.route)
+        returned = self.route_receipt(self.document)
+        for side, invalid_start in [
+            ("outbound", {"x": 500.0, "z": 500.0}),
+            ("return", {"x": 400.0, "z": 600.0, "y": 5.0}),
+            ("return", {"x": 4.0, "z": 6.0, "y": 999.0}),
+            ("return", {"x": 4.0, "z": 6.0}),
+        ]:
+            with self.subTest(side=side, start=invalid_start):
+                kwargs = {"outbound_receipt": deepcopy(outbound),
+                          "return_receipt": deepcopy(returned)}
+                kwargs[side + "_receipt"]["start"] = invalid_start
+                with self.assertRaisesRegex(hunt_mission.MissionError,
+                                            "route origin"):
+                    cli.audit(self.mission, self.route, self.progress,
+                              require_route_progress=True, **kwargs)
+
+    def test_strict_route_origin_retains_valid_pass_and_height_tolerances(self):
+        outbound = self.route_receipt(self.route)
+        returned = self.route_receipt(self.document)
+        outbound["start"]["x"] += .49  # Pass-guide initial admission permits 0.50.
+        returned["start"]["y"] += .99  # Height admission permits 1.0.
+        self.assertEqual("consistent", cli.audit(
+            self.mission, self.route, self.progress,
+            outbound_receipt=outbound, return_receipt=returned,
+            require_route_progress=True)["status"])
+
     def test_safe_retreat_needs_outbound_sidecar_not_normal_return(self):
         p = deepcopy(self.progress)
         p["encounter"]["reason"] = "selected-encounter-unsafe"
