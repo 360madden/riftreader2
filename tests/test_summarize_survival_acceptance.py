@@ -392,6 +392,45 @@ class SurvivalAcceptanceSummaryTests(unittest.TestCase):
                 observed = summary.summarize([{"status": "stopped"}], telemetry)
                 self.assertEqual(expected, observed["acceptance"]["checkpointInvariant"])
 
+    def test_malformed_structured_event_identity_cannot_crash_or_claim_damage(self):
+        player_id, target_id = "u0000000000000001", "u0000000000000002"
+        incoming = {"sequence": 7, "clock": 10.5, "kind": "damage", "damage": 12,
+                    "caster": target_id, "target": player_id,
+                    "selectedTargetId": target_id}
+        outgoing = {"sequence": 8, "clock": 10.5, "kind": "damage", "damage": 20,
+                    "caster": player_id, "target": target_id,
+                    "selectedTargetId": target_id}
+        for event_kind, original in (("incoming", incoming), ("outgoing", outgoing)):
+            for key, invalid in (("sequence", [7]), ("clock", {"at": 10.5}),
+                                 ("caster", {"id": player_id}),
+                                 ("target", [target_id])):
+                with self.subTest(event=event_kind, field=key):
+                    before = self.sample(10, 100, 100)
+                    after = self.sample(11, 88, 80,
+                                        **{event_kind: {**original, key: invalid}})
+                    report = summary.summarize([{"status": "encounter-interrupted"}],
+                                               [before, after])
+                    self.assertFalse(report["acceptance"]["incomingDamage"])
+                    self.assertFalse(report["acceptance"]["outgoingDamage"])
+                    self.assertEqual("unavailable",
+                                     report["telemetry"][event_kind + "Correlation"]["status"])
+
+    def test_extreme_numeric_receipts_are_unavailable_not_exceptions(self):
+        player_id, target_id = "u0000000000000001", "u0000000000000002"
+        event = {"sequence": 7, "clock": 10 ** 400, "kind": "damage", "damage": 12,
+                 "caster": target_id, "target": player_id,
+                 "selectedTargetId": target_id}
+        before = self.sample(10, 100, 100)
+        after = self.sample(11, 88, 100, incoming=event)
+        result = summary.summarize([{"status": "encounter-interrupted"}], [before, after])
+        self.assertFalse(result["acceptance"]["incomingDamage"])
+        self.assertEqual("unavailable", result["telemetry"]["incomingCorrelation"]["status"])
+
+        after = self.sample(11, 88, 100)
+        after["native"] = {"player": {"health": {"current": 10 ** 400, "maximum": 10 ** 400}}}
+        result = summary.summarize([{"status": "stopped"}], [before, after])
+        self.assertEqual("telemetry-percent", result["telemetry"]["selfHealthDrops"][0]["basis"])
+
     def test_route_only_never_claims_damage_and_cli_writes_new_summary(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

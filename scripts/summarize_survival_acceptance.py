@@ -52,7 +52,13 @@ def _rows(path):
 
 
 def _number(value):
-    return float(value) if type(value) in (int, float) and math.isfinite(value) else None
+    if type(value) not in (int, float):
+        return None
+    try:
+        number = float(value)
+    except (ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) else None
 
 
 def _same(left, right):
@@ -181,13 +187,21 @@ def _events(samples, field, incoming):
         if not isinstance(event, dict):
             continue
         sequence = event.get("sequence")
+        clock = _number(event.get("clock"))
+        if clock is None:
+            continue
         # Event counters can repeat after a Lua producer restart or a target
         # switch. They identify an event only within its originating context.
         identity = (sample.get("sessionId"), sample.get("epoch"),
                     sample.get("playerId"), sample.get("targetId"),
                     sequence, event.get("clock"), event.get("caster"),
                     event.get("target"))
-        if identity in seen:
+        # Retained JSON may contain structured/corrupt event identity fields.
+        # Reject such events rather than crashing or attributing their damage.
+        try:
+            if identity in seen:
+                continue
+        except TypeError:
             continue
         seen.add(identity)
         damage = _number(event.get("damage"))
@@ -204,7 +218,7 @@ def _events(samples, field, incoming):
                     and _same(event.get("caster"), sample.get("playerId"))
                     and _same(event.get("target"), selected))
         if damage is not None and damage > 0 and expected:
-            result.append({"sequence": sequence, "clock": _number(event.get("clock")),
+            result.append({"sequence": sequence, "clock": clock,
                            "damage": damage, "abilityName": event.get("abilityName"),
                            "caster": event.get("caster"), "target": event.get("target"),
                            "sessionId": sample.get("sessionId"),
