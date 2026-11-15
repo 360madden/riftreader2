@@ -137,3 +137,22 @@ Next keep dense, continuity-qualified walked samples at the hunt-to-survival
 handoff rather than treating display simplification as traversed evidence. Group
 that correction's physical acceptance with the next authorized bounded survival
 run; retain the separate source geometry/clearance qualifications.
+
+
+## Hunt-to-survival checkpoint continuity
+
+The mission now retains a separate bounded retreat seed made only from observed
+samples, while playback keeps compact waypoints. The seed preserves ordered
+corners, repeated visits, height changes and the safe anchor. Persisted samples
+must match the compact corridor in order, planar/height tolerances, endpoints,
+continuity and runtime identity. Encounter Resume validates before any encounter
+input or checkpoint transition; retreat dispatch rechecks it. Unsupported legacy
+sparse checkpoints refuse rather than invent missing observations.
+
+Terminal retreat retains up to 500 admitted samples and rejects a 501st before
+mutation; ordinary travel keeps its 256-point rolling trail. The offline handoff
+covers a compact two-waypoint straight with its observed continuity seed, a
+260-point trail reaching its original anchor, corrupt checkpoint refusal and
+vertical/loop round trips. This does not authorize or establish live gameplay.
+The next acceptance task remains a separately authorized bounded physical
+travel/encounter/recovery/retreat run with STOP and release checks.

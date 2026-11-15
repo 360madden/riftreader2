@@ -300,7 +300,8 @@ class HuntMissionTests(unittest.TestCase):
         self.assertEqual(["outbound"],playback_calls)
         points,options=runtime.assertions
         self.assertEqual([["Return 1",4.0,6.0],["Return 2",1.0,2.0]],points)
-        self.assertEqual([(1.0,5.0,2.0),(4.0,5.0,6.0)],
+        self.assertEqual([(1.0,5.0,2.0),(2.0,5.0,3.3),
+                          (3.0,5.0,4.6),(4.0,5.0,6.0)],
             [(p["x"],p["y"],p["z"]) for p in options["initial_retreat_trail"]])
         self.assertTrue(options["assess_before_travel"] and options["finish_after_retreat"])
         self.assertEqual("retreated-no-qualified-kill",result["status"])

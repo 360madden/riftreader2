@@ -156,7 +156,7 @@ def load_definition(mission_path, route_path, profile_path):
     return mission, route, profile
 
 
-def _walked_corridor(legs):
+def _walked_corridor(legs, *, include_samples=False):
     corridor = []
     for number, leg in enumerate(legs, 1):
         if not isinstance(leg, dict) or leg.get("status") != "arrived":
@@ -187,15 +187,45 @@ def _walked_corridor(legs):
     if len(corridor) < 2: raise MissionError("outbound native path is too short for return")
     retained = _coalesce_retained_corridor(corridor)
     if len(retained) > MAX_WAYPOINTS: raise MissionError("return corridor exceeds waypoint limit")
-    return retained
+    return (retained, corridor) if include_samples else retained
 
 
-def _return_document(corridor, identity=None):
+def _retreat_seed(samples, retained):
+    """Keep actual ordered samples, including corners and bounded connecting hops."""
+    indices, cursor = [], 0
+    for point in retained:
+        # The simplifier returns original tuple objects. Match their identities,
+        # not just coordinates: a loop may visit the same point more than once.
+        while cursor < len(samples) and samples[cursor] is not point:
+            cursor += 1
+        if cursor == len(samples): raise MissionError("retained corridor sample order is invalid")
+        indices.append(cursor)
+        cursor += 1
+    selected = [samples[0]]
+    start = 0
+    for end in indices[1:]:
+        while start < end:
+            next_index = start + 1
+            while next_index <= end:
+                a, b = samples[start], samples[next_index]
+                if math.hypot(b[0]-a[0], b[2]-a[2]) > 2 or abs(b[1]-a[1]) > 1:
+                    break
+                next_index += 1
+            chosen = next_index - 1
+            if chosen == start: raise MissionError("outbound native path is discontinuous")
+            selected.append(samples[chosen])
+            if len(selected) > 500: raise MissionError("retreat trail exceeds 500 actual samples")
+            start = chosen
+    return [{"x": p[0], "y": p[1], "z": p[2]} for p in selected]
+
+
+def _return_document(corridor, identity=None, samples=None):
     # RouteProgress.begin admits a new route at its first waypoint.
     destinations = list(reversed(corridor))
     if not destinations: raise MissionError("verified return corridor has no destination")
     provenance={"kind":"native-retained-walked-corridor","retainedPoints":len(corridor)}
     if identity is not None: provenance["runtimeIdentity"]=deepcopy(identity)
+    if samples is not None: provenance["retreatTrail"] = _retreat_seed(samples, corridor)
     return {"waypoints": [[f"Return {i}", p[0], p[2]] for i,p in enumerate(destinations,1)],
         "heights": [p[1] for p in destinations],
         "provenance": provenance}
@@ -211,6 +241,62 @@ def _verify_return_identity(document, adapter):
                    or expected[key].casefold() != str(actual.get(key,"")).casefold()
                    for key in keys)):
         raise MissionError("verified return corridor belongs to another runtime identity")
+
+
+def _verified_retreat_seed(document, mission):
+    waypoints, heights = document.get("waypoints"), document.get("heights")
+    if (not isinstance(waypoints, list) or not isinstance(heights, list)
+            or not 2 <= len(waypoints) <= 500 or len(waypoints) != len(heights)):
+        raise MissionError("verified safe-retreat corridor is invalid")
+    compact = []
+    for point, height in zip(reversed(waypoints), reversed(heights)):
+        if not isinstance(point, (list, tuple)) or len(point) != 3:
+            raise MissionError("verified safe-retreat corridor is invalid")
+        compact.append(_point({"x": point[1], "y": height, "z": point[2]}, "return point"))
+    provenance = document.get("provenance")
+    if not isinstance(provenance, dict) or provenance.get("kind") != "native-retained-walked-corridor":
+        raise MissionError("verified safe-retreat corridor provenance is invalid")
+    raw = provenance.get("retreatTrail", compact)
+    if not isinstance(raw, list) or not 2 <= len(raw) <= 500:
+        raise MissionError("verified retreat trail is invalid")
+    trail = [_point(point, "retreat trail point") for point in raw]
+    if trail[0] != compact[0] or trail[-1] != compact[-1]:
+        raise MissionError("retreat trail endpoints do not match the return corridor")
+    offset = 0
+    for start, end in zip(compact, compact[1:]):
+        dx, dz = end["x"]-start["x"], end["z"]-start["z"]
+        length = math.hypot(dx, dz)
+        vertical = end["y"]-start["y"]
+        peak = 0.0
+        while True:
+            offset += 1
+            if offset >= len(trail):
+                raise MissionError("retreat trail does not retain the ordered return corridor")
+            point = trail[offset]
+            along = (((point["x"]-start["x"])*dx + (point["z"]-start["z"])*dz)
+                     / (length*length)) if length else (
+                         (point["y"]-start["y"])/vertical if vertical else 0.0)
+            bounded = min(1.0, max(0.0, along))
+            if (math.hypot(point["x"]-(start["x"]+bounded*dx),
+                           point["z"]-(start["z"]+bounded*dz)) > .2 + 1e-9
+                    or abs(point["y"]-(start["y"]+bounded*(end["y"]-start["y"]))) > .3 + 1e-9):
+                raise MissionError("retreat trail leaves the retained return corridor")
+            projection = along * (length if length else abs(vertical))
+            peak = max(peak, projection)
+            if peak - projection > (.2 if length else .3) + 1e-9:
+                raise MissionError("retreat trail reverses outside retained corridor order")
+            if point == end:
+                break
+    if offset != len(trail)-1:
+        raise MissionError("retreat trail extends beyond the retained return corridor")
+    safe = mission["safeAnchor"]
+    if (math.hypot(trail[0]["x"]-safe["x"], trail[0]["z"]-safe["z"]) > safe["planarTolerance"]
+            or abs(trail[0]["y"]-safe["y"]) > safe["heightTolerance"]):
+        raise MissionError("retreat trail does not reach the safe anchor")
+    for a, b in zip(trail, trail[1:]):
+        if math.hypot(b["x"]-a["x"], b["z"]-a["z"]) > 2 or abs(b["y"]-a["y"]) > 1:
+            raise MissionError("retreat trail is discontinuous")
+    return trail
 
 
 def _release_verified(value):
@@ -296,15 +382,20 @@ def run_mission(*, mission, route_document, route_path, profile_path, checkpoint
             runner=runtime.route_runner, checkpoint=outbound_checkpoint, direction="forward",
             resume=resume and outbound_checkpoint.is_file(), face_waypoints=True)
         require_budget("outbound")
-        corridor = _walked_corridor(legs)
+        corridor, samples = _walked_corridor(legs, include_samples=True)
         safe = mission["safeAnchor"]
         if (math.hypot(corridor[0][0]-safe["x"],corridor[0][2]-safe["z"]) > safe["planarTolerance"]
                 or abs(corridor[0][1]-safe["y"]) > safe["heightTolerance"]):
             raise MissionError("retained outbound corridor does not reach the safe anchor")
         progress.update(stage="encounter", outboundNextIndex=cursor.next_index,
                         returnDocument=_return_document(
-                            corridor,adapter.binding["runtimeIdentity"])); write_json_atomic(checkpoint, progress)
+                            corridor,adapter.binding["runtimeIdentity"],samples)); write_json_atomic(checkpoint, progress)
     if progress["stage"] == "encounter":
+        document = progress.get("returnDocument")
+        if not isinstance(document, dict):
+            raise MissionError("verified return corridor is unavailable")
+        _verify_return_identity(document, adapter)
+        _verified_retreat_seed(document, mission)
         if clock() >= deadline: raise MissionError("mission deadline expired before encounter")
         progress["stage"]="encounter-started"; write_json_atomic(checkpoint, progress)
         hunt=mission["hunt"]
@@ -346,12 +437,8 @@ def run_mission(*, mission, route_document, route_path, profile_path, checkpoint
         document=progress.get("returnDocument")
         if not isinstance(document,dict): raise MissionError("verified return corridor is unavailable")
         _verify_return_identity(document,adapter)
-        waypoints=document.get("waypoints"); heights=document.get("heights")
-        if (not isinstance(waypoints,list) or not isinstance(heights,list)
-                or len(waypoints) != len(heights)):
-            raise MissionError("verified safe-retreat corridor is invalid")
-        trail=[{"x":point[1],"y":height,"z":point[2]}
-               for point,height in zip(reversed(waypoints),reversed(heights))]
+        trail=_verified_retreat_seed(document,mission)
+        waypoints=document["waypoints"]; heights=document["heights"]
         legs=runtime.route_runner(adapter,waypoints,mission_stop,event("safe-retreat"),
             face_waypoints=True,initial_retreat_trail=trail,
             assess_before_travel=True,finish_after_retreat=True)

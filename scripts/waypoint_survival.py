@@ -170,8 +170,11 @@ class WaypointSurvivalRunner:
             raise ValueError("trail point must contain finite coordinates")
         value = tuple(float(item) for item in point)
         if not self.trail or self.trail[-1] != value:
+            if self.finish_after_retreat and len(self.trail) >= 500:
+                raise SurvivalPolicyError("terminal safe retreat trail exceeds 500 points")
             self.trail.append(value)
-            self.trail = self.trail[-256:]
+            if not self.finish_after_retreat:
+                self.trail = self.trail[-256:]
 
     def _reverse_trail(self):
         return [list(point) for point in reversed(self.trail)]

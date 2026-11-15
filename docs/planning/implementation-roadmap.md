@@ -96,9 +96,10 @@ earlier branch directly toward the reversed trail, without an expected-origin
 binding. The fix must admit retreat and rejoin only from a fresh, stationary,
 same-floor ordered frontier and bind that origin through the shared native mover.
 The correction passed 113 focused Python and 75 native follower tests offline;
-physical displaced-retreat acceptance remains open. Next preserve the hunt
-workflow's dense walked samples separately from simplified display geometry at
-the survival handoff. These are immediate rank-1 dependencies, ahead of further
+physical displaced-retreat acceptance remains open. The hunt handoff now preserves bounded observed samples separately from
+compact playback geometry, validates checkpoint corridor order before encounter
+input, and retains the terminal safe anchor. Its focused offline handoff and
+checkpoint tests pass; physical integrated acceptance remains open. These are immediate rank-1 dependencies, ahead of further
 world reconstruction; they do not restart gameplay or erase live acceptance work.
 
 **Casting interface checkpoint, November 14:** the shared command service and
