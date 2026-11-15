@@ -103,6 +103,37 @@ class ProbeTests(unittest.TestCase):
             self.assertEqual(result["readerSha256"],
                              hashlib.sha256(b"synthetic-reader").hexdigest().upper())
 
+    def test_false_marker_is_counted_without_claiming_copied_frame(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            request_path = root / "request.json"
+            request_path.write_text("{}", encoding="utf-8")
+            index = self.index({}, request_path)
+            index["scan"]["prefixAddresses"] = ["0xABCDEF"]
+            index["candidates"] = [{
+                "status": "prefix-not-plausible",
+                "reason": "marker is not followed by a frame",
+            }]
+            index_path = root / "index.json"
+            index_path.write_text(json.dumps(index), encoding="utf-8")
+            receipt = probe.check_index(index_path, {}, probe.digest(request_path), SELECTION)
+            self.assertEqual(receipt["prefixCount"], 1)
+            self.assertEqual(receipt["publishedSnapshots"], 0)
+            self.assertEqual(receipt["sourceVerifiedSnapshots"], 0)
+            self.assertEqual(receipt["candidateStatusCounts"], {"prefix-not-plausible": 1})
+
+    def test_malformed_candidate_status_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            request_path = root / "request.json"
+            request_path.write_text("{}", encoding="utf-8")
+            index = self.index({}, request_path)
+            index["candidates"] = [{"status": {"unsupported": True}}]
+            index_path = root / "index.json"
+            index_path.write_text(json.dumps(index), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "scan-candidates-invalid"):
+                probe.check_index(index_path, {}, probe.digest(request_path), SELECTION)
+
     def test_copied_frame_claim_without_source_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

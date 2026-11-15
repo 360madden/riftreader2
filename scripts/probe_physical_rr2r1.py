@@ -7,6 +7,7 @@ No addon binding, game input, focus changes, or VM access.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import hashlib
 import json
 from pathlib import Path
@@ -90,8 +91,11 @@ def check_index(path, request, request_sha, selection):
     # also protects the RR2A1 physical collector, which reuses check_index().
     candidates = index.get("candidates")
     require(isinstance(candidates, list) and len(candidates) <= 128
-            and all(isinstance(row, dict) for row in candidates),
+            and all(isinstance(row, dict)
+                    and isinstance(row.get("status"), str)
+                    and 1 <= len(row["status"]) <= 80 for row in candidates),
             "scan-candidates-invalid")
+    status_counts = dict(sorted(Counter(row["status"] for row in candidates).items()))
     complete = [row for row in candidates if row.get("status") == "complete"]
     require(len(complete) == index["publishedSnapshots"],
             "scan-copy-count-mismatch")
@@ -137,6 +141,7 @@ def check_index(path, request, request_sha, selection):
         "status": index["status"],
         "indexSha256": hashlib.sha256(data).hexdigest().upper(),
         "prefixCount": len(scan["prefixAddresses"]),
+        "candidateStatusCounts": status_counts,
         "publishedSnapshots": index["publishedSnapshots"],
         "sourceVerifiedSnapshots": len(complete),
         "scanStatus": scan.get("status"),
@@ -265,6 +270,7 @@ def assess_saved(summary_path, output_dir, session_id=None):
             "scanReason": verified["scanReason"],
             "examinedBytes": verified["examinedBytes"],
             "prefixCount": verified["prefixCount"],
+            "candidateStatusCounts": verified["candidateStatusCounts"],
             "sourceVerifiedSnapshots": verified["sourceVerifiedSnapshots"],
         })
         if verified["sourceVerifiedSnapshots"] > 0:
@@ -480,6 +486,8 @@ def main(argv=None):
         return 2
     print(json.dumps({"status": result["status"], "summary": str(path),
                       "snapshots": [r["publishedSnapshots"] for r in result.get("runs", [])],
+                       "candidateStatusCounts": [r["candidateStatusCounts"] for r in
+                                                 result.get("runs", result.get("runDiagnostics", []))],
                       "qualification": result["qualification"],
                       "referenceAssessment": result["referenceAssessment"]}))
     return 0
