@@ -257,12 +257,23 @@ def main(argv=None):
     except (OSError, ValueError, TypeError, KeyError, OverflowError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:220]}))
         return 2
-    print(json.dumps({"status": result["status"], "evidenceKind": result["evidenceKind"],
-                      "summarySha256": result.get("summarySha256"),
-                      "sourceCount": len(result["sources"]) if "sources" in result else None,
-                      "captureCount": result.get("captureCount"),
-                       "nativeStatsComparison": result.get("nativeStatsComparison"),
-                      "output": str(args.output) if args.output else None}))
+    brief = {"status": result["status"], "evidenceKind": result["evidenceKind"]}
+    if "sources" in result:
+        brief.update(summarySha256=result["summarySha256"],
+                     sourceCount=len(result["sources"]))
+    elif "segments" in result:
+        brief.update(captureCount=result["captureCount"],
+                     sumPlanarChordsCandidate=result["sumPlanarChordsCandidate"],
+                     netPositionDeltaCandidate=result["netPositionDeltaCandidate"],
+                     healthObservedCount=result["healthObservedCount"])
+    else:
+        brief.update(positionDeltaCandidate=result["positionDeltaCandidate"],
+                     planarDistanceCandidate=result["planarDistanceCandidate"],
+                     healthDeltaCandidate=result["healthDeltaCandidate"],
+                     nativeStatsComparison=result["nativeStatsComparison"])
+    if args.output:
+        brief["output"] = str(args.output)
+    print(json.dumps(brief, allow_nan=False))
     return 0
 
 

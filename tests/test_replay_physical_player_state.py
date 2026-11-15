@@ -279,9 +279,12 @@ class ComparisonUnitTests(unittest.TestCase):
                           unknown["rawValuesChanged"]), (1, 1, 0))
 
 
-    def test_pair_cli_returns_raw_stat_comparison_to_headless_caller(self):
+    def test_pair_cli_reports_position_health_and_stats_without_null_placeholders(self):
         with patch.object(replay, "compare", return_value={
             "status": "candidate-only", "evidenceKind": "amd-physical-player-state-pair/1",
+            "positionDeltaCandidate": {"x": -2.4, "y": -2.5, "z": 55.7},
+            "planarDistanceCandidate": 55.8,
+            "healthDeltaCandidate": 0,
             "nativeStatsComparison": {"status": "comparable-candidate",
                                       "rawValuesChanged": 1}}), \
              redirect_stdout(io.StringIO()) as printed:
@@ -289,6 +292,11 @@ class ComparisonUnitTests(unittest.TestCase):
                 "--summary", "offline-before", "--after", "offline-after"]), 0)
         report = json.loads(printed.getvalue())
         self.assertEqual(report["nativeStatsComparison"]["rawValuesChanged"], 1)
+        self.assertEqual(report["positionDeltaCandidate"]["z"], 55.7)
+        self.assertEqual(report["planarDistanceCandidate"], 55.8)
+        self.assertEqual(report["healthDeltaCandidate"], 0)
+        for unused in ("sourceCount", "summarySha256", "captureCount"):
+            self.assertNotIn(unused, report)
 
 
 class HistoryUnitTests(unittest.TestCase):
