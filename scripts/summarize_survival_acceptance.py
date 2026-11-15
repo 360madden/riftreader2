@@ -325,14 +325,20 @@ def summarize(route_rows, telemetry_rows=None):
     if not condensed:
         resume_status = "unavailable"
     elif "retreat" in condensed:
-        retreat = condensed.index("retreat")
-        rejoin = next((index for index in range(retreat + 1, len(condensed))
-                       if condensed[index] == "rejoin"), None)
-        travel = (next((index for index in range(rejoin + 1, len(condensed))
-                        if condensed[index] == "travel"), None)
-                  if rejoin is not None else None)
-        resume_status = ("preserved" if rejoin is not None and travel is not None
-                         and checkpoint_status == "preserved" else "violated")
+        # Every encounter's retreat must independently rejoin and resume travel.
+        # A completed earlier cycle cannot validate a later incomplete one,
+        # nor can one rejoin be borrowed across two retreat attempts.
+        complete = checkpoint_status == "preserved"
+        for retreat, state in enumerate(condensed):
+            if state != "retreat":
+                continue
+            next_retreat = next((index for index in range(retreat + 1, len(condensed))
+                                if condensed[index] == "retreat"), len(condensed))
+            cycle = condensed[retreat + 1:next_retreat]
+            if "rejoin" not in cycle or "travel" not in cycle[cycle.index("rejoin") + 1:]:
+                complete = False
+                break
+        resume_status = "preserved" if complete else "violated"
     else:
         resume_status = "not-exercised"
     summary["telemetry"] = {

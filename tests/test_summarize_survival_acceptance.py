@@ -336,6 +336,30 @@ class SurvivalAcceptanceSummaryTests(unittest.TestCase):
                     self.assertEqual(2, summary.main(
                         ["--route", str(source), "--require-complete-route"]))
 
+    def test_incomplete_second_retreat_cannot_borrow_first_resumption(self):
+        states = ("travel", "retreat", "recover", "rejoin", "travel",
+                  "retreat", "recover")
+        telemetry = [self.sample(10 + index, 100, 100, state=state)
+                     for index, state in enumerate(states)]
+        observed = summary.summarize([{"status": "stopped"}], telemetry)
+        self.assertEqual("preserved", observed["acceptance"]["checkpointInvariant"])
+        self.assertEqual("violated", observed["acceptance"]["recoveryResumeInvariant"])
+
+    def test_rejoin_after_another_retreat_cannot_complete_first_cycle(self):
+        states = ("travel", "retreat", "recover", "retreat", "rejoin", "travel")
+        telemetry = [self.sample(10 + index, 100, 100, state=state)
+                     for index, state in enumerate(states)]
+        observed = summary.summarize([{"status": "stopped"}], telemetry)
+        self.assertEqual("violated", observed["acceptance"]["recoveryResumeInvariant"])
+
+    def test_multiple_completed_retreats_still_preserve_recovery_invariant(self):
+        states = ("travel", "retreat", "recover", "rejoin", "travel",
+                  "retreat", "recover", "rejoin", "travel")
+        telemetry = [self.sample(10 + index, 100, 100, state=state)
+                     for index, state in enumerate(states)]
+        observed = summary.summarize([{"status": "stopped"}], telemetry)
+        self.assertEqual("preserved", observed["acceptance"]["recoveryResumeInvariant"])
+
     def test_route_only_never_claims_damage_and_cli_writes_new_summary(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
