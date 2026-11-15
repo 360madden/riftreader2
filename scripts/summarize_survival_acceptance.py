@@ -319,9 +319,25 @@ def summarize(route_rows, telemetry_rows=None):
     if telemetry_rows is None:
         return summary
     samples = [_telemetry_sample(row) for row in telemetry_rows]
-    identities = {(sample["sessionId"], sample["epoch"], sample["playerId"])
-                  for sample in samples}
-    identity_stable = len(identities) == 1 and None not in next(iter(identities), ())
+    # Retained producer fields can be malformed or reset independently of the
+    # game process.  A recovery state sequence proves nothing across a producer
+    # restart, repeated frame, or reversed timestamp.  This checks internal
+    # progression only; it is NOT nonce binding or live-source authentication.
+    def valid_identity(sample):
+        return (isinstance(sample["sessionId"], str) and bool(sample["sessionId"])
+                and type(sample["epoch"]) is int
+                and isinstance(sample["playerId"], str) and bool(sample["playerId"]))
+    identity_stable = (bool(samples) and all(map(valid_identity, samples))
+                       and all((sample["sessionId"], sample["epoch"], sample["playerId"])
+                               == (samples[0]["sessionId"], samples[0]["epoch"],
+                                   samples[0]["playerId"]) for sample in samples))
+    continuity_verified = (identity_stable and len(samples) >= 2
+                           and all(type(sample["sequence"]) is int
+                                   and sample["sequence"] >= 0
+                                   and sample["clock"] is not None for sample in samples)
+                           and all(after["sequence"] > before["sequence"]
+                                   and after["clock"] > before["clock"]
+                                   for before, after in zip(samples, samples[1:])))
     self_drops, target_drops = _drops(samples, "selfCurrent"), _drops(samples, "targetCurrent")
     incoming, outgoing = _events(samples, "incoming", True), _events(samples, "outgoing", False)
     incoming_correlation = _correlation(self_drops, incoming)
@@ -334,7 +350,8 @@ def summarize(route_rows, telemetry_rows=None):
         return (value is not None and type(value) is not bool
                 and (not isinstance(value, (str, dict, list, tuple)) or
                      bool(value.strip() if isinstance(value, str) else value)))
-    if not interrupted_checkpoints or not all(map(checkpoint_known, interrupted_checkpoints)):
+    if (not continuity_verified or not interrupted_checkpoints
+            or not all(map(checkpoint_known, interrupted_checkpoints))):
         checkpoint_status = "unavailable"
     elif all(type(value) is type(interrupted_checkpoints[0])
              and value == interrupted_checkpoints[0] for value in interrupted_checkpoints):
@@ -342,12 +359,13 @@ def summarize(route_rows, telemetry_rows=None):
     else:
         checkpoint_status = "changed-while-interrupted"
     stops = [sample["stopSet"] for sample in samples if type(sample["stopSet"]) is bool]
-    stop_status = ("unavailable" if not stops else "latched-throughout" if all(stops)
+    stop_status = ("unavailable" if not continuity_verified or not stops
+                   else "latched-throughout" if all(stops)
                    else "clear-throughout" if not any(stops) else "changed")
     states = [sample["policyState"] for sample in samples if sample["policyState"] is not None]
     condensed = [state for index, state in enumerate(states)
                  if index == 0 or state != states[index - 1]]
-    if not condensed:
+    if not continuity_verified or not condensed:
         resume_status = "unavailable"
     elif "retreat" in condensed:
         # Every encounter's retreat must independently rejoin and resume travel.
@@ -377,6 +395,7 @@ def summarize(route_rows, telemetry_rows=None):
         resume_status = "not-exercised"
     summary["telemetry"] = {
         "status": "observed", "sampleCount": len(samples), "identityStable": identity_stable,
+        "continuityVerified": continuity_verified,
         "selfHealthDrops": self_drops, "targetHealthDrops": target_drops,
         "incomingEvents": incoming, "outgoingEvents": outgoing,
         "incomingCorrelation": incoming_correlation,

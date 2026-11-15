@@ -358,6 +358,7 @@ class SurvivalAcceptanceSummaryTests(unittest.TestCase):
         telemetry = [self.sample(10 + index, 100, 100, state=state)
                      for index, state in enumerate(states)]
         observed = summary.summarize([{"status": "stopped"}], telemetry)
+        self.assertTrue(observed["telemetry"]["continuityVerified"])
         self.assertEqual("preserved", observed["acceptance"]["recoveryResumeInvariant"])
 
     def test_retreat_requires_ordered_recovery_rejoin_and_travel(self):
@@ -375,6 +376,34 @@ class SurvivalAcceptanceSummaryTests(unittest.TestCase):
                 observed = summary.summarize([{"status": "stopped"}], telemetry)
                 self.assertEqual("preserved", observed["acceptance"]["checkpointInvariant"])
                 self.assertEqual("violated", observed["acceptance"]["recoveryResumeInvariant"])
+
+    def test_recovery_receipts_require_one_advancing_producer(self):
+        states = ("travel", "retreat", "recover", "rejoin", "travel")
+        def frames():
+            return [self.sample(10 + i, 100, 100, state=state)
+                    for i, state in enumerate(states)]
+        for failure in ("session-reset", "sequence-rollback", "clock-rollback",
+                        "malformed-session"):
+            with self.subTest(failure=failure):
+                telemetry = frames()
+                if failure == "session-reset":
+                    for index in (3, 4):
+                        telemetry[index]["snapshot"]["sessionId"] = "b" * 32
+                        telemetry[index]["snapshot"]["sequence"] = index - 2
+                elif failure == "sequence-rollback":
+                    telemetry[3]["snapshot"]["sequence"] = 1
+                elif failure == "clock-rollback":
+                    telemetry[3]["snapshot"]["frameTime"] = 9.0
+                else:
+                    telemetry[3]["snapshot"]["sessionId"] = {"not": "a nonce"}
+                observed = summary.summarize([{"status": "stopped"}], telemetry)
+                self.assertFalse(observed["telemetry"]["continuityVerified"])
+                self.assertEqual("unavailable",
+                                 observed["acceptance"]["checkpointInvariant"])
+                self.assertEqual("unavailable",
+                                 observed["acceptance"]["recoveryResumeInvariant"])
+                self.assertEqual("unavailable",
+                                 observed["acceptance"]["stopInvariant"])
 
     def test_missing_checkpoint_does_not_claim_retreat_preservation(self):
         states = ("travel", "retreat", "rejoin", "travel")
