@@ -109,7 +109,7 @@ internal static class FollowRouteCommand
             "--expected-host", "--pid", "--expect-start-ticks", "--expect-sha256",
             "--expect-hwnd", "--expect-player-key", "--owner-pid", "--owner-start-ticks",
             "--x", "--z", "--goal-y", "--stop-file", "--max-seconds",
-            "--expect-x", "--expect-z", "--expect-bearing", "--path-file"
+            "--expect-x", "--expect-y", "--expect-z", "--expect-bearing", "--path-file"
         };
         var unknown = values.Keys.FirstOrDefault(key => !allowed.Contains(key));
         if (unknown is not null) throw new InvalidDataException("Unknown option: " + unknown);
@@ -141,6 +141,8 @@ internal static class FollowRouteCommand
         var originCount = new[] { "--expect-x", "--expect-z", "--expect-bearing" }.Count(values.ContainsKey);
         if (originCount is not (0 or 3))
             throw new InvalidDataException("--expect-x, --expect-z and --expect-bearing are all-or-none.");
+        if (originCount == 0 && values.ContainsKey("--expect-y"))
+            throw new InvalidDataException("--expect-y requires the expected origin triplet.");
         var survivalInterrupt = flags.Contains("--survival-interrupt");
         var survivalRetreat = flags.Contains("--survival-retreat");
         if (survivalRetreat && !survivalInterrupt)
@@ -162,7 +164,8 @@ internal static class FollowRouteCommand
             originCount == 0 ? null : Finite(values["--expect-z"], "--expect-z"),
             originCount == 0 ? null : Finite(values["--expect-bearing"], "--expect-bearing"),
             survivalInterrupt, survivalRetreat, values.TryGetValue("--goal-y", out var y) ? Finite(y, "--goal-y") : null,
-            routePoints, controlPauses);
+            routePoints, controlPauses,
+            values.TryGetValue("--expect-y", out var expectedY) ? Finite(expectedY, "--expect-y") : null);
     }
 
     private static RoutePoint[] ReadRoutePoints(string file, bool controlPauses)

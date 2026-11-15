@@ -73,11 +73,12 @@ public sealed class FollowRouteCommandTests
             "--expect-hwnd", "0x8", "--expect-player-key", "42",
             "--owner-pid", "10", "--owner-start-ticks", "200",
             "--x", "3.5", "--z", "4.5", "--stop-file", @"C:\temp\stop.signal",
-            "--expect-x", "1", "--expect-z", "2", "--expect-bearing", "-3",
+            "--expect-x", "1", "--expect-y", "7", "--expect-z", "2", "--expect-bearing", "-3",
             "--max-seconds", "1800", "--execute", "--json" };
         var parsed = FollowRouteCommand.Parse(args);
         Assert.Equal(1800, parsed.MaxSeconds);
         Assert.Equal(1, parsed.ExpectedX);
+        Assert.Equal(7, parsed.ExpectedY);
         Assert.Equal(-3, parsed.ExpectedBearing);
         Assert.Throws<InvalidDataException>(() =>
             FollowRouteCommand.Parse(args.Where(x => x != "--expect-bearing" && x != "-3").ToArray()));
@@ -101,6 +102,20 @@ public sealed class FollowRouteCommandTests
         var options = Options() with { ExpectedX = 0, ExpectedZ = 0, ExpectedBearing = 0 };
         var result = await FollowRouteCommand.FollowAsync(options,
             Reader(Pose(.051, 0, 0)), input, () => null, NoDelay);
+        Assert.Equal("blocked", result.Status);
+        Assert.False(result.InputSent);
+        Assert.Empty(input.Events);
+    }
+
+    [Fact]
+    public async Task ReviewedOriginHeightRejectsFloorChangeBeforeInput()
+    {
+        var input = new Input();
+        var pose = Pose(0, 0, 0);
+        var options = Options() with { ExpectedX = 0, ExpectedZ = 0,
+            ExpectedBearing = 0, ExpectedY = pose.Y + 1 };
+        var result = await FollowRouteCommand.FollowAsync(options,
+            Reader(pose), input, () => null, NoDelay);
         Assert.Equal("blocked", result.Status);
         Assert.False(result.InputSent);
         Assert.Empty(input.Events);

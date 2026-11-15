@@ -345,12 +345,13 @@ class ContinuousMoveTests(unittest.TestCase):
         with patch("scripts.physical_waypoints.read_stationary", side_effect=[self.start, settled]):
             result = move.move_to(self.adapter, 100, 0, threading.Event(), popen=popen,
                          native_exe=self.root / "native.exe", owner_identity=(55, 66),
-                         stop_path=stop_path, expected_origin={"x": 0, "z": 0, "bearing": 0})
+                         stop_path=stop_path, expected_origin={"x": 0, "y": 10, "z": 0, "bearing": 0})
         command = children[0].command
         self.assertEqual((command[command.index("--expect-x") + 1],
                           command[command.index("--expect-z") + 1],
                           command[command.index("--expect-bearing") + 1]),
                          ("0.0", "0.0", "0.0"))
+        self.assertEqual("10.0", command[command.index("--expect-y") + 1])
         self.assertEqual(result["motionMode"], "held-forward")
         self.assertIn("not started", result["autorunQualification"])
         with patch("scripts.physical_waypoints.read_stationary", return_value=self.start), \
@@ -359,6 +360,13 @@ class ContinuousMoveTests(unittest.TestCase):
                 move.move_to(self.adapter, 100, 0, threading.Event(), popen=rejected,
                              owner_identity=(55, 66), stop_path=self.root / "stale.stop",
                              expected_origin={"x": .06, "z": 0, "bearing": 0})
+            rejected.assert_not_called()
+        with patch("scripts.physical_waypoints.read_stationary", return_value=self.start), \
+             patch("subprocess.Popen") as rejected:
+            with self.assertRaisesRegex(Exception, "reviewed movement origin"):
+                move.move_to(self.adapter, 100, 0, threading.Event(), popen=rejected,
+                             owner_identity=(55, 66), stop_path=self.root / "stale-y.stop",
+                             expected_origin={"x": 0, "y": 11, "z": 0, "bearing": 0})
             rejected.assert_not_called()
 
     def test_all_terminal_receipts_require_release_and_empty_pressed_inputs(self):

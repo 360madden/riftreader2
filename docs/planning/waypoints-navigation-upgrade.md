@@ -120,3 +120,20 @@ and owner-change cases. The separately authorized new reverse run completed
 `artifacts/navigation-live-1794689309713092900/result.json`. The prior interrupted
 checkpoint remains unchanged. Camera smoothness, survival recovery/rejoin and
 actual swept clearance remain open.
+
+
+## Displacement admission correction
+
+An offline U-shaped retained-trail replay exposed retreat dispatch from a fresh
+pose near an earlier branch using the cached pre-encounter position. Retreat and
+rejoin now require a fresh stationary native pose at the retained ordered
+frontier, verify the requested corridor order, and bind X/Y/Z/bearing through the
+shared Python mover and native pre-input origin check. Unsupported connections
+halt before auxiliary movement. STOP and explicit Resume retain their existing
+semantics. Focused offline checks passed 113 Python and 75 native follower tests;
+this does not establish physical knockback/retreat acceptance.
+
+Next keep dense, continuity-qualified walked samples at the hunt-to-survival
+handoff rather than treating display simplification as traversed evidence. Group
+that correction's physical acceptance with the next authorized bounded survival
+run; retain the separate source geometry/clearance qualifications.

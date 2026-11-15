@@ -89,6 +89,18 @@ requires its applicable authority and fresh identity/ownership checks.
 
 ## Remaining work, ranked
 
+**Current failure-driven priority, November 14 (AMD-DESKTOP):** Before the next
+bounded hunt round trip, close displaced-retreat admission. An offline replay of
+a walked U-shaped trail reproduced a request from a knocked-back pose near the
+earlier branch directly toward the reversed trail, without an expected-origin
+binding. The fix must admit retreat and rejoin only from a fresh, stationary,
+same-floor ordered frontier and bind that origin through the shared native mover.
+The correction passed 113 focused Python and 75 native follower tests offline;
+physical displaced-retreat acceptance remains open. Next preserve the hunt
+workflow's dense walked samples separately from simplified display geometry at
+the survival handoff. These are immediate rank-1 dependencies, ahead of further
+world reconstruction; they do not restart gameplay or erase live acceptance work.
+
 **Casting interface checkpoint, November 14:** the shared command service and
 compact HUD now remove the picker/visible-panel dependency from routine setup
 and observation. This improves test operation without closing combat acceptance.

@@ -88,10 +88,25 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
     def invoke(self, points, backend, mover, **kwargs):
         events, entered = kwargs.pop("events", []), []
         stop = kwargs.pop("stop", threading.Event())
-        with patch("scripts.physical_waypoints.read_stationary", return_value=pose()):
+        location = [0.0, 0.0]
+        def tracked_mover(*args, **options):
+            try:
+                result = mover(*args, **options)
+            except Interrupted as exc:
+                location[:] = [exc.position["x"], exc.position["z"]]
+                raise
+            if isinstance(result, dict) and isinstance(result.get("position"), dict):
+                location[:] = [result["position"]["x"], result["position"]["z"]]
+            return result
+        reads = [0]
+        def stationary(*_):
+            reads[0] += 1
+            return pose(*(location if reads[0] == 1 else
+                          getattr(backend, "position", location)))
+        with patch("scripts.physical_waypoints.read_stationary", side_effect=stationary):
             result = run_survival_route(
                 object(), points, stop, events.append, profile=PROFILE,
-                telemetry=backend.telemetry, action_backend=backend, mover=mover,
+                telemetry=backend.telemetry, action_backend=backend, mover=tracked_mover,
                 encounter_error=Interrupted, entry_check=lambda value: entered.append(value),
                 wait_seconds=0, **kwargs)
         return result, events, entered
@@ -183,6 +198,21 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
             self.invoke([("end", 5, 0)], backend, mover, events=events)
         self.assertEqual([(5.0, 0.0)], calls)
         self.assertFalse(any(e.get("status") in ("arrived", "passed") for e in events))
+
+    def test_low_health_displacement_to_earlier_loop_branch_refuses_retreat(self):
+        low = observed(present=True, combat=True); low["player"]["healthPct"] = 20
+        backend = Backend([observed(present=True, combat=True), low])
+        backend.position = [0, 0]
+        calls = []
+        def mover(adapter, x, z, stop, emit, **options):
+            calls.append((x, z))
+            path = [{"x": x, "y": 5, "z": z} for x, z in
+                    [(0, 0), (0, 2), (2, 2), (4, 2), (4, 0)]]
+            raise Interrupted({"releaseSucceeded": True, "desktopInputsDown": [],
+                               "path": path}, path[-1])
+        with self.assertRaisesRegex(Exception, "retained retreat frontier"):
+            self.invoke([("end", 5, 0)], backend, mover)
+        self.assertEqual([(5.0, 0.0)], calls)
 
     def test_retained_corridor_preserves_collinear_reversals_in_both_directions(self):
         points = [(0, 0, z) for z in (0, 1, 2, 1, 2, 3)]
@@ -539,6 +569,9 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
                             for x in range(11)]}
 
         def mover(adapter, x, z, stop, emit, **options):
+            if options["survival_guard"] == "retreat":
+                self.assertEqual({"x": 5.0, "y": 5.0, "z": 0.0, "bearing": 0.0},
+                                 options["expected_origin"])
             calls.append((x, z, options["survival_guard"], options["max_seconds"],
                           options["goal_y"]))
             if len(calls) == 1:
@@ -592,7 +625,7 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
             result=arrived(x,z,*current); current[:]=[x,z]; emit(result); return result
         events=[]
         with patch("scripts.physical_waypoints.read_stationary",
-                   side_effect=[pose(4,0),pose(0,0)]):
+                   side_effect=[pose(4,0),pose(4,0),pose(0,0)]):
             results=run_survival_route(object(),[("hunt",4,0),("safe",0,0)],
                 threading.Event(),events.append,profile=PROFILE,telemetry=backend.telemetry,
                 action_backend=backend,mover=mover,encounter_error=Interrupted,wait_seconds=0,
@@ -613,7 +646,7 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
         def mover(adapter,x,z,stop,emit,**options):
             result=arrived(x,z,*current); current[:]=[x,z]; emit(result); return result
         with patch("scripts.physical_waypoints.read_stationary",
-                   side_effect=[pose(4,0),pose(1,0)]):
+                   side_effect=[pose(4,0),pose(4,0),pose(1,0)]):
             with self.assertRaisesRegex(Exception,"did not finish at the retained safe endpoint"):
                 run_survival_route(object(),[("hunt",4,0),("safe",0,0)],threading.Event(),
                     profile=PROFILE,telemetry=backend.telemetry,action_backend=backend,
@@ -710,7 +743,8 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
             emit(result)
             return result
 
-        with patch("scripts.physical_waypoints.read_stationary", return_value=pose()):
+        with patch("scripts.physical_waypoints.read_stationary",
+                   side_effect=lambda *_: pose(current["x"], current["z"])):
             results = run_survival_route(
                 object(), [("first", 0, 5), ("pending", 5, 5)], threading.Event(),
                 profile=PROFILE, telemetry=backend.telemetry,

@@ -236,17 +236,9 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
                          "reason": "No verified native encounter release"})
 
     retreat_frontier = None
-    latest_player_position = None
 
     def request_move(mode, requested, pending):
-        nonlocal current
         if mode == "rejoin":
-            # A released encounter can displace the player after the movement
-            # receipt. Use the policy's latest fresh telemetry, never that old pose.
-            if latest_player_position is not None:
-                current = dict(latest_player_position)
-            else:
-                current = _position(read_stationary(adapter, stop))
             # The frontier is advanced only by verified retreat arrivals.  A
             # nearby but nonadjacent branch of a loop is not a connector.
             if retreat_frontier is None:
@@ -255,9 +247,6 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
                 frontier = retreat_frontier
             if not 0 <= frontier < len(policy.trail):
                 raise WaypointError("Retained rejoin frontier is unavailable")
-            point = policy.trail[frontier]
-            if not _corridor_arrival(current, point[0], point[1], point[2]):
-                raise WaypointError("Current pose is not at the retained rejoin frontier")
             # requested is interruption-to-origin; replay frontier-to-interruption.
             count = len(policy.trail) - frontier
             requested = list(reversed(requested[:count]))
@@ -267,18 +256,11 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
         return dict(movement_release, reason=movement_release.get("reason", reason))
 
     def guarded_telemetry():
-        nonlocal latest_player_position
         if stop.is_set():
             raise _OperatorStopped("Stopped before survival telemetry")
         value = telemetry()
         if stop.is_set():
             raise _OperatorStopped("Stopped after survival telemetry; no action started")
-        player = value.get("player", {}) if isinstance(value, dict) else {}
-        try:
-            latest_player_position = _position({axis: player["coord" + axis.upper()]
-                                                for axis in ("x", "y", "z")})
-        except (KeyError, TypeError, ValueError):
-            latest_player_position = None
         return value
 
     def guarded(action):
@@ -333,7 +315,8 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
         return remaining
 
     def move(row, *, forward, expected_height=None, guard_mode=True,
-             operation_max_seconds=None, guides=None, on_pass=None):
+             operation_max_seconds=None, guides=None, on_pass=None,
+             expected_origin=None):
         nonlocal current, movement_release, auxiliary_distance, motion_speed, motion_turn_rate, response_delay, observed_coast
         label, x, z = row
         movement_start = dict(current)
@@ -367,6 +350,8 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
                 raise WaypointError("Configured retreat time was exceeded")
             options = {"max_seconds": limit, "survival_guard": guard_mode,
                        "goal_y": expected_height}
+            if expected_origin is not None:
+                options["expected_origin"] = expected_origin
             if guides:
                 options["path_points"] = guides
                 if any(guide.get("controlPause") is True for guide in guides):
@@ -483,7 +468,7 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
         return verified
 
     def execute_requested_moves():
-        nonlocal retreat_frontier
+        nonlocal current, retreat_frontier
         while requested_moves:
             mode, requested, _ = requested_moves.pop(0)
             if mode not in {"retreat", "rejoin"}:
@@ -492,6 +477,19 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
                 policy.coordinator.critical("critical-unavailable")
                 policy.state = "halt"
                 raise WaypointError("Known retreat trail has too few retained points")
+            frontier = (len(policy.trail) - 1 if retreat_frontier is None
+                        else retreat_frontier)
+            if not 0 <= frontier < len(policy.trail):
+                raise WaypointError(f"Retained {mode} frontier is unavailable")
+            stationary = read_stationary(adapter, stop)
+            current = _position(stationary)
+            if not _corridor_arrival(current, *policy.trail[frontier]):
+                policy.coordinator.critical("critical-unavailable")
+                policy.state = "halt"
+                raise WaypointError(f"Current pose is not at the retained {mode} frontier")
+            admitted_origin = dict(current, bearing=float(stationary.bearing))
+            if not math.isfinite(admitted_origin["bearing"]):
+                raise WaypointError("Stationary movement bearing is unavailable")
             normalized = []
             for coordinates in requested:
                 if (not isinstance(coordinates, (list, tuple))
@@ -503,6 +501,12 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
                 if any(not math.isfinite(value) for value in point):
                     raise WaypointError("Survival policy returned an invalid route point")
                 normalized.append(point)
+            expected = (list(reversed(policy.trail[:frontier + 1])) if mode == "retreat"
+                        else list(policy.trail[frontier:]))
+            if normalized != expected:
+                policy.coordinator.critical("critical-unavailable")
+                policy.state = "halt"
+                raise WaypointError(f"Retained {mode} corridor is not in frontier order")
             execution_points = _coalesce_retained_corridor(normalized)
             # Carry each retained point's ordered trail index through
             # coalescing; equal coordinates may occur on separate loop visits.
@@ -558,7 +562,7 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
                 if move(aux_rows[end], forward=False, expected_height=expected_height,
                         guard_mode="retreat" if mode == "retreat" else True,
                         operation_max_seconds=retreat_remaining, guides=guides,
-                        on_pass=accept_auxiliary) is None:
+                        on_pass=accept_auxiliary, expected_origin=admitted_origin) is None:
                     policy.coordinator.critical("critical-unavailable")
                     policy.state = "halt"
                     raise WaypointError("Encounter recurred during survival rejoin")

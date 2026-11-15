@@ -551,6 +551,8 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
                            for key in ("x", "z", "bearing"))
         except KeyError as exc:
             raise WaypointError("Expected movement origin must contain X, Z and bearing") from exc
+        origin_y = (_finite(expected_origin["y"], "expected origin y")
+                    if "y" in expected_origin else None)
 
     with (adapter.reserve() if reservation is None else nullcontext(reservation)) as lease:
         start = read_stationary(adapter, stop)
@@ -558,7 +560,8 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
         if origin is not None:
             origin_distance = math.hypot(start.position.x - origin[0], start.position.z - origin[1])
             origin_bearing_error = abs((start.bearing - origin[2] + 180) % 360 - 180)
-            if origin_distance > .05 or origin_bearing_error > .5:
+            if (origin_distance > .05 or origin_bearing_error > .5
+                    or origin_y is not None and abs(start.position.y - origin_y) > .05):
                 raise WaypointError("Fresh pose no longer matches the reviewed movement origin")
         initial_distance = math.hypot(x - start.position.x, z - start.position.z)
         if initial_distance > MAX_ROUTE_DISTANCE:
@@ -592,6 +595,8 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
             insertion = command.index("--execute")
             command[insertion:insertion] = ["--expect-x", repr(origin[0]),
                 "--expect-z", repr(origin[1]), "--expect-bearing", repr(origin[2])]
+            if origin_y is not None:
+                command[insertion:insertion] = ["--expect-y", repr(origin_y)]
         event_goal = {"x": x, "z": z}
         if goal_y is not None:
             event_goal["y"] = goal_y
