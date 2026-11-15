@@ -167,6 +167,61 @@ class LinkTests(unittest.TestCase):
         result = self.run_join()
         self.assertEqual(result["status"], "candidate-only")
 
+    def test_optional_native_pair_exposes_raw_changes_without_qualifying_semantics(self):
+        linked = {"status": "candidate-only", "nativeSummarySha256": "1" * 64,
+                  "processId": 123, "nativeSelfKeyCandidate": PLAYER_KEY,
+                  "qualification": "Lua unbound; stat values unqualified."}
+        pair = {"status": "candidate-only", "beforeSummarySha256": "4" * 64,
+                "afterSummarySha256": "1" * 64, "processId": 123,
+                "selfKeyCandidate": PLAYER_KEY,
+                "nativeStatsComparison": {"status": "comparable-candidate",
+                                          "rawValuesCompared": 40,
+                                          "rawValuesChanged": 2,
+                                          "changed": [{"name": "armor", "variant": "ordinary"},
+                                                      {"name": "armor", "variant": "unbuffed"}]}}
+        with patch.object(join, "correlate", return_value=deepcopy(linked)) as correlate, \
+             patch.object(join.state, "compare", return_value=deepcopy(pair)) as compare:
+            result = join.correlate_with_previous("old.json", "new.json", "lua.json")
+            correlate.assert_called_once_with("new.json", "lua.json")
+            compare.assert_called_once_with("old.json", "new.json")
+        self.assertEqual(result["status"], "candidate-only")
+        self.assertEqual(result["previousNativeSummarySha256"], "4" * 64)
+        self.assertEqual(result["nativeStatsComparison"]["rawValuesChanged"], 2)
+        self.assertIn("does not authenticate", result["qualification"])
+        pair["nativeStatsComparison"]["rawValuesChanged"] = 0
+        with patch.object(join, "correlate", return_value=deepcopy(linked)), \
+             patch.object(join.state, "compare", return_value=deepcopy(pair)):
+            self.assertEqual(join.correlate_with_previous("old", "new", "lua")
+                             ["nativeStatsComparison"]["rawValuesChanged"], 0)
+
+    def test_optional_native_pair_rejects_mismatch_or_incompatible_stats(self):
+        linked = {"nativeSummarySha256": "1" * 64, "processId": 123,
+                  "nativeSelfKeyCandidate": PLAYER_KEY,
+                  "qualification": "Unbound Lua candidates."}
+        pair = {"status": "candidate-only", "beforeSummarySha256": "4" * 64,
+                "afterSummarySha256": "1" * 64, "processId": 123,
+                "selfKeyCandidate": PLAYER_KEY,
+                "nativeStatsComparison": {"status": "comparable-candidate",
+                                          "rawValuesCompared": 40,
+                                          "rawValuesChanged": 0}}
+        for mutation, reason in (
+            ({"afterSummarySha256": "f" * 64}, "previous-native-pair-mismatch"),
+            ({"processId": 999}, "previous-native-pair-mismatch"),
+            ({"selfKeyCandidate": "42"}, "previous-native-pair-mismatch"),
+            ({"nativeStatsComparison": {"status": "incompatible-selector-layout"}},
+             "previous-native-stats-not-comparable"),
+            ({"nativeStatsComparison": {"status": "comparable-candidate",
+                                        "rawValuesCompared": 0}},
+             "previous-native-stats-not-comparable"),
+        ):
+            with self.subTest(mutation=mutation):
+                altered = deepcopy(pair)
+                altered.update(mutation)
+                with patch.object(join, "correlate", return_value=deepcopy(linked)), \
+                     patch.object(join.state, "compare", return_value=altered):
+                    with self.assertRaisesRegex(ValueError, reason):
+                        join.correlate_with_previous("old", "new", "lua")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -135,17 +135,49 @@ def correlate(state_summary, rr2a1_summary):
     }
 
 
+def correlate_with_previous(previous_state, current_state, rr2a1_summary):
+    """Link a source-verified native stat *change candidate* to a later Lua bracket.
+
+    The native pair is strictly same-process and ordered; Lua only independently
+    screens the latest native player's identity/coordinates, not stat semantics.
+    """
+    linked = correlate(current_state, rr2a1_summary)
+    pair = state.compare(previous_state, current_state)
+    require(pair.get("status") == "candidate-only"
+            and pair.get("afterSummarySha256") == linked["nativeSummarySha256"]
+            and pair.get("processId") == linked["processId"]
+            and str(pair.get("selfKeyCandidate")) == linked["nativeSelfKeyCandidate"],
+            "previous-native-pair-mismatch")
+    comparison = pair.get("nativeStatsComparison")
+    require(isinstance(comparison, dict)
+            and comparison.get("status") == "comparable-candidate"
+            and type(comparison.get("rawValuesCompared")) is int
+            and comparison["rawValuesCompared"] > 0,
+            "previous-native-stats-not-comparable")
+    linked["previousNativeSummarySha256"] = pair["beforeSummarySha256"]
+    linked["nativeStatsComparison"] = comparison
+    linked["qualification"] += (" Pair differences are native raw-value candidates; "
+                                "the later Lua bracket does not authenticate or "
+                                "independently validate any stat change.")
+    return linked
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--state-summary", type=Path, required=True)
     parser.add_argument("--rr2a1-summary", type=Path, required=True)
+    parser.add_argument("--previous-state-summary", type=Path,
+                        help="Optional earlier same-process four-source native capture")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
     try:
         if args.output:
             require(not args.output.exists() and not args.output.is_symlink(),
                     "output-exists")
-        result = correlate(args.state_summary, args.rr2a1_summary)
+        result = (correlate_with_previous(args.previous_state_summary,
+                                          args.state_summary, args.rr2a1_summary)
+                  if args.previous_state_summary else
+                  correlate(args.state_summary, args.rr2a1_summary))
         if args.output:
             with args.output.open("x", encoding="utf-8", newline="\n") as output:
                 json.dump(result, output, indent=2, allow_nan=False)
@@ -158,6 +190,7 @@ def main(argv=None):
         "processId": result["processId"],
         "luaPlayerIdCandidate": result["luaPlayerIdCandidate"],
         "rawStatValuesAvailable": result["rawStatValuesAvailable"],
+        "rawStatValuesChanged": result.get("nativeStatsComparison", {}).get("rawValuesChanged"),
         "candidateObservationGapSeconds": result["candidateObservationGapSeconds"],
         "output": str(args.output) if args.output else None,
     }))
