@@ -167,6 +167,9 @@ def _drops(samples, field):
             result.append({"amount": left - right, "from": left, "to": right,
                            "basis": before[basis_key],
                            "startClock": before.get("clock"), "endClock": after.get("clock"),
+                           "sessionId": before.get("sessionId"), "epoch": before.get("epoch"),
+                           "playerId": before.get("playerId"),
+                           "targetId": before.get("targetId"),
                            "attributionEligible": context_stable})
     return result
 
@@ -178,7 +181,12 @@ def _events(samples, field, incoming):
         if not isinstance(event, dict):
             continue
         sequence = event.get("sequence")
-        identity = (sequence, event.get("clock"), event.get("caster"), event.get("target"))
+        # Event counters can repeat after a Lua producer restart or a target
+        # switch. They identify an event only within its originating context.
+        identity = (sample.get("sessionId"), sample.get("epoch"),
+                    sample.get("playerId"), sample.get("targetId"),
+                    sequence, event.get("clock"), event.get("caster"),
+                    event.get("target"))
         if identity in seen:
             continue
         seen.add(identity)
@@ -198,7 +206,11 @@ def _events(samples, field, incoming):
         if damage is not None and damage > 0 and expected:
             result.append({"sequence": sequence, "clock": _number(event.get("clock")),
                            "damage": damage, "abilityName": event.get("abilityName"),
-                           "caster": event.get("caster"), "target": event.get("target")})
+                           "caster": event.get("caster"), "target": event.get("target"),
+                           "sessionId": sample.get("sessionId"),
+                           "epoch": sample.get("epoch"),
+                           "playerId": sample.get("playerId"),
+                           "targetId": sample.get("targetId")})
     return result
 
 
@@ -214,7 +226,12 @@ def _correlation(drops, events):
         # separate HP declines. Each distinct event supports at most one drop.
         for index, event in enumerate(events):
             if (index not in consumed and event["clock"] is not None
-                    and start <= event["clock"] <= end):
+                    and start <= event["clock"] <= end
+                    and _same(event.get("sessionId"), drop.get("sessionId"))
+                    and type(event.get("epoch")) is int
+                    and event["epoch"] == drop.get("epoch")
+                    and _same(event.get("playerId"), drop.get("playerId"))
+                    and _same(event.get("targetId"), drop.get("targetId"))):
                 consumed.add(index)
                 paired += 1
                 break

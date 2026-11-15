@@ -97,6 +97,43 @@ class SurvivalAcceptanceSummaryTests(unittest.TestCase):
                                   [self.sample(10, 100, 100), after])
         self.assertFalse(value["acceptance"]["incomingDamage"])
 
+    def test_old_session_damage_event_cannot_explain_new_session_hp_drop(self):
+        player_id, target_id = "u0000000000000001", "u0000000000000002"
+        event = {"sequence": 7, "clock": 10.5, "kind": "damage",
+                 "damage": 12, "caster": target_id, "target": player_id,
+                 "selectedTargetId": target_id}
+        old = self.sample(10.5, 100, 100, incoming=event)
+        old["snapshot"]["sessionId"] = "a" * 32
+        newer_before = self.sample(10, 100, 100)
+        newer_before["snapshot"]["sessionId"] = "b" * 32
+        newer_after = self.sample(11, 88, 100)
+        newer_after["snapshot"]["sessionId"] = "b" * 32
+        observed = summary.summarize(
+            [{"status": "encounter-interrupted"}],
+            [old, newer_before, newer_after])
+        self.assertEqual(1, len(observed["telemetry"]["selfHealthDrops"]))
+        self.assertTrue(observed["telemetry"]["selfHealthDrops"][0]["attributionEligible"])
+        self.assertEqual(0, observed["telemetry"]["incomingCorrelation"]["pairedCount"])
+        self.assertEqual("observed-unpaired",
+                         observed["telemetry"]["incomingCorrelation"]["status"])
+
+    def test_same_event_counter_after_session_restart_remains_distinct(self):
+        player_id, target_id = "u0000000000000001", "u0000000000000002"
+        event = {"sequence": 7, "clock": 10.5, "kind": "damage",
+                 "damage": 12, "caster": target_id, "target": player_id,
+                 "selectedTargetId": target_id}
+        old = self.sample(10.5, 100, 100, incoming=event)
+        old["snapshot"]["sessionId"] = "a" * 32
+        newer_before = self.sample(10, 100, 100)
+        newer_before["snapshot"]["sessionId"] = "b" * 32
+        newer_after = self.sample(11, 88, 100, incoming=event)
+        newer_after["snapshot"]["sessionId"] = "b" * 32
+        observed = summary.summarize(
+            [{"status": "encounter-interrupted"}],
+            [old, newer_before, newer_after])
+        self.assertEqual(2, len(observed["telemetry"]["incomingEvents"]))
+        self.assertEqual(1, observed["telemetry"]["incomingCorrelation"]["pairedCount"])
+
     def test_single_boundary_event_cannot_explain_two_health_drops(self):
         player_id, target_id = "u0000000000000001", "u0000000000000002"
         event = {"sequence": 7, "clock": 11.0, "kind": "damage", "damage": 10,
