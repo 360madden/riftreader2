@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -67,7 +68,8 @@ class DestinationPlanTests(unittest.TestCase):
             "catalog": bridge._reference(self.catalog),
             "destination": {"entry": self.entry, "entryHash": bridge._identity(self.entry)},
             "patchId": self.candidate["patchId"], "buildId": self.candidate["planner"]["buildId"],
-            "query": {"requestedStartXYZ": [0, 1, 2], "selectedApproachXYZ": [2, 1, 2], "exitCode": 0},
+            "query": {"requestedStartXYZ": bridge._xyz(command[command.index("--from") + 1]),
+                      "selectedApproachXYZ": self.entry["approachXYZ"], "exitCode": 0},
             "candidate": {**bridge._reference(candidate_path), "candidateId": self.candidate["candidateId"],
                 "status": self.candidate["status"], "evidence": self.candidate["evidence"]},
             "qualification": {"destinationState": "manual-unverified",
@@ -410,6 +412,389 @@ class DestinationPlanTests(unittest.TestCase):
         result = self.current_plan(execute=True, runner=self.current_runner(latched=True))
         self.assertEqual("blocked", result["status"])
         self.assertEqual(1, len(self.calls))
+
+    def preparation_inputs(self, *, qualified=True, large_index=False):
+        if not qualified:
+            self.candidate["coordinates"]["transformToRr2Native"] = {"kind": "unknown", "qualification": "unqualified"}
+            sign(self.candidate)
+        self.request = self.save("area-request.json", {"areaRequestId": "c" * 64,
+            "sourceWorld": {"key": "world", "authority": "test-source"},
+            "coordinateFrame": {key: value for key, value in self.candidate["coordinates"].items()
+                                if key != "transformToRr2Native"}})
+        self.index = self.save("source-index.json", {"sourceIndexId": "d" * 64,
+            "padding": "x" * (9 * 1024 * 1024) if large_index else ""})
+        self.source_catalog = self.save("source-catalog.json", {"catalogId": "e" * 64})
+        self.preparation = self.save("preparation.json", {"preparationId": "f" * 64})
+        patch_document = {"patchId": self.candidate["patchId"], "sourceWorld": "world",
+            "coordinates": deepcopy(self.candidate["coordinates"]), "requestedBounds": [-1, 0, 1, 3, 2, 3],
+            "content": {"geometrySha256": "1" * 64}}
+        self.patch.write_text(json.dumps(patch_document))
+        self.build.write_text(json.dumps({"buildId": self.candidate["planner"]["buildId"],
+            "worldContext": {"patchId": patch_document["patchId"], "sourceWorld": "world",
+                             "coordinates": patch_document["coordinates"]},
+            "sourceObjSha256": "1" * 64, "profile": self.candidate["planner"]["profile"]}))
+        self.entry["preparationBinding"] = {"schema": "riftworld.destination-source-binding/1",
+            "kind": "source-index", "sourceIndexId": "d" * 64}
+        self.entry["evidence"] = ["native-corridor:unit-test"]
+        self.catalog.write_text(json.dumps({"schema": "riftworld.destination-catalog/1", "destinations": [self.entry]}))
+        self.prepare_calls = []
+        self.handoff_change = None
+        self.validation_change = None
+        self.prepare_effect = None
+
+    def prepare(self, command, **options):
+        self.prepare_calls.append((command, options))
+        self.assertNotIn("--from", command)
+        self.assertNotIn("--to", command)
+        self.assertLessEqual(options["max_output_bytes"], 1024 * 1024)
+        reason = options["cancel_check"]()
+        if reason:
+            raise subprocess.SubprocessError(reason)
+        handoff = {"schema": "riftworld.prepared-navigation-handoff/1"}
+        for name, path, identity in (("preparation", self.preparation, "f" * 64),
+            ("sourceIndex", self.index, "d" * 64), ("sourceCatalog", self.source_catalog, "e" * 64),
+            ("areaRequest", self.request, "c" * 64), ("patch", self.patch, self.candidate["patchId"]),
+            ("navigation", self.build, self.candidate["planner"]["buildId"])):
+            id_field = {"preparation": "preparationId", "sourceIndex": "sourceIndexId",
+                        "sourceCatalog": "catalogId", "areaRequest": "areaRequestId",
+                        "patch": "patchId", "navigation": "buildId"}[name]
+            handoff[name] = {"descriptor": str(path), "descriptorSha256": bridge._hash(path), id_field: identity}
+        handoff.update(coordinates=deepcopy(self.candidate["coordinates"]), requestedBounds=[-1, 0, 1, 3, 2, 3],
+            sourceWorld={"key": "world", "authority": "test-source"},
+            navigationProfile={"input": None if "--profile" not in command else {
+                "descriptor": command[command.index("--profile") + 1],
+                "descriptorSha256": bridge._hash(command[command.index("--profile") + 1])},
+                "value": self.candidate["planner"]["profile"],
+                               "semanticSha256": bridge._identity(self.candidate["planner"]["profile"])},
+            accounting={"sourceClosure": "unqualified"}, work={"preparationCacheHit": True},
+            qualification="Offline source geometry only.")
+        if self.handoff_change:
+            self.handoff_change(handoff)
+        Path(command[command.index("--handoff") + 1]).write_text(json.dumps(handoff))
+        Path(command[command.index("--receipt") + 1]).write_text(json.dumps({
+            "schema": "riftworld.area-preparation-run/1", "preparation": handoff["preparation"]}))
+        if self.prepare_effect:
+            self.prepare_effect()
+        return SimpleNamespace(returncode=0, confirmed_cleanup=True, metadata={"status": "completed"})
+
+    def query_source(self, command, **options):
+        if "validate-destination-receipt" in command:
+            candidate_path = Path(command[command.index("--candidate") + 1])
+            receipt_path = Path(command[command.index("--receipt") + 1])
+            receipt = json.loads(receipt_path.read_text())
+            value = {"schema": "riftworld.destination-receipt-validation/1",
+                "candidate": {**bridge._reference(candidate_path), "candidateId": self.candidate["candidateId"]},
+                "receipt": bridge._reference(receipt_path), "patch": receipt["patch"],
+                "navigation": receipt["navigation"],
+                "preparation": receipt["preparation"],
+                "binding": receipt["binding"], "qualification": receipt["qualification"]}
+            if self.validation_change:
+                self.validation_change(value)
+            return subprocess.CompletedProcess(command, 0, json.dumps(value), "")
+        result = self.query(command, **options)
+        receipt_path = Path(command[command.index("--receipt") + 1])
+        receipt = json.loads(receipt_path.read_text())
+        receipt.update(schema="riftworld.destination-query-receipt/2",
+            patch={"descriptor": str(self.patch), "descriptorSha256": bridge._hash(self.patch),
+                   "patchId": self.candidate["patchId"]},
+            navigation={"descriptor": str(self.build), "descriptorSha256": bridge._hash(self.build),
+                        "buildId": self.candidate["planner"]["buildId"]},
+            preparation={"descriptor": str(self.preparation), "descriptorSha256": bridge._hash(self.preparation),
+                         "preparationId": "f" * 64},
+            binding={"schema": "riftworld.destination-patch-binding/1", "mode": "source-index",
+                "patchId": self.candidate["patchId"], "sourceIndexId": "d" * 64,
+                "areaRequestId": "c" * 64, "requestedBounds": [-1, 0, 1, 3, 2, 3]})
+        receipt_path.write_text(json.dumps(receipt))
+        return result
+
+    def automatic_plan(self, **options):
+        arguments = dict(patch=None, build=None, prepare_request=self.request, source_index=self.index,
+            allow_partial_navigation=True, preparation_runner=self.prepare, runner=self.query_source)
+        arguments.update(options)
+        return self.plan(**arguments)
+
+    def test_automatic_preparation_composes_named_query_and_real_adoption_without_input(self):
+        self.preparation_inputs()
+        catalog_bytes = self.catalog.read_bytes()
+        result = self.automatic_plan()
+        self.assertEqual("adoptable", result["status"], result["blockers"])
+        self.assertEqual("prepared", result["stages"]["preparation"])
+        self.assertEqual(1, len(self.prepare_calls))
+        self.assertFalse(result["inputSent"])
+        self.assertFalse(result["currentRouteChanged"])
+        self.assertEqual(catalog_bytes, self.catalog.read_bytes())
+        self.assertIn("preparationHandoff", result["inputs"])
+        self.assertIn("preparationRun", result)
+
+    def test_large_source_index_is_streamed_without_rr2_json_parse(self):
+        self.preparation_inputs(large_index=True)
+        self.assertGreater(self.index.stat().st_size, bridge.MAX_CANDIDATE_BYTES)
+        self.assertEqual("adoptable", self.automatic_plan()["status"])
+
+    def test_handoff_hex_hash_casing_is_not_an_input_change(self):
+        self.preparation_inputs()
+
+        def lowercase(handoff):
+            for name in ("preparation", "sourceIndex", "sourceCatalog", "areaRequest", "patch", "navigation"):
+                handoff[name]["descriptorSha256"] = handoff[name]["descriptorSha256"].lower()
+
+        self.handoff_change = lowercase
+        result = self.automatic_plan()
+        self.assertEqual("adoptable", result["status"], result["blockers"])
+
+    def test_requested_profile_is_bound_to_input_and_effective_build(self):
+        self.preparation_inputs()
+        profile = self.save("profile.json", {"agent_radius": .5})
+        result = self.automatic_plan(prepare_profile=profile)
+        self.assertEqual("adoptable", result["status"], result["blockers"])
+        self.assertEqual(bridge._hash(profile), result["preparedNavigation"]["navigationProfile"]["input"]["descriptorSha256"])
+        profile.write_text(json.dumps({"agent_radius": .75}))
+        result = self.automatic_plan(prepare_profile=profile, output_directory=self.root / "ignored-profile")
+        self.assertIn("requested-profile-overrides-do-not-match-prepared-navigation", result["blockers"])
+        self.assertNotIn("candidate", result)
+
+    def test_tampered_profile_input_reference_is_not_an_effective_profile_match(self):
+        self.preparation_inputs()
+        profile = self.save("profile.json", {"agent_radius": .5})
+        self.handoff_change = lambda handoff: handoff["navigationProfile"]["input"].update(descriptorSha256="0" * 64)
+        result = self.automatic_plan(prepare_profile=profile)
+        self.assertIn("prepared-handoff-profile-input-mismatch", result["blockers"])
+
+    def test_preparation_selector_pairs_and_explicit_permission_are_required(self):
+        self.preparation_inputs()
+        for options in ({"patch": self.patch}, {"source_index": None}, {"prepare_request": None},
+                        {"allow_partial_navigation": False}):
+            with self.subTest(options=options), self.assertRaises(ValueError):
+                self.automatic_plan(**options)
+        self.assertFalse(self.prepare_calls)
+
+    def test_preparation_requires_authored_source_binding_and_never_injects_patch_id(self):
+        self.preparation_inputs()
+        self.entry.pop("preparationBinding")
+        self.entry["evidence"] = ["patchId:" + self.candidate["patchId"]]
+        self.catalog.write_text(json.dumps({"destinations": [self.entry]}))
+        before = self.catalog.read_bytes()
+        with self.assertRaisesRegex(ValueError, "predeclared-source-bound"):
+            self.automatic_plan()
+        self.assertEqual(before, self.catalog.read_bytes())
+        self.assertFalse(self.prepare_calls)
+
+    def test_source_receipt_preparation_proof_must_match_validated_handoff(self):
+        self.preparation_inputs()
+        self.validation_change = lambda result: result["preparation"].update(preparationId="0" * 64)
+        result = self.automatic_plan()
+        self.assertIn("destination-preparation-proof-does-not-match-handoff", result["blockers"])
+        self.assertNotIn("adoptedRoute", result)
+
+    def test_prepared_mode_rejects_consistent_exact_patch_validator_downgrade(self):
+        self.preparation_inputs()
+
+        def exact_patch(command, **options):
+            result = self.query_source(command, **options)
+            if "query_destination.py" in command[1]:
+                path = Path(command[command.index("--receipt") + 1])
+                receipt = json.loads(path.read_text())
+                receipt["binding"]["mode"] = "exact-patch"
+                path.write_text(json.dumps(receipt))
+            return result
+
+        result = self.automatic_plan(runner=exact_patch)
+        self.assertIn("prepared-destination-must-use-source-index-binding", result["blockers"])
+        self.assertNotIn("adoptedRoute", result)
+
+    def test_ambiguous_destination_binding_is_refused_before_long_preparation(self):
+        self.preparation_inputs()
+        self.entry["evidence"].append("patchId:" + self.candidate["patchId"])
+        self.catalog.write_text(json.dumps({"destinations": [self.entry]}))
+        with self.assertRaisesRegex(ValueError, "ambiguous-source-and-exact"):
+            self.automatic_plan()
+        self.assertFalse(self.prepare_calls)
+
+    def test_tampered_handoff_refs_bounds_profile_and_schema_block_query(self):
+        self.preparation_inputs()
+        changes = [lambda handoff: handoff.update(schema="unknown"),
+            lambda handoff: handoff["sourceIndex"].update(descriptorSha256="0" * 64),
+            lambda handoff: handoff["areaRequest"].update(areaRequestId="0" * 64),
+            lambda handoff: handoff.update(requestedBounds=[-100, 0, 1, 3, 2, 3]),
+            lambda handoff: handoff["navigationProfile"].update(semanticSha256="0" * 64)]
+        for index, change in enumerate(changes):
+            self.handoff_change = change
+            result = self.automatic_plan(output_directory=self.root / f"bad-handoff-{index}")
+            self.assertEqual("blocked", result["status"])
+            self.assertNotIn("candidate", result)
+            self.assertIn("preparationRun", result)
+
+    def test_preparation_input_changes_are_refused_and_geometry_refs_retained(self):
+        self.preparation_inputs()
+        self.prepare_effect = lambda: self.catalog.write_text("{}")
+        result = self.automatic_plan()
+        self.assertEqual("blocked", result["status"])
+        self.assertEqual("prepared", result["stages"]["preparation"])
+        self.assertIn("preparedNavigation", result)
+        self.assertNotIn("candidate", result)
+
+    def test_prepare_error_retains_run_and_owned_cleanup_metadata(self):
+        self.preparation_inputs()
+
+        def failing(command, **options):
+            self.prepare(command, **options)
+            return SimpleNamespace(returncode=2, confirmed_cleanup=True, metadata={"status": "completed"})
+
+        result = self.automatic_plan(preparation_runner=failing)
+        self.assertEqual("blocked", result["status"])
+        self.assertIn("preparationRun", result)
+        self.assertTrue(result["preparationProcess"]["confirmedCleanup"])
+        self.assertEqual("not-started", result["stages"]["query"])
+
+    def test_cleanup_unverified_never_continues_to_query(self):
+        self.preparation_inputs()
+
+        def uncertain(command, **options):
+            self.prepare(command, **options)
+            return SimpleNamespace(returncode=0, confirmed_cleanup=False, metadata={"status": "uncertain"})
+
+        result = self.automatic_plan(preparation_runner=uncertain)
+        self.assertEqual("blocked", result["status"])
+        self.assertNotIn("candidate", result)
+
+    def test_explicit_start_or_approach_outside_prepared_xyz_does_not_expand_request(self):
+        self.preparation_inputs()
+        result = self.automatic_plan(start=[-2, 1, 2])
+        self.assertIn("requested-start-outside-prepared-area", result["blockers"])
+        self.entry["approachXYZ"] = [2, 4, 2]
+        self.catalog.write_text(json.dumps({"destinations": [self.entry]}))
+        result = self.automatic_plan(output_directory=self.root / "outside-goal")
+        self.assertIn("destination-approach-outside-prepared-area-or-unavailable", result["blockers"])
+        self.assertNotIn("candidate", result)
+
+    def test_unknown_prepared_transform_blocks_native_query_after_identity_only_read(self):
+        self.preparation_inputs(qualified=False)
+        result = self.automatic_plan(start=None, from_current=True, session="owned",
+                                     runner=self.current_runner())
+        self.assertEqual("blocked", result["status"])
+        self.assertEqual("prepared", result["stages"]["preparation"])
+        self.assertIn("identity-transform", " ".join(result["blockers"]))
+        self.assertFalse(result["prePreparationIdentity"]["usedForQuery"])
+        self.assertNotIn("nativeXYZ", result["prePreparationIdentity"])
+        self.assertNotIn("startObservation", result)
+        self.assertNotIn("candidate", result)
+
+    def test_cancel_callback_blocks_changed_stop_epoch_during_long_preparation(self):
+        self.preparation_inputs()
+        result = self.automatic_plan(start=None, from_current=True, session="owned",
+            runner=self.current_runner(stop_epochs=(0, 0, 1)))
+        self.assertEqual("blocked", result["status"])
+        self.assertIn("session-or-stop-epoch-changed-during-preparation", " ".join(result["blockers"]))
+        self.assertNotIn("candidate", result)
+
+    def test_source_receipt_validator_mismatch_never_adopts(self):
+        self.preparation_inputs()
+        self.validation_change = lambda result: result["patch"].update(descriptorSha256="0" * 64)
+        result = self.automatic_plan()
+        self.assertEqual("blocked", result["status"])
+        self.assertIn("authoritative-destination-receipt-validation-mismatch", result["blockers"])
+        self.assertNotIn("adoptedRoute", result)
+
+    def source_session_runner(self, **options):
+        pose_runner = self.current_runner(**options)
+
+        def run(command, **kwargs):
+            if "query_destination.py" in command[1] or "validate-destination-receipt" in command:
+                return self.query_source(command, **kwargs)
+            return pose_runner(command, **kwargs)
+        return run
+
+    def test_post_preparation_pose_is_query_origin_and_old_identity_xyz_is_discarded(self):
+        self.preparation_inputs()
+
+        def move(pose):
+            pose["position"]["x"] = .1
+            self.candidate["query"]["requestedStartXYZ"][0] = .1
+            self.candidate["query"]["snappedStartXYZ"][0] = .1
+            self.candidate["points"][0]["xyz"][0] = .1
+            sign(self.candidate)
+
+        result = self.automatic_plan(native=False, start=None, from_current=True, session="owned",
+            runner=self.source_session_runner(pose_changes=[lambda pose: None, move, move]))
+        self.assertEqual("planned", result["status"], result["blockers"])
+        self.assertEqual([.1, 1, 2], result["requestedStartXYZ"])
+        self.assertFalse(result["prePreparationIdentity"]["usedForQuery"])
+        self.assertNotIn("nativeXYZ", result["prePreparationIdentity"])
+        query = next(command for command, _ in self.calls if "query_destination.py" in command[1])
+        self.assertEqual("0.10000000000000001,1,2", query[query.index("--from") + 1])
+
+    def test_available_status_identity_avoids_preparation_pose_acquisition(self):
+        self.preparation_inputs(qualified=False)
+        base = self.current_runner()
+
+        def hinted(command, **kwargs):
+            result = base(command, **kwargs)
+            if command[2] == "status":
+                response = json.loads(result.stdout)
+                response["data"]["pose"] = {"status": "fresh", "sampleStatus": "fresh",
+                    "source": "existing-idle-reader", "sampledAtUtc": datetime.now(timezone.utc).isoformat(),
+                    "ageSeconds": 0, "freshForSeconds": 2, "target": response["data"]["target"],
+                    "runtimeIdentity": {"machine": "AMD-DESKTOP", "processId": 123,
+                        "processStartUtcTicks": 456, "gameBuildSha256": "a" * 64, "unitKey": self.player}}
+                result.stdout = json.dumps(response)
+            return result
+
+        result = self.automatic_plan(start=None, from_current=True, session="owned", runner=hinted)
+        self.assertEqual("blocked", result["status"])
+        self.assertEqual("session-status", result["prePreparationIdentity"]["acquiredBy"])
+        self.assertFalse(any(command[2:4] == ["pose", "refresh"] for command, _ in self.calls))
+
+    def test_player_changed_during_preparation_blocks_before_query(self):
+        self.preparation_inputs()
+        result = self.automatic_plan(start=None, from_current=True, session="owned",
+            runner=self.source_session_runner(pose_changes=[lambda pose: None,
+                lambda pose: pose["runtimeIdentity"].update(unitKey="other")]))
+        self.assertEqual("blocked", result["status"])
+        self.assertIn("current-native-player-changed-during-preparation", result["blockers"])
+        self.assertIn("preparedNavigation", result)
+        self.assertNotIn("candidate", result)
+
+    def test_preparation_session_poll_is_throttled_and_final_check_is_unconditional(self):
+        self.preparation_inputs()
+        clock = [0.0]
+
+        def polling(command, **options):
+            before = sum(call[0][2] == "status" for call in self.calls)
+            for _ in range(30):
+                self.assertIsNone(options["cancel_check"]())
+            self.assertEqual(1, sum(call[0][2] == "status" for call in self.calls) - before)
+            clock[0] = .5
+            self.assertIsNone(options["cancel_check"]())
+            self.assertEqual(1, sum(call[0][2] == "status" for call in self.calls) - before)
+            return self.prepare(command, **options)
+
+        with patch("scripts.waypoint_destination_plan.time.monotonic", side_effect=lambda: clock[0]):
+            result = self.automatic_plan(start=None, from_current=True, session="owned",
+                runner=self.source_session_runner(), preparation_runner=polling)
+        self.assertEqual("adoptable", result["status"], result["blockers"])
+        # Initial, pre-identity, one debounced poll, final forced poll,
+        # post-prep pose, and post-query pose are all bounded status requests.
+        statuses = [call[0] for call in self.calls if call[0][2] == "status"]
+        self.assertEqual(6, len(statuses))
+        self.assertTrue(all(command[command.index("--timeout") + 1] == "1" for command in statuses))
+
+    def test_owned_timeout_retains_cleanup_evidence_and_published_geometry_receipt(self):
+        self.preparation_inputs()
+
+        class TimedOut(subprocess.SubprocessError):
+            metadata = {"status": "timed-out"}
+            result = SimpleNamespace(returncode=-1, confirmed_cleanup=True)
+
+        def timed_out(command, **options):
+            self.prepare(command, **options)
+            raise TimedOut("deadline")
+
+        result = self.automatic_plan(preparation_runner=timed_out)
+        self.assertEqual("blocked", result["status"])
+        self.assertEqual("timed-out", result["preparationProcess"]["metadata"]["status"])
+        self.assertTrue(result["preparationProcess"]["confirmedCleanup"])
+        self.assertIn("preparationRun", result)
+        self.assertNotIn("candidate", result)
 
 
 class CurrentStartMailboxTests(unittest.TestCase):

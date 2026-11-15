@@ -15,8 +15,10 @@ import json
 import math
 from pathlib import Path
 import platform
+import re
 import subprocess
 import sys
+import time
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -31,8 +33,8 @@ SCHEMA = "rr2.destination-plan/1"
 RIFTWORLD_ROOT = ROOT.parent / "RiftWorld"
 
 
-def _read(path):
-    value, digest = _read_document(path, MAX_CANDIDATE_BYTES)
+def _read(path, limit=MAX_CANDIDATE_BYTES):
+    value, digest = _read_document(path, limit)
     if not isinstance(value, dict):
         raise ValueError("JSON document must be an object")
     return value, digest
@@ -64,7 +66,8 @@ def _xyz(value):
     return result
 
 
-def _publication(candidate_path, receipt_path, *, catalog_path, destination, start, inputs):
+def _publication(candidate_path, receipt_path, *, catalog_path, destination, start, inputs,
+                 validator=None):
     candidate, candidate_hash = _read(candidate_path)
     review = inspect_candidate(candidate)
     receipt, _ = _read(receipt_path)
@@ -76,7 +79,7 @@ def _publication(candidate_path, receipt_path, *, catalog_path, destination, sta
                       "destinationEvidence": entry.get("evidence"),
                       "traversal": candidate["evidence"].get("traversal")} if entry else None)
     ref = receipt.get("candidate", {})
-    if (receipt.get("schema") != "riftworld.destination-query-receipt/1"
+    if (receipt.get("schema") not in {"riftworld.destination-query-receipt/1", "riftworld.destination-query-receipt/2"}
             or not entry or receipt.get("destination", {}).get("entry") != entry
             or receipt["destination"].get("entryHash") != _identity(entry)
             or receipt.get("catalog") != inputs["catalog"]
@@ -94,20 +97,137 @@ def _publication(candidate_path, receipt_path, *, catalog_path, destination, sta
             or candidate["query"]["requestedGoalXYZ"] != entry.get("approachXYZ")):
         raise ValueError("destination-publication-context-mismatch")
     for name, reference in inputs.items():
-        if _hash(reference["path"]) != reference["sha256"]:
+        if _hash(reference["path"]).casefold() != str(reference["sha256"]).casefold():
             raise ValueError("planning-input-changed: " + name)
     patch, _ = _read(inputs["patch"]["path"])
     build, _ = _read(inputs["build"]["path"])
     if (candidate["patchId"] != patch.get("patchId")
             or candidate["planner"]["buildId"] != build.get("buildId")):
         raise ValueError("destination-publication-build-mismatch")
+    if receipt["schema"] == "riftworld.destination-query-receipt/2":
+        if validator is None:
+            raise ValueError("source-destination-receipt-requires-authoritative-validation")
+        validator(candidate, receipt)
     return candidate, receipt, review
 
 
-def _session_state(session, runner, *, allow_latched=False):
+def _inside_bounds(point, bounds):
+    return (isinstance(bounds, list) and len(bounds) == 6
+            and all(type(value) in (int, float) and math.isfinite(value) for value in bounds)
+            and all(bounds[axis] <= point[axis] <= bounds[axis + 3] for axis in range(3)))
+
+
+def _prepared_handoff(path, *, request_path, index_path, inputs, profile_path=None):
+    """Read only the compact source-side contract; large descriptors are streamed."""
+    handoff, _ = _read(path, 1024 * 1024)
+    if handoff.get("schema") != "riftworld.prepared-navigation-handoff/1":
+        raise ValueError("unsupported-prepared-navigation-handoff")
+    for name, identity in (("preparation", "preparationId"), ("sourceIndex", "sourceIndexId"),
+                           ("sourceCatalog", "catalogId"), ("areaRequest", "areaRequestId"),
+                           ("patch", "patchId"), ("navigation", "buildId")):
+        ref = handoff.get(name)
+        if (not isinstance(ref, dict) or not isinstance(ref.get("descriptor"), str)
+                or not re.fullmatch(r"[a-fA-F0-9]{64}", str(ref.get(identity, "")))
+                or str(ref.get("descriptorSha256", "")).casefold()
+                   != _hash(ref["descriptor"]).casefold()):
+            raise ValueError("prepared-handoff-reference-mismatch: " + name)
+    for name, input_name, expected_path in (("areaRequest", "areaRequest", request_path),
+                                             ("sourceIndex", "sourceIndex", index_path)):
+        ref = handoff[name]
+        if (Path(ref["descriptor"]).resolve() != expected_path
+                or ref["descriptorSha256"].casefold() != inputs[input_name]["sha256"].casefold()):
+            raise ValueError("prepared-handoff-input-mismatch: " + name)
+    request, _ = _read(request_path)
+    if (request.get("areaRequestId") != handoff["areaRequest"]["areaRequestId"]
+            or handoff.get("sourceWorld") != request.get("sourceWorld")):
+        raise ValueError("prepared-handoff-request-identity-mismatch")
+    patch_path = Path(handoff["patch"]["descriptor"]).resolve()
+    build_path = Path(handoff["navigation"]["descriptor"]).resolve()
+    patch, _ = _read(patch_path)
+    build, _ = _read(build_path)
+    if (request.get("sourceWorld", {}).get("key") != patch.get("sourceWorld")
+            or any(patch.get("coordinates", {}).get(key) != value
+                   for key, value in request.get("coordinateFrame", {}).items())
+            or patch.get("patchId") != handoff["patch"]["patchId"]
+            or patch.get("coordinates") != handoff.get("coordinates")
+            or patch.get("requestedBounds") != handoff.get("requestedBounds")
+            or build.get("buildId") != handoff["navigation"]["buildId"]
+            or build.get("worldContext") != {"patchId": patch["patchId"],
+                "sourceWorld": patch["sourceWorld"], "coordinates": patch["coordinates"]}
+            or build.get("sourceObjSha256") != patch.get("content", {}).get("geometrySha256")):
+        raise ValueError("prepared-handoff-patch-build-context-mismatch")
+    profile = handoff.get("navigationProfile", {})
+    if (profile.get("value") != build.get("profile") or
+            str(profile.get("semanticSha256", "")).casefold() != _identity(profile.get("value")).casefold()):
+        raise ValueError("prepared-handoff-navigation-profile-mismatch")
+    profile_input = profile.get("input")
+    if profile_path is None:
+        if profile_input is not None:
+            raise ValueError("prepared-handoff-unrequested-profile-input")
+    else:
+        if (not isinstance(profile_input, dict)
+                or Path(str(profile_input.get("descriptor", ""))).resolve() != profile_path
+                or str(profile_input.get("descriptorSha256", "")).casefold()
+                   != inputs["navigationProfileInput"]["sha256"].casefold()):
+            raise ValueError("prepared-handoff-profile-input-mismatch")
+        overrides, _ = _read(profile_path, 1024 * 1024)
+        if any(type(value) not in (int, float) or not math.isfinite(value)
+               or key not in profile["value"] or profile["value"][key] != value
+               for key, value in overrides.items()):
+            raise ValueError("requested-profile-overrides-do-not-match-prepared-navigation")
+    return handoff, patch_path, build_path
+
+
+def _validated_destination(python, world_root, candidate_path, receipt_path, inputs, runner,
+                           candidate, receipt, prepared=None):
+    result = runner([str(python), "-m", "riftworld", "validate-destination-receipt",
+                     "--candidate", str(candidate_path), "--receipt", str(receipt_path)],
+                    cwd=world_root, text=True, capture_output=True, check=False)
+    if len(result.stdout.encode("utf-8")) > 1024 * 1024:
+        raise ValueError("authoritative-destination-validation-output-too-large")
+    validation = json.loads(result.stdout)
+    if not isinstance(validation, dict):
+        raise ValueError("authoritative-destination-validation-must-be-an-object")
+    expected_candidate = {**_reference(candidate_path), "candidateId": candidate["candidateId"]}
+    expected_navigation = {"descriptor": inputs["build"]["path"],
+                           "descriptorSha256": inputs["build"]["sha256"],
+                           "buildId": candidate["planner"]["buildId"]}
+    if (result.returncode != 0 or validation.get("schema") != "riftworld.destination-receipt-validation/1"
+            or validation.get("candidate") != expected_candidate
+            or validation.get("receipt") != _reference(receipt_path)
+            or validation.get("patch") != receipt.get("patch")
+            or validation.get("patch") != {"descriptor": inputs["patch"]["path"],
+                "descriptorSha256": inputs["patch"]["sha256"], "patchId": candidate["patchId"]}
+            or validation.get("navigation") != expected_navigation
+            or receipt.get("navigation") != expected_navigation
+            or validation.get("binding") != receipt.get("binding")
+            or validation.get("qualification") != receipt.get("qualification")):
+        raise ValueError("authoritative-destination-receipt-validation-mismatch")
+    binding = validation["binding"]
+    if (not isinstance(binding, dict) or binding.get("schema") != "riftworld.destination-patch-binding/1"
+            or binding.get("mode") not in {"source-index", "exact-patch"}
+            or binding.get("patchId") != candidate["patchId"]):
+        raise ValueError("authoritative-destination-binding-invalid")
+    if prepared and binding.get("mode") != "source-index":
+        raise ValueError("prepared-destination-must-use-source-index-binding")
+    if prepared:
+        expected_preparation = {"descriptor": inputs["preparation"]["path"],
+            "descriptorSha256": inputs["preparation"]["sha256"],
+            "preparationId": prepared["preparation"]["preparationId"]}
+        if (validation.get("preparation") != expected_preparation
+                or receipt.get("preparation") != expected_preparation):
+            raise ValueError("destination-preparation-proof-does-not-match-handoff")
+        if (binding.get("sourceIndexId") != prepared["sourceIndex"]["sourceIndexId"]
+                or binding.get("areaRequestId") not in {None, prepared["areaRequest"]["areaRequestId"]}
+                or binding.get("requestedBounds") != prepared["requestedBounds"]):
+            raise ValueError("destination-binding-does-not-match-prepared-area")
+    return validation
+
+
+def _session_state(session, runner, *, allow_latched=False, identity_out=None):
     command = [sys.executable, str(ROOT / "scripts" / "waypoints_cli.py"),
-               "status", "--session", session, "--json"]
-    result = runner(command, cwd=ROOT, text=True, capture_output=True, check=False)
+               "status", "--session", session, "--timeout", "1", "--json"]
+    result = runner(command, cwd=ROOT, text=True, capture_output=True, check=False, timeout=2)
     try:
         response = json.loads(result.stdout)
         data = response["data"]
@@ -128,8 +248,27 @@ def _session_state(session, runner, *, allow_latched=False):
                 or data["app"].get("closing") is not False
                 or type(epoch) not in (int, float) or not math.isfinite(epoch)):
             raise ValueError("session-not-idle-or-stop-latched")
-        return {"sessionId": session, "target": data["target"], "stopEpoch": epoch,
-                "stopLatched": controls["stopLatched"]}
+        admission = {"sessionId": session, "target": data["target"], "stopEpoch": epoch,
+                     "stopLatched": controls["stopLatched"]}
+        if identity_out is not None:
+            pose = data.get("pose")
+            if isinstance(pose, dict):
+                owner = pose.get("runtimeIdentity")
+                try:
+                    limit, age = pose.get("freshForSeconds"), pose.get("ageSeconds")
+                    stamp = datetime.fromisoformat(pose["sampledAtUtc"].replace("Z", "+00:00"))
+                    elapsed = (datetime.now(timezone.utc) - stamp).total_seconds()
+                    if (pose.get("status") == "fresh" and pose.get("sampleStatus") == "fresh"
+                            and pose.get("target") == target and _identity_matches_target(owner, target)
+                            and type(limit) in (int, float) and 0 < limit <= 2
+                            and type(age) in (int, float) and 0 <= age <= limit
+                            and -.1 <= elapsed <= limit and isinstance(pose.get("source"), str)):
+                        identity_out.update(runtimeIdentity=deepcopy(owner), target=deepcopy(target),
+                            sessionId=session, source=pose["source"], sampledAtUtc=pose["sampledAtUtc"],
+                            ageSecondsAtValidation=elapsed, acquiredBy="session-status")
+                except (KeyError, TypeError, ValueError):
+                    pass  # An explicit input-free identity read is the fallback.
+        return admission
     except (ValueError, TypeError, KeyError) as exc:
         raise ValueError("execution-session-unavailable: " + str(exc)) from exc
 
@@ -141,6 +280,17 @@ def _same_runtime(left, right):
                (str(left[key]) == str(right[key]) if key == "unitKey" else
                 str(left[key]).casefold() == str(right[key]).casefold())
                for key in ("machine", "processId", "processStartUtcTicks", "gameBuildSha256", "unitKey"))
+
+
+def _identity_matches_target(identity, target):
+    return (isinstance(identity, dict) and isinstance(identity.get("unitKey"), str)
+            and bool(identity["unitKey"])
+            and str(identity.get("machine", "")).casefold()
+               == str(target.get("machineName") or target.get("hostName", "")).casefold()
+            and str(identity.get("gameBuildSha256", "")).casefold()
+               == str(target["executableSha256"]).casefold()
+            and all(str(identity.get(key, "")) == str(target[key])
+                    for key in ("processId", "processStartUtcTicks")))
 
 
 def _current_pose(session, admission, runner, *, allow_latched):
@@ -155,14 +305,7 @@ def _current_pose(session, admission, runner, *, allow_latched):
         raise ValueError("current-native-pose-unavailable")
     position, identity = data.get("position"), data.get("runtimeIdentity")
     target = admission["target"]
-    if (data.get("target") != target or not isinstance(identity, dict)
-            or not isinstance(identity.get("unitKey"), str) or not identity["unitKey"]
-            or str(identity.get("machine", "")).casefold()
-               != str(target.get("machineName") or target.get("hostName", "")).casefold()
-            or str(identity.get("gameBuildSha256", "")).casefold()
-               != str(target["executableSha256"]).casefold()
-            or any(str(identity.get(key, "")) != str(target[key])
-                   for key in ("processId", "processStartUtcTicks"))):
+    if data.get("target") != target or not _identity_matches_target(identity, target):
         raise ValueError("current-native-pose-owner-or-target-mismatch")
     age, limit = data.get("ageSeconds"), data.get("freshForSeconds")
     source, stamp = data.get("source"), data.get("sampledAtUtc")
@@ -278,12 +421,15 @@ def _execution_result(plan, route_path):
     plan["status"] = plan["stages"]["execution"] = plan["arrival"]["status"]
 
 
-def plan_destination(*, catalog, destination, patch, build, output_directory, start=None, from_current=False,
+def plan_destination(*, catalog, destination, output_directory, patch=None, build=None,
+                     prepare_request=None, source_index=None, allow_partial_navigation=False,
+                     prepare_profile=None, prepare_timeout_seconds=600,
+                     start=None, from_current=False,
                      riftworld_root=RIFTWORLD_ROOT, riftworld_python=None,
                      native_receipts=(), native_context=None, native_start=None,
                      native_end=None, candidate_start=0, candidate_end=None,
                      execute=False, session=None, search_extent=None,
-                     runner=subprocess.run):
+                     runner=subprocess.run, preparation_runner=None):
     """Publish an offline destination plan, with optional scoped adoption/dispatch.
 
     A new output directory is mandatory. Query/adoption failures retain useful
@@ -292,6 +438,17 @@ def plan_destination(*, catalog, destination, patch, build, output_directory, st
     if bool(from_current) == (start is not None):
         raise ValueError("choose exactly one explicit start or from-current")
     start = _xyz(start) if start is not None else None
+    preparing = prepare_request is not None or source_index is not None
+    if (preparing and (prepare_request is None or source_index is None or patch is not None or build is not None)
+            or not preparing and (patch is None or build is None)):
+        raise ValueError("choose prepared patch+build or prepare-request+source-index")
+    if preparing and allow_partial_navigation is not True:
+        raise ValueError("preparation navigation requires explicit allow-partial-navigation")
+    if (type(prepare_timeout_seconds) not in (int, float) or not math.isfinite(prepare_timeout_seconds)
+            or not 0 < prepare_timeout_seconds <= 3600):
+        raise ValueError("prepare timeout must be finite and within 0..3600 seconds")
+    if prepare_profile is not None and not preparing:
+        raise ValueError("prepare-profile requires preparation mode")
     if not isinstance(destination, str) or not destination.strip():
         raise ValueError("destination ID is required")
     if (execute or from_current) and (not isinstance(session, str) or not session.strip()):
@@ -309,36 +466,156 @@ def plan_destination(*, catalog, destination, patch, build, output_directory, st
     query_tool = world_root / "tools" / "query_destination.py"
     if not python.is_file() or not query_tool.is_file():
         raise ValueError("RiftWorld Python or destination query tool is unavailable")
-    catalog, patch, build = (Path(value).resolve() for value in (catalog, patch, build))
-    build_file = build / "navigation.json" if build.is_dir() else build
-    inputs = {name: _reference(path) for name, path in
-              (("catalog", catalog), ("patch", patch), ("build", build_file))}
+    catalog = Path(catalog).resolve()
+    inputs = {"catalog": _reference(catalog)}
+    if preparing:
+        destination_catalog, _ = _read(catalog)
+        prepared_entry = next((entry for entry in destination_catalog.get("destinations", [])
+                               if isinstance(entry, dict) and entry.get("id") == destination), None)
+        declared_binding = prepared_entry.get("preparationBinding") if prepared_entry else None
+        if (not isinstance(declared_binding, dict)
+                or declared_binding.get("schema") != "riftworld.destination-source-binding/1"
+                or declared_binding.get("kind") != "source-index"
+                or set(declared_binding) - {"schema", "kind", "sourceIndexId", "areaRequestId"}
+                or not re.fullmatch(r"[a-f0-9]{64}", str(declared_binding.get("sourceIndexId", "")))
+                or "areaRequestId" in declared_binding and not re.fullmatch(
+                    r"[a-f0-9]{64}", str(declared_binding["areaRequestId"]))):
+            raise ValueError("preparation-mode-requires-predeclared-source-bound-destination")
+        if any(isinstance(item, str) and item.startswith("patchId:")
+               for item in prepared_entry.get("evidence", [])):
+            raise ValueError("ambiguous-source-and-exact-patch-destination-binding")
+        prepare_request, source_index = Path(prepare_request).resolve(), Path(source_index).resolve()
+        inputs.update(areaRequest=_reference(prepare_request), sourceIndex=_reference(source_index))
+        if prepare_profile is not None:
+            prepare_profile = Path(prepare_profile).resolve()
+            inputs["navigationProfileInput"] = _reference(prepare_profile)
+    else:
+        patch, build = Path(patch).resolve(), Path(build).resolve()
+        build_file = build / "navigation.json" if build.is_dir() else build
+        inputs.update(patch=_reference(patch), build=_reference(build_file))
     output = Path(output_directory).resolve()
     output.mkdir(parents=True, exist_ok=False)
     candidate_path, receipt_path = output / "candidate.json", output / "destination.json"
     plan_path, route_path = output / "plan.json", output / "adopted-route.json"
+    handoff_path, preparation_receipt = output / "prepared-navigation.json", output / "preparation-run.json"
     plan = {"schema": SCHEMA, "createdAtUtc": datetime.now(timezone.utc).isoformat(),
             "status": "blocked", "destinationId": destination, "requestedStartXYZ": start,
             "startSource": "current-native" if from_current else "explicit-source-coordinates",
-            "inputs": inputs, "stages": {"query": "pending", "adoption": "not-requested",
+            "inputs": inputs, "stages": {"query": "not-started", "adoption": "not-requested",
                                           "execution": "not-requested"},
             "blockers": [], "inputSent": False, "currentRouteChanged": False,
             "qualification": "Prepared-map planning and corresponding walked-corridor reuse only; "
                              "no global transform, collision, service-use or live authority."}
+    if preparing:
+        plan["stages"]["preparation"] = "pending"
 
     def publish():
         write_json_atomic(plan_path, plan)
         return deepcopy(plan)
 
     try:
+        prepared = None
+        preparation_owner = None
+        identity_hint = {}
         if execute or from_current:
-            admission = _session_state(session, runner, allow_latched=not execute)
+            admission = _session_state(session, runner, allow_latched=not execute,
+                                       identity_out=identity_hint if preparing else None)
             plan["executionAdmission" if execute else "observationAdmission"] = admission
+        if preparing:
+            if execute or from_current:
+                identity_sample = identity_hint or _current_pose(session, admission, runner, allow_latched=not execute)
+                preparation_owner = identity_sample["runtimeIdentity"]
+                plan["prePreparationIdentity"] = {key: value for key, value in identity_sample.items()
+                                                  if key != "nativeXYZ"}
+                plan["prePreparationIdentity"].update(purpose="identity-only", usedForQuery=False)
+
+            last_poll, last_cancel_reason = float("-inf"), None
+            post_preparation_identity = {}
+
+            def cancel_preparation(*, force=False):
+                nonlocal last_poll, last_cancel_reason
+                if execute or from_current:
+                    if last_cancel_reason:
+                        return last_cancel_reason
+                    now = time.monotonic()
+                    if not force and now - last_poll < .75:
+                        return None
+                    last_poll = now
+                    try:
+                        current = _session_state(session, runner, allow_latched=not execute,
+                            identity_out=post_preparation_identity if force else None)
+                        if current != admission:
+                            last_cancel_reason = "session-or-stop-epoch-changed-during-preparation"
+                    except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError):
+                        last_cancel_reason = "session-unavailable-during-preparation"
+                return last_cancel_reason
+
+            prepare_command = [str(python), "-m", "riftworld", "prepare-area", "--request", str(prepare_request),
+                               "--source-index", str(source_index), "--build-nav", "--allow-partial-navigation",
+                               "--receipt", str(preparation_receipt), "--handoff", str(handoff_path)]
+            if prepare_profile is not None:
+                prepare_command += ["--profile", str(prepare_profile)]
+            if preparation_runner is None:
+                from scripts.owned_process import run_owned
+                preparation_runner = run_owned
+            plan["preparationLogDirectory"] = str(output / "preparation-process")
+            try:
+                process = preparation_runner(prepare_command, cwd=world_root,
+                    log_directory=output / "preparation-process", timeout_seconds=prepare_timeout_seconds,
+                    cancel_check=cancel_preparation, max_output_bytes=1024 * 1024)
+                plan["preparationProcess"] = {"exitCode": process.returncode,
+                    "metadata": process.metadata, "confirmedCleanup": process.confirmed_cleanup}
+            except subprocess.SubprocessError as error:
+                process = getattr(error, "result", None)
+                plan["preparationProcess"] = {"metadata": getattr(error, "metadata", None),
+                    "exitCode": getattr(process, "returncode", None),
+                    "confirmedCleanup": getattr(process, "confirmed_cleanup", False)}
+                if preparation_receipt.is_file():
+                    plan["preparationRun"] = _reference(preparation_receipt)
+                raise ValueError("preparation-process-failed: " + str(error)) from error
+            if preparation_receipt.is_file():
+                plan["preparationRun"] = _reference(preparation_receipt)
+            if process.returncode != 0 or process.confirmed_cleanup is not True:
+                raise ValueError("preparation-failed-or-cleanup-unverified")
+            prepared, patch, build = _prepared_handoff(handoff_path, request_path=prepare_request,
+                index_path=source_index, inputs=inputs, profile_path=prepare_profile)
+            inputs.update(patch=_reference(patch), build=_reference(build),
+                          preparationHandoff=_reference(handoff_path))
+            for name in ("preparation", "sourceCatalog"):
+                inputs[name] = {"path": str(Path(prepared[name]["descriptor"]).resolve()),
+                                "sha256": prepared[name]["descriptorSha256"].upper()}
+            plan["preparedNavigation"] = prepared
+            plan["stages"]["preparation"] = "prepared"
+            for name, reference in inputs.items():
+                if _hash(reference["path"]).casefold() != str(reference["sha256"]).casefold():
+                    raise ValueError("planning-input-changed-during-preparation: " + name)
+            cancelled = cancel_preparation(force=True)
+            if cancelled:
+                raise ValueError(cancelled)
+            if (declared_binding.get("sourceIndexId") != prepared["sourceIndex"]["sourceIndexId"]
+                    or declared_binding.get("areaRequestId") not in {None, prepared["areaRequest"]["areaRequestId"]}):
+                raise ValueError("declared-destination-binding-does-not-match-prepared-inputs")
+            if preparation_owner is not None and post_preparation_identity:
+                plan["postPreparationIdentity"] = {**post_preparation_identity,
+                    "purpose": "identity-only-status", "usedForQuery": False}
+                if not _same_runtime(preparation_owner, post_preparation_identity["runtimeIdentity"]):
+                    raise ValueError("current-native-player-changed-during-preparation")
+                plan["preparationOwnerCheck"] = "matching-fresh-status"
+            if not from_current and not _inside_bounds(start, prepared["requestedBounds"]):
+                raise ValueError("requested-start-outside-prepared-area")
+            destinations, _ = _read(catalog)
+            entry = next((entry for entry in destinations.get("destinations", [])
+                          if isinstance(entry, dict) and entry.get("id") == destination), None)
+            if not entry or entry.get("approachXYZ") is None or not _inside_bounds(
+                    _xyz(entry["approachXYZ"]), prepared["requestedBounds"]):
+                raise ValueError("destination-approach-outside-prepared-area-or-unavailable")
         if from_current:
             patch_document, _ = _read(patch)
             transform = patch_document.get("coordinates", {}).get("transformToRr2Native")
             if (not isinstance(transform, dict) or transform.get("kind") != "identity"
                     or transform.get("qualification") not in {"landmark-reprojection-candidate", "verified"}):
+                if preparing and "preparationOwnerCheck" not in plan:
+                    plan["preparationOwnerCheck"] = "skipped-unqualified-transform"
                 raise ValueError("current-native-start-requires-explicit-qualified-identity-transform")
             observation = _current_pose(session, admission, runner, allow_latched=not execute)
             observation["transformToRr2Native"] = deepcopy(transform)
@@ -346,21 +623,43 @@ def plan_destination(*, catalog, destination, patch, build, output_directory, st
             observation["qualification"] = "Native start used through this patch's explicit identity transform; " \
                                            "no global coordinate or live world/floor qualification."
             plan["startObservation"] = observation
+            if preparation_owner is not None and not _same_runtime(preparation_owner, observation["runtimeIdentity"]):
+                raise ValueError("current-native-player-changed-during-preparation")
+            if preparation_owner is not None:
+                plan["preparationOwnerCheck"] = "matching-fresh-post-preparation-pose"
             start = observation["nativeXYZ"]
             plan["requestedStartXYZ"] = start
+            if prepared and not _inside_bounds(start, prepared["requestedBounds"]):
+                raise ValueError("current-start-outside-prepared-area")
+        elif preparing and execute:
+            identity_sample = _current_pose(session, admission, runner, allow_latched=False)
+            plan["postPreparationIdentity"] = {key: value for key, value in identity_sample.items() if key != "nativeXYZ"}
+            if not _same_runtime(preparation_owner, identity_sample["runtimeIdentity"]):
+                raise ValueError("current-native-player-changed-during-preparation")
+            plan["preparationOwnerCheck"] = "matching-fresh-post-preparation-pose"
         command = [str(python), str(query_tool), "--catalog", str(catalog),
                    "--destination", destination, "--patch", str(patch), "--build", str(build),
                    "--from", ",".join(format(axis, ".17g") for axis in start),
                    "--out", str(candidate_path), "--receipt", str(receipt_path)]
         if search_extent is not None:
             command += ["--search-extent", format(search_extent, ".17g")]
+        if prepared:
+            command += ["--preparation", prepared["preparation"]["descriptor"]]
+        plan["stages"]["query"] = "pending"
         query = runner(command, cwd=world_root, text=True, capture_output=True, check=False)
         plan["queryProcess"] = {"exitCode": query.returncode, "stdout": query.stdout,
                                 "stderr": query.stderr}
         if not candidate_path.is_file() or not receipt_path.is_file():
             raise ValueError("destination-query-did-not-publish")
+        def validate_destination(candidate, receipt):
+            validation = _validated_destination(python, world_root, candidate_path, receipt_path,
+                inputs, runner, candidate, receipt, prepared)
+            plan["destinationValidation"] = validation
+            return validation
+
         candidate, receipt, review = _publication(candidate_path, receipt_path,
-            catalog_path=catalog, destination=destination, start=start, inputs=inputs)
+            catalog_path=catalog, destination=destination, start=start, inputs=inputs,
+            validator=validate_destination)
         plan.update(candidate=_reference(candidate_path), destinationReceipt=_reference(receipt_path),
                     destination=deepcopy(receipt["destination"]), review=review)
         plan["stages"]["query"] = candidate["status"]
@@ -414,20 +713,38 @@ def plan_destination(*, catalog, destination, patch, build, output_directory, st
             plan["execution"] = _dispatch(route_path, session, current["stopEpoch"], runner)
             _execution_result(plan, route_path)
         return publish()
+    except KeyboardInterrupt:
+        plan["status"] = "execution-unverified" if plan["stages"]["execution"] == "running" else "cancelled"
+        plan["blockers"].append("operator-cancelled; no further destination continuation")
+        if preparing and plan["stages"]["preparation"] == "pending":
+            plan["stages"]["preparation"] = "cancelled"
+            if preparation_receipt.is_file():
+                plan["preparationRun"] = _reference(preparation_receipt)
+        return publish()
     except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as exc:
         plan["status"] = "execution-unverified" if plan["stages"]["execution"] == "running" else "blocked"
         if plan["stages"]["query"] == "pending":
             plan["stages"]["query"] = "failed"
         elif plan["stages"]["adoption"] == "pending":
             plan["stages"]["adoption"] = "blocked"
+        if preparing and plan["stages"]["preparation"] == "pending":
+            plan["stages"]["preparation"] = "blocked"
         plan["blockers"].append(str(exc))
         return publish()
 
 
 def parser():
     result = argparse.ArgumentParser(description=__doc__)
-    for name in ("catalog", "patch", "build"):
-        result.add_argument("--" + name, type=Path, required=True)
+    result.add_argument("--catalog", type=Path, required=True)
+    mode = result.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--patch", type=Path, help="Existing exact patch; requires --build")
+    mode.add_argument("--prepare-request", type=Path,
+                      help="Area-request recipe; requires --source-index and a predeclared source-bound destination")
+    result.add_argument("--build", type=Path)
+    result.add_argument("--source-index", type=Path)
+    result.add_argument("--allow-partial-navigation", action="store_true")
+    result.add_argument("--prepare-profile", type=Path)
+    result.add_argument("--prepare-timeout-seconds", type=float, default=600)
     result.add_argument("--destination", required=True)
     starts = result.add_mutually_exclusive_group(required=True)
     starts.add_argument("--from", dest="start", type=_xyz)
@@ -453,7 +770,7 @@ def main(argv=None):
     try:
         result = plan_destination(**vars(args))
         print(json.dumps(result, indent=2, allow_nan=False))
-        return 130 if result["status"] == "stopped" else 2 if result["status"] in {
+        return 130 if result["status"] in {"stopped", "cancelled"} else 2 if result["status"] in {
             "blocked", "halted", "execution-unverified"} else 0
     except (OSError, ValueError, TypeError) as exc:
         print(json.dumps({"schema": SCHEMA, "status": "blocked", "blockers": [str(exc)],
