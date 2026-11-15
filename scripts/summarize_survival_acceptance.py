@@ -282,6 +282,37 @@ def _completion_gate(terminal, receipts, terminal_final):
     return {"status": "blocked", "reason": reason}
 
 
+def _survival_completion_gate(summary):
+    """Strict offline rejoin-route receipt gate, not proof of live gameplay."""
+    route = summary["route"]
+    telemetry = summary["telemetry"]
+    acceptance = summary["acceptance"]
+    if route["completionGate"]["status"] != "admitted":
+        reason = "route-incomplete"
+    elif telemetry["status"] != "observed":
+        reason = "telemetry-missing"
+    elif not telemetry["continuityVerified"]:
+        reason = "producer-discontinuous"
+    elif acceptance["stopInvariant"] != "clear-throughout":
+        reason = "stop-unverified"
+    elif not telemetry["policyStateComplete"]:
+        reason = "policy-state-missing"
+    else:
+        states = telemetry["policyStates"]
+        retreats = sum(state == "retreat" and
+                       (index == 0 or states[index - 1] != "retreat")
+                       for index, state in enumerate(states))
+        if retreats != route["encounterInterruptCount"]:
+            reason = "encounter-retreat-count-mismatch"
+        elif retreats and acceptance["checkpointInvariant"] != "preserved":
+            reason = "checkpoint-unverified"
+        elif retreats and acceptance["recoveryResumeInvariant"] != "preserved":
+            reason = "recovery-unverified"
+        else:
+            return {"status": "admitted", "reason": "offline-route-and-rejoin-receipts-only"}
+    return {"status": "blocked", "reason": reason}
+
+
 def summarize(route_rows, telemetry_rows=None):
     terminal = next((row for row in reversed(route_rows)
                      if row.get("status") in {
@@ -317,6 +348,7 @@ def summarize(route_rows, telemetry_rows=None):
                        "stopInvariant": "unavailable"},
     }
     if telemetry_rows is None:
+        summary["route"]["survivalCompletionGate"] = _survival_completion_gate(summary)
         return summary
     samples = [_telemetry_sample(row) for row in telemetry_rows]
     # Retained producer fields can be malformed or reset independently of the
@@ -358,8 +390,10 @@ def summarize(route_rows, telemetry_rows=None):
         checkpoint_status = "preserved"
     else:
         checkpoint_status = "changed-while-interrupted"
-    stops = [sample["stopSet"] for sample in samples if type(sample["stopSet"]) is bool]
-    stop_status = ("unavailable" if not continuity_verified or not stops
+    # A missing/non-boolean STOP receipt cannot prove STOP was clear throughout.
+    stops = [sample["stopSet"] for sample in samples]
+    stop_status = ("unavailable" if not continuity_verified or
+                   not all(type(stop) is bool for stop in stops)
                    else "latched-throughout" if all(stops)
                    else "clear-throughout" if not any(stops) else "changed")
     states = [sample["policyState"] for sample in samples if sample["policyState"] is not None]
@@ -401,6 +435,8 @@ def summarize(route_rows, telemetry_rows=None):
         "incomingCorrelation": incoming_correlation,
         "outgoingCorrelation": outgoing_correlation,
         "policyStates": states,
+        "policyStateComplete": all(isinstance(sample["policyState"], str)
+                                   and bool(sample["policyState"]) for sample in samples),
     }
     summary["acceptance"] = {
         "incomingDamage": identity_stable and incoming_correlation["status"] == "correlated",
@@ -408,6 +444,7 @@ def summarize(route_rows, telemetry_rows=None):
         "checkpointInvariant": checkpoint_status,
         "recoveryResumeInvariant": resume_status, "stopInvariant": stop_status,
     }
+    summary["route"]["survivalCompletionGate"] = _survival_completion_gate(summary)
     return summary
 
 
@@ -418,6 +455,8 @@ def main(argv=None):
     parser.add_argument("--output", type=Path, help="optional new summary JSON path")
     parser.add_argument("--require-complete-route", action="store_true",
                         help="exit 2 unless final route arrival, all waypoint progress and input releases are evidenced")
+    parser.add_argument("--require-survival-route", action="store_true",
+                        help="exit 2 unless route, producer, STOP and retreat/rejoin receipts are complete; offline only")
     args = parser.parse_args(argv)
     result = summarize(_rows(args.route), _rows(args.telemetry) if args.telemetry else None)
     text = json.dumps(result, sort_keys=True, separators=(",", ":"), allow_nan=False)
@@ -426,8 +465,11 @@ def main(argv=None):
             raise AcceptanceError("output-exists")
         args.output.write_text(text + "\n", encoding="utf-8")
     print(text)
-    return (2 if args.require_complete_route
-            and result["route"]["completionGate"]["status"] != "admitted" else 0)
+    return (2 if ((args.require_complete_route
+                  and result["route"]["completionGate"]["status"] != "admitted")
+                 or (args.require_survival_route
+                     and result["route"]["survivalCompletionGate"]["status"] != "admitted"))
+            else 0)
 
 
 if __name__ == "__main__":

@@ -476,6 +476,74 @@ class SurvivalAcceptanceSummaryTests(unittest.TestCase):
         result = summary.summarize([{"status": "stopped"}], [before, after])
         self.assertEqual("telemetry-percent", result["telemetry"]["selfHealthDrops"][0]["basis"])
 
+    def test_stop_clear_throughout_requires_every_retained_frame(self):
+        frames = [self.sample(10 + index, 100, 100, state=state)
+                  for index, state in enumerate(
+                      ("travel", "retreat", "recover", "rejoin", "travel"))]
+        for invalid in (None, "false", [], 0):
+            with self.subTest(invalid=invalid):
+                samples = [dict(frame) for frame in frames]
+                samples[2] = dict(samples[2])
+                if invalid is None:
+                    samples[2].pop("stopSet")
+                else:
+                    samples[2]["stopSet"] = invalid
+                report = summary.summarize([{"status": "stopped"}], samples)
+                self.assertEqual("unavailable", report["acceptance"]["stopInvariant"])
+
+    def test_survival_route_gate_requires_recovery_and_matching_encounters(self):
+        interrupted = {"status": "encounter-interrupted", "releaseSucceeded": True,
+                       "desktopInputsDown": []}
+        arrived = {"status": "arrived", "releaseSucceeded": True,
+                   "desktopInputsDown": [], "waypointCount": 3, "nextWaypoint": 3}
+        states = ("travel", "retreat", "recover", "rejoin", "travel")
+        telemetry = [self.sample(10 + i, 100, 100, state=state)
+                     for i, state in enumerate(states)]
+        route = [interrupted, arrived]
+        admitted = summary.summarize(route, telemetry)
+        self.assertEqual("admitted", admitted["route"]["survivalCompletionGate"]["status"])
+
+        missing = summary.summarize(route)
+        self.assertEqual("telemetry-missing", missing["route"]["survivalCompletionGate"]["reason"])
+        broken = [dict(row) for row in telemetry]
+        broken[3] = dict(broken[3])
+        broken[3]["snapshot"] = dict(broken[3]["snapshot"])
+        broken[3]["snapshot"]["sequence"] = 1
+        self.assertEqual("producer-discontinuous",
+                         summary.summarize(route, broken)["route"]["survivalCompletionGate"]["reason"])
+        self.assertEqual("encounter-retreat-count-mismatch",
+                         summary.summarize([interrupted, interrupted, arrived], telemetry)
+                         ["route"]["survivalCompletionGate"]["reason"])
+        self.assertEqual("route-incomplete",
+                         summary.summarize([interrupted, {**arrived, "nextWaypoint": 2}], telemetry)
+                         ["route"]["survivalCompletionGate"]["reason"])
+        unsafe = [dict(row) for row in telemetry]
+        unsafe[2] = dict(unsafe[2])
+        unsafe[2].pop("stopSet")
+        self.assertEqual("stop-unverified",
+                         summary.summarize(route, unsafe)["route"]["survivalCompletionGate"]["reason"])
+
+    def test_survival_route_cli_refuses_unqualified_rejoin(self):
+        interrupted = {"status": "encounter-interrupted", "releaseSucceeded": True,
+                       "desktopInputsDown": []}
+        arrived = {"status": "arrived", "releaseSucceeded": True,
+                   "desktopInputsDown": [], "waypointCount": 2, "nextWaypoint": 2}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            route = root / "route.jsonl"
+            telemetry = root / "telemetry.jsonl"
+            route.write_text("".join(json.dumps(row) + "\n" for row in (interrupted, arrived)),
+                             encoding="utf-8")
+            self.assertEqual(2, summary.main(["--route", str(route),
+                                              "--require-survival-route"]))
+            states = ("travel", "retreat", "recover", "rejoin", "travel")
+            telemetry.write_text("".join(
+                json.dumps(self.sample(10 + index, 100, 100, state=state)) + "\n"
+                for index, state in enumerate(states)), encoding="utf-8")
+            self.assertEqual(0, summary.main(["--route", str(route),
+                                              "--telemetry", str(telemetry),
+                                              "--require-survival-route"]))
+
     def test_route_only_never_claims_damage_and_cli_writes_new_summary(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
