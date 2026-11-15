@@ -6,6 +6,8 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -44,6 +46,15 @@ class LongitudinalCandidateTests(unittest.TestCase):
         self.new = session(x=4., z=3., sequence=50, clock=1000.,
                            beginning="2026-11-14T23:00:00Z",
                            ending="2026-11-14T23:00:08Z", source="D")
+
+    def test_direct_script_cli_help_resolves_repository_imports(self):
+        result = subprocess.run(
+            [sys.executable, str(Path(longitudinal.__file__).resolve()), "--help"],
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--require-increasing-counters", result.stdout)
 
     def test_changed_native_and_lua_coordinates_with_regressed_sequence(self):
         result = longitudinal.compare_sessions(self.old, self.new)
