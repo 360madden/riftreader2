@@ -305,6 +305,43 @@ class SurvivalAcceptanceSummaryTests(unittest.TestCase):
         self.assertEqual(0, data["selectedTarget"]["comparableSamples"])
 
 
+    def test_out_of_range_native_hp_cannot_fabricate_damage(self):
+        player_id, target_id = "u0000000000000001", "u0000000000000002"
+        incoming = {"sequence": 7, "clock": 10.5, "kind": "damage", "damage": 10,
+                    "caster": target_id, "target": player_id,
+                    "selectedTargetId": target_id}
+        outgoing = {"sequence": 8, "clock": 10.5, "kind": "damage", "damage": 10,
+                    "caster": player_id, "target": target_id,
+                    "selectedTargetId": target_id}
+        for invalid in (-10, 110):
+            with self.subTest(invalid=invalid):
+                before = self.sample(10, 100, 100)
+                after = self.sample(11, 100, 100, incoming=incoming, outgoing=outgoing)
+                before["native"] = {
+                    "player": {"health": {"available": True,
+                                          "status": "calculated-candidate",
+                                          "current": 100, "maximum": 100}},
+                    "selectedTarget": {"health": {"available": True,
+                                                  "status": "calculated-candidate",
+                                                  "current": 100, "maximum": 100}}}
+                after["native"] = {
+                    "player": {"health": {"available": True,
+                                          "status": "calculated-candidate",
+                                          "current": invalid, "maximum": 100}},
+                    "selectedTarget": {"health": {"available": True,
+                                                  "status": "calculated-candidate",
+                                                  "current": invalid, "maximum": 100}}}
+                report = summary.summarize(
+                    [{"status": "encounter-interrupted"}], [before, after])
+                self.assertEqual([], report["telemetry"]["selfHealthDrops"])
+                self.assertEqual([], report["telemetry"]["targetHealthDrops"])
+                self.assertFalse(report["acceptance"]["incomingDamage"])
+                self.assertFalse(report["acceptance"]["outgoingDamage"])
+                comparison = report["telemetry"]["nativeSnapshotHealthComparison"]
+                self.assertEqual("comparison-only", comparison["status"])
+                self.assertEqual(1, comparison["player"]["comparableSamples"])
+                self.assertEqual(1, comparison["selectedTarget"]["comparableSamples"])
+
     def test_repeated_addon_frame_exposes_new_native_hp_changes_without_attribution(self):
         before = self.sample(10, 100, 100)
         after = self.sample(11, 100, 100)

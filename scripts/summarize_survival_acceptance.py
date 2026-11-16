@@ -71,10 +71,20 @@ def _native_health_number(health, field):
     return _number(health.get(field))
 
 
+def _native_health_pair(health):
+    """Reject unusable native HP before damage or snapshot comparisons."""
+    current = _native_health_number(health, "current")
+    maximum = _native_health_number(health, "maximum")
+    if (current is None or maximum is None or maximum <= 0
+            or not 0 <= current <= maximum):
+        return None
+    return current, maximum
+
+
 def _native_snapshot_health_pair(native_health, snapshot):
     """Compare two retained HP candidates, without assuming atomic acquisition."""
-    native_current = _native_health_number(native_health, "current")
-    native_maximum = _native_health_number(native_health, "maximum")
+    native_pair = _native_health_pair(native_health)
+    native_current, native_maximum = native_pair if native_pair is not None else (None, None)
     snapshot_current = _number(snapshot.get("health"))
     snapshot_maximum = _number(snapshot.get("healthMax"))
     if any(value is None for value in (
@@ -326,10 +336,10 @@ def _telemetry_sample(row):
 
     health = native_player.get("health") if isinstance(native_player.get("health"), dict) else {}
     target_health = native_target.get("health") if isinstance(native_target.get("health"), dict) else {}
-    self_current = _native_health_number(health, "current")
-    self_maximum = _native_health_number(health, "maximum")
-    target_current = _native_health_number(target_health, "current")
-    target_maximum = _native_health_number(target_health, "maximum")
+    self_pair = _native_health_pair(health)
+    target_pair = _native_health_pair(target_health)
+    self_current, self_maximum = self_pair if self_pair is not None else (None, None)
+    target_current, target_maximum = target_pair if target_pair is not None else (None, None)
     self_basis = "native-absolute" if self_current is not None else None
     target_basis = "native-absolute" if target_current is not None else None
     # A normalized-only wrapper still provides useful percentage trends, but
