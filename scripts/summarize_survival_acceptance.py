@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+from datetime import datetime
 from pathlib import Path
 
 MAX_BYTES = 32 * 1024 * 1024
@@ -89,6 +90,78 @@ def _native_snapshot_health_pair(native_health, snapshot):
             "nativeMinusSnapshotMaximum": native_maximum - snapshot_maximum}
 
 
+def _utc_seconds(value):
+    """Parse an offset-aware native acquisition receipt; never infer a zone."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if stamp.tzinfo is None:
+            return None
+        return _number(stamp.timestamp())
+    except (ValueError, OverflowError):
+        return None
+
+
+def _repeated_frame_evidence(samples):
+    """Detect native changes during a repeated addon frame, not their cause."""
+    output = {
+        "scope": "adjacent-same-owner-retained-wrappers-only",
+        "repeatedFrameIntervals": 0,
+        "nativeChangedWhileRepeated": {"player": 0, "selectedTarget": 0},
+        "firstNativeChange": None,
+    }
+    for before, after in zip(samples, samples[1:]):
+        # A repeated sequence alone is insufficient: require the same producer,
+        # player/selected target, and identical game-clock frame.
+        if not (all(isinstance(before.get(key), str) and before[key]
+                    and _same(before[key], after.get(key))
+                    for key in ("sessionId", "playerId", "targetId"))
+                and type(before.get("epoch")) is int
+                and before["epoch"] == after.get("epoch")
+                and type(before.get("sequence")) is int
+                and before["sequence"] >= 0
+                and before["sequence"] == after.get("sequence")
+                and before.get("clock") is not None
+                and before["clock"] == after.get("clock")):
+            continue
+        earlier_wall = _number(before.get("wallTime"))
+        later_wall = _number(after.get("wallTime"))
+        if (earlier_wall is None or later_wall is None
+                or later_wall <= earlier_wall):
+            continue
+        output["repeatedFrameIntervals"] += 1
+        earlier_native = _utc_seconds(before.get("nativeSampledAtUtc"))
+        later_native = _utc_seconds(after.get("nativeSampledAtUtc"))
+        if (earlier_native is None or later_native is None
+                or later_native <= earlier_native):
+            continue
+        changes = {}
+        for key, field in (("player", "nativeSnapshotPlayer"),
+                           ("selectedTarget", "nativeSnapshotTarget")):
+            old, new = before.get(field), after.get(field)
+            if (old is None or new is None
+                    or old["snapshotCurrent"] != new["snapshotCurrent"]
+                    or old["snapshotMaximum"] != new["snapshotMaximum"]
+                    or old["nativeMaximum"] != new["nativeMaximum"]
+                    or old["nativeCurrent"] == new["nativeCurrent"]):
+                continue
+            output["nativeChangedWhileRepeated"][key] += 1
+            changes[key] = {
+                "nativeBefore": old["nativeCurrent"],
+                "nativeAfter": new["nativeCurrent"],
+                "snapshotCurrent": new["snapshotCurrent"],
+            }
+        if changes and output["firstNativeChange"] is None:
+            output["firstNativeChange"] = {
+                "sequence": after["sequence"], "frameTime": after["clock"],
+                "wrapperGapSeconds": later_wall - earlier_wall,
+                "nativeCaptureGapSeconds": later_native - earlier_native,
+                "changes": changes,
+            }
+    return output
+
+
 def _health_concordance(samples):
     """Surface same-wrapper native/addon disagreements, never live qualification."""
     output = {"status": "unavailable", "scope": "retained-wrapper-candidates-only"}
@@ -114,6 +187,7 @@ def _health_concordance(samples):
         }
         any_comparison |= bool(pairs)
         any_mismatch |= bool(mismatches)
+    output["repeatedFrameEvidence"] = _repeated_frame_evidence(samples)
     if any_mismatch:
         output["status"] = "mismatch-observed"
     elif any_comparison:
@@ -181,6 +255,7 @@ def _telemetry_sample(row):
     target_id = snapshot.get("targetId") or row.get("targetId")
     return {
         "clock": _number(snapshot.get("frameTime") if snapshot else report.get("frameTime")),
+        "nativeSampledAtUtc": native.get("sampledAtUtc"),
         "sequence": snapshot.get("sequence", report.get("sequence")),
         "epoch": snapshot.get("epoch", report.get("epoch")),
         "sessionId": snapshot.get("sessionId", report.get("sessionId")),

@@ -304,6 +304,77 @@ class SurvivalAcceptanceSummaryTests(unittest.TestCase):
         self.assertEqual(0, data["player"]["comparableSamples"])
         self.assertEqual(0, data["selectedTarget"]["comparableSamples"])
 
+
+    def test_repeated_addon_frame_exposes_new_native_hp_changes_without_attribution(self):
+        before = self.sample(10, 100, 100)
+        after = self.sample(11, 100, 100)
+        # Snapshot frame/identity are unchanged while independent native
+        # capture timestamps and native HP advance.
+        after["snapshot"]["sequence"] = before["snapshot"]["sequence"]
+        after["snapshot"]["frameTime"] = before["snapshot"]["frameTime"]
+        after["wallTime"] = 14.0
+        before["native"] = {
+            "sampledAtUtc": "2026-11-14T12:16:21+00:00",
+            "player": {"health": {"available": True, "status": "calculated-candidate",
+                                  "current": 100, "maximum": 100}},
+            "selectedTarget": {"health": {"available": True, "status": "calculated-candidate",
+                                          "current": 100, "maximum": 100}},
+        }
+        after["native"] = {
+            "sampledAtUtc": "2026-11-14T12:16:25+00:00",
+            "player": {"health": {"available": True, "status": "calculated-candidate",
+                                  "current": 88, "maximum": 100}},
+            "selectedTarget": {"health": {"available": True, "status": "calculated-candidate",
+                                          "current": 75, "maximum": 100}},
+        }
+        route = [{"status": "encounter-interrupted"}]
+        result = summary.summarize(route, [before, after])
+        comparison = result["telemetry"]["nativeSnapshotHealthComparison"]
+        replay = comparison["repeatedFrameEvidence"]
+        self.assertEqual(1, replay["repeatedFrameIntervals"])
+        self.assertEqual({"player": 1, "selectedTarget": 1},
+                         replay["nativeChangedWhileRepeated"])
+        self.assertEqual(4.0, replay["firstNativeChange"]["nativeCaptureGapSeconds"])
+        self.assertEqual(4.0, replay["firstNativeChange"]["wrapperGapSeconds"])
+        self.assertEqual(100, replay["firstNativeChange"]["changes"]["player"]["snapshotCurrent"])
+        self.assertEqual(88, replay["firstNativeChange"]["changes"]["player"]["nativeAfter"])
+        self.assertFalse(result["acceptance"]["incomingDamage"])
+        self.assertFalse(result["acceptance"]["outgoingDamage"])
+
+    def test_frame_replay_requires_producer_identity_and_ordered_native_time(self):
+        before = self.sample(10, 100, 100)
+        after = self.sample(11, 100, 100)
+        after["snapshot"]["sequence"] = before["snapshot"]["sequence"]
+        after["snapshot"]["frameTime"] = before["snapshot"]["frameTime"]
+        before["native"] = {
+            "sampledAtUtc": "2026-11-14T12:16:21+00:00",
+            "player": {"health": {"current": 100, "maximum": 100}}}
+        after["native"] = {
+            "sampledAtUtc": "2026-11-14T12:16:20+00:00",
+            "player": {"health": {"current": 88, "maximum": 100}}}
+        for modifier in ("reversed-native-time", "new-session", "advancing-frame",
+                         "missing-timestamp", "changed-snapshot-hp"):
+            with self.subTest(modifier=modifier):
+                sample = json.loads(json.dumps(after))
+                if modifier == "new-session":
+                    sample["snapshot"]["sessionId"] = "b" * 32
+                elif modifier == "advancing-frame":
+                    sample["snapshot"]["sequence"] += 1
+                    sample["snapshot"]["frameTime"] += 1
+                elif modifier == "missing-timestamp":
+                    sample["native"].pop("sampledAtUtc")
+                elif modifier == "changed-snapshot-hp":
+                    sample["snapshot"]["player"]["health"] = 88
+                if modifier not in ("reversed-native-time", "missing-timestamp"):
+                    sample["native"]["sampledAtUtc"] = (
+                        sample["native"].get("sampledAtUtc",
+                            "2026-11-14T12:16:25+00:00"))
+                replay = summary.summarize(
+                    [{"status": "encounter-interrupted"}], [before, sample])[
+                        "telemetry"]["nativeSnapshotHealthComparison"]["repeatedFrameEvidence"]
+                self.assertEqual(0, replay["nativeChangedWhileRepeated"]["player"])
+                self.assertIsNone(replay["firstNativeChange"])
+
     def test_conflicting_or_incomplete_release_receipts_fail_closed(self):
         bad_receipts = (
             {"releaseSucceeded": True, "allInputsReleased": False, "desktopInputsDown": []},
