@@ -264,6 +264,8 @@ class DestinationPlanTests(unittest.TestCase):
             post_position={"x": 2.7, "y": 1, "z": 2}))
         self.assertEqual("route-complete-only", result["status"])
         self.assertEqual("outside-approach", result["arrival"]["postExecutionNativeStatus"])
+        self.assertEqual("route-complete-only", result["arrival"]["status"])
+        self.assertEqual("arrived-at-approach", result["arrival"]["workerReceiptStatus"])
         self.assertIn("post-execution-native-position-outside-approach", result["blockers"])
         self.assertTrue(result["inputSent"])
         self.assertFalse(result["currentRouteChanged"])
@@ -277,6 +279,8 @@ class DestinationPlanTests(unittest.TestCase):
                     execute=True, session="owned", runner=self.executing_runner(**options))
                 self.assertEqual("execution-unverified", result["status"])
                 self.assertEqual("unverified", result["arrival"]["postExecutionNativeStatus"])
+                self.assertEqual("unverified", result["arrival"]["status"])
+                self.assertEqual("arrived-at-approach", result["arrival"]["workerReceiptStatus"])
                 self.assertTrue(any("post-execution-native-verification-failed" in reason
                                     for reason in result["blockers"]))
                 self.assertTrue(result["inputSent"])

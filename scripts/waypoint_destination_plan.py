@@ -443,12 +443,16 @@ def _verify_post_execution_arrival(plan, route_path, session, admission, runner)
         route, _ = _read(route_path)
         owner = route["candidateAdoption"]["owner"]
         runtime = observed["runtimeIdentity"]
+        if not isinstance(owner, dict) or not isinstance(runtime, dict):
+            raise ValueError("post-execution-native-owner-receipt-malformed")
         if any((str(runtime.get(key, "")) != str(owner.get(key, "")) if key == "unitKey"
                 else str(runtime.get(key, "")).casefold() != str(owner.get(key, "")).casefold())
                for key in ("machine", "gameBuildSha256", "unitKey")):
             raise ValueError("post-execution-native-player-changed")
     except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as exc:
         plan["status"] = plan["stages"]["execution"] = "execution-unverified"
+        plan["arrival"]["workerReceiptStatus"] = plan["arrival"]["status"]
+        plan["arrival"]["status"] = "unverified"
         plan["arrival"]["postExecutionNativeStatus"] = "unverified"
         plan["blockers"].append("post-execution-native-verification-failed: " + str(exc))
         return
@@ -467,6 +471,7 @@ def _verify_post_execution_arrival(plan, route_path, session, admission, runner)
     arrival["postExecutionNativeStatus"] = (
         "arrived-at-approach" if arrived else "outside-approach")
     if not arrived:
+        arrival["workerReceiptStatus"] = arrival["status"]
         plan["status"] = plan["stages"]["execution"] = arrival["status"] = "route-complete-only"
         plan["blockers"].append("post-execution-native-position-outside-approach")
 
