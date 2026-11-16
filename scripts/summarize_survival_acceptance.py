@@ -103,6 +103,32 @@ def _utc_seconds(value):
         return None
 
 
+def _native_wrapper_timing(samples):
+    """Measure only the native timestamp relative to its retained wrapper.
+
+    Neither the addon frame game clock nor Lua sequence supplies a UTC capture
+    timestamp, so these gaps cannot establish addon sampling latency.
+    """
+    gaps = []
+    for sample in samples:
+        wall = _number(sample.get("wallTime"))
+        native = _utc_seconds(sample.get("nativeSampledAtUtc"))
+        # wallTime is a Unix UTC timestamp in the physical capture wrapper;
+        # some synthetic/historical fixtures instead use game-clock seconds.
+        if (wall is None or native is None
+                or wall < 1_000_000_000 or native < 1_000_000_000):
+            continue
+        gaps.append(wall - native)
+    return {
+        "scope": "native-utc-vs-wrapper-utc-only",
+        "comparableWrappers": len(gaps),
+        "unavailableWrappers": len(samples) - len(gaps),
+        "nativeAfterWrapperCount": sum(gap < 0 for gap in gaps),
+        "minimumSeconds": min(gaps, default=None),
+        "maximumSeconds": max(gaps, default=None),
+    }
+
+
 def _repeated_frame_evidence(samples):
     """Detect native changes during a repeated addon frame, not their cause."""
     output = {
@@ -250,6 +276,10 @@ def _health_concordance(samples):
             "comparableSamples": len(pairs),
             "matchingSamples": len(pairs) - len(mismatches),
             "mismatchedSamples": len(mismatches),
+            "nativeHigherCurrentMismatches": sum(
+                pair["nativeMinusSnapshotCurrent"] > 0 for _, pair in mismatches),
+            "nativeLowerCurrentMismatches": sum(
+                pair["nativeMinusSnapshotCurrent"] < 0 for _, pair in mismatches),
             "adjacentFrameValueCandidates": _adjacent_frame_hp_candidates(samples, field),
             "largestAbsoluteCurrentGap": max(
                 (abs(pair["nativeMinusSnapshotCurrent"]) for _, pair in pairs),
@@ -261,6 +291,7 @@ def _health_concordance(samples):
         any_comparison |= bool(pairs)
         any_mismatch |= bool(mismatches)
     output["repeatedFrameEvidence"] = _repeated_frame_evidence(samples)
+    output["nativeToWrapperTiming"] = _native_wrapper_timing(samples)
     if any_mismatch:
         output["status"] = "mismatch-observed"
     elif any_comparison:

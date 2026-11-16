@@ -454,6 +454,48 @@ class SurvivalAcceptanceSummaryTests(unittest.TestCase):
                 self.assertEqual(0, candidate["priorSnapshotMatches"])
                 self.assertEqual(0, candidate["ambiguousMatches"])
 
+    def test_native_wrapper_timing_and_hp_mismatch_direction(self):
+        rows = [self.sample(10, 100, 100), self.sample(11, 85, 100)]
+        for sample, wall, sampled, hp in zip(
+                rows, (1794658581.5, 1794658582.25),
+                ("2026-11-14T12:16:21+00:00", "2026-11-14T12:16:22+00:00"),
+                (100, 90)):
+            sample["wallTime"] = wall
+            sample["native"] = {
+                "sampledAtUtc": sampled,
+                "player": {"health": {"available": True,
+                                      "status": "calculated-candidate",
+                                      "current": hp, "maximum": 100}},
+            }
+        comparison = summary.summarize(
+            [{"status": "encounter-interrupted"}], rows
+        )["telemetry"]["nativeSnapshotHealthComparison"]
+        timing = comparison["nativeToWrapperTiming"]
+        self.assertEqual("native-utc-vs-wrapper-utc-only", timing["scope"])
+        self.assertEqual(2, timing["comparableWrappers"])
+        self.assertEqual(0, timing["unavailableWrappers"])
+        self.assertEqual(0, timing["nativeAfterWrapperCount"])
+        self.assertAlmostEqual(0.25, timing["minimumSeconds"])
+        self.assertAlmostEqual(0.5, timing["maximumSeconds"])
+        self.assertEqual(1, comparison["player"]["nativeHigherCurrentMismatches"])
+        self.assertEqual(0, comparison["player"]["nativeLowerCurrentMismatches"])
+
+    def test_native_wrapper_timing_rejects_missing_unzoned_and_toy_clocks(self):
+        rows = [self.sample(10, 100, 100) for _ in range(4)]
+        rows[0]["native"] = {"sampledAtUtc": "2026-11-14T12:16:21+00:00"}
+        rows[1]["wallTime"] = 1794658582.0
+        rows[1]["native"] = {"sampledAtUtc": "2026-11-14T12:16:23+00:00"}
+        rows[2]["wallTime"] = 1794658582.0
+        rows[2]["native"] = {"sampledAtUtc": "2026-11-14T12:16:21"}
+        rows[3]["wallTime"] = 1794658582.0
+        result = summary.summarize(
+            [{"status": "encounter-interrupted"}], rows
+        )["telemetry"]["nativeSnapshotHealthComparison"]["nativeToWrapperTiming"]
+        self.assertEqual(1, result["comparableWrappers"])
+        self.assertEqual(3, result["unavailableWrappers"])
+        self.assertEqual(1, result["nativeAfterWrapperCount"])
+        self.assertAlmostEqual(-1.0, result["minimumSeconds"])
+
     def test_conflicting_or_incomplete_release_receipts_fail_closed(self):
         bad_receipts = (
             {"releaseSucceeded": True, "allInputsReleased": False, "desktopInputsDown": []},
