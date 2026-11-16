@@ -5,8 +5,8 @@ import unittest
 from unittest.mock import patch
 
 from scripts.survival_route_runner import (_coalesce_retained_corridor,
-                                            _corridor_arrival, _traversed_path,
-                                            run_survival_route)
+                                            _corridor_arrival, _release_confirmed,
+                                            _traversed_path, run_survival_route)
 from scripts.waypoint_survival import VerifiedBindingProfile
 
 
@@ -359,6 +359,28 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
         self.assertEqual([True, "retreat"], calls)
         self.assertFalse(any(e.get("status") in ("passed", "arrived") for e in events))
 
+    def test_release_receipt_requires_explicit_empty_desktop_input_inventory(self):
+        # A missing key inventory is unknown, not a verified release.  This is
+        # the same evidence rule used by offline survival acceptance.
+        self.assertFalse(_release_confirmed({"releaseSucceeded": True}))
+        self.assertFalse(_release_confirmed({"releaseSucceeded": True,
+                                             "allInputsReleased": True}))
+        self.assertFalse(_release_confirmed({"releaseSucceeded": True,
+                                             "desktopInputsDown": None}))
+        self.assertFalse(_release_confirmed({"releaseSucceeded": True,
+                                             "desktopInputsDown": ["w"]}))
+        self.assertTrue(_release_confirmed({"releaseSucceeded": True,
+                                            "desktopInputsDown": []}))
+
+    def test_arrived_missing_desktop_input_inventory_must_not_complete(self):
+        def mover(adapter, x, z, stop, emit, **options):
+            result = arrived(x, z)
+            result.pop("desktopInputsDown")
+            return result
+
+        with self.assertRaisesRegex(Exception, "arrived.*release"):
+            self.invoke([("pending", 4, 0)], Backend([observed()]), mover)
+
     def test_arrived_without_confirmed_key_release_must_not_complete_route(self):
         def mover(adapter, x, z, stop, emit, **options):
             receipt = arrived(x, z)
@@ -445,6 +467,18 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
     def test_unverified_native_release_never_starts_combat_or_retries(self):
         def mover(adapter, x, z, stop, emit, **options):
             raise Interrupted({"releaseSucceeded": False, "desktopInputsDown": ["w"]},
+                              {"x": 1, "y": 5, "z": 0})
+
+        backend = Backend([observed(present=True, combat=True)])
+        with self.assertRaisesRegex(Exception, "uncertain-release"):
+            self.invoke([("pending", 10, 0)], backend, mover)
+        self.assertNotIn(("combat-start",), backend.calls)
+
+    def test_missing_encounter_input_inventory_blocks_combat_and_retry(self):
+        def mover(adapter, x, z, stop, emit, **options):
+            raise Interrupted({"releaseSucceeded": True,
+                               "path": [{"x": 0, "y": 5, "z": 0},
+                                        {"x": 1, "y": 5, "z": 0}]},
                               {"x": 1, "y": 5, "z": 0})
 
         backend = Backend([observed(present=True, combat=True)])

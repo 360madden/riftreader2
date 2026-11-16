@@ -65,7 +65,7 @@ def _release_confirmed(receipt):
     evidence = [receipt.get(key) for key in ("releaseSucceeded", "allInputsReleased")
                 if key in receipt]
     return (bool(evidence) and all(value is True for value in evidence)
-            and receipt.get("desktopInputsDown", []) == [])
+            and receipt.get("desktopInputsDown") == [])
 
 
 def _corridor_arrival(position, x, y, z):
@@ -396,7 +396,13 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
                   "goal": {"x": x, "z": z}, "position": dict(current),
                   "releaseSucceeded": _release_confirmed(movement_release)})
             if not _release_confirmed(movement_release):
-                return None  # Coordinator records the uncertain release before any combat.
+                # Do not re-enter the policy loop with a positive-looking but
+                # incomplete native release receipt.  It can otherwise retry
+                # without ever recognizing the missing held-key inventory.
+                policy.coordinator.critical("critical-unavailable")
+                policy.state = "halt"
+                raise WaypointError("Survival policy halted: uncertain-release; "
+                                    "native input inventory is not verified")
             try:
                 traversed = _traversed_path(movement_release, current,
                                              {"x": policy.trail[-1][0],
