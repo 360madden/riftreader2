@@ -43,46 +43,75 @@ def timestamp_ns(value):
     return ((delta.days * 86400 + delta.seconds) * 1_000_000 + delta.microseconds) * 1000 + remainder * 100
 
 
+def _solve_view_axes(axes, values):
+    """Small pivoted 3x3 solver; avoids optional NumPy for offline ray picking."""
+    rows = [[*axes[i], values[i]] for i in range(3)]
+    for col in range(3):
+        pivot = max(range(col, 3), key=lambda i: abs(rows[i][col]))
+        if not math.isfinite(rows[pivot][col]) or abs(rows[pivot][col]) < 1e-14:
+            raise ValueError("unstable-native-view-inverse")
+        rows[col], rows[pivot] = rows[pivot], rows[col]
+        divisor = rows[col][col]
+        rows[col] = [value / divisor for value in rows[col]]
+        for index in range(3):
+            if index != col:
+                factor = rows[index][col]
+                rows[index] = [a - factor * b for a, b in zip(rows[index], rows[col])]
+    answer = [row[3] for row in rows]
+    if not all(math.isfinite(value) for value in answer):
+        raise ValueError("nonfinite-native-view-inverse")
+    return answer
+
+
 def native_view_rays(camera):
     """Invert screen X/Y/W only; extent 20 is display geometry, never scene depth."""
     result = {"status": "unavailable", "clipWDisplayExtent": 20.,
               "label": "Native projection view rays — display extent 20 (clip W); no scene depth/occlusion",
               "qualification": "Screen-edge visualization rays to an explicit clip-W display plane; not game near/far clipping planes, terrain or a camera calibration."}
     try:
-        import numpy as np
-    except ImportError:
-        return dict(result, reason="numpy-unavailable")
-    try:
         optical = plot.physical._optical_camera_values(camera)
         plot.require(optical is not None and optical.get("status") == "available-candidate"
                      and optical.get("projectionAvailableCandidate") is True, "native-camera-projection-unavailable")
-        transform = np.array([struct.unpack("<f", struct.pack("<I", bit))[0]
-                              for bit in camera["rawBits"]], dtype=np.float64)
+        transform = [struct.unpack("<f", struct.pack("<I", bit))[0] for bit in camera["rawBits"]]
         matrix, viewport = plot.physical._optical_projection_values(camera, transform)
-        matrix = np.array(matrix, dtype=np.float64).reshape(4, 4)
-        origin, eye = transform[12:15], transform[9:12] + transform[12:15]
-        plot.require(np.isfinite(matrix).all() and np.isfinite(origin).all() and np.isfinite(eye).all(),
+        origin = transform[12:15]
+        eye = [transform[9+i] + origin[i] for i in range(3)]
+        plot.require(all(math.isfinite(value) for value in matrix + origin + eye),
                      "nonfinite-native-view-geometry")
-        axes, translation = matrix[[0, 1, 3], :3], matrix[[0, 1, 3], 3]
-        condition = float(np.linalg.cond(axes))
-        plot.require(math.isfinite(condition) and condition <= 1e6, "unstable-native-view-inverse")
-        implied_eye = np.linalg.solve(axes, -translation) + origin
-        eye_error = float(np.max(np.abs(implied_eye - eye)))
-        plot.require(math.isfinite(eye_error) and eye_error <= .001, "native-view-implied-eye-mismatch")
+        axes = [[matrix[r*4+c] for c in range(3)] for r in (0, 1, 3)]
+        translation = [matrix[r*4+3] for r in (0, 1, 3)]
+        inverse_columns = [_solve_view_axes(axes, [int(i == c) for i in range(3)])
+                           for c in range(3)]
+        row_norm = max(sum(abs(value) for value in row) for row in axes)
+        inverse_norm = max(sum(abs(inverse_columns[col][row]) for col in range(3))
+                           for row in range(3))
+        condition = row_norm * inverse_norm  # Infinity-norm condition estimate.
+        plot.require(math.isfinite(condition) and condition <= 1e6,
+                     "unstable-native-view-inverse")
+        implied_eye_offset = _solve_view_axes(axes, [-value for value in translation])
+        implied_eye = [offset + origin[i] for i, offset in enumerate(implied_eye_offset)]
+        eye_error = max(abs(a-b) for a, b in zip(implied_eye, eye))
+        plot.require(math.isfinite(eye_error) and eye_error <= .001,
+                     "native-view-implied-eye-mismatch")
         corners = []
         for x, y in ((-1, 1), (1, 1), (1, -1), (-1, -1)):
-            clip_xyw = np.array([x * 20., y * 20., 20.])
-            world = np.linalg.solve(axes, clip_xyw - translation) + origin
-            plot.require(np.isfinite(world).all() and np.allclose(
-                axes @ (world - origin) + translation, clip_xyw, rtol=1e-8, atol=1e-7),
-                "native-view-inverse-roundtrip-failed")
-            corners.append(world.tolist())
+            clip_xyw = [x*20., y*20., 20.]
+            offset = _solve_view_axes(axes, [value - shift
+                 for value, shift in zip(clip_xyw, translation)])
+            world = [offset[i] + origin[i] for i in range(3)]
+            reprojection = [sum(a*b for a, b in zip(row, offset)) + shift
+                            for row, shift in zip(axes, translation)]
+            plot.require(all(math.isfinite(value) and abs(value-expected) <=
+                         1e-7 + 1e-8*abs(expected) for value, expected
+                         in zip(reprojection, clip_xyw)),
+                         "native-view-inverse-roundtrip-failed")
+            corners.append(world)
         left, right, top, bottom = viewport
-        result.update(status="available-candidate", nativeEyeXYZ=eye.tolist(), cornersXYZ=corners,
-            lineStrips=[[eye.tolist(), corner] for corner in corners] + [corners + [corners[0]]],
+        result.update(status="available-candidate", nativeEyeXYZ=eye, cornersXYZ=corners,
+            lineStrips=[[eye, corner] for corner in corners] + [corners + [corners[0]]],
             viewportRectNormalized=[left, 1-top, right, 1-bottom],
             inverseConditionNumber=condition, impliedEyeMaximumError=eye_error)
-    except (ValueError, TypeError, KeyError, AttributeError, OverflowError, np.linalg.LinAlgError) as error:
+    except (ValueError, TypeError, KeyError, AttributeError, OverflowError) as error:
         result.update(reason=str(error) or type(error).__name__)
     return result
 

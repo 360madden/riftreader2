@@ -1,5 +1,16 @@
 # Current status
 
+**November 16 — physical screenshot-pixel to 3D viewing ray works offline on AMD-DESKTOP.**
+New `physical_pixel_ray.py` reuses matched WGC/native brackets, camera float32
+projection and verified client offsets to return a source-hashed, no-depth
+unit viewing ray without NumPy. Two preserved Nov 12 physical captures replayed:
+(962,321) missed its recorded target XYZ by 0.0280 native units; (641,446)
+missed its recorded player XYZ by 0.0200. 57 focused/adjacent Python tests pass;
+no RIFT process was accessed and no movement was sent. Next: intersect only
+registered, qualified terrain/obstacle geometry with multiple-hit/occlusion
+uncertainty; never equate a viewing ray with a navigable world-surface pick.
+[Implementation and limits](workflows/physical-world-screen.md#offline-screenshot-pixel-to-3d-viewing-ray-november-16-2026).
+
 **November 14 — batched navigation control pauses verified offline on AMD-DESKTOP.**
 Normal and survival route playback now use one native process per explicit-stop
 interval, retaining automatic corner pauses inside that process. Versioned pause

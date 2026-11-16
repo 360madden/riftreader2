@@ -1,7 +1,6 @@
 """Actual retained-evidence validators with an injected sink; no SDK or viewer."""
 from copy import deepcopy
 import hashlib
-import importlib.util
 import json
 import math
 import os
@@ -539,7 +538,6 @@ class ExportTests(unittest.TestCase):
         self.assertNotIn("displayCamera", result)
         self.assertIsNone(self.sinks[-1].display_camera)
 
-    @unittest.skipUnless(importlib.util.find_spec("numpy"), "optional NumPy environment required")
     def test_native_view_rays_use_exact_native_times_and_source_hashes(self):
         self.run_export()
         events = self.sinks[-1].events
@@ -555,7 +553,6 @@ class ExportTests(unittest.TestCase):
         self.assertEqual(len(native[0]["sha256"]), 64)
         self.assertIn("display extent 20 (clip W); no scene depth/occlusion", rays[0][2]["label"])
 
-    @unittest.skipUnless(importlib.util.find_spec("numpy"), "optional NumPy environment required")
     def test_singular_optional_inverse_preserves_valid_route_and_clears_camera(self):
         for filename in ("before.json", "after.json"):
             path = self.root / filename
@@ -576,14 +573,14 @@ class ExportTests(unittest.TestCase):
         row = next(event[2] for event in events if event[0] == "evidence/native")
         self.assertEqual(row["cameraViewRays"]["reason"], "unstable-native-view-inverse")
 
-    def test_missing_numpy_or_disabled_camera_is_optional_for_fake_sink_export(self):
+    def test_numpy_not_required_and_disabled_camera_is_optional_for_fake_sink_export(self):
         with patch.dict("sys.modules", {"numpy": None}):
             result = self.run_export()
         self.assertEqual(result["status"], "offline-rerun-evidence-export")
         events = self.sinks[-1].events
         row = next(event[2] for event in events if event[0] == "evidence/native")
-        self.assertEqual(row["cameraViewRays"]["reason"], "numpy-unavailable")
-        self.assertFalse(any(event[1] == "camera-rays3d" for event in events))
+        self.assertEqual(row["cameraViewRays"]["status"], "available-candidate")
+        self.assertEqual(len([event for event in events if event[1] == "camera-rays3d"]), 2)
         self.output.unlink()
         self.run_export(camera_rays=False)
         events = self.sinks[-1].events
@@ -770,7 +767,6 @@ class ExportTests(unittest.TestCase):
         self.assertEqual(rrb.Spatial2DView.call_args.kwargs["name"], "Desktop candidate 1 (UTC upper bound)")
 
 
-@unittest.skipUnless(importlib.util.find_spec("numpy"), "optional NumPy environment required")
 class NativeViewRayTests(unittest.TestCase):
     def test_screen_corners_and_known_xyz_roundtrip_for_asymmetric_offset_projection(self):
         camera = optical_camera()

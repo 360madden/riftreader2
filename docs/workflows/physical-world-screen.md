@@ -243,6 +243,32 @@ arbitrary world XYZ into normalized client coordinates. Client/frame geometry th
 maps those coordinates into a matching RIFT screenshot. This is separate from the
 flat, player-facing map in the waypoint window.
 
+### Offline screenshot-pixel to 3D viewing ray (November 16, 2026)
+
+`scripts/physical_pixel_ray.py` accepts `--observation`, `--route`,
+`--pixel-x` and `--pixel-y` for a retained, matched WGC/native camera bracket.
+It reuses the existing full screenshot, process/build/player and route checks, maps the chosen physical-frame
+pixel center into the actual native viewport, inverts the preserved float32
+X/Y/W projection, and verifies forward reprojection. The 3x3 inversion now uses
+Python's standard library; NumPy is not required for native camera rays.
+Output is JSON with image/native hashes, original capture time, camera eye,
+unit ray direction, inverse conditioning and reprojection error. Outside-client,
+outside-native-viewport, unstable-camera and changed-source cases refuse input.
+
+Historical AMD-DESKTOP PID51524 WGC bundle
+`artifacts/waypoint-view-a07ef160cdd34d5f9465b13e372c44fb/` was replayed
+**offline** at screenshot pixel (962,321). The new ray's shortest distance to
+the independently saved target XYZ (7410.62255859375, 863.526123046875,
+2942.396484375) was **0.028028 native units**. Forward-projecting the ray's
+display-plane point returned the sampled pixel with error under 3e-11 pixels.
+A separate 22:46 UTC saved view from the same historical PID, at pixel (641,446),
+passed within **0.020032 native units** of its independently recorded player XYZ.
+57 focused/adjacent tests passed under `C:\Python314\python.exe` without
+NumPy. This is view geometry only: no depth, surface hit, floor, occlusion,
+world-instance match, collision clearance, movement command or live acceptance.
+Next: intersect qualified registered terrain/object geometry and preserve
+multiple-hit/visibility uncertainty before using picks as route destinations.
+
 **Preferred live presenter: Qt/PySide6-Essentials.** The waypoint window chooses
 the installed `.local/overlay-venv` and its Qt presenter automatically. Local setup
 and the GitHub tool comparison are in
