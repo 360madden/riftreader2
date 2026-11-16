@@ -154,6 +154,20 @@ class ArchivedLandmarkProofTests(unittest.TestCase):
                             for hit in wall_hits), .01)
         self.assertFalse(exact["movementEligible"])
         self.assertFalse(nearby["movementEligible"])
+        center_ray = physical_pixel_ray.pixel_ray(
+            camera, obs["clientFrameMapping"], 1115, 286)
+        footprint = physical_pixel_surface.sample_pixel_footprint(
+            vertices, faces, camera, obs["clientFrameMapping"], 1115, 286, 2,
+            center_ray=center_ray, center_surface=exact, max_distance=42)
+        self.assertEqual(footprint["sampleCount"], 9)
+        self.assertTrue(footprint["ambiguousFirstSurface"])
+        self.assertEqual(footprint["samples"][0]["firstMeshGroup"],
+                         exact["hits"][0]["meshGroup"])
+        left = next(row for row in footprint["samples"]
+                    if row["offsetPixels"] == [-2, 0])
+        self.assertTrue(left["firstMeshGroup"].startswith(
+            "A_F_terrace_wall_curved_02"))
+        self.assertFalse(footprint["movementEligible"])
 
     def test_changed_native_camera_across_wgc_bracket_refuses(self):
         folder = self.copy_small_sources()

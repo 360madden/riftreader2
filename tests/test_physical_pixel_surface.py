@@ -228,6 +228,85 @@ class RetainedMeshTests(unittest.TestCase):
         self.assertIsNone(result["ray"]["worldSurfaceXYZ"])
         self.assertEqual(self.mesh.read_bytes(), before)
 
+
+    def test_footprint_zero_preserves_single_ray_result(self):
+        baseline = surface.pick_retained(self.obs, self.route, 160, 110, self.mesh, self.reg)
+        explicit_zero = surface.pick_retained(
+            self.obs, self.route, 160, 110, self.mesh, self.reg,
+            pixel_selection_radius=0)
+        self.assertEqual(explicit_zero, baseline)
+        self.assertNotIn("pixelFootprint", baseline)
+
+    def test_footprint_cardinal_neighbor_exposes_thin_surface(self):
+        camera = self.fixture.after["observation"]["opticalCameraCandidate"]
+        mapping = self.fixture.frame["clientFrameMapping"]
+        center = physical_pixel_ray.pixel_ray(camera, mapping, 160, 110)
+        neighbor = physical_pixel_ray.pixel_ray(camera, mapping, 158, 110)
+        near_at = [neighbor["nativeEyeXYZ"][i] +
+                   neighbor["unitDirectionXYZ"][i] * 8 for i in range(3)]
+        near_big = centered_triangle(neighbor, 8)
+        near = [[near_at[i] + (point[i] - near_at[i]) * .01 for i in range(3)]
+                for point in near_big]
+        far = centered_triangle(center, 20)
+        lines = ["g narrow-wall"]
+        lines.extend("v " + " ".join(f"{v:.17g}" for v in point) for point in near)
+        lines += ["f 1 2 3", "g far-terrain"]
+        lines.extend("v " + " ".join(f"{v:.17g}" for v in point) for point in far)
+        lines += ["f 4 5 6"]
+        self.mesh.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        self.reg.write_text(json.dumps(registration(self.mesh.read_bytes())),
+                            encoding="utf-8")
+        result = surface.pick_retained(
+            self.obs, self.route, 160, 110, self.mesh, self.reg,
+            max_distance=30, pixel_selection_radius=2)
+        footprint = result["pixelFootprint"]
+        self.assertEqual(result["surface"]["hits"][0]["meshGroup"], "far-terrain")
+        self.assertEqual((footprint["radiusPixels"], footprint["sampleCount"]), (2, 9))
+        self.assertEqual(footprint["maxSampleCount"], 13)
+        self.assertTrue(footprint["ambiguousFirstSurface"])
+        self.assertEqual(footprint["status"], "ambiguous-first-surface")
+        self.assertEqual(footprint["samples"][0]["firstMeshGroup"], "far-terrain")
+        left = next(row for row in footprint["samples"]
+                    if row["offsetPixels"] == [-2, 0])
+        self.assertEqual(left["firstMeshGroup"], "narrow-wall")
+        self.assertEqual(footprint["missingFirstHitCount"], 0)
+        self.assertFalse(footprint["visibleSurfaceQualified"])
+        self.assertFalse(footprint["movementEligible"])
+        self.assertFalse(result["movementEligible"])
+        argv = ["--observation", str(self.obs), "--route", str(self.route),
+                "--pixel-x", "160", "--pixel-y", "110",
+                "--mesh-obj", str(self.mesh), "--registration-json", str(self.reg),
+                "--pixel-selection-radius", "2", "--max-distance", "30"]
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            self.assertEqual(surface.main(argv), 0)
+        cli = json.loads(stdout.getvalue())
+        self.assertEqual(cli["pixelFootprint"]["sampleCount"], 9)
+        self.assertTrue(cli["pixelFootprint"]["ambiguousFirstSurface"])
+        # With no far background, absent neighboring hits are reported explicitly.
+        self.mesh.write_text("\n".join(lines[:5]) + "\n", encoding="utf-8")
+        self.reg.write_text(json.dumps(registration(self.mesh.read_bytes())),
+                            encoding="utf-8")
+        sparse = surface.pick_retained(
+            self.obs, self.route, 160, 110, self.mesh, self.reg,
+            max_distance=30, pixel_selection_radius=2)
+        self.assertGreater(sparse["pixelFootprint"]["missingFirstHitCount"], 0)
+        self.assertTrue(sparse["pixelFootprint"]["ambiguousFirstSurface"])
+        self.assertFalse(sparse["movementEligible"])
+
+    def test_footprint_refuses_invalid_radius_and_outside_client(self):
+        for invalid in (-1, True, 4):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(
+                    ValueError, "pixel-selection-radius-invalid"):
+                surface.pick_retained(self.obs, self.route, 160, 110,
+                                      self.mesh, self.reg,
+                                      pixel_selection_radius=invalid)
+        mapping = self.fixture.frame["clientFrameMapping"]
+        with self.assertRaisesRegex(ValueError, "pixel-footprint-neighbor-invalid"):
+            surface.pick_retained(
+                self.obs, self.route, mapping["clientLeft"], 110, self.mesh, self.reg,
+                pixel_selection_radius=1)
+
     def test_cli_json_result_and_changed_sha_blocks(self):
         argv = ["--observation", str(self.obs), "--route", str(self.route),
                 "--pixel-x", "160", "--pixel-y", "110",

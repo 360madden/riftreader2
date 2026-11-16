@@ -424,6 +424,26 @@ Keep multiple surface candidates and pixel-placement uncertainty visible;
 do not silently snap a user click or promote the terrain hit to a visible
 floor/collision result. This case has a focused real-archive regression.
 
+**Bounded pixel-selection footprint (Nov 16):** Add optional
+`--pixel-selection-radius 1`, `2` or `3` to the same `physical_pixel_surface.py`
+command above. The default `0` retains exactly the original single-ray JSON.
+Positive radii sample the center and left/right/up/down neighboring integer
+pixels at each step (at most 13 total rays) against one parsed, SHA-pinned OBJ
+and the same WGC/native camera bracket. The extra `pixelFootprint` object
+reports each sampled first candidate's mesh group, triangle, depth and missing
+hits, plus `ambiguousFirstSurface` when first-hit groups or presence disagree.
+Samples leaving the verified client/viewport are refused. In the real Nov 13
+thin-wall regression, radius 2 exposes **terrain at (1115,286)** and the
+**curved wall at (1113,286)** within manual-selection uncertainty. This is
+an uncertainty diagnostic, not a claim about optical visibility, collision
+response or qualified movement. Thirty-two focused tests passed; 96 combined P1/neighboring tests passed; no input.
+An end-to-end replay against the genuine Nov 12 guard-foot screenshot pixel
+(962,321) with radius 2 reported **nine of nine** first-hit terrain samples
+from the same `world_terrain_7168_2816_nif_mesh_1` group; their candidate
+ray depths ranged from **26.0102 to 26.2277** native units. This contrast
+shows the report can distinguish a stable *sampled group* from a thin-edge
+mixed group, not that a stable group is optically visible or traversable.
+
 **P1 offline implementation is functional** (exact pixel ray, pinned mesh,
 multiple depth groups, explicit hit selection, repeatable historical tests).
 **P1 live/world qualification remains blocked** pending a same-owner,

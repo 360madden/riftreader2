@@ -26,6 +26,9 @@ MAX_REGISTRATION_BYTES = 16 * 1024
 MAX_VERTICES = 250_000
 MAX_TRIANGLES = 400_000
 MAX_REPORTED_HITS = 64
+MAX_FOOTPRINT_RADIUS = 3
+MAX_FOOTPRINT_SAMPLES = 1 + 4 * MAX_FOOTPRINT_RADIUS
+MAX_FOOTPRINT_REPORT_BYTES = 2 * 1024 * 1024
 _HEX_SHA = re.compile(r"[0-9a-fA-F]{64}\Z")
 _INDEX = re.compile(r"[1-9][0-9]*\Z")
 
@@ -262,10 +265,111 @@ def intersect_prepared(vertices, faces, ray, max_distance=2000.0, selected_trian
                              "are not independently qualified."}
 
 
+
+def _verified_footprint_camera(observation_path, retained_ray, x, y):
+    """Recover only the same hash-admitted native camera and WGC client mapping."""
+    _, raw, observation_sha = _source_bytes(
+        observation_path, MAX_FOOTPRINT_REPORT_BYTES, "footprint-observation")
+    _require(observation_sha == retained_ray["source"]["sha256"],
+             "footprint-observation-changed-after-admission")
+    observation = _strict_json(raw)
+    _require(type(observation) is dict
+             and type(observation.get("nativeFacing")) is dict,
+             "footprint-native-bracket-missing")
+    after_path = observation["nativeFacing"].get("afterOutput")
+    _require(isinstance(after_path, str) and bool(after_path),
+             "footprint-native-after-path-missing")
+    _, after_bytes, after_sha = _source_bytes(
+        after_path, MAX_FOOTPRINT_REPORT_BYTES, "footprint-native-after")
+    _require(after_sha == retained_ray["source"]["nativeAfterSha256"],
+             "footprint-native-after-changed-after-admission")
+    native = _strict_json(after_bytes)
+    _require(type(native) is dict and type(native.get("observation")) is dict,
+             "footprint-native-after-report-invalid")
+    camera = native["observation"].get("opticalCameraCandidate")
+    receipt_path = observation.get("receipt")
+    _require(isinstance(receipt_path, str) and bool(receipt_path),
+             "footprint-wgc-receipt-path-missing")
+    _, receipt_raw, receipt_sha = _source_bytes(
+        receipt_path, MAX_FOOTPRINT_REPORT_BYTES, "footprint-wgc-receipt")
+    _require(receipt_sha == retained_ray["source"]["receiptSha256"].lower(),
+             "footprint-wgc-receipt-changed-after-admission")
+    receipt = _strict_json(receipt_raw)
+    _require(type(receipt) is dict, "footprint-wgc-receipt-invalid")
+    mapping = receipt.get("clientFrameMapping")
+    if "clientFrameMapping" in observation:
+        _require(observation["clientFrameMapping"] == mapping,
+                 "footprint-client-mapping-source-mismatch")
+    center = physical_pixel_ray.pixel_ray(camera, mapping, x, y)
+    _require(center == retained_ray["ray"], "footprint-center-ray-mismatch")
+    return camera, mapping
+
+
+def sample_pixel_footprint(vertices, faces, camera, mapping, x, y, radius, *,
+                           center_ray, center_surface, max_distance=2000.0):
+    """Report candidate first-surface disagreement across bounded cardinal pixels.
+
+    This is not a screen-space depth buffer or a visible-surface decision. Offsets
+    are center, then left/right/up/down at each integer step through radius.
+    """
+    _require(type(radius) is int and 1 <= radius <= MAX_FOOTPRINT_RADIUS,
+             "pixel-selection-radius-invalid")
+    offsets = [(0, 0)]
+    for step in range(1, radius + 1):
+        offsets.extend(((-step, 0), (step, 0), (0, -step), (0, step)))
+    _require(len(offsets) <= MAX_FOOTPRINT_SAMPLES, "pixel-footprint-cap-exceeded")
+    rays = []
+    for dx, dy in offsets:
+        try:
+            candidate = physical_pixel_ray.pixel_ray(camera, mapping, x + dx, y + dy)
+        except ValueError as error:
+            raise ValueError("pixel-footprint-neighbor-invalid: " + str(error)) from error
+        rays.append(candidate)
+    _require(rays[0] == center_ray, "pixel-footprint-center-ray-mismatch")
+    samples, group_counts, depths = [], {}, []
+    missing = 0
+    for (dx, dy), ray in zip(offsets, rays):
+        intersection = (center_surface if dx == 0 and dy == 0
+                        else intersect_prepared(vertices, faces, ray,
+                                                max_distance=max_distance))
+        hits = intersection["hits"]
+        nearest = hits[0] if hits else None
+        if nearest is None:
+            missing += 1
+        else:
+            group = nearest["meshGroup"]
+            group_counts[group] = group_counts.get(group, 0) + 1
+            depths.append(nearest["distanceNative"])
+        samples.append({"offsetPixels": [dx, dy], "framePixel": [x + dx, y + dy],
+                        "status": ("first-candidate-hit" if nearest else
+                                   "no-candidate-intersection"),
+                        "firstMeshGroup": nearest["meshGroup"] if nearest else None,
+                        "firstTriangleIndex": nearest["triangleIndex"] if nearest else None,
+                        "firstDistanceNative": (nearest["distanceNative"]
+                                                if nearest else None)})
+    mixed = len(group_counts) > 1 or 0 < missing < len(samples)
+    return {"schema": "rr2.retained-pixel-footprint/1",
+            "status": ("ambiguous-first-surface" if mixed else
+                       "no-candidate-intersection" if missing == len(samples) else
+                       "single-first-group-candidate"),
+            "radiusPixels": radius, "pattern": "center-plus-cardinals-at-each-integer-step",
+            "sampleCount": len(samples), "maxSampleCount": MAX_FOOTPRINT_SAMPLES,
+            "firstMeshGroupCounts": [{"meshGroup": group, "count": group_counts[group]}
+                                     for group in sorted(group_counts)],
+            "missingFirstHitCount": missing,
+            "firstDistanceRangeNative": [min(depths), max(depths)] if depths else None,
+            "ambiguousFirstSurface": mixed, "samples": samples,
+            "visibleSurfaceQualified": False, "movementEligible": False,
+            "qualification": "Candidate first hits are sampled at nearby pixels; "
+                             "neighbor samples cannot prove visible geometry, rendered "
+                             "depth, obstacle response, world registration or route clearance."}
+
+
 def pick_retained(observation, route, x, y, mesh_path, registration_path,
                   max_distance=2000.0, selected_triangle=None,
                   anchor_join_path=None, anchor_join_sha256=None,
-                  rack_report_path=None, rack_report_sha256=None):
+                  rack_report_path=None, rack_report_sha256=None,
+                  pixel_selection_radius=0):
     """Pair admitted saved physical screenshot with explicitly SHA-pinned mesh."""
     ray = physical_pixel_ray.pick_retained(observation, route, x, y)
     audit_fields = (anchor_join_path, anchor_join_sha256,
@@ -282,8 +386,23 @@ def pick_retained(observation, route, x, y, mesh_path, registration_path,
     mesh_path, raw, digest = _source_bytes(mesh_path, MAX_MESH_BYTES, "mesh")
     _require(mesh_path.suffix.lower() == ".obj", "mesh-must-be-obj")
     registration = load_registration(registration_path, digest)
-    intersections = intersect_obj(raw, ray["ray"], registration["sourceToNativeRows"],
-                                  max_distance=max_distance, selected_triangle=selected_triangle)
+    _require(type(pixel_selection_radius) is int
+             and 0 <= pixel_selection_radius <= MAX_FOOTPRINT_RADIUS,
+             "pixel-selection-radius-invalid")
+    footprint = None
+    if pixel_selection_radius:
+        camera, mapping = _verified_footprint_camera(observation, ray, x, y)
+        vertices, faces = parse_obj(raw, registration["sourceToNativeRows"])
+        intersections = intersect_prepared(
+            vertices, faces, ray["ray"], max_distance=max_distance,
+            selected_triangle=selected_triangle)
+        footprint = sample_pixel_footprint(
+            vertices, faces, camera, mapping, x, y, pixel_selection_radius,
+            center_ray=ray["ray"], center_surface=intersections,
+            max_distance=max_distance)
+    else:
+        intersections = intersect_obj(raw, ray["ray"], registration["sourceToNativeRows"],
+                                      max_distance=max_distance, selected_triangle=selected_triangle)
     _require(hashlib.sha256(mesh_path.read_bytes()).hexdigest() == digest
              and hashlib.sha256(Path(registration["path"]).read_bytes()).hexdigest()
                  == registration["sha256"], "mesh-or-registration-changed-during-raycast")
@@ -298,6 +417,8 @@ def pick_retained(observation, route, x, y, mesh_path, registration_path,
             "surface": intersections, "inputSent": False, "movementEligible": False}
     if anchor_audit is not None:
         result["anchorAudit"] = anchor_audit
+    if footprint is not None:
+        result["pixelFootprint"] = footprint
     return result
 
 
@@ -312,6 +433,8 @@ def main(argv=None):
                         help="SHA-pinned candidate-only source-to-native affine hypothesis")
     parser.add_argument("--max-distance", type=float, default=2000.0,
                         help="maximum ray depth in hypothetical native units (default 2000)")
+    parser.add_argument("--pixel-selection-radius", type=int, default=0,
+                        help="0..3 candidate-pixel cardinal footprint; 0 keeps single-ray output")
     parser.add_argument("--select-triangle-index", type=int,
                         help="exact one-based OBJ triangle ID from hits; display-only, no movement")
     parser.add_argument("--anchor-join-json", type=Path,
@@ -328,7 +451,8 @@ def main(argv=None):
                                anchor_join_path=args.anchor_join_json,
                                anchor_join_sha256=args.anchor_join_sha256,
                                rack_report_path=args.rack_report_json,
-                               rack_report_sha256=args.rack_report_sha256)
+                               rack_report_sha256=args.rack_report_sha256,
+                               pixel_selection_radius=args.pixel_selection_radius)
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
         print(json.dumps({"schema": SCHEMA, "status": "blocked", "reason": str(error),
                           "inputSent": False, "movementEligible": False}))
