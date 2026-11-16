@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 import sys
 
@@ -27,6 +28,31 @@ MAX_EVIDENCE_GAP_TICKS = 10 * 60 * 10_000_000
 def require(ok, reason):
     if not ok:
         raise ValueError("native-stats-rr2a1-" + reason)
+
+
+def screen_original_state_xyz(native_position, first_lua_position):
+    """Screen native stats-state XYZ against the first independently replayed Lua XYZ.
+
+    The existing RR2A1 comparison screens its own later native brackets only.
+    Without this check, an intervening position change could inherit the
+    later bracket's coordinate agreement despite a different original XYZ.
+    """
+    require(isinstance(native_position, dict)
+            and isinstance(first_lua_position, dict),
+            "invalid-position")
+    difference = {}
+    for axis in ("x", "y", "z"):
+        a, b = native_position.get(axis), first_lua_position.get(axis)
+        require(type(a) in (int, float) and type(b) in (int, float)
+                and math.isfinite(a) and math.isfinite(b),
+                "invalid-position")
+        difference[axis] = abs(a - b)
+    maximum = max(difference.values())
+    require(maximum <= lua.MAX_COORDINATE_GAP_CANDIDATE,
+            "lua-position-drift")
+    return {"withinTolerance": True, "maximumAxisDifference": maximum,
+            "axisDifferences": difference,
+            "toleranceNativeUnits": lua.MAX_COORDINATE_GAP_CANDIDATE}
 
 
 def correlate(state_summary, rr2a1_summary):
@@ -97,6 +123,9 @@ def correlate(state_summary, rr2a1_summary):
     expected_id = "u" + format(int(native["selfKeyCandidate"]), "016X")
     require(replayed.get("luaPlayerIdCandidate") == expected_id,
             "native-lua-self-id-mismatch")
+    screen = screen_original_state_xyz(
+        native["candidateValues"].get("position"),
+        replayed.get("positionCandidates", {}).get("firstLua"))
     _, _, first_bracket_start, _ = lua.native.verified_bracket(before)
     end_dt, end_tick = _utc_tick_order_key(native["lastCompletedAtUtc"])
     start_dt, start_tick = _utc_tick_order_key(first_bracket_start)
@@ -126,9 +155,10 @@ def correlate(state_summary, rr2a1_summary):
         "nativeStatsSourceSha256": native["sources"]["stats"]["sha256"],
         "luaSequenceWindows": replayed["sequenceWindows"],
         "coordinateAgreementScreen": replayed["coordinateAgreementScreen"],
+        "nativeStateToLuaPositionScreen": screen,
         "candidateObservationGapSeconds": gap_ticks / 10_000_000,
         "qualification": ("Independent source-replayed Lua/native self-ID and XYZ candidates "
-                          "agree in one process epoch and precede/follow one 20-stat snapshot. "
+                          "agree with earlier native-state XYZ in one process epoch within a stationary screen; this does not prove continuous position or lack of movement. "
                           "Lua RR2A1 is unbound; stats are raw candidates, not independently "
                           "verified semantics, nonce-authenticated freshness, atomic state, "
                           "changed-state causality, or a live-control readiness signal."),
@@ -154,8 +184,17 @@ def correlate_with_previous(previous_state, current_state, rr2a1_summary):
             and type(comparison.get("rawValuesCompared")) is int
             and comparison["rawValuesCompared"] > 0,
             "previous-native-stats-not-comparable")
+    delta = pair.get("positionDeltaCandidate")
+    planar = pair.get("planarDistanceCandidate")
+    require(isinstance(delta, dict) and
+            all(type(delta.get(axis)) in (int, float) and
+                math.isfinite(delta[axis]) for axis in ("x", "y", "z")) and
+            type(planar) in (int, float) and math.isfinite(planar) and planar >= 0,
+            "previous-native-position-not-comparable")
     linked["previousNativeSummarySha256"] = pair["beforeSummarySha256"]
     linked["nativeStatsComparison"] = comparison
+    linked["nativePositionDeltaCandidate"] = delta
+    linked["nativePlanarDistanceCandidate"] = planar
     linked["qualification"] += (" Pair differences are native raw-value candidates; "
                                 "the later Lua bracket does not authenticate or "
                                 "independently validate any stat change.")
@@ -191,6 +230,9 @@ def main(argv=None):
         "luaPlayerIdCandidate": result["luaPlayerIdCandidate"],
         "rawStatValuesAvailable": result["rawStatValuesAvailable"],
         "rawStatValuesChanged": result.get("nativeStatsComparison", {}).get("rawValuesChanged"),
+        "nativePositionDeltaCandidate": result.get("nativePositionDeltaCandidate"),
+        "nativePlanarDistanceCandidate": result.get("nativePlanarDistanceCandidate"),
+        "nativeStateToLuaPositionScreen": result["nativeStateToLuaPositionScreen"],
         "candidateObservationGapSeconds": result["candidateObservationGapSeconds"],
         "output": str(args.output) if args.output else None,
     }))

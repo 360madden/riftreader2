@@ -40,7 +40,9 @@ class LinkTests(unittest.TestCase):
             "lastCompletedAtUtc": "2026-11-15T21:03:18.0000000Z",
             "summarySha256": "1" * 64,
             "sources": {"stats": {"sha256": "2" * 64}},
-            "candidateValues": {"stats": {
+            "candidateValues": {"position": {
+                "x": 7191.6084, "y": 873.9848, "z": 3019.1848,
+            }, "stats": {
                 "status": "candidate-only", "selectorCount": 20,
                 "stats": [{"name": f"field{i}",
                            "ordinary": {"status": "raw-candidate"},
@@ -56,6 +58,10 @@ class LinkTests(unittest.TestCase):
             "luaPlayerIdCandidate": PLAYER_ID,
             "sequenceWindows": [[1, 2], [3, 4]],
             "coordinateAgreementScreen": {"withinTolerance": True},
+            "positionCandidates": {"firstLua": {
+                "x": 7191.60986328125, "y": 873.97998046875,
+                "z": 3019.179931640625,
+            }},
             "captureOrder": {"status": "source-verified-order"},
         }
         self.retained = {
@@ -102,6 +108,8 @@ class LinkTests(unittest.TestCase):
         self.assertEqual(result["luaPlayerIdCandidate"], PLAYER_ID)
         self.assertEqual(result["luaSequenceWindows"], [[1, 2], [3, 4]])
         self.assertAlmostEqual(result["candidateObservationGapSeconds"], 72)
+        self.assertTrue(result["nativeStateToLuaPositionScreen"]["withinTolerance"])
+        self.assertLess(result["nativeStateToLuaPositionScreen"]["maximumAxisDifference"], 0.05)
         self.assertIn("unbound", result["qualification"])
 
     def test_refuses_mismatched_player_owner_and_executable(self):
@@ -134,6 +142,20 @@ class LinkTests(unittest.TestCase):
         self.native["candidateValues"].pop("stats")
         with self.assertRaisesRegex(ValueError, "four-source-native-stats-required"):
             self.run_join()
+
+    def test_rejects_intervening_position_change_even_if_lua_brackets_agree(self):
+        # The Lua two-pass screen only compares its OWN native brackets. A
+        # different earlier stat-state XYZ must not inherit that agreement.
+        self.native["candidateValues"]["position"]["z"] += 55.73
+        with self.assertRaisesRegex(ValueError, "native-stats-rr2a1-lua-position-drift"):
+            self.run_join()
+
+    def test_rejects_missing_or_nonfinite_original_position(self):
+        for malformed in (None, float("nan"), True):
+            with self.subTest(malformed=malformed):
+                self.native["candidateValues"]["position"]["x"] = malformed
+                with self.assertRaisesRegex(ValueError, "native-stats-rr2a1-invalid-position"):
+                    self.run_join()
 
     def test_refuses_lua_native_disagreement(self):
         self.paired["coordinateAgreementScreen"]["withinTolerance"] = False
@@ -174,6 +196,8 @@ class LinkTests(unittest.TestCase):
         pair = {"status": "candidate-only", "beforeSummarySha256": "4" * 64,
                 "afterSummarySha256": "1" * 64, "processId": 123,
                 "selfKeyCandidate": PLAYER_KEY,
+                "positionDeltaCandidate": {"x": -2.4, "y": -2.5, "z": 55.7},
+                "planarDistanceCandidate": 55.75,
                 "nativeStatsComparison": {"status": "comparable-candidate",
                                           "rawValuesCompared": 40,
                                           "rawValuesChanged": 2,
@@ -187,6 +211,8 @@ class LinkTests(unittest.TestCase):
         self.assertEqual(result["status"], "candidate-only")
         self.assertEqual(result["previousNativeSummarySha256"], "4" * 64)
         self.assertEqual(result["nativeStatsComparison"]["rawValuesChanged"], 2)
+        self.assertEqual(result["nativePositionDeltaCandidate"]["z"], 55.7)
+        self.assertEqual(result["nativePlanarDistanceCandidate"], 55.75)
         self.assertIn("does not authenticate", result["qualification"])
         pair["nativeStatsComparison"]["rawValuesChanged"] = 0
         with patch.object(join, "correlate", return_value=deepcopy(linked)), \
@@ -201,6 +227,8 @@ class LinkTests(unittest.TestCase):
         pair = {"status": "candidate-only", "beforeSummarySha256": "4" * 64,
                 "afterSummarySha256": "1" * 64, "processId": 123,
                 "selfKeyCandidate": PLAYER_KEY,
+                "positionDeltaCandidate": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "planarDistanceCandidate": 0.0,
                 "nativeStatsComparison": {"status": "comparable-candidate",
                                           "rawValuesCompared": 40,
                                           "rawValuesChanged": 0}}
@@ -213,6 +241,8 @@ class LinkTests(unittest.TestCase):
             ({"nativeStatsComparison": {"status": "comparable-candidate",
                                         "rawValuesCompared": 0}},
              "previous-native-stats-not-comparable"),
+            ({"positionDeltaCandidate": {"x": 0.0, "y": float("nan"), "z": 0.0}},
+             "previous-native-position-not-comparable"),
         ):
             with self.subTest(mutation=mutation):
                 altered = deepcopy(pair)
