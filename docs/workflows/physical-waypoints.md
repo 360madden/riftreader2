@@ -71,6 +71,17 @@ fail, the recovery start remains unavailable. This is a candidate for a new
 planning request, **not** automatic replanning, route qualification, STOP
 clearing or permission to resume input. The original failure status is retained.
 
+A new **plan-only** candidate can now use that handoff without copying coordinates.
+Repeat the previous destination command with the same catalog, patch and build,
+replacing `--from X,Y,Z` with `--from-recovery-plan PATH_TO_HALTED_PLAN_JSON
+--session EXACT_SESSION_ID` and choosing a fresh `--out-dir`. RR2 verifies the
+old route/receipt hashes, release, player/process, STOP epoch/latch and a fresh
+native pose within 0.30 horizontal / 0.50 height units of the recorded recovery
+start before querying RiftWorld. The new `plan.json` records `recoverySource`;
+its candidate remains **unadopted**, STOP stays latched, and no route is loaded
+or executed. A changed player/STOP/map requires an independent new planning
+request, not reuse of the old recovery handoff.
+
 To plan from the current player position, replace `--from X,Y,Z` with
 `--from-current --session EXACT_SESSION_ID`. This performs two fresh read-only
 pose acquisitions through that session's existing reader, before and after the

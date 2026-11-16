@@ -528,10 +528,92 @@ def _capture_recovery_start(plan, route_path, session, admission, runner):
         recovery["reason"] = str(exc)
 
 
+def _verified_recovery_source(path, *, inputs, destination, session, admission, observation):
+    """Bind a plan-only query to a retained halt and an independently fresh pose."""
+    original_path = Path(path).resolve()
+    previous, _ = _read(original_path)
+    recovery = previous.get("recovery")
+    old_observation = previous.get("recoveryObservation")
+    old_admission = previous.get("executionAdmission")
+    if (previous.get("schema") != SCHEMA or previous.get("status") not in {"halted", "stopped"}
+            or not isinstance(recovery, dict) or not isinstance(old_observation, dict)
+            or not isinstance(old_admission, dict)
+            or recovery.get("status") != "fresh-native-start"
+            or recovery.get("terminalStatus") != previous["status"]
+            or recovery.get("candidateOnly") is not True
+            or recovery.get("automaticRetry") is not False
+            or recovery.get("requiresExplicitNewRun") is not True):
+        raise ValueError("recovery-source-is-not-a-qualified-halted-run")
+    if (previous.get("destinationId") != destination
+            or recovery.get("destinationId") != destination):
+        raise ValueError("recovery-destination-mismatch")
+    if (old_admission.get("sessionId") != session
+            or old_observation.get("sessionId") != session
+            or old_admission.get("target") != admission["target"]
+            or old_observation.get("target") != admission["target"]
+            or recovery.get("stopEpoch") != admission["stopEpoch"]
+            or recovery.get("stopLatched") is not admission["stopLatched"]):
+        raise ValueError("recovery-session-target-or-stop-epoch-changed")
+    if not _same_runtime(old_observation.get("runtimeIdentity"), observation["runtimeIdentity"]):
+        raise ValueError("recovery-player-or-process-changed")
+    previous_inputs = previous.get("inputs")
+    if not isinstance(previous_inputs, dict):
+        raise ValueError("recovery-source-inputs-unavailable")
+    for name in ("catalog", "patch", "build"):
+        prior_ref, current_ref = previous_inputs.get(name), inputs.get(name)
+        if (not isinstance(prior_ref, dict) or not isinstance(current_ref, dict)
+                or Path(str(prior_ref.get("path", ""))).resolve() != Path(current_ref["path"]).resolve()
+                or str(prior_ref.get("sha256", "")).casefold()
+                   != str(current_ref["sha256"]).casefold()):
+            raise ValueError("recovery-planning-input-changed: " + name)
+    execution = previous.get("execution")
+    if not isinstance(execution, dict):
+        raise ValueError("recovery-execution-receipt-unavailable")
+    for key, reference in (("route", previous.get("adoptedRoute")),
+                           ("receipt", execution.get("receipt"))):
+        if (not isinstance(reference, dict) or not isinstance(reference.get("path"), str)
+                or str(reference.get("sha256", "")).casefold()
+                   != _hash(reference["path"]).casefold()):
+            raise ValueError("recovery-" + key + "-reference-changed")
+    route, _ = _read(previous["adoptedRoute"]["path"])
+    adoption = route.get("candidateAdoption")
+    owner = adoption.get("owner") if isinstance(adoption, dict) else None
+    if not isinstance(owner, dict) or not _same_runtime(
+            observation["runtimeIdentity"], {
+                "machine": owner.get("machine"),
+                "processId": admission["target"]["processId"],
+                "processStartUtcTicks": admission["target"]["processStartUtcTicks"],
+                "gameBuildSha256": owner.get("gameBuildSha256"),
+                "unitKey": owner.get("unitKey")}):
+        raise ValueError("recovery-route-owner-changed")
+    receipt, _ = _read(execution["receipt"]["path"])
+    if receipt.get("inputReleaseFault") is not False:
+        raise ValueError("recovery-source-input-release-unverified")
+    for key in ("result", "completedLegs"):
+        legs = receipt.get(key)
+        if legs is not None and (not isinstance(legs, list) or any(
+                not isinstance(leg, dict) or leg.get("releaseSucceeded") is not True
+                or leg.get("desktopInputsDown") != [] for leg in legs)):
+            raise ValueError("recovery-source-leg-release-unverified")
+    old_xyz = _xyz(old_observation.get("nativeXYZ"))
+    if _xyz(recovery.get("startNativeXYZ")) != old_xyz:
+        raise ValueError("recovery-source-position-inconsistent")
+    xyz = observation["nativeXYZ"]
+    planar = math.hypot(old_xyz[0] - xyz[0], old_xyz[2] - xyz[2])
+    height = abs(old_xyz[1] - xyz[1])
+    if planar > .30 + 1e-9 or height > .50 + 1e-9:
+        raise ValueError("recovery-player-moved-since-handoff")
+    return {"plan": _reference(original_path), "terminalStatus": previous["status"],
+            "previousNativeXYZ": old_xyz, "freshNativeXYZ": xyz,
+            "planarDistanceSinceHandoff": planar, "heightErrorSinceHandoff": height,
+            "stopEpoch": admission["stopEpoch"], "stopLatched": admission["stopLatched"],
+            "candidateOnly": True, "inputSent": False}
+
+
 def plan_destination(*, catalog, destination, output_directory, patch=None, build=None,
                      prepare_request=None, source_index=None, allow_partial_navigation=False,
                      prepare_profile=None, prepare_timeout_seconds=600,
-                     start=None, from_current=False,
+                     start=None, from_current=False, recovery_plan=None,
                      riftworld_root=RIFTWORLD_ROOT, riftworld_python=None,
                      native_receipts=(), native_context=None, native_start=None,
                      native_end=None, candidate_start=0, candidate_end=None,
@@ -542,6 +624,10 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
     A new output directory is mandatory. Query/adoption failures retain useful
     files and a structured plan. No operation replaces the current route.
     """
+    if recovery_plan is not None:
+        if start is not None or from_current or execute:
+            raise ValueError("recovery plan is exclusive and plan-only")
+        from_current = True
     if bool(from_current) == (start is not None):
         raise ValueError("choose exactly one explicit start or from-current")
     start = _xyz(start) if start is not None else None
@@ -562,6 +648,8 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
         raise ValueError("execution or from-current requires an exact session")
     supplied = bool(native_receipts) or any(value is not None for value in
                                           (native_context, native_start, native_end))
+    if recovery_plan is not None and (supplied or preparing):
+        raise ValueError("recovery mode accepts existing patch/build and produces a plan-only candidate")
     if supplied and (not native_receipts or native_context is None
                      or native_start is None or native_end is None):
         raise ValueError("native adoption requires receipts, context and inclusive native range")
@@ -607,7 +695,8 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
     handoff_path, preparation_receipt = output / "prepared-navigation.json", output / "preparation-run.json"
     plan = {"schema": SCHEMA, "createdAtUtc": datetime.now(timezone.utc).isoformat(),
             "status": "blocked", "destinationId": destination, "requestedStartXYZ": start,
-            "startSource": "current-native" if from_current else "explicit-source-coordinates",
+            "startSource": ("verified-halt-recovery" if recovery_plan is not None else
+                            "current-native" if from_current else "explicit-source-coordinates"),
             "inputs": inputs, "stages": {"query": "not-started", "adoption": "not-requested",
                                           "execution": "not-requested"},
             "blockers": [], "inputSent": False, "currentRouteChanged": False,
@@ -730,6 +819,10 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
             observation["qualification"] = "Native start used through this patch's explicit identity transform; " \
                                            "no global coordinate or live world/floor qualification."
             plan["startObservation"] = observation
+            if recovery_plan is not None:
+                plan["recoverySource"] = _verified_recovery_source(recovery_plan,
+                    inputs=inputs, destination=destination, session=session,
+                    admission=admission, observation=observation)
             if preparation_owner is not None and not _same_runtime(preparation_owner, observation["runtimeIdentity"]):
                 raise ValueError("current-native-player-changed-during-preparation")
             if preparation_owner is not None:
@@ -859,6 +952,8 @@ def parser():
     starts.add_argument("--from", dest="start", type=_xyz)
     starts.add_argument("--from-current", action="store_true",
                         help="read fresh bound native XYZ through the exact --session; no game input")
+    starts.add_argument("--from-recovery-plan", dest="recovery_plan", type=Path,
+                        help="plan-only: verify a halted run and fresh same-player recovery pose; never resume input")
     result.add_argument("--out-dir", dest="output_directory", type=Path, required=True)
     result.add_argument("--riftworld-root", type=Path, default=RIFTWORLD_ROOT)
     result.add_argument("--riftworld-python", type=Path)

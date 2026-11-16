@@ -434,6 +434,93 @@ class DestinationPlanTests(unittest.TestCase):
         self.assertTrue(result["observationAdmission"]["stopLatched"])
         self.assertFalse(result["inputSent"])
 
+    def halted_recovery_source(self):
+        source = self.plan(output_directory=self.root / "halt-source", execute=True,
+            session="owned", runner=self.executing_runner(
+                failure={"status": "halted", "reason": "no-progress"},
+                post_position={"x": 0, "y": 1, "z": 2},
+                stop_epochs=(0, 0, 1, 1), latched=(False, False, True, True)))
+        self.assertEqual("fresh-native-start", source["recovery"]["status"])
+        self.calls.clear()
+        return self.root / "halt-source" / "plan.json"
+
+    def test_recovery_plan_cli_generates_new_candidate_without_input_or_adoption(self):
+        source = self.halted_recovery_source()
+        result = self.plan(start=None, native=False, recovery_plan=source, session="owned",
+            output_directory=self.root / "replanned", runner=self.current_runner(
+                latched=True, stop_epochs=(1, 1, 1, 1)))
+        self.assertEqual("planned", result["status"], result["blockers"])
+        self.assertEqual("verified-halt-recovery", result["startSource"])
+        self.assertEqual([0, 1, 2], result["requestedStartXYZ"])
+        self.assertEqual(1, result["recoverySource"]["stopEpoch"])
+        self.assertEqual("halted", result["recoverySource"]["terminalStatus"])
+        self.assertEqual(0, result["recoverySource"]["planarDistanceSinceHandoff"])
+        self.assertEqual("native-evidence-required", result["stages"]["adoption"])
+        self.assertNotIn("adoptedRoute", result)
+        self.assertFalse(result["inputSent"])
+        self.assertFalse(result["currentRouteChanged"])
+        self.assertFalse(any(command[2:4] == ["route", "run"] for command, _ in self.calls))
+        self.assertEqual(2, sum(command[2:4] == ["pose", "refresh"] for command, _ in self.calls))
+        query = next(command for command, _ in self.calls if "query_destination.py" in command[1])
+        self.assertEqual("0,1,2", query[query.index("--from") + 1])
+        parsed = bridge.parser().parse_args(["--catalog", str(self.catalog),
+            "--patch", str(self.patch), "--build", str(self.build),
+            "--destination", self.entry["id"], "--from-recovery-plan", str(source),
+            "--session", "owned", "--out-dir", "new-plan"])
+        self.assertEqual(source, parsed.recovery_plan)
+
+    def test_recovery_plan_rejects_epoch_player_movement_and_destination_changes(self):
+        source = self.halted_recovery_source()
+        cases = (
+            ({"stop_epochs": (2, 2, 2)}, "recovery-session-target-or-stop-epoch-changed", {}),
+            ({"pose_changes": [lambda pose: pose["runtimeIdentity"].update(unitKey="other")]},
+             "recovery-player-or-process-changed", {}),
+            ({"pose_changes": [lambda pose: pose["position"].update(x=1)]},
+             "recovery-player-moved-since-handoff", {}),
+            ({}, "recovery-destination-mismatch", {"destination": "wrong-destination"}),
+        )
+        for index, (runner_options, reason, overrides) in enumerate(cases):
+            with self.subTest(case=index):
+                self.calls.clear()
+                result = self.plan(start=None, native=False, recovery_plan=source,
+                    session="owned", output_directory=self.root / f"refused-replan-{index}",
+                    runner=self.current_runner(**{"latched": True, "stop_epochs": (1, 1, 1),
+                        **runner_options}), **overrides)
+                self.assertEqual("blocked", result["status"])
+                self.assertIn(reason, result["blockers"])
+                self.assertNotIn("candidate", result)
+                self.assertFalse(result["inputSent"])
+                self.assertFalse(any("query_destination.py" in command[1] for command, _ in self.calls))
+                self.assertFalse(any(command[2:4] == ["route", "run"] for command, _ in self.calls))
+
+    def test_recovery_plan_tampered_receipt_and_changed_source_are_refused(self):
+        source = self.halted_recovery_source()
+        receipt = self.root / "executed.json"
+        receipt.write_text(receipt.read_text() + " ", encoding="utf-8")
+        blocked = self.plan(start=None, native=False, recovery_plan=source, session="owned",
+            output_directory=self.root / "bad-receipt-replan",
+            runner=self.current_runner(latched=True, stop_epochs=(1, 1, 1)))
+        self.assertIn("recovery-receipt-reference-changed", blocked["blockers"])
+        original = json.loads(source.read_text())
+        receipt.write_text(json.dumps({**json.loads(receipt.read_text()),
+            "inputReleaseFault": False}), encoding="utf-8")
+        original["execution"]["receipt"] = bridge._reference(receipt)
+        source.write_text(json.dumps(original), encoding="utf-8")
+        self.patch.write_text(self.patch.read_text() + " ", encoding="utf-8")
+        blocked = self.plan(start=None, native=False, recovery_plan=source, session="owned",
+            output_directory=self.root / "changed-map-replan",
+            runner=self.current_runner(latched=True, stop_epochs=(1, 1, 1)))
+        self.assertIn("recovery-planning-input-changed: patch", blocked["blockers"])
+
+    def test_recovery_mode_rejects_execution_and_native_adoption_before_any_io(self):
+        with self.assertRaisesRegex(ValueError, "exclusive and plan-only"):
+            self.plan(start=None, recovery_plan=self.root / "source.json", execute=True,
+                session="owned")
+        with self.assertRaisesRegex(ValueError, "plan-only candidate"):
+            self.plan(start=None, recovery_plan=self.root / "source.json", session="owned")
+        self.assertFalse(self.calls)
+        self.assertFalse((self.root / "plan").exists())
+
     def test_current_start_requires_session_and_exclusive_start_selection(self):
         with self.assertRaisesRegex(ValueError, "exact session"):
             self.plan(start=None, from_current=True)
