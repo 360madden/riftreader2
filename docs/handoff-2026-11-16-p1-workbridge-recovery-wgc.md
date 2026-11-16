@@ -28,3 +28,20 @@
 5. Preserve other developers' dirty files: on this pass unrelated modifications/untracked files were present under `scripts/`, `tests/`, `docs/reference/`, `.playwright-cli/` and `output/`. Commit/push only `tools/physical-wgc-probe/Program.cs` and this handoff.
 
 **Important:** The Workbridge quarantine is recovered, and live screenshot acquisition now works. The native/screen-world/occlusion portion of P1 remains candidate-level pending visual and geometry qualification.
+
+## Post-push P1 continuation — rendered-pillar/OBJ negative control (18:56 EST)
+
+The SHA-verified WGC screenshot was **visually reviewed** at 960-pixel preview width. Atank, Quicksilver Medic, the right healer, tent, tree/rock backdrop, decorative plaza floor and two very large foreground stone pillars are clearly visible. This is a manual scene reading, not an automatic instance ID or depth measurement.
+
+Using only the already retained screenshot, its stable native-camera-after report (SHA-256 `88c69d36ebbf1722d83869e288b01446240492f45b051dc5e0dca5ad8e893e0f`), the RiftWorld courtyard OBJ (SHA-256 `9638697914900f3098fbae11d3b6cabe95c663c954898fa6ca589ee759861dec`) and the **candidate-only identity-registration hypothesis** (SHA-256 `53528eba13ed3a1d9bf9e0322c3086372396d2fb55dc5daa46d8f47391c83248`), four pixels were replayed through `physical_pixel_ray.pixel_ray` and `physical_pixel_surface.intersect_prepared`. All four inverse rays forward-reprojected with error under `4e-11` pixels. Their first candidate intersections:
+
+| Visually identified pixel (physical frame) | Hypothetical OBJ first group | Ray distance | Triangle |
+| --- | --- | ---: | ---: |
+| Left foreground pillar `(850,530)` | `world_terrain_7168_2816_nif_mesh_1` | 55.1519 | 32506 |
+| Right foreground pillar `(2200,500)` | same terrain group | 46.2630 | 30874 |
+| Open path `(1100,640)` | same terrain group | 32.8338 | 31737 |
+| Decorative plaza floor `(1280,1200)` | same terrain group | 11.5240 | 31498 |
+
+A radius-2 cardinal footprint replay (9 rays per point) returned **9/9 first candidate hits in that terrain group** for both visually pillar-occupied pixels and 9/9 for the open-path control. No missing hits or within-footprint mesh-group ambiguity was reported; ray depth ranges were left pillar `54.5306–55.7799`, right pillar `46.1959–46.3304`, open path `32.6039–33.0670` native units. Commands retained in Workbridge jobs `rr2-p1-live-frame-mesh-four-pixels-20261116-a` and `rr2-p1-live-frame-three-footprints-20261116-a` (both exit 0). This is a **negative visual/coverage observation**, not proof of a specific missing mesh: registration, clipping, source scope and object-instance identity remain hypotheses.
+
+**Engineering decision:** a locally consistent terrain raycast or even a unanimous 9-pixel group vote must **never** be promoted to visible surface, walkable floor or collision clearance when scene imagery contains an intervening object. Next P0/P1 payoff: qualify source-mapped pillar/shrine geometry and Havok collision channels/instance transforms, or independently establish rendered-depth/occlusion evidence for those exact pixels; retain `occlusionQualified=false`, `obstacleQualified=false`, `movementEligible=false` meanwhile. No new screenshot, game memory acquisition or gameplay input was required for this continuation.
