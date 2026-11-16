@@ -1,5 +1,22 @@
 # Current status
 
+**November 16, 09:43 EST — P1 three-corner screenshot/OBJ visual alignment replay passed.**
+A second independently retained physical WGC frame (Nov 13, PID34468) has
+three manually selected structural corners that are exact courtyard OBJ
+vertices. The same-build native camera is raw-bit/projection-identical on both
+sides of the 2.724684-second image bracket. The points reproject to within
+1.5340/1.5550/2.9212 pixels (all inside ±3-pixel manual selection); their
+pixel viewing rays miss source vertices by only 0.0401–0.0810 native units.
+Deliberately translating source XYZ +10 X causes 323–427-pixel mismatch;
++10 Z causes 82–243 pixels; +1 Y causes 33–51 pixels. This is meaningful
+**localized render-mesh X/Z alignment evidence**, unlike flat ground alone.
+New read-only CLI `scripts/physical_pixel_landmarks.py` and ignored source-hashed
+`artifacts/pixel-surface-p1-20261116/three-landmark-visual-registration.json`
+preserve the witness. **92 combined focused tests passed.** Arbitrary pixel
+visible depth, full source/instance registration, obstacle collision and
+navigation clearance remain unqualified; no input was sent.
+[Landmark CLI and limits](workflows/physical-world-screen.md#offline-screenshot-pixel-to-3d-mesh-candidate-surfaces-p1-november-16).
+
 **November 16, 09:30 EST — P1 independent source/native anchor audit works offline on AMD-DESKTOP.**
 Optional SHA-pinned RiftWorld armor-rack reports are now cross-checked against
 the same retained WGC pixel/mesh hit for process epoch, executable build,

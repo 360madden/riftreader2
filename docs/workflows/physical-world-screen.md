@@ -368,6 +368,51 @@ one rack nor close flat-ground intersections registers every source OBJ,
 qualifies depth/occlusion, or proves contact. **84 focused tests passed**
 (including real historical cross-project evidence).
 
+**Independent pixel/OBJ visual-landmark witness (Nov 16):** RiftWorld's
+Nov 13 WGC capture at **PID34468** contains three manually marked *visible
+structural corners*. All three supplied source XYZ are **exact referenced
+vertices** of the 227,051-triangle courtyard OBJ; they are not terrain
+pixels forward-generated from saved route positions. The original image
+and receipt hashes match; both independently retained native reader reports
+match the same process/build, bracket the image by **2.724684 seconds**, and
+have bit-identical camera pose, raw bits and projection matrices. The source
+vertices reproject within the stated **±3-pixel manual-selection uncertainty**:
+**1.5340 / 1.5550 / 2.9212 pixels**. Inverting the three selected image pixels
+returns viewing rays **0.0401 / 0.0608 / 0.0810 native units** from their
+corresponding source vertices (at positive depths).
+
+Unlike the earlier flat-ground test, deliberately shifting the source XYZ
+by **+10 X** produces **323–427 pixel** mismatch, by **+10 Z** produces
+**82–243 pixels**, and by **+1 Y** produces **33–51 pixels**. This is stronger
+*localized X/Z/Y render-mesh-to-camera alignment evidence* for **three corners
+in one historical frame**, not arbitrary pixel depth or entire-world instance
+registration. The source armor rack from the separate Nov 16 physics bracket
+is **251 horizontal units** from this courtyard center and is **not in the
+courtyard OBJ's exported CDR placement set**; do not mislabel it as one of the
+visible corners. The cross-epoch/one-rack limits above still apply.
+
+To replay on **AMD-DESKTOP**, from `C:\work\riftreader2`, run:
+
+```powershell
+C:\Python314\python.exe scripts\physical_pixel_landmarks.py `
+  --archive-dir C:\work\RiftWorld\artifacts\thedeor-20261113-r4 `
+  --mesh-obj C:\work\RiftWorld\artifacts\thedeor-20261113-r4\riftworld-patch.obj `
+  --mesh-sha256 9638697914900f3098fbae11d3b6cabe95c663c954898fa6ca589ee759861dec `
+  --landmarks-sha256 61d81c7649674b80c5855975f2f235d124fde699552665e13998a45c8a73348e `
+  --observation-sha256 666f650f3e11fff325acaab56413203b1966274d7af7776c1a3755197ca68601 `
+  --native-before-sha256 00a2c4e060dba5f4f767b6e7d2a8432f4fda1cf32599a31b6021c82bc3e0348d `
+  --native-after-sha256 d6effc47840c64610c7dd2b1e754d0ba13b794310c2a5fb67b25032e84c479ff
+```
+
+The JSON returns per-landmark screen/XYZ/ray misses, the exact source hashes,
+model membership and perturbation results, always with
+`allSourceMeshRegistered: false` and `movementEligible: false`. An archived
+report is at
+`artifacts/pixel-surface-p1-20261116/three-landmark-visual-registration.json`.
+The dedicated replay refuses changed WGC receipts, rebinds, native camera drift,
+non-mesh landmarks and edited pixel/source evidence. **92 focused tests passed**
+including this archival witness and both prior P1 paths.
+
 **P1 offline implementation is functional** (exact pixel ray, pinned mesh,
 multiple depth groups, explicit hit selection, repeatable historical tests).
 **P1 live/world qualification remains blocked** pending a same-owner,
