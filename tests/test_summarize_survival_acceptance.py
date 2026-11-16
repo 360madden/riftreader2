@@ -324,6 +324,43 @@ class SurvivalAcceptanceSummaryTests(unittest.TestCase):
             self.assertEqual(gap, data["firstMismatch"]["nativeMinusSnapshotCurrent"])
             self.assertEqual(110, data["firstMismatch"]["sequence"])
 
+    def test_explicit_native_unit_key_mismatch_cannot_create_hp_disagreement(self):
+        # Opposite-entity HP is not a same-entity mismatch or damage receipt.
+        for owner, addon_key, other_key, field in (
+                ("player", "u0000000000000001", "3", "player"),
+                ("selectedTarget", "u0000000000000002", "4", "selectedTarget")):
+            with self.subTest(owner=owner):
+                before = self.sample(10, 100, 100)
+                after = self.sample(11, 100, 100)
+                for sample, hp in ((before, 100), (after, 80)):
+                    sample["native"] = {owner: {
+                        "key": str(int(addon_key[1:], 16)) if hp == 100 else other_key,
+                        "health": {"available": True, "status": "calculated-candidate",
+                                   "current": hp, "maximum": 100}}}
+                result = summary.summarize(
+                    [{"status": "encounter-interrupted"}], [before, after])
+                report = result["telemetry"]["nativeSnapshotHealthComparison"]
+                self.assertEqual(1, report[field]["comparableSamples"])
+                self.assertEqual(0, report[field]["mismatchedSamples"])
+                self.assertEqual(1, report[field]["excludedNativeOwnerMismatches"])
+                drops = ("selfHealthDrops" if field == "player"
+                         else "targetHealthDrops")
+                self.assertEqual([], result["telemetry"][drops])
+
+    def test_explicit_malformed_native_unit_keys_are_unavailable(self):
+        for key in (True, None, -1, 0, "uBAD", "9" * 4500, "٤", 2**65):
+            with self.subTest(key=str(key)[:25]):
+                sample = self.sample(10, 100, 100)
+                sample["native"] = {"player": {
+                    "key": key, "health": {"available": True,
+                                        "status": "calculated-candidate",
+                                        "current": 50, "maximum": 100}}}
+                result = summary.summarize([{"status": "encounter-interrupted"}],
+                                           [sample])
+                data = result["telemetry"]["nativeSnapshotHealthComparison"]
+                self.assertEqual(0, data["player"]["comparableSamples"])
+                self.assertEqual(1, data["player"]["excludedNativeOwnerMismatches"])
+
     def test_health_concordance_excludes_unavailable_and_invalid_pairs(self):
         before = self.sample(10, 100, 100)
         after = self.sample(11, 80, 80)

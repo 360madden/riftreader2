@@ -324,6 +324,9 @@ def _health_concordance(samples):
         first = mismatches[0] if mismatches else None
         output[key] = {
             "comparableSamples": len(pairs),
+            "excludedNativeOwnerMismatches": sum(
+                sample.get("nativeOwnerMismatch", {}).get(key) is True
+                for sample in samples),
             "matchingSamples": len(pairs) - len(mismatches),
             "mismatchedSamples": len(mismatches),
             "nativeHigherCurrentMismatches": sum(
@@ -362,6 +365,30 @@ def _nested(value, *names):
     return value
 
 
+def _native_owner_matches_addon(native_owner, addon_id):
+    """Fail closed on an explicit conflicting unit key; tolerate legacy absent keys.
+
+    Native C# emits a decimal u64 while Lua emits u + sixteen hex digits.
+    A missing native key leaves old candidate-only evidence unchanged; an
+    explicitly present but invalid or different key disqualifies native HP.
+    """
+    if "key" not in native_owner:
+        return True
+    key = native_owner["key"]
+    if type(key) is int:
+        number = key
+    elif (isinstance(key, str) and 1 <= len(key) <= 20
+          and key.isascii() and key.isdecimal()):
+        number = int(key)
+    else:
+        return False
+    if not (0 < number < 2**64 and isinstance(addon_id, str)
+            and len(addon_id) == 17 and addon_id[0] in "uU"
+            and all(char in "0123456789abcdefABCDEF" for char in addon_id[1:])):
+        return False
+    return number == int(addon_id[1:], 16)
+
+
 def _telemetry_sample(row):
     telemetry = row.get("telemetry") if isinstance(row.get("telemetry"), dict) else row
     report = row.get("report") if isinstance(row.get("report"), dict) else row
@@ -374,6 +401,16 @@ def _telemetry_sample(row):
               else row.get("native") if isinstance(row.get("native"), dict) else {})
     native_player = native.get("player") if isinstance(native.get("player"), dict) else {}
     native_target = native.get("selectedTarget") if isinstance(native.get("selectedTarget"), dict) else {}
+    player_id = snapshot.get("playerId") or report.get("playerId") or row.get("playerId")
+    target_id = snapshot.get("targetId") or row.get("targetId")
+    player_owner_mismatch = not _native_owner_matches_addon(native_player, player_id)
+    target_owner_mismatch = not _native_owner_matches_addon(native_target, target_id)
+    # Never compare HP from a different native entity with the addon owner.
+    # Retain snapshot/telemetry fallback and label missing native evidence.
+    if player_owner_mismatch:
+        native_player = {}
+    if target_owner_mismatch:
+        native_target = {}
 
     health = native_player.get("health") if isinstance(native_player.get("health"), dict) else {}
     target_health = native_target.get("health") if isinstance(native_target.get("health"), dict) else {}
@@ -406,8 +443,6 @@ def _telemetry_sample(row):
         outgoing = max(candidates, key=lambda event: _number(event.get("clock")) or -1,
                        default=None)
     policy = row.get("policy") if isinstance(row.get("policy"), dict) else {}
-    player_id = snapshot.get("playerId") or report.get("playerId") or row.get("playerId")
-    target_id = snapshot.get("targetId") or row.get("targetId")
     return {
         "clock": _number(snapshot.get("frameTime") if snapshot else report.get("frameTime")),
         "nativeSampledAtUtc": native.get("sampledAtUtc"),
@@ -419,6 +454,8 @@ def _telemetry_sample(row):
         "playerId": player_id, "targetId": target_id,
         "selfCurrent": self_current, "selfMaximum": self_maximum,
         "selfBasis": self_basis,
+        "nativeOwnerMismatch": {"player": player_owner_mismatch,
+                                "selectedTarget": target_owner_mismatch},
         "nativeSnapshotPlayer": _native_snapshot_health_pair(health, raw_player),
         "nativeSnapshotTarget": _native_snapshot_health_pair(target_health, raw_target),
         "targetCurrent": target_current, "targetMaximum": target_maximum,
