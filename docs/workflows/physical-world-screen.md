@@ -345,6 +345,29 @@ and ray mathematics**, but **cannot independently qualify X/Z source/native
 registration**. Do not interpret small ray-to-ground residuals as proof that
 object collision geometry is horizontally placed correctly.
 
+**Independent noncoplanar anchor audit (Nov 16):** The optional
+`--anchor-join-json`, `--anchor-join-sha256`, `--rack-report-json` and
+`--rack-report-sha256` flags audit a SHA-pinned RiftWorld same-Havok-world
+armor-rack source/native bracket alongside the *same* retained WGC pixel
+and OBJ hit. The two independent report hashes, bracket status/flags, owner
+world, rack pose, source MOPP pins, process epoch, executable/build, module
+mapping and capture window must agree. Missing/partial flags and changed
+reports refuse the command. The JSON adds `anchorAudit` with the exact
+blockers; the selected mesh hit remains a candidate even if the peer anchor
+agrees. There are no new RIFT reads or inputs.
+
+On the real AMD archive, the noncoplanar rack pose/source match has
+translation error **0.00001348** and basis error **8.13e-8** native units,
+with player and rack bracketed inside Havok world `0x2d211001880`.
+But the old screenshot is **PID51524** (Nov 12), versus rack **PID37928**
+(Nov 16). They share the executable SHA, but **not** process/start epoch
+or the bracket interval; the screenshot has no independent Havok-world
+membership. The audit correctly returns `blocked`, even while pixel
+(962,321) still yields the same explicit terrain triangle 13693. Neither
+one rack nor close flat-ground intersections registers every source OBJ,
+qualifies depth/occlusion, or proves contact. **84 focused tests passed**
+(including real historical cross-project evidence).
+
 **P1 offline implementation is functional** (exact pixel ray, pinned mesh,
 multiple depth groups, explicit hit selection, repeatable historical tests).
 **P1 live/world qualification remains blocked** pending a same-owner,

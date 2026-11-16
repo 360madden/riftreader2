@@ -1,5 +1,18 @@
 # Current status
 
+**November 16, 09:30 EST — P1 independent source/native anchor audit works offline on AMD-DESKTOP.**
+Optional SHA-pinned RiftWorld armor-rack reports are now cross-checked against
+the same retained WGC pixel/mesh hit for process epoch, executable build,
+module mapping and source/native rack pose. The genuine native/source rack
+pose agrees to 0.00001348 translation and 8.13e-8 basis units, but the
+historical WGC frame is PID51524 (Nov 12) and the rack is PID37928 (Nov 16).
+The command therefore correctly reports a **blocked cross-epoch join**, not
+registered screenshot geometry; no independent screenshot Havok-world ID,
+visual depth, full mesh frame or clearance proof exists. The old pixel still
+hits its candidate terrain triangle 13693. All 84 focused tests pass,
+including archived cross-project negative acceptance, no game reads/input.
+[Source-anchor audit](workflows/physical-world-screen.md#offline-screenshot-pixel-to-3d-mesh-candidate-surfaces-p1-november-16).
+
 **November 16 — P1 screenshot pixel-to-real-mesh candidate hits work offline on AMD-DESKTOP.**
 New `scripts/physical_pixel_surface.py` intersects the retained, source-hashed
 native WGC camera ray with explicitly SHA-pinned triangular RiftWorld OBJ

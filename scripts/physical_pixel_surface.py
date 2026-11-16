@@ -263,9 +263,22 @@ def intersect_prepared(vertices, faces, ray, max_distance=2000.0, selected_trian
 
 
 def pick_retained(observation, route, x, y, mesh_path, registration_path,
-                  max_distance=2000.0, selected_triangle=None):
+                  max_distance=2000.0, selected_triangle=None,
+                  anchor_join_path=None, anchor_join_sha256=None,
+                  rack_report_path=None, rack_report_sha256=None):
     """Pair admitted saved physical screenshot with explicitly SHA-pinned mesh."""
     ray = physical_pixel_ray.pick_retained(observation, route, x, y)
+    audit_fields = (anchor_join_path, anchor_join_sha256,
+                    rack_report_path, rack_report_sha256)
+    _require(not any(value is not None for value in audit_fields)
+             or all(value is not None for value in audit_fields),
+             "source-anchor-audit-requires-all-four-arguments")
+    anchor_audit = None
+    if all(value is not None for value in audit_fields):
+        from scripts import physical_pixel_anchor
+        anchor_audit = physical_pixel_anchor.audit(
+            ray, anchor_join_path, anchor_join_sha256,
+            rack_report_path, rack_report_sha256)
     mesh_path, raw, digest = _source_bytes(mesh_path, MAX_MESH_BYTES, "mesh")
     _require(mesh_path.suffix.lower() == ".obj", "mesh-must-be-obj")
     registration = load_registration(registration_path, digest)
@@ -274,7 +287,7 @@ def pick_retained(observation, route, x, y, mesh_path, registration_path,
     _require(hashlib.sha256(mesh_path.read_bytes()).hexdigest() == digest
              and hashlib.sha256(Path(registration["path"]).read_bytes()).hexdigest()
                  == registration["sha256"], "mesh-or-registration-changed-during-raycast")
-    return {"schema": SCHEMA, "status": intersections["status"],
+    result = {"schema": SCHEMA, "status": intersections["status"],
             "source": ray["source"], "identity": ray["identity"],
             "capturedAtUtc": ray["capturedAtUtc"], "ray": ray["ray"],
             "mesh": {"path": str(mesh_path), "sha256": digest,
@@ -283,6 +296,9 @@ def pick_retained(observation, route, x, y, mesh_path, registration_path,
                              "sourceToNativeRows": registration["sourceToNativeRows"],
                              "qualification": "candidate-only"},
             "surface": intersections, "inputSent": False, "movementEligible": False}
+    if anchor_audit is not None:
+        result["anchorAudit"] = anchor_audit
+    return result
 
 
 def main(argv=None):
@@ -298,11 +314,21 @@ def main(argv=None):
                         help="maximum ray depth in hypothetical native units (default 2000)")
     parser.add_argument("--select-triangle-index", type=int,
                         help="exact one-based OBJ triangle ID from hits; display-only, no movement")
+    parser.add_argument("--anchor-join-json", type=Path,
+                        help="optional RiftWorld rack bracket; requires all anchor flags")
+    parser.add_argument("--anchor-join-sha256", help="hash pin for rack bracket")
+    parser.add_argument("--rack-report-json", type=Path,
+                        help="RiftWorld rack report pinned by the bracket")
+    parser.add_argument("--rack-report-sha256", help="hash pin for rack report")
     args = parser.parse_args(argv)
     try:
         result = pick_retained(args.observation, args.route, args.pixel_x, args.pixel_y,
                                args.mesh_obj, args.registration_json, args.max_distance,
-                               selected_triangle=args.select_triangle_index)
+                               selected_triangle=args.select_triangle_index,
+                               anchor_join_path=args.anchor_join_json,
+                               anchor_join_sha256=args.anchor_join_sha256,
+                               rack_report_path=args.rack_report_json,
+                               rack_report_sha256=args.rack_report_sha256)
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
         print(json.dumps({"schema": SCHEMA, "status": "blocked", "reason": str(error),
                           "inputSent": False, "movementEligible": False}))
