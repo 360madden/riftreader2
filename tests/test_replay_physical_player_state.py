@@ -75,6 +75,22 @@ class StateReplayTests(unittest.TestCase):
             "candidateValues": replay._native_values("stats", report)}))
         return report
 
+    def test_pinned_intermediate_health_drop_survives_last_sample_recovery(self):
+        self.edit_source("vitals", lambda r: r["observations"][0]["health"].update(current=18000))
+        self.edit_summary(lambda s: s["sources"]["vitals"]["burstSummary"].update(
+            sourceReportSha256=s["sources"]["vitals"]["sourceSha256"]))
+        replayed = replay.verified_state(self.summary)
+        self.assertEqual(replayed["healthSampleCandidates"], [18000, 18208, 18208])
+        self.assertEqual(replayed["candidateValues"]["vitals"]["health"]["current"], 18208)
+
+    def test_unavailable_intermediate_health_does_not_invent_reading(self):
+        self.edit_source("vitals", lambda r: r["observations"][0]["health"].update(
+            status="unavailable", current=None))
+        self.edit_summary(lambda s: s["sources"]["vitals"]["burstSummary"].update(
+            sourceReportSha256=s["sources"]["vitals"]["sourceSha256"]))
+        self.assertEqual(replay.verified_state(self.summary)["healthSampleCandidates"],
+                         [None, 18208, 18208])
+
     def test_optional_stats_source_replays_and_original_sources_remain(self):
         self.attach_stats()
         result = replay.verified_state(self.summary)
@@ -327,6 +343,19 @@ class HistoryUnitTests(unittest.TestCase):
                           result["healthMaxCandidate"]), (3, 90, 100))
         self.assertIn("NOT actual travel", result["qualification"])
         self.assertEqual(result["nativeStatsHistory"]["status"], "not-comparable")
+
+    def test_health_history_includes_transient_burst_dip_not_visible_at_endpoints(self):
+        captures = [self.sample(0), self.sample(1)]
+        captures[0]["healthSampleCandidates"] = [100, 60, 100]
+        captures[1]["healthSampleCandidates"] = [95, 95]
+        with patch.object(replay, "verified_state", side_effect=captures):
+            result = replay.history(["a", "b"])
+        self.assertEqual(result["healthMinCandidate"], 95)
+        self.assertEqual(result["healthObservedCount"], 2)
+        self.assertEqual((result["healthSampleCount"], result["healthSamplesObservedCount"]),
+                         (5, 5))
+        self.assertEqual((result["healthSamplesMinCandidate"],
+                          result["healthSamplesMaxCandidate"]), (60, 100))
 
     def test_history_rolls_up_changed_stats_without_inventing_missing_intervals(self):
         captures = [self.sample(i) for i in range(3)]

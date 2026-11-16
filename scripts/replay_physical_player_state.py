@@ -25,6 +25,14 @@ def require(ok, reason):
         raise ValueError("physical-state-replay-" + reason)
 
 
+def _health_candidate(entry):
+    """Raw HP candidate only when a recorded sample actually calculated one."""
+    current = entry.get("current") if isinstance(entry, dict) else None
+    return (current if isinstance(entry, dict)
+            and entry.get("status") == "calculated-candidate"
+            and type(current) is int and current >= 0 else None)
+
+
 def verified_state(filename):
     filename = Path(filename)
     receipt, receipt_sha = context.load(filename)
@@ -48,7 +56,7 @@ def verified_state(filename):
             "invalid-summary-owner")
     module = (receipt.get("moduleBaseAddress"), receipt.get("moduleSize"))
     require(all(type(v) is int and v > 0 for v in module), "invalid-module")
-    values, hashes = {}, {}
+    values, hashes, health_samples = {}, {}, []
     previous_end, first_time, last_time = None, None, None
     for kind in kinds:
         saved = receipt["sources"][kind]
@@ -92,6 +100,11 @@ def verified_state(filename):
             if first_time is None:
                 first_time = sample["startedAtUtc"]
             previous_end, last_time = end, sample["completedAtUtc"]
+        # A final burst projection can hide a transient HP drop that
+        # recovers before the last sample. Keep every pinned candidate.
+        if kind == "vitals":
+            health_samples = [_health_candidate(_native_values(
+                "vitals", {"observation": sample})["health"]) for sample in rows]
         projected = _native_values(kind, report)
         require(projected == saved.get("candidateValues"),
                 kind + "-candidate-projection-mismatch")
@@ -113,7 +126,7 @@ def verified_state(filename):
         "moduleBaseAddress": module[0], "moduleSize": module[1],
         "selfKeyCandidate": receipt["selfKeyCandidate"], "sources": hashes,
         "firstStartedAtUtc": first_time, "lastCompletedAtUtc": last_time,
-        "candidateValues": values,
+        "candidateValues": values, "healthSampleCandidates": health_samples,
         "qualification": "Pinned sequential native replay; not atomic, passive-fresh, Lua-correlated or restart-qualified.",
     }
 
@@ -200,9 +213,13 @@ def history(summaries):
     require(2 <= len(summaries) <= 24, "history-count-out-of-bounds")
     captures = [verified_state(path) for path in summaries]
     edges = [_compare_states(a, b) for a, b in zip(captures, captures[1:])]
-    health = [capture["candidateValues"]["vitals"]["health"] for capture in captures]
-    health_points = [h["current"] if h.get("status") == "calculated-candidate"
-                     and type(h.get("current")) is int else None for h in health]
+    health_points = [_health_candidate(capture["candidateValues"]["vitals"]["health"])
+                     for capture in captures]
+    # Include intermediate burst samples, not just each final projected HP.
+    # The fallback supports older in-memory verified-state shapes.
+    health_samples = [value for capture, endpoint in zip(captures, health_points)
+                      for value in capture.get("healthSampleCandidates", [endpoint])]
+    available_health_samples = [v for v in health_samples if type(v) is int]
     # An incomplete stat series cannot be reported as unchanged.
     comparable = [(index, row) for index, edge in enumerate(edges, 1)
                   if (row := edge["nativeStatsComparison"])["status"] == "comparable-candidate"]
@@ -247,6 +264,10 @@ def history(summaries):
         "healthObservedCount": sum(h is not None for h in health_points),
         "healthMinCandidate": min((h for h in health_points if h is not None), default=None),
         "healthMaxCandidate": max((h for h in health_points if h is not None), default=None),
+        "healthSampleCount": len(health_samples),
+        "healthSamplesObservedCount": len(available_health_samples),
+        "healthSamplesMinCandidate": min(available_health_samples, default=None),
+        "healthSamplesMaxCandidate": max(available_health_samples, default=None),
         "qualification": ("SHA-pinned ordered same-process native candidates; planar chords "
                           "are sampled straight-line distances, NOT actual travel. No "
                           "independent Lua, freshness, movement-causation or restart proof."),
@@ -283,6 +304,10 @@ def main(argv=None):
                      sumPlanarChordsCandidate=result["sumPlanarChordsCandidate"],
                      netPositionDeltaCandidate=result["netPositionDeltaCandidate"],
                      healthObservedCount=result["healthObservedCount"],
+                      healthSampleCount=result["healthSampleCount"],
+                      healthSamplesObservedCount=result["healthSamplesObservedCount"],
+                      healthSamplesMinCandidate=result["healthSamplesMinCandidate"],
+                      healthSamplesMaxCandidate=result["healthSamplesMaxCandidate"],
                       nativeStatsHistory={k: v for k, v in result["nativeStatsHistory"].items()
                                           if k != "changed"})
     else:
