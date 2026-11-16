@@ -266,8 +266,62 @@ passed within **0.020032 native units** of its independently recorded player XYZ
 57 focused/adjacent tests passed under `C:\Python314\python.exe` without
 NumPy. This is view geometry only: no depth, surface hit, floor, occlusion,
 world-instance match, collision clearance, movement command or live acceptance.
-Next: intersect qualified registered terrain/object geometry and preserve
-multiple-hit/visibility uncertainty before using picks as route destinations.
+P1 now adds **candidate-only** mesh hit depths; actual world registration,
+visibility and traversal remain separate qualification gates.
+
+### Offline screenshot-pixel to 3D mesh candidate surfaces (P1, November 16)
+
+`scripts/physical_pixel_surface.py` extends the saved physical screenshot
+ray through a bounded triangular Wavefront OBJ (16 MiB, at most 250,000
+vertices and 400,000 triangles). A SHA256-pinned registration JSON declares
+an *explicit source-to-native affine transform hypothesis*, not independently
+verified world registration. Only `"qualification": "candidate-only"` is
+accepted. It requires no NumPy, RIFT process access or game input.
+
+Command on **AMD-DESKTOP**, from `C:\work\riftreader2`, using retained Nov 12
+WGC/native evidence and a historical RiftWorld render-mesh export:
+
+```powershell
+C:\Python314\python.exe scripts\physical_pixel_surface.py --observation artifacts\waypoint-view-a07ef160cdd34d5f9465b13e372c44fb\observation.json --route artifacts\waypoint-view-a07ef160cdd34d5f9465b13e372c44fb\route.json --pixel-x 962 --pixel-y 321 --mesh-obj C:\work\RiftWorld\artifacts\geometry-workflow-courtyard-20261114-r1\geometry.obj --registration-json artifacts\pixel-surface-p1-20261116\courtyard-identity-hypothesis.json --max-distance 200
+```
+
+Registration fields: `schema: rr2.mesh-frame-hypothesis/1`,
+`meshSha256` (the exact OBJ SHA256), `sourceFrame` (descriptive string),
+`sourceToNativeRows` (three finite four-number affine rows) and
+`qualification: candidate-only`. The reproducible historical registration
+with a *hypothetical identity transform* is retained beside the replay report.
+
+The JSON returns sorted positive intersections with source mesh group,
+triangle index, distance, XYZ, normal, front/back orientation and barycentric
+weights. Same-depth edge/overlap triangles share a depth group; deeper floors
+and water remain separate. At most 64 hits are printed, with exact hit counts
+and a truncation flag. Invalid frame/camera/OBJ/hash conditions refuse.
+The parent ray's `worldSurfaceXYZ` stays null and movement remains disabled.
+
+**Two genuine historical offline replays:**
+
+- Pixel **(962,321)** intersected terrain triangle 13,693 at
+  **(7410.623239, 863.5262, 2942.361895)**, 26.1185 units down the ray:
+  **0.03460 native units** from the independently saved guard target XYZ.
+  The same ray also hit a deeper water mesh at 120.4807 units.
+- Pixel **(641,446)** intersected terrain triangle 13,649 at
+  **(7421.692838, 863.5262, 2941.003752)**, 19.4891 units down the ray:
+  **0.07944 native units** from saved player XYZ. A deeper water mesh hit
+  was found at 89.9004 units.
+
+The real RiftWorld courtyard OBJ (SHA256 `96386979...59e`) contained
+**198,644 vertices and 227,051 triangles**. Results, pinned source hashes,
+job IDs and registration are recorded in
+`artifacts/pixel-surface-p1-20261116/replay.json`.
+**75 focused/adjacent tests passed** under `C:\Python314\python.exe`.
+
+These residuals support a **historical local alignment candidate** only.
+Actual native/source world-instance registration, current Watch locality,
+scene depth/occlusion, collision response, selected walkable floor and capsule
+clearance remain unproven. `movementEligible` always stays false. Next:
+qualify the source/native frame and loaded world instance, then compare
+candidate geometry with current collision and visual-depth evidence before
+any navigation target admission.
 
 **Preferred live presenter: Qt/PySide6-Essentials.** The waypoint window chooses
 the installed `.local/overlay-venv` and its Qt presenter automatically. Local setup

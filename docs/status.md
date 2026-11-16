@@ -1,5 +1,20 @@
 # Current status
 
+**November 16 — P1 screenshot pixel-to-real-mesh candidate hits work offline on AMD-DESKTOP.**
+New `scripts/physical_pixel_surface.py` intersects the retained, source-hashed
+native WGC camera ray with explicitly SHA-pinned triangular RiftWorld OBJ
+geometry under a declared source/native transform *hypothesis*. Two genuine
+Nov 12 screenshots replayed against 227,051 courtyard triangles: guard-foot
+pixel (962,321) hit a terrain mesh 0.03460 native units from saved target XYZ;
+player pixel (641,446) hit terrain 0.07944 units from saved player XYZ. Both
+also intersected deeper water meshes. The source-frame identity hypothesis,
+mesh hash, exact hits and replay jobs are retained in
+`artifacts/pixel-surface-p1-20261116/replay.json` (ignored local evidence).
+75 focused/adjacent tests passed. This is a **historical alignment candidate**:
+current source/native world registration, visibility, collision, correct
+floor and traversal are still unqualified; movement/input remained disabled.
+[P1 workflow and limits](workflows/physical-world-screen.md#offline-screenshot-pixel-to-3d-mesh-candidate-surfaces-p1-november-16).
+
 **November 16 — physical screenshot-pixel to 3D viewing ray works offline on AMD-DESKTOP.**
 New `physical_pixel_ray.py` reuses matched WGC/native brackets, camera float32
 projection and verified client offsets to return a source-hashed, no-depth
