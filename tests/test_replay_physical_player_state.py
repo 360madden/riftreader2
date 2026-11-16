@@ -326,6 +326,33 @@ class HistoryUnitTests(unittest.TestCase):
         self.assertEqual((result["healthObservedCount"], result["healthMinCandidate"],
                           result["healthMaxCandidate"]), (3, 90, 100))
         self.assertIn("NOT actual travel", result["qualification"])
+        self.assertEqual(result["nativeStatsHistory"]["status"], "not-comparable")
+
+    def test_history_rolls_up_changed_stats_without_inventing_missing_intervals(self):
+        captures = [self.sample(i) for i in range(3)]
+        for index, capture in enumerate(captures):
+            capture["candidateValues"]["stats"] = {
+                "status": "candidate-only", "selectorCount": 1,
+                "stats": [{"name": "armor", "selector": 37, "mappedIndex": 20,
+                           "ordinary": {"status": "raw-candidate", "rawSigned64": 100 + index * 3},
+                           "unbuffed": {"status": "raw-candidate", "rawSigned64": 100}}],
+            }
+        with patch.object(replay, "verified_state", side_effect=captures):
+            complete = replay.history(["a", "b", "c"])["nativeStatsHistory"]
+        self.assertEqual(complete["status"], "comparable-candidate")
+        self.assertEqual((complete["comparableSegments"], complete["rawValuesCompared"],
+                          complete["rawValuesChanged"]), (2, 4, 2))
+        self.assertEqual([row["segmentIndex"] for row in complete["changed"]], [1, 2])
+        self.assertEqual([row["rawNumericDifference"] for row in complete["changed"]], [3, 3])
+
+        incomplete = json.loads(json.dumps(captures))
+        incomplete[2]["candidateValues"].pop("stats")
+        with patch.object(replay, "verified_state", side_effect=incomplete):
+            partial = replay.history(["a", "b", "c"])["nativeStatsHistory"]
+        self.assertEqual(partial["status"], "partial-candidate")
+        self.assertEqual((partial["comparableSegments"], partial["rawValuesCompared"],
+                          partial["rawValuesChanged"]), (1, 2, 1))
+        self.assertEqual([row["segmentIndex"] for row in partial["changed"]], [1])
 
     def test_history_rejects_overlap(self):
         from unittest.mock import patch

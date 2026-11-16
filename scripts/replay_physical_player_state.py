@@ -203,6 +203,22 @@ def history(summaries):
     health = [capture["candidateValues"]["vitals"]["health"] for capture in captures]
     health_points = [h["current"] if h.get("status") == "calculated-candidate"
                      and type(h.get("current")) is int else None for h in health]
+    # An incomplete stat series cannot be reported as unchanged.
+    comparable = [(index, row) for index, edge in enumerate(edges, 1)
+                  if (row := edge["nativeStatsComparison"])["status"] == "comparable-candidate"]
+    complete_stats = (len(comparable) == len(edges) and
+                      all(row["rawValuesUnavailable"] == 0 for _, row in comparable))
+    stats_history = {
+        "status": ("comparable-candidate" if complete_stats else
+                   "partial-candidate" if comparable else "not-comparable"),
+        "segmentCount": len(edges),
+        "comparableSegments": len(comparable),
+        "rawValuesCompared": sum(row["rawValuesCompared"] for _, row in comparable),
+        "rawValuesUnavailable": sum(row["rawValuesUnavailable"] for _, row in comparable),
+        "rawValuesChanged": sum(row["rawValuesChanged"] for _, row in comparable),
+        "changed": [{"segmentIndex": index, **change}
+                    for index, row in comparable for change in row["changed"]],
+    }
     delta = {axis: captures[-1]["candidateValues"]["position"][axis] -
              captures[0]["candidateValues"]["position"][axis]
              for axis in ("x", "y", "z")}
@@ -217,6 +233,7 @@ def history(summaries):
         "summarySha256s": [capture["summarySha256"] for capture in captures],
         "firstStartedAtUtc": captures[0]["firstStartedAtUtc"],
         "lastCompletedAtUtc": captures[-1]["lastCompletedAtUtc"],
+        "nativeStatsHistory": stats_history,
         "segments": [{
             "beforeSummarySha256": edge["beforeSummarySha256"],
             "afterSummarySha256": edge["afterSummarySha256"],
@@ -265,7 +282,9 @@ def main(argv=None):
         brief.update(captureCount=result["captureCount"],
                      sumPlanarChordsCandidate=result["sumPlanarChordsCandidate"],
                      netPositionDeltaCandidate=result["netPositionDeltaCandidate"],
-                     healthObservedCount=result["healthObservedCount"])
+                     healthObservedCount=result["healthObservedCount"],
+                      nativeStatsHistory={k: v for k, v in result["nativeStatsHistory"].items()
+                                          if k != "changed"})
     else:
         brief.update(positionDeltaCandidate=result["positionDeltaCandidate"],
                      planarDistanceCandidate=result["planarDistanceCandidate"],
