@@ -201,10 +201,11 @@ class DestinationPlanTests(unittest.TestCase):
             if command[2] == "status":
                 epoch = stop_epochs[min(status_count, len(stop_epochs) - 1)]
                 status_count += 1
+                latch = latched[min(status_count - 1, len(latched) - 1)] if isinstance(latched, (tuple, list)) else latched
                 data = {"target": {"machineName": target_host, "processId": 123,
                                    "processStartUtcTicks": 456, "executableSha256": "a" * 64},
                         "app": {"busy": False, "closing": False},
-                        "controls": {"stopEpoch": epoch, "stopLatched": latched,
+                        "controls": {"stopEpoch": epoch, "stopLatched": latch,
                                      "ownedActionActive": False, "inputReleaseFault": False}}
                 response = {"ok": True, "sessionId": "owned", "data": data}
             elif command[2:4] == ["pose", "refresh"]:
@@ -329,6 +330,46 @@ class DestinationPlanTests(unittest.TestCase):
         self.assertTrue(result["inputSent"])
         self.assertIn("receipt", result["execution"])
         self.assertEqual(self.entry["id"], result["destinationId"])
+
+    def test_halt_produces_fresh_replan_start_without_clearing_stop_or_retrying(self):
+        result = self.plan(execute=True, session="owned",
+            runner=self.executing_runner(
+                failure={"status": "halted", "reason": "no-progress"},
+                post_position={"x": 1.25, "y": 1, "z": 2},
+                stop_epochs=(0, 0, 1, 1), latched=(False, False, True, True)))
+        self.assertEqual("halted", result["status"])
+        self.assertTrue(result["inputSent"])
+        self.assertFalse(result["currentRouteChanged"])
+        self.assertEqual("fresh-native-start", result["recovery"]["status"])
+        self.assertEqual([1.25, 1, 2], result["recovery"]["startNativeXYZ"])
+        self.assertTrue(result["recovery"]["stopLatched"])
+        self.assertTrue(result["recovery"]["stopEpochChanged"])
+        self.assertFalse(result["recovery"]["automaticRetry"])
+        self.assertTrue(result["recovery"]["requiresExplicitNewRun"])
+        self.assertEqual(self.player, result["recoveryObservation"]["runtimeIdentity"]["unitKey"])
+        self.assertEqual(1, sum(command[2:4] == ["route", "run"] for command, _ in self.calls))
+        self.assertEqual(1, sum(command[2:4] == ["pose", "refresh"] for command, _ in self.calls))
+        self.assertEqual(result, json.loads((self.root / "plan" / "plan.json").read_text()))
+
+    def test_halt_does_not_offer_recovery_start_without_release_or_stable_owner(self):
+        cases = (
+            ({"release": False}, "route-input-release-not-verified"),
+            ({"post_owner": "other-player"}, "recovery-player-or-route-owner-changed"),
+            ({"post_pose_fault": True}, "current-native-pose-unavailable"),
+            ({"stop_epochs": (0, 0, 1, 2)}, "session-or-stop-epoch-changed"),
+            ({"receipt_change": lambda receipt: receipt["result"][0].update(
+                desktopInputsDown=["W"])}, "route-leg-input-release-not-verified"),
+        )
+        for index, (options, expected) in enumerate(cases):
+            with self.subTest(case=index):
+                result = self.plan(output_directory=self.root / f"recovery-blocked-{index}",
+                    execute=True, session="owned", runner=self.executing_runner(
+                        failure={"status": "halted", "reason": "no-progress"}, **options))
+                self.assertEqual("halted", result["status"])
+                self.assertEqual("unavailable", result["recovery"]["status"])
+                self.assertIn(expected, result["recovery"]["reason"])
+                self.assertFalse(result["recovery"]["automaticRetry"])
+                self.assertNotIn("recoveryObservation", result)
 
     def test_wrong_route_or_runtime_receipt_cannot_establish_arrival(self):
         cases = [lambda receipt: receipt.update(externalRouteSha256="f" * 64),

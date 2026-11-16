@@ -476,6 +476,58 @@ def _verify_post_execution_arrival(plan, route_path, session, admission, runner)
         plan["blockers"].append("post-execution-native-position-outside-approach")
 
 
+def _capture_recovery_start(plan, route_path, session, admission, runner):
+    """Capture a fresh, input-free replan start after an owned route halt/STOP.
+
+    This is a planning handoff, never an automatic retry or STOP/lease reset.
+    A failed or unverified release does not qualify a recovery position.
+    """
+    if plan["status"] not in {"halted", "stopped"}:
+        return
+    recovery = {"status": "unavailable", "terminalStatus": plan["status"],
+                "automaticRetry": False, "requiresExplicitNewRun": True,
+                "destinationId": plan["destinationId"],
+                "qualification": "Fresh native position only; new route and corridor evidence "
+                                 "must be independently qualified before any new input."}
+    plan["recovery"] = recovery
+    try:
+        reference = plan["execution"].get("receipt")
+        if not isinstance(reference, dict) or not isinstance(reference.get("path"), str):
+            raise ValueError("trusted-route-receipt-unavailable")
+        receipt, digest = _read(reference["path"])
+        if str(reference.get("sha256", "")).casefold() != digest.casefold():
+            raise ValueError("route-receipt-changed-after-dispatch")
+        if receipt.get("inputReleaseFault") is not False:
+            raise ValueError("route-input-release-not-verified")
+        for key in ("result", "completedLegs"):
+            legs = receipt.get(key)
+            if legs is not None and (not isinstance(legs, list) or any(
+                    not isinstance(leg, dict) or leg.get("releaseSucceeded") is not True
+                    or leg.get("desktopInputsDown") != [] for leg in legs)):
+                raise ValueError("route-leg-input-release-not-verified")
+        current = _session_state(session, runner, allow_latched=True)
+        if current["target"] != admission["target"]:
+            raise ValueError("recovery-target-changed")
+        observed = _current_pose(session, current, runner, allow_latched=True)
+        route, _ = _read(route_path)
+        owner = route["candidateAdoption"]["owner"]
+        if not isinstance(owner, dict) or not _same_runtime(
+                observed["runtimeIdentity"], {
+                    "machine": owner.get("machine"),
+                    "processId": admission["target"].get("processId"),
+                    "processStartUtcTicks": admission["target"].get("processStartUtcTicks"),
+                    "gameBuildSha256": owner.get("gameBuildSha256"),
+                    "unitKey": owner.get("unitKey")}):
+            raise ValueError("recovery-player-or-route-owner-changed")
+        plan["recoveryObservation"] = observed
+        recovery.update(status="fresh-native-start", startNativeXYZ=observed["nativeXYZ"],
+                        stopLatched=current["stopLatched"], stopEpoch=current["stopEpoch"],
+                        stopEpochChanged=current["stopEpoch"] != admission["stopEpoch"],
+                        candidateOnly=True)
+    except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as exc:
+        recovery["reason"] = str(exc)
+
+
 def plan_destination(*, catalog, destination, output_directory, patch=None, build=None,
                      prepare_request=None, source_index=None, allow_partial_navigation=False,
                      prepare_profile=None, prepare_timeout_seconds=600,
@@ -768,6 +820,7 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
             plan["execution"] = _dispatch(route_path, session, current["stopEpoch"], runner)
             _execution_result(plan, route_path)
             _verify_post_execution_arrival(plan, route_path, session, current, runner)
+            _capture_recovery_start(plan, route_path, session, current, runner)
         return publish()
     except KeyboardInterrupt:
         plan["status"] = "execution-unverified" if plan["stages"]["execution"] == "running" else "cancelled"

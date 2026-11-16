@@ -61,6 +61,16 @@ arrival verification fails. The physical end-to-end path has not yet been
 exercised. General region transitions, novel-path clearance, automatic stuck
 replanning and service interaction remain separate incomplete work.
 
+After a trusted `halted` or `stopped` route result, the destination planner also
+records a **read-only recovery start**. It first verifies the route receipt's
+release state, then checks that the Waypoints session is idle and its physical
+process/player still owns the route. A fresh native pose is stored as
+`recoveryObservation`; `recovery.startNativeXYZ` and the current STOP epoch/latch
+are recorded in `plan.json`. If release, freshness, identity or session checks
+fail, the recovery start remains unavailable. This is a candidate for a new
+planning request, **not** automatic replanning, route qualification, STOP
+clearing or permission to resume input. The original failure status is retained.
+
 To plan from the current player position, replace `--from X,Y,Z` with
 `--from-current --session EXACT_SESSION_ID`. This performs two fresh read-only
 pose acquisitions through that session's existing reader, before and after the
