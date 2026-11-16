@@ -1,8 +1,12 @@
 """Focused offline tests for source-replayed native statistics / RR2A1 linkage."""
 from __future__ import annotations
 
+import base64
+from contextlib import redirect_stdout
 from copy import deepcopy
 import hashlib
+from io import StringIO
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -251,6 +255,117 @@ class LinkTests(unittest.TestCase):
                      patch.object(join.state, "compare", return_value=altered):
                     with self.assertRaisesRegex(ValueError, reason):
                         join.correlate_with_previous("old", "new", "lua")
+
+    def reference_rows(self):
+        xyz = self.native["candidateValues"]["position"]
+        def frame(number, completed):
+            return {
+                "startedAtUtc": "2026-11-15T21:04:" + completed + ".0000000Z",
+                "completedAtUtc": "2026-11-15T21:04:" + completed + ".0500000Z",
+                "snapshotSha256": str(number) * 64,
+                "selected": {
+                    "wireSha256": str(number + 2) * 64,
+                    "sequence": number, "epoch": 44, "frameTime": float(number),
+                    "fields": {"coord" + axis.upper(): {"status": "ok", "value": xyz[axis]}
+                               for axis in "xyz"},
+                },
+            }
+        return [frame(1, "30"), frame(2, "35")]
+
+    def run_reference(self, rows, *, linked=None, native=None):
+        linked = linked or self.run_join()
+        native = native or deepcopy(self.native)
+        with patch.object(join.state, "verified_state", return_value=native), \
+             patch.object(join.survival_state, "reference_pair",
+                          return_value=rows) as replay:
+            result = join.correlate_with_rr2r1(
+                linked, "state.json", "before.json", "after.json", "a" * 32)
+            replay.assert_called_once_with(
+                "before.json", "after.json", "a" * 32, native)
+            return result
+
+    def test_optional_rr2r1_nonce_checked_coordinate_pair_is_candidate_only(self):
+        result = self.run_reference(self.reference_rows())
+        reference = result["rr2r1Reference"]
+        self.assertEqual(result["status"], "candidate-only")
+        self.assertEqual(reference["status"], "nonce-checked-stationary-candidates")
+        self.assertEqual(reference["sessionId"], "a" * 32)
+        self.assertEqual(reference["epoch"], 44)
+        self.assertEqual([f["sequence"] for f in reference["frames"]], [1, 2])
+        self.assertAlmostEqual(reference["nativeToLastReferenceGapSeconds"], 77.05)
+        self.assertEqual(reference["frames"][0]["nativePositionScreen"]
+                         ["maximumAxisDifference"], 0)
+        self.assertIn("remain unqualified", result["qualification"])
+
+    def test_rr2r1_rejects_mismatched_identity_timing_and_coordinates(self):
+        for name, change, reason in (
+            ("position", lambda r, n, l: r[1]["selected"]["fields"]["coordZ"]
+             .update(value=3000.0), "rr2r1-position-mismatch"),
+            ("missing", lambda r, n, l: r[0]["selected"]["fields"]["coordX"]
+             .update(status="unavailable"), "rr2r1-coordinates-unavailable"),
+            ("nan", lambda r, n, l: r[1]["selected"]["fields"]["coordX"]
+             .update(value=float("nan")), "rr2r1-coordinates-unavailable"),
+            ("stale", lambda r, n, l: r[1].update(
+                completedAtUtc="2026-11-15T21:06:00.0000000Z"), "rr2r1-evidence-window"),
+            ("reversed", lambda r, n, l: n.update(
+                lastCompletedAtUtc="2026-11-15T21:04:31.0000000Z"), "rr2r1-evidence-window"),
+            ("different-build", lambda r, n, l: n["target"].update(
+                executableSha256="B" * 64), "rr2r1-native-state-mismatch"),
+            ("different-summary", lambda r, n, l: l.update(
+                nativeSummarySha256="F" * 64), "rr2r1-native-state-mismatch"),
+        ):
+            with self.subTest(name=name):
+                rows, native, linked = self.reference_rows(), deepcopy(self.native), self.run_join()
+                change(rows, native, linked)
+                with self.assertRaisesRegex(ValueError, reason):
+                    self.run_reference(rows, native=native, linked=linked)
+
+
+    def test_rr2r1_real_snapshot_decoder_reuses_nonce_and_source_checks(self):
+        fixture = json.loads((join.ROOT / "contracts/addon/fixtures/reference-v1.json").read_text())
+        nonce = fixture["nonce"]
+        paths = []
+        for seq, second in ((1, 30), (2, 35)):
+            frame = deepcopy(fixture["before"])
+            frame["player"] = {"status": "ok", "value": PLAYER_ID}
+            frame["sequence"] = seq
+            frame["epoch"] = 4
+            frame["clock"] = {"status": "ok", "value": 5.0 + seq}
+            for axis, value in self.native["candidateValues"]["position"].items():
+                frame["fields"]["coord" + axis.upper()] = {"status": "ok", "value": value}
+            wire = b"RR2R1|" + json.dumps(frame).encode("ascii") + b"|ENDRR2R1"
+            saved = {
+                "schemaVersion": 1, "evidenceKind": "native-memory-snapshot/1",
+                "status": "complete", "identity": self.owner,
+                "startedAtUtc": f"2026-11-15T21:04:{second:02}.0000000Z",
+                "completedAtUtc": f"2026-11-15T21:04:{second:02}.0500000Z",
+                "chunks": [{"address": "0x1000", "status": "success",
+                            "bytesRead": len(wire), "requestedByteLength": len(wire),
+                            "bytesBase64": base64.b64encode(wire).decode("ascii"),
+                            "bytesSha256": hashlib.sha256(wire).hexdigest().upper()}],
+            }
+            path = self.root / f"verified-{seq}.json"
+            path.write_text(json.dumps(saved), encoding="utf-8")
+            paths.append(path)
+        with patch.object(join.state, "verified_state", return_value=deepcopy(self.native)):
+            result = join.correlate_with_rr2r1(self.run_join(), "state.json",
+                                               paths[0], paths[1], nonce)
+            self.assertEqual(result["rr2r1Reference"]["status"],
+                             "nonce-checked-stationary-candidates")
+            self.assertEqual(len(result["rr2r1Reference"]["frames"]), 2)
+            with self.assertRaises(ValueError):
+                join.correlate_with_rr2r1(self.run_join(), "state.json",
+                                          paths[0], paths[1], "f" * 32)
+
+    def test_reference_arguments_must_be_complete(self):
+        output = StringIO()
+        with redirect_stdout(output):
+            code = join.main([
+                "--state-summary", "native.json", "--rr2a1-summary", "lua.json",
+                "--session-id", "a" * 32])
+        self.assertEqual(code, 2)
+        self.assertIn("rr2r1-reference-requires-both-snapshots-and-nonce",
+                      json.loads(output.getvalue())["reason"])
 
 
 if __name__ == "__main__":

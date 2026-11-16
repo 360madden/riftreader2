@@ -20,6 +20,7 @@ from scripts import compare_physical_player_context_pair as sources
 from scripts import compare_physical_rr2a1_passes as lua
 from scripts import probe_physical_rr2r1 as probe
 from scripts import replay_physical_player_state as state
+from scripts import survival_state
 from scripts.physical_rift import _utc_tick_order_key
 
 MAX_EVIDENCE_GAP_TICKS = 10 * 60 * 10_000_000
@@ -200,6 +201,68 @@ def correlate_with_previous(previous_state, current_state, rr2a1_summary):
                                 "independently validate any stat change.")
     return linked
 
+def correlate_with_rr2r1(linked, state_summary, before, after, session_id):
+    """Add a separately nonce-checked RR2R1 stationary-position screen.
+
+    Reuse the existing byte-decoding, source-hash, epoch and advancement checks.
+    This does not independently establish how the supplied nonce was bound.
+    """
+    native = state.verified_state(state_summary)
+    require(native["summarySha256"] == linked["nativeSummarySha256"]
+            and native["target"]["processId"] == linked["processId"]
+            and native["target"]["processStartUtcTicks"] == linked["processStartUtcTicks"]
+            and native["target"]["executableSha256"] == linked["executableSha256"],
+            "rr2r1-native-state-mismatch")
+    rows = survival_state.reference_pair(before, after, session_id, native)
+    native_end = survival_state.utc(native["lastCompletedAtUtc"])
+    first_start = survival_state.utc(rows[0]["startedAtUtc"])
+    last_end = survival_state.utc(rows[-1]["completedAtUtc"])
+    require(native_end < first_start and
+            0 < last_end - native_end <= 120 * 10_000_000,
+            "rr2r1-evidence-window")
+    screens = []
+    for row in rows:
+        fields = row["selected"].get("fields")
+        require(isinstance(fields, dict), "rr2r1-coordinates-unavailable")
+        xyz = {}
+        for axis in "xyz":
+            field = fields.get("coord" + axis.upper())
+            require(isinstance(field, dict) and field.get("status") == "ok",
+                    "rr2r1-coordinates-unavailable")
+            value = field.get("value")
+            require(type(value) in (int, float) and math.isfinite(value),
+                    "rr2r1-coordinates-unavailable")
+            xyz[axis] = value
+        try:
+            screen = screen_original_state_xyz(
+                native["candidateValues"].get("position"), xyz)
+        except ValueError as exc:
+            raise ValueError("native-stats-rr2a1-rr2r1-position-mismatch") from exc
+        screens.append({
+            "snapshotSha256": row["snapshotSha256"],
+            "wireSha256": row["selected"]["wireSha256"],
+            "sequence": row["selected"]["sequence"],
+            "frameTime": row["selected"]["frameTime"],
+            "completedAtUtc": row["completedAtUtc"],
+            "nativePositionScreen": screen,
+        })
+    linked["rr2r1Reference"] = {
+        "status": "nonce-checked-stationary-candidates",
+        "sessionId": session_id,
+        "epoch": rows[-1]["selected"]["epoch"],
+        "frames": screens,
+        "nativeToLastReferenceGapSeconds": (last_end - native_end) / 10_000_000,
+        "qualification": "Two independently decoded, advancing RR2R1 frames match the "
+                         "earlier native XYZ and player-key candidates under the "
+                         "caller-supplied already-bound nonce. This does not prove "
+                         "nonce issuance, continuous immobility, stat semantics or "
+                         "current live control readiness.",
+    }
+    linked["qualification"] += (" An optional source-replayed RR2R1 pair has matching "
+                                "stationary-position candidates; all native statistics "
+                                "remain unqualified.")
+    return linked
+
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
@@ -207,16 +270,27 @@ def main(argv=None):
     parser.add_argument("--rr2a1-summary", type=Path, required=True)
     parser.add_argument("--previous-state-summary", type=Path,
                         help="Optional earlier same-process four-source native capture")
+    parser.add_argument("--reference-before", type=Path, help="Earlier retained RR2R1 snapshot")
+    parser.add_argument("--reference-after", type=Path, help="Later retained RR2R1 snapshot")
+    parser.add_argument("--session-id", help="Already-bound exact RR2R1 reader nonce")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
     try:
         if args.output:
             require(not args.output.exists() and not args.output.is_symlink(),
                     "output-exists")
+        require(not any(value is not None for value in
+                        (args.reference_before, args.reference_after, args.session_id)) or
+                all((args.reference_before, args.reference_after, args.session_id)),
+                "rr2r1-reference-requires-both-snapshots-and-nonce")
         result = (correlate_with_previous(args.previous_state_summary,
                                           args.state_summary, args.rr2a1_summary)
                   if args.previous_state_summary else
                   correlate(args.state_summary, args.rr2a1_summary))
+        if args.reference_before is not None:
+            result = correlate_with_rr2r1(result, args.state_summary,
+                                          args.reference_before, args.reference_after,
+                                          args.session_id)
         if args.output:
             with args.output.open("x", encoding="utf-8", newline="\n") as output:
                 json.dump(result, output, indent=2, allow_nan=False)
@@ -233,6 +307,7 @@ def main(argv=None):
         "nativePositionDeltaCandidate": result.get("nativePositionDeltaCandidate"),
         "nativePlanarDistanceCandidate": result.get("nativePlanarDistanceCandidate"),
         "nativeStateToLuaPositionScreen": result["nativeStateToLuaPositionScreen"],
+        "rr2r1ReferenceStatus": result.get("rr2r1Reference", {}).get("status"),
         "candidateObservationGapSeconds": result["candidateObservationGapSeconds"],
         "output": str(args.output) if args.output else None,
     }))
