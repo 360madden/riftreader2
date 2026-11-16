@@ -99,6 +99,11 @@ class ProbeTests(unittest.TestCase):
             self.assertEqual([r["startAddress"] for r in result["runs"]],
                              ["0x10000", "0x20000"])
             self.assertIn("no decoded Lua frame", result["qualification"])
+            self.assertEqual(result["scanWork"], {
+                "scansCompleted": 2, "examinedBytes": 2 * 1048576,
+                "prefixesObserved": 1, "copiedSnapshots": 1,
+                "candidateStatusCounts": {"complete": 1}, "nextResumeCursor": None,
+            })
             self.assertEqual(json.loads(receipt.read_text()), result)
             self.assertEqual(result["readerSha256"],
                              hashlib.sha256(b"synthetic-reader").hexdigest().upper())
@@ -310,6 +315,11 @@ class ProbeTests(unittest.TestCase):
             self.assertEqual(result["initialCursor"], "0x30000")
             self.assertEqual(result["runs"][0]["startAddress"], "0x30000")
             self.assertEqual(result["resumeSourceSha256"], probe.digest(prior))
+            self.assertEqual(result["scanWork"], {
+                "scansCompleted": 1, "examinedBytes": 1048576,
+                "prefixesObserved": 0, "copiedSnapshots": 0,
+                "candidateStatusCounts": {}, "nextResumeCursor": "0x40000",
+            })
             self.assertEqual(json.loads(resumed.read_text()), result)
 
     def test_resume_rejects_tampered_receipt_changed_epoch_or_reader(self):

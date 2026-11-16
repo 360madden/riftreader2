@@ -422,6 +422,24 @@ def collect(pid, output_dir, *, scan_bytes=SCAN_BYTES, scan_ms=SCAN_MS,
                 "advancingComparisons": assessment["diagnostics"]["advancing"],
                 "withinPairingWindow": assessment["pairingWindow"]["withinWindow"],
             }
+    statuses = Counter()
+    for row in results:
+        statuses.update(row["candidateStatusCounts"])
+    measured_bytes = [row["examinedBytes"] for row in results]
+    next_resume = (checked_cursor(results[-1]["nextAddress"], results[-1]["startAddress"])
+                   if not any(row["publishedSnapshots"] for row in results)
+                   and results[-1]["nextAddress"] is not None else None)
+    # This is cumulative work, not unique memory coverage: copied candidates
+    # deliberately cause rescanning of the same address scope.
+    scan_work = {
+        "scansCompleted": len(results),
+        "examinedBytes": (sum(measured_bytes) if all(
+            type(value) is int and value >= 0 for value in measured_bytes) else None),
+        "prefixesObserved": sum(row["prefixCount"] for row in results),
+        "copiedSnapshots": sum(row["sourceVerifiedSnapshots"] for row in results),
+        "candidateStatusCounts": dict(sorted(statuses.items())),
+        "nextResumeCursor": next_resume,
+    }
     summary = {
         "schemaVersion": 1,
         "evidenceKind": "amd-physical-rr2r1-prefix-scan/1",
@@ -438,6 +456,7 @@ def collect(pid, output_dir, *, scan_bytes=SCAN_BYTES, scan_ms=SCAN_MS,
         "initialCursor": initial_cursor,
         "resumeSourceSha256": resume[1] if resume else None,
         "runs": results,
+        "scanWork": scan_work,
         "referenceAssessment": reference_assessment,
         "limitations": [
             "Each no-snapshot scan advances the C# memory cursor; a candidate scan is repeated to seek an advancing frame.",
@@ -489,7 +508,8 @@ def main(argv=None):
                        "candidateStatusCounts": [r["candidateStatusCounts"] for r in
                                                  result.get("runs", result.get("runDiagnostics", []))],
                       "qualification": result["qualification"],
-                      "referenceAssessment": result["referenceAssessment"]}))
+                      "referenceAssessment": result["referenceAssessment"],
+                      "scanWork": result.get("scanWork")}))
     return 0
 
 
