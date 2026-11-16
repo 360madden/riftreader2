@@ -48,11 +48,18 @@ replacing the route table, selection, revision or saved route progress. Raw
 RiftWorld `review-candidate` waypoint exports are rejected at import/admission.
 
 The destination result checks the worker receipt's exact route/request/session,
-runtime identity, release and final XYZ before reporting `arrived-at-approach`.
-An incomplete destination scope remains `route-complete-only`, and uncertain
-execution keeps `inputSent:null`. The live path has not been exercised by this
-milestone. General area acquisition, novel-path adoption/clearance, automatic
-stuck replanning and service interaction remain separate incomplete work.
+runtime identity, release and final XYZ, then **independently refreshes the native
+player position after input release**. `arrived-at-approach` requires both the
+worker's receipt and a fresh same-player, same-process, same-STOP-epoch position
+inside the approach's XZ/height tolerances. The plan preserves the post-execution
+observation and its distance errors. A completed route with the player still
+outside is `route-complete-only`; unavailable, stale, wrong-player or changed-STOP
+post-execution observations are `execution-unverified` even if the worker reported
+success. This readback sends no game input or automatic retry. A known worker
+input action remains recorded as `inputSent:true`, including when independent
+arrival verification fails. The physical end-to-end path has not yet been
+exercised. General region transitions, novel-path clearance, automatic stuck
+replanning and service interaction remain separate incomplete work.
 
 To plan from the current player position, replace `--from X,Y,Z` with
 `--from-current --session EXACT_SESSION_ID`. This performs two fresh read-only

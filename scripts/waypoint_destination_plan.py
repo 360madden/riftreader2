@@ -434,6 +434,43 @@ def _execution_result(plan, route_path):
     plan["status"] = plan["stages"]["execution"] = plan["arrival"]["status"]
 
 
+def _verify_post_execution_arrival(plan, route_path, session, admission, runner):
+    """Require a fresh independent native position after the worker releases input."""
+    if plan["status"] not in {"arrived-at-approach", "route-complete-only"}:
+        return
+    try:
+        observed = _current_pose(session, admission, runner, allow_latched=False)
+        route, _ = _read(route_path)
+        owner = route["candidateAdoption"]["owner"]
+        runtime = observed["runtimeIdentity"]
+        if any((str(runtime.get(key, "")) != str(owner.get(key, "")) if key == "unitKey"
+                else str(runtime.get(key, "")).casefold() != str(owner.get(key, "")).casefold())
+               for key in ("machine", "gameBuildSha256", "unitKey")):
+            raise ValueError("post-execution-native-player-changed")
+    except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as exc:
+        plan["status"] = plan["stages"]["execution"] = "execution-unverified"
+        plan["arrival"]["postExecutionNativeStatus"] = "unverified"
+        plan["blockers"].append("post-execution-native-verification-failed: " + str(exc))
+        return
+    plan["postExecutionObservation"] = observed
+    xyz = observed["nativeXYZ"]
+    approach = plan["destination"]["entry"]["approachXYZ"]
+    planar = math.hypot(xyz[0] - approach[0], xyz[2] - approach[2])
+    height = abs(xyz[1] - approach[1])
+    arrival = plan["arrival"]
+    arrived = (plan["destinationCovered"]
+               and planar <= arrival["planarTolerance"] + 1e-9
+               and height <= arrival["heightTolerance"] + 1e-9)
+    arrival["postExecutionNativeXYZ"] = xyz
+    arrival["postExecutionNativePlanarDistance"] = planar
+    arrival["postExecutionNativeHeightError"] = height
+    arrival["postExecutionNativeStatus"] = (
+        "arrived-at-approach" if arrived else "outside-approach")
+    if not arrived:
+        plan["status"] = plan["stages"]["execution"] = arrival["status"] = "route-complete-only"
+        plan["blockers"].append("post-execution-native-position-outside-approach")
+
+
 def plan_destination(*, catalog, destination, output_directory, patch=None, build=None,
                      prepare_request=None, source_index=None, allow_partial_navigation=False,
                      prepare_profile=None, prepare_timeout_seconds=600,
@@ -725,6 +762,7 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
             publish()
             plan["execution"] = _dispatch(route_path, session, current["stopEpoch"], runner)
             _execution_result(plan, route_path)
+            _verify_post_execution_arrival(plan, route_path, session, current, runner)
         return publish()
     except KeyboardInterrupt:
         plan["status"] = "execution-unverified" if plan["stages"]["execution"] == "running" else "cancelled"

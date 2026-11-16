@@ -189,7 +189,8 @@ class DestinationPlanTests(unittest.TestCase):
 
     def executing_runner(self, *, stop_epochs=(0, 0), latched=False, route_hash=None,
                          release=True, position=None, failure=None, receipt_change=None,
-                         target_host="AMD-DESKTOP"):
+                         target_host="AMD-DESKTOP", post_position=None,
+                         post_pose_fault=False, post_owner=None):
         status_count = 0
 
         def run(command, **options):
@@ -206,6 +207,20 @@ class DestinationPlanTests(unittest.TestCase):
                         "controls": {"stopEpoch": epoch, "stopLatched": latched,
                                      "ownedActionActive": False, "inputReleaseFault": False}}
                 response = {"ok": True, "sessionId": "owned", "data": data}
+            elif command[2:4] == ["pose", "refresh"]:
+                if post_pose_fault:
+                    return subprocess.CompletedProcess(command, 1, "{}", "")
+                data = {"status": "fresh", "sampleStatus": "fresh",
+                    "source": "existing-idle-reader", "ageSeconds": .01, "freshForSeconds": 2,
+                    "sampledAtUtc": datetime.now(timezone.utc).isoformat(),
+                    "position": post_position or position or {"x": 2, "y": 1, "z": 2},
+                    "target": {"machineName": target_host, "processId": 123,
+                               "processStartUtcTicks": 456, "executableSha256": "a" * 64},
+                    "runtimeIdentity": {"machine": "AMD-DESKTOP", "processId": 123,
+                        "processStartUtcTicks": 456, "gameBuildSha256": "a" * 64,
+                        "unitKey": post_owner or self.player}}
+                response = {"ok": True, "sessionId": "owned",
+                            "requestId": "post-execution-pose", "data": data}
             else:
                 route = Path(command[command.index("--file") + 1])
                 receipt_value = {"status": "halted" if failure else "completed",
@@ -234,13 +249,37 @@ class DestinationPlanTests(unittest.TestCase):
         self.assertEqual("arrived-at-approach", result["status"])
         self.assertTrue(result["inputSent"])
         self.assertFalse(result["currentRouteChanged"])
-        command = self.calls[-1][0]
+        command = next(command for command, _ in self.calls if command[2:4] == ["route", "run"])
         self.assertEqual(["route", "run"], command[2:4])
         self.assertEqual(result["adoptedRoute"]["sha256"], command[command.index("--route-sha256") + 1])
         self.assertEqual("0", command[command.index("--stop-epoch") + 1])
         self.assertIn("--execute", command)
         self.assertIn("receipt", result["execution"])
         self.assertEqual("not-attempted", result["arrival"]["serviceInteraction"])
+        self.assertEqual("arrived-at-approach", result["arrival"]["postExecutionNativeStatus"])
+        self.assertEqual([2, 1, 2], result["postExecutionObservation"]["nativeXYZ"])
+
+    def test_false_worker_arrival_is_downgraded_by_fresh_native_position(self):
+        result = self.plan(execute=True, session="owned", runner=self.executing_runner(
+            post_position={"x": 2.7, "y": 1, "z": 2}))
+        self.assertEqual("route-complete-only", result["status"])
+        self.assertEqual("outside-approach", result["arrival"]["postExecutionNativeStatus"])
+        self.assertIn("post-execution-native-position-outside-approach", result["blockers"])
+        self.assertTrue(result["inputSent"])
+        self.assertFalse(result["currentRouteChanged"])
+
+    def test_unavailable_or_changed_owner_post_execution_pose_never_verifies_arrival(self):
+        for index, options in enumerate(({"post_pose_fault": True},
+                                          {"post_owner": "other-player"},
+                                          {"stop_epochs": (0, 0, 1)})):
+            with self.subTest(options=options):
+                result = self.plan(output_directory=self.root / f"unverified-arrival-{index}",
+                    execute=True, session="owned", runner=self.executing_runner(**options))
+                self.assertEqual("execution-unverified", result["status"])
+                self.assertEqual("unverified", result["arrival"]["postExecutionNativeStatus"])
+                self.assertTrue(any("post-execution-native-verification-failed" in reason
+                                    for reason in result["blockers"]))
+                self.assertTrue(result["inputSent"])
 
     def test_stop_during_planning_cannot_be_erased_before_dispatch(self):
         result = self.plan(execute=True, session="owned",
