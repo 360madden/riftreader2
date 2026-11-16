@@ -400,6 +400,53 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "arrived.*destination"):
             self.invoke([("pending", 4, 0)], backend, mover)
 
+    def test_passage_off_native_traversed_path_never_advances(self):
+        events = []
+
+        def mover(adapter, x, z, stop, emit, **options):
+            guide = options["path_points"][0]
+            emit({"status": "passed", "index": 0, "name": guide["name"],
+                  "position": {"x": 0, "y": 5, "z": 2},
+                  "passageVerified": True, "releaseSucceeded": True,
+                  "desktopInputsDown": [], "source": "settled-corner"})
+            result = arrived(x, z)
+            # Native path never goes near the apparently verified guide.
+            result["path"] = [{"x": 0, "y": 5, "z": 0},
+                              {"x": 1, "y": 5, "z": 0},
+                              {"x": 2, "y": 5, "z": 0}]
+            return result
+
+        with self.assertRaisesRegex(Exception, "passage.*traversed path"):
+            self.invoke([("guide", 0, 2), ("end", 2, 0)],
+                        Backend([observed()]), mover, events=events,
+                        goal_heights=[5, 5], point_kinds=["pass", "stop"])
+        self.assertFalse(any(e.get("status") in ("passed", "arrived")
+                             for e in events))
+
+    def test_out_of_order_native_path_cannot_advance_guides(self):
+        events = []
+
+        def mover(adapter, x, z, stop, emit, **options):
+            for index, guide in enumerate(options["path_points"]):
+                emit({"status": "passed", "index": index, "name": guide["name"],
+                      "position": {"x": guide["x"], "y": 5, "z": guide["z"]},
+                      "passageVerified": True, "releaseSucceeded": True,
+                      "desktopInputsDown": [], "source": "settled-corner"})
+            result = arrived(x, z)
+            # Native path passes the second guide (4,0) BEFORE first (4,4).
+            result["path"] = [{"x": px, "y": 5, "z": pz} for px, pz in
+                              ((0, 0), (2, 0), (4, 0), (4, 2),
+                               (4, 4), (2, 4), (0, 4))]
+            return result
+
+        with self.assertRaisesRegex(Exception, "passage.*traversed path"):
+            self.invoke([("first", 4, 4), ("second", 4, 0),
+                         ("end", 0, 4)], Backend([observed()]), mover,
+                        events=events, goal_heights=[5, 5, 5],
+                        point_kinds=["pass", "pass", "stop"])
+        self.assertFalse(any(e.get("status") in ("passed", "arrived")
+                             for e in events))
+
     def test_arrived_callback_is_not_published_before_receipt_validation(self):
         cases = (
             ("release", lambda receipt: receipt.update(releaseSucceeded=False),
@@ -772,8 +819,17 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
                       "goal": guide, "position": {"x": guide["x"], "y": guide.get("y", 5), "z": guide["z"]},
                       "passageVerified": True, "releaseSucceeded": True, "desktopInputsDown": [],
                       "source": "settled-corner" if guide.get("controlPause") else "pose"})
+            travel = [(start_x, start_z)] + [
+                (guide["x"], guide["z"]) for guide in options.get("path_points", [])] + [(x, z)]
+            native_path = [{"x": start_x, "y": 5, "z": start_z}]
+            for (sx, sz), (gx, gz) in zip(travel, travel[1:]):
+                segments = max(1, math.ceil(math.hypot(gx - sx, gz - sz)))
+                native_path.extend({"x": sx + (gx - sx) * step / segments, "y": 5,
+                                    "z": sz + (gz - sz) * step / segments}
+                                   for step in range(1, segments + 1))
             current.update(x=x, z=z)
             result = arrived(x, z, start_x, start_z)
+            result["path"] = native_path
             emit(result)
             return result
 

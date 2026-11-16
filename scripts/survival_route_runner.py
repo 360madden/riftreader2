@@ -59,6 +59,42 @@ def _traversed_path(receipt, final_position, anchor):
     return points
 
 
+def _verify_passages_on_path(points, events):
+    """Require ordered passage positions on the independently retained path.
+
+    A mover's "passed" callback alone cannot advance a checkpoint: the same
+    native receipt must support visiting each guide in the emitted order.
+    Sparse continuous samples are matched to their bounded segments; this
+    establishes corridor compatibility, not exact passage timestamps.
+    """
+    last_progress = -1.0
+    for event in events:
+        position = _position(event.get("position"))
+        matched = None
+        for index in range(max(0, math.floor(last_progress)), len(points) - 1):
+            start, end = points[index], points[index + 1]
+            dx, dy, dz = (end[axis] - start[axis] for axis in ("x", "y", "z"))
+            length_squared = dx * dx + dy * dy + dz * dz
+            if length_squared < 1e-12:
+                continue
+            fraction = max(0.0, min(1.0, (
+                (position["x"] - start["x"]) * dx
+                + (position["y"] - start["y"]) * dy
+                + (position["z"] - start["z"]) * dz) / length_squared))
+            progress = index + fraction
+            if progress <= last_progress + 1e-6:
+                continue
+            planar = math.hypot(position["x"] - start["x"] - fraction * dx,
+                                position["z"] - start["z"] - fraction * dz)
+            height = abs(position["y"] - start["y"] - fraction * dy)
+            if planar <= .5 and height <= .5:
+                matched = progress
+                break
+        if matched is None:
+            raise ValueError("Survival passage is not on the ordered native traversed path")
+        last_progress = matched
+
+
 def _release_confirmed(receipt):
     if not isinstance(receipt, dict):
         return False
@@ -366,6 +402,7 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
                 try:
                     stopped_position = _position(receipt.get("position"))
                     traversed = _traversed_path(receipt, stopped_position, movement_start)
+                    _verify_passages_on_path(traversed, passed_events)
                 except (TypeError, ValueError):
                     pass  # Keep the checkpoint unchanged if evidence is incomplete.
                 else:
@@ -408,6 +445,7 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
                                              {"x": policy.trail[-1][0],
                                               "y": policy.trail[-1][1],
                                               "z": policy.trail[-1][2]})
+                _verify_passages_on_path(traversed, passed_events)
             except (ValueError, IndexError) as invalid:
                 policy.coordinator.critical("critical-unavailable")
                 policy.state = "halt"
@@ -445,6 +483,7 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
         movement_release = result
         try:
             traversed = _traversed_path(result, current, movement_start)
+            _verify_passages_on_path(traversed, passed_events)
         except ValueError as invalid:
             policy.coordinator.critical("critical-unavailable")
             policy.state = "halt"
