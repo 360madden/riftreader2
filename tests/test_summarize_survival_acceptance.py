@@ -25,6 +25,41 @@ class SurvivalAcceptanceSummaryTests(unittest.TestCase):
                 "policy": {"state": state, "checkpoint": checkpoint,
                            "pendingLeg": ["finish", 1, 2]}, "stopSet": stop}
 
+    def test_host_read_receipts_bound_native_call_order_not_lua_frame_age(self):
+        before = self.sample(10, 100, 100)
+        before["report"] = {"snapshot": before["snapshot"], "acquisition": {
+            "utcTimingScope": "host-read-window-not-lua-production-time",
+            "hostReadStartedUtc": "2026-11-14T12:00:00.000+00:00",
+            "hostReadCompletedUtc": "2026-11-14T12:00:00.100+00:00"}}
+        before["native"] = {"sampledAtUtc": "2026-11-14T12:00:00.180+00:00"}
+        later = self.sample(11, 95, 100)
+        later["report"] = {"snapshot": later["snapshot"], "acquisition": {
+            "utcTimingScope": "host-read-window-not-lua-production-time",
+            "hostReadStartedUtc": "2026-11-14T12:00:02.000+00:00",
+            "hostReadCompletedUtc": "2026-11-14T12:00:02.150+00:00"}}
+        later["native"] = {"sampledAtUtc": "2026-11-14T12:00:02.230+00:00"}
+        result = summary.summarize([{"status": "encounter-interrupted"}], [before, later])
+        timing = result["telemetry"]["nativeSnapshotHealthComparison"]["hostReadTiming"]
+        self.assertEqual(2, timing["nativeAfterHostReadCount"])
+        self.assertEqual(2, timing["comparableSamples"])
+        self.assertEqual("host-read-window-only-not-addon-producer-time", timing["scope"])
+        self.assertAlmostEqual(.08, timing["minimumNativeAfterReadSeconds"], places=3)
+
+    def test_invalid_or_missing_host_window_never_qualifies_latency(self):
+        absent = self.sample(10, 100, 100)
+        reversed_window = self.sample(11, 90, 100)
+        reversed_window["report"] = {"snapshot": reversed_window["snapshot"],
+            "acquisition": {"utcTimingScope": "host-read-window-not-lua-production-time",
+                "hostReadStartedUtc": "2026-11-14T12:00:02+00:00",
+                "hostReadCompletedUtc": "2026-11-14T12:00:01+00:00"}}
+        reversed_window["native"] = {"sampledAtUtc": "2026-11-14T12:00:03+00:00"}
+        result = summary.summarize([{"status": "encounter-interrupted"}],
+                                   [absent, reversed_window])
+        timing = result["telemetry"]["nativeSnapshotHealthComparison"]["hostReadTiming"]
+        self.assertEqual(0, timing["comparableSamples"])
+        self.assertEqual(1, timing["invalidHostWindows"])
+        self.assertEqual(1, timing["missingHostWindows"])
+
     def test_correlates_exact_incoming_and_outgoing_damage_and_invariants(self):
         player_id, target_id = "u0000000000000001", "u0000000000000002"
         incoming = {"sequence": 7, "clock": 10.4, "kind": "damage", "damage": 12,

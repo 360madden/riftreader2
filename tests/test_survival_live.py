@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 import contextlib
+from datetime import datetime
 from io import StringIO
 import json
 from pathlib import Path
@@ -479,6 +480,13 @@ class SurvivalLiveTests(unittest.TestCase):
         self.assertEqual([16 * 1024 * 1024, 2 * 1024 * 1024], lengths)
         self.assertTrue(result["catalog"]["complete"])
         self.assertTrue((output / "result.json").is_file())
+        for receipt in result["attempts"]:
+            start = datetime.fromisoformat(receipt["hostReadStartedUtc"])
+            end = datetime.fromisoformat(receipt["hostReadCompletedUtc"])
+            self.assertIsNotNone(start.tzinfo)
+            self.assertLessEqual(start, end)
+            self.assertEqual("host-read-window-not-lua-production-time",
+                             receipt["utcTimingScope"])
 
     def test_known_address_batch_can_advance_without_another_scout(self):
         scout_calls = 0

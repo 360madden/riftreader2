@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+from datetime import datetime, timezone
 import hashlib
 import json
 import math
@@ -723,6 +724,7 @@ class SurvivalLiveConsumer:
 
     def snapshot(self):
         self.attempt += 1
+        host_started_utc = datetime.now(timezone.utc).isoformat()
         started = self.monotonic()
         phases = []
         cached = []
@@ -778,8 +780,13 @@ class SurvivalLiveConsumer:
                                "candidateCount": len(candidates), "status": "complete"})
         _require((self.monotonic() - started) * 1000 <= self.snapshot_milliseconds,
                  "survival-snapshot-deadline-exceeded")
+        host_completed_utc = datetime.now(timezone.utc).isoformat()
         receipt = {
             "attempt": self.attempt,
+            # Host-side read window, not the instant the Lua addon produced the frame.
+            "utcTimingScope": "host-read-window-not-lua-production-time",
+            "hostReadStartedUtc": host_started_utc,
+            "hostReadCompletedUtc": host_completed_utc,
             "elapsedMilliseconds": (self.monotonic() - started) * 1000,
             "scanStartAddress": f"0x{self.base:X}", "scanBytes": self.length,
             "cachedAddressCount": len(self.known_addresses),

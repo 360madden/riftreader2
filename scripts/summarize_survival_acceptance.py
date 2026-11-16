@@ -139,6 +139,46 @@ def _native_wrapper_timing(samples):
     }
 
 
+def _host_read_timing(samples):
+    """Compare native sample UTC with host read-call bounds, not Lua frame age."""
+    result = {
+        "scope": "host-read-window-only-not-addon-producer-time",
+        "comparableSamples": 0, "missingHostWindows": 0,
+        "invalidHostWindows": 0, "missingNativeSamples": 0,
+        "nativeAfterHostReadCount": 0, "nativeInsideHostReadCount": 0,
+        "nativeBeforeHostReadCount": 0,
+        "minimumNativeAfterReadSeconds": None,
+        "maximumNativeAfterReadSeconds": None,
+    }
+    gaps = []
+    for sample in samples:
+        window = sample.get("hostReadWindow")
+        if not isinstance(window, dict):
+            result["missingHostWindows"] += 1
+            continue
+        start = _utc_seconds(window.get("hostReadStartedUtc"))
+        end = _utc_seconds(window.get("hostReadCompletedUtc"))
+        if (window.get("utcTimingScope") != "host-read-window-not-lua-production-time"
+                or start is None or end is None or start > end):
+            result["invalidHostWindows"] += 1
+            continue
+        native = _utc_seconds(sample.get("nativeSampledAtUtc"))
+        if native is None:
+            result["missingNativeSamples"] += 1
+            continue
+        result["comparableSamples"] += 1
+        if native < start:
+            result["nativeBeforeHostReadCount"] += 1
+        elif native < end:
+            result["nativeInsideHostReadCount"] += 1
+        else:
+            result["nativeAfterHostReadCount"] += 1
+            gaps.append(native - end)
+    result["minimumNativeAfterReadSeconds"] = min(gaps, default=None)
+    result["maximumNativeAfterReadSeconds"] = max(gaps, default=None)
+    return result
+
+
 def _repeated_frame_evidence(samples):
     """Detect native changes during a repeated addon frame, not their cause."""
     output = {
@@ -302,6 +342,7 @@ def _health_concordance(samples):
         any_mismatch |= bool(mismatches)
     output["repeatedFrameEvidence"] = _repeated_frame_evidence(samples)
     output["nativeToWrapperTiming"] = _native_wrapper_timing(samples)
+    output["hostReadTiming"] = _host_read_timing(samples)
     if any_mismatch:
         output["status"] = "mismatch-observed"
     elif any_comparison:
@@ -370,6 +411,8 @@ def _telemetry_sample(row):
     return {
         "clock": _number(snapshot.get("frameTime") if snapshot else report.get("frameTime")),
         "nativeSampledAtUtc": native.get("sampledAtUtc"),
+        "hostReadWindow": (report.get("acquisition")
+                           if isinstance(report.get("acquisition"), dict) else None),
         "sequence": snapshot.get("sequence", report.get("sequence")),
         "epoch": snapshot.get("epoch", report.get("epoch")),
         "sessionId": snapshot.get("sessionId", report.get("sessionId")),
