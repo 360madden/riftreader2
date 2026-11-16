@@ -285,6 +285,93 @@ class TwoPassTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, reason):
                     pair.verify_capture_order("index1", "index2", "native1", "native2")
 
+    @staticmethod
+    def native_health_state(value, digest, first, last):
+        player = "u035400012FA2D207"
+        return {
+            "summarySha256": digest, "status": "candidate-only",
+            "target": {"hostName": "AMD-DESKTOP", "processId": 123,
+                       "processStartUtcTicks": "638000000000000001",
+                       "executableSha256": "B" * 64},
+            "moduleBaseAddress": 0x140000000, "moduleSize": 400000,
+            "selfKeyCandidate": str(int(player[1:], 16)),
+            "firstStartedAtUtc": first, "lastCompletedAtUtc": last,
+            "candidateValues": {
+                "position": {"x": 10., "y": 20., "z": 30.},
+                "vitals": {"health": {"status": "calculated-candidate",
+                                      "current": value, "maximum": 18208}},
+            },
+            "healthSampleCandidates": [value, value],
+        }
+
+    def test_two_independent_native_health_states_compare_with_lua_trend(self):
+        first, second = self.sample()
+        second["luaHealthCandidates"][0]["health"]["current"] = 18000
+        second["luaHealthCandidates"][1]["health"]["current"] = 18000
+        earlier = self.native_health_state(18208, "1" * 64,
+                    "2026-11-16T12:00:00+00:00", "2026-11-16T12:00:01+00:00")
+        later = self.native_health_state(18000, "2" * 64,
+                    "2026-11-16T12:01:00+00:00", "2026-11-16T12:01:01+00:00")
+        with patch.object(pair.lua, "replay", side_effect=[first, second]), \
+             patch.object(pair.lua.native_state, "verified_state",
+                          side_effect=[earlier, later]):
+            result = pair.compare("first", "second", "bracket",
+                                  first_native_state="state1",
+                                  second_native_state="state2")
+        linked = result["independentNativeHealthTrendCandidate"]
+        self.assertEqual(-208, linked["nativeDeltaCurrentCandidate"])
+        self.assertEqual(-208, linked["luaEndpointDeltaCurrentCandidate"])
+        self.assertEqual("same-direction-candidate", linked["directionScreen"])
+        self.assertEqual("all-equal", linked["firstNativeLuaAgreement"]["agreementScreen"])
+        self.assertEqual("all-equal", linked["secondNativeLuaAgreement"]["agreementScreen"])
+        self.assertIn("not time-locked", linked["qualification"])
+
+    def test_native_health_state_requires_two_pins_and_same_owner(self):
+        a, b = self.sample()
+        with patch.object(pair.lua, "replay", side_effect=[a, b]):
+            with self.assertRaisesRegex(ValueError, "both-native-states-required"):
+                pair.compare("first", "second", "bracket",
+                             first_native_state="state1")
+        before = self.native_health_state(18208, "1" * 64,
+                    "2026-11-16T12:00:00+00:00", "2026-11-16T12:00:01+00:00")
+        changed_owner = self.native_health_state(18000, "2" * 64,
+                    "2026-11-16T12:01:00+00:00", "2026-11-16T12:01:01+00:00")
+        changed_owner["selfKeyCandidate"] = "42"
+        with patch.object(pair.lua, "replay", side_effect=[a, b]), \
+             patch.object(pair.lua.native_state, "verified_state",
+                          side_effect=[before, changed_owner]):
+            with self.assertRaisesRegex(ValueError, "owner-or-epoch-changed"):
+                pair.compare("first", "second", "bracket",
+                             first_native_state="state1",
+                             second_native_state="state2")
+
+    def test_native_health_state_time_order_rejection_and_unavailable(self):
+        a, b = self.sample()
+        before = self.native_health_state(18208, "1" * 64,
+                    "2026-11-16T12:00:00+00:00", "2026-11-16T12:00:01+00:00")
+        reversed_state = self.native_health_state(18000, "2" * 64,
+                    "2026-11-16T11:59:00+00:00", "2026-11-16T11:59:01+00:00")
+        with patch.object(pair.lua, "replay", side_effect=[a, b]), \
+             patch.object(pair.lua.native_state, "verified_state",
+                          side_effect=[before, reversed_state]):
+            with self.assertRaisesRegex(ValueError, "captures-overlap-or-reversed"):
+                pair.compare("first", "second", "bracket",
+                             first_native_state="state1",
+                             second_native_state="state2")
+        unavailable = deepcopy(before)
+        unavailable["candidateValues"]["vitals"]["health"]["status"] = "unavailable"
+        later = self.native_health_state(18000, "2" * 64,
+                    "2026-11-16T12:01:00+00:00", "2026-11-16T12:01:01+00:00")
+        with patch.object(pair.lua, "replay", side_effect=[a, b]), \
+             patch.object(pair.lua.native_state, "verified_state",
+                          side_effect=[unavailable, later]):
+            linked = pair.compare("first", "second", "bracket",
+                                  first_native_state="state1",
+                                  second_native_state="state2")[
+                                      "independentNativeHealthTrendCandidate"]
+        self.assertIsNone(linked["nativeDeltaCurrentCandidate"])
+        self.assertEqual("unavailable", linked["directionScreen"])
+
     def test_replay_failure_propagates_and_existing_output_preserved(self):
         a, b = self.sample()
         with patch.object(pair.lua, "replay",

@@ -31,8 +31,11 @@ def require(ok, reason):
         raise ValueError("physical-rr2a1-pair-" + reason)
 
 
-def compare(first_index, second_index, first_native_bracket, second_native_bracket=None):
+def compare(first_index, second_index, first_native_bracket, second_native_bracket=None,
+            *, first_native_state=None, second_native_state=None):
     """Recheck raw sources rather than trust previously generated replay summaries."""
+    require((first_native_state is None) == (second_native_state is None),
+            "both-native-states-required")
     second_native_bracket = (first_native_bracket if second_native_bracket is None
                              else second_native_bracket)
     first = lua.replay(first_index, first_native_bracket)
@@ -179,6 +182,52 @@ def compare(first_index, second_index, first_native_bracket, second_native_brack
             "0.05-unit empirical screening tolerance. Captures are not time-atomic; "
             "the disagreement may reflect time separation or stale candidate data. "
             "Producer freshness, movement semantics and restart recovery are unqualified.")
+    if first_native_state is not None:
+        # These are independently acquired, ordered native *state* captures.
+        # Do not misrepresent them as time-atomic with the Lua scan windows.
+        earlier = lua.native_state.verified_state(first_native_state)
+        later = lua.native_state.verified_state(second_native_state)
+        state_pair = lua.native_state._compare_states(earlier, later)
+        first_screen = lua.compare_native_health(first, earlier)
+        second_screen = lua.compare_native_health(second, later)
+        native_before = first_screen["nativeHealthCandidate"]
+        native_after = second_screen["nativeHealthCandidate"]
+        native_delta = (state_pair["healthDeltaCandidate"]
+                        if native_before is not None and native_after is not None
+                        and native_before["maximum"] == native_after["maximum"]
+                        else None)
+        first_lua_health = first_health[0]["health"]
+        last_lua_health = second_health[-1]["health"]
+        lua_delta = (last_lua_health["current"] - first_lua_health["current"]
+                     if first_lua_health is not None and last_lua_health is not None
+                     and first_lua_health["maximum"] == last_lua_health["maximum"]
+                     else None)
+        if native_delta is None or lua_delta is None:
+            direction = "unavailable"
+        elif native_delta == lua_delta == 0:
+            direction = "both-unchanged-candidate"
+        elif (native_delta > 0 and lua_delta > 0 or
+              native_delta < 0 and lua_delta < 0):
+            direction = "same-direction-candidate"
+        else:
+            direction = "different-direction-candidate"
+        result["independentNativeHealthTrendCandidate"] = {
+            "status": "candidate-only",
+            "firstNativeLuaAgreement": first_screen,
+            "secondNativeLuaAgreement": second_screen,
+            "nativeDeltaCurrentCandidate": native_delta,
+            "luaEndpointDeltaCurrentCandidate": lua_delta,
+            "directionScreen": direction,
+            "nativeSourceSha256": [earlier["summarySha256"], later["summarySha256"]],
+            "nativeCaptureWindowsUtc": [
+                [earlier["firstStartedAtUtc"], earlier["lastCompletedAtUtc"]],
+                [later["firstStartedAtUtc"], later["lastCompletedAtUtc"]]],
+            "qualification": (
+                "Independently SHA-replayed, ordered same-process native health "
+                "candidate states versus advancing unbound Lua HP endpoints; "
+                "capture windows are not time-locked, so even the same direction "
+                "does not prove live health semantics, damage cause or RR2R1 freshness."),
+        }
     return result
 
 
@@ -215,6 +264,10 @@ def main(argv=None):
     parser.add_argument("--second-index", type=Path, required=True)
     parser.add_argument("--first-native-bracket", type=Path, required=True)
     parser.add_argument("--second-native-bracket", type=Path)
+    parser.add_argument("--first-native-state", type=Path,
+                        help="Optional first SHA-pinned native player-state summary; requires the second")
+    parser.add_argument("--second-native-state", type=Path,
+                        help="Optional second ordered same-process native player-state summary")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--require-bracketed-order", action="store_true",
                         help="Verify original native→scan→scan→native UTC order")
@@ -223,7 +276,9 @@ def main(argv=None):
         require(not args.output.exists() and not args.output.is_symlink(),
                 "output-exists")
         result = compare(args.first_index, args.second_index,
-                         args.first_native_bracket, args.second_native_bracket)
+                         args.first_native_bracket, args.second_native_bracket,
+                         first_native_state=args.first_native_state,
+                         second_native_state=args.second_native_state)
         if args.require_bracketed_order:
             require(args.second_native_bracket is not None,
                     "second-native-bracket-required")
