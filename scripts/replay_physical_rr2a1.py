@@ -19,6 +19,7 @@ if str(ROOT) not in sys.path:
 
 from scripts import compare_physical_player_brackets as native
 from scripts import compare_physical_player_context_pair as context
+from scripts import replay_physical_player_state as native_state
 
 PREFIX = b"RR2A1|"
 SUFFIX = b"|ENDRR2A1"
@@ -36,6 +37,67 @@ def sha(raw):
 def exact_json(raw):
     return json.loads(raw.decode("utf-8-sig"), object_pairs_hook=context._unique_pairs,
                       parse_constant=lambda _: require(False, "nonfinite-json"))
+
+
+def health_candidate(fields):
+    """Return an internally valid RR2A1 HP pair or unavailable; never infer damage."""
+    if not isinstance(fields, dict):
+        return None
+    current, maximum = fields.get("health"), fields.get("healthMax")
+    if not isinstance(current, dict) or not isinstance(maximum, dict):
+        return None
+    if current.get("status") != "ok" or maximum.get("status") != "ok":
+        return None
+    a, b = current.get("value"), maximum.get("value")
+    if (type(a) not in (int, float) or type(b) not in (int, float)
+            or not math.isfinite(a) or not math.isfinite(b)
+            or a < 0 or b <= 0 or a > b):
+        return None
+    return {"current": a, "maximum": b}
+
+
+def compare_native_health(lua_report, native_report):
+    """Screen source-pinned, same-owner *non-atomic* HP candidate agreement."""
+    identity, owner = lua_report["identity"], native_report.get("target")
+    require(isinstance(owner, dict)
+            and owner.get("hostName") == identity["host"] == "AMD-DESKTOP"
+            and owner.get("processId") == identity["processId"]
+            and str(owner.get("processStartUtcTicks")) ==
+                str(identity["processStartUtcTicks"])
+            and str(owner.get("executableSha256", "")).upper() ==
+                identity["executableSha256"].upper()
+            and native_report.get("selfKeyCandidate") ==
+                str(int(lua_report["luaPlayerIdCandidate"][1:], 16)),
+            "native-health-owner-mismatch")
+    health = native_report["candidateValues"]["vitals"]["health"]
+    current, maximum = health.get("current"), health.get("maximum")
+    samples = native_report.get("healthSampleCandidates")
+    stable = (health.get("status") == "calculated-candidate"
+              and type(current) is int and type(maximum) is int
+              and 0 <= current <= maximum and maximum > 0
+              and isinstance(samples, list) and len(samples) >= 2
+              and all(type(value) is int and value == current for value in samples))
+    available = [row["health"] for row in lua_report["luaHealthCandidates"]
+                 if row["health"] is not None]
+    matches = (sum(row["current"] == current and row["maximum"] == maximum
+                   for row in available) if stable else 0)
+    different = len(available) - matches if stable else 0
+    return {
+        "status": "candidate-only",
+        "agreementScreen": ("unavailable" if not stable or not available
+                            else "all-equal" if different == 0 else "different"),
+        "luaAvailableFrames": len(available),
+        "nativeStableCandidate": stable,
+        "matchingFrames": matches,
+        "differingFrames": different,
+        "nativeHealthCandidate": ({"current": current, "maximum": maximum}
+                                  if stable else None),
+        "nativeSummarySha256": native_report["summarySha256"],
+        "luaScanIndexSha256": lua_report["sourceSha256"]["scanIndex"],
+        "qualification": ("Same-process candidate-only health value screen, not atomic "
+                          "capture, independently timestamped Lua production, "
+                          "nonce-authenticated RR2R1 or changed-state proof."),
+    }
 
 
 def replay(index_path, native_summary_path):
@@ -118,7 +180,9 @@ def replay(index_path, native_summary_path):
                     and math.isfinite(reading["value"]), "unavailable-lua-xyz")
             xyz[axis] = reading["value"]
         frames.append({"sequence": observed["sequence"], "epoch": observed["epoch"],
-                       "clock": clock["value"], "xyz": xyz, "snapshotSha256": digest,
+                       "clock": clock["value"], "xyz": xyz,
+                       "health": health_candidate(observed.get("fields")),
+                       "snapshotSha256": digest,
                        "frameSha256": sha(frame)})
     require(len(frames) >= 2, "insufficient-complete-frames")
     frames.sort(key=lambda f: f["sequence"])
@@ -144,6 +208,8 @@ def replay(index_path, native_summary_path):
         "lastClockCandidate": frames[-1]["clock"],
         "nativePositionCandidate": native_xyz,
         "luaPositionCandidates": [f["xyz"] for f in frames],
+        "luaHealthCandidates": [{"sequence": f["sequence"], "health": f["health"]}
+                                for f in frames],
         "maxAbsCoordinateDifferenceCandidate": maxima,
         "sourceSha256": {"scanIndex": index_sha, "scanRequest": request_sha,
                          "nativeBracketSummary": native_sha},
@@ -160,12 +226,17 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scan-index", type=Path, required=True)
     parser.add_argument("--native-bracket", type=Path, required=True)
+    parser.add_argument("--native-state-summary", type=Path,
+                        help="Optional SHA-replayed same-process native HP baseline; candidate only")
     parser.add_argument("--output", type=Path, required=True)
     options = parser.parse_args(argv)
     try:
         require(not options.output.exists() and not options.output.is_symlink(),
                 "output-exists")
         result = replay(options.scan_index, options.native_bracket)
+        if options.native_state_summary is not None:
+            result["nativeHealthComparison"] = compare_native_health(
+                result, native_state.verified_state(options.native_state_summary))
         with options.output.open("x", encoding="utf-8", newline="\n") as out:
             json.dump(result, out, indent=2, allow_nan=False)
             out.write("\n")

@@ -33,7 +33,8 @@ def save_json(path, value):
     return replay.sha(path.read_bytes())
 
 
-def fixture(root, *, second_clock=20, second_sequence=2, first_sequence=1, epoch=1):
+def fixture(root, *, second_clock=20, second_sequence=2, first_sequence=1, epoch=1,
+            health=18208, health_max=18208):
     folder = root / "scan"
     folder.mkdir()
     request = {"marker": "RR2A1|", "target": deepcopy(IDENTITY)}
@@ -45,7 +46,8 @@ def fixture(root, *, second_clock=20, second_sequence=2, first_sequence=1, epoch
                  "clock": {"status": "ok", "value": clock},
                  "player": {"status": "ok", "value": "u" + format(int(KEY), "016X")},
                  "fields": {field: {"status": "ok", "value": value} for field, value
-                            in (("coordX", 10.002), ("coordY", 20.003), ("coordZ", 30.004))}}
+                            in (("coordX", 10.002), ("coordY", 20.003), ("coordZ", 30.004),
+                                 ("health", health), ("healthMax", health_max))}}
         raw = replay.PREFIX + json.dumps(frame).encode("ascii") + replay.SUFFIX
         chunk = raw + bytes(4096 - len(raw))
         address = 0x10000 * i
@@ -89,6 +91,48 @@ class ReplayTests(unittest.TestCase):
             self.assertAlmostEqual(report["maxAbsCoordinateDifferenceCandidate"]["z"], .004)
             self.assertEqual(report["status"], "candidate-only")
             self.assertIn("not nonce-bound", report["qualification"])
+
+    def test_rr2a1_health_cross_source_candidate_screen(self):
+        with tempfile.TemporaryDirectory() as d:
+            index = fixture(Path(d))
+            with patch.object(replay.native, "verified_bracket",
+                              return_value=(NATIVE, "A" * 64, None, None)):
+                report = replay.replay(index, Path(d) / "native-summary.json")
+            self.assertEqual([x["health"] for x in report["luaHealthCandidates"]],
+                             [{"current": 18208, "maximum": 18208}] * 2)
+            state_report = {
+                "target": {"hostName": "AMD-DESKTOP", "processId": 123,
+                           "processStartUtcTicks": str(IDENTITY["processStartUtcTicks"]),
+                           "executableSha256": BUILD},
+                "selfKeyCandidate": KEY, "summarySha256": "C" * 64,
+                "candidateValues": {"vitals": {"health": {
+                    "status": "calculated-candidate", "current": 18208,
+                    "maximum": 18208}}},
+                "healthSampleCandidates": [18208, 18208, 18208],
+            }
+            result = replay.compare_native_health(report, state_report)
+            self.assertEqual(result["matchingFrames"], 2)
+            self.assertEqual(result["differingFrames"], 0)
+            self.assertEqual(result["status"], "candidate-only")
+            self.assertEqual(result["agreementScreen"], "all-equal")
+            self.assertIn("not atomic", result["qualification"])
+            changed = deepcopy(state_report)
+            changed["selfKeyCandidate"] = "1234567"
+            with self.assertRaisesRegex(ValueError, "native-health-owner-mismatch"):
+                replay.compare_native_health(report, changed)
+            changed = deepcopy(state_report)
+            changed["healthSampleCandidates"] = [18000, 18208, 18208]
+            self.assertEqual(replay.compare_native_health(report, changed)
+                             ["agreementScreen"], "unavailable")
+
+    def test_impossible_lua_health_is_not_compared(self):
+        with tempfile.TemporaryDirectory() as d:
+            index = fixture(Path(d), health=19000, health_max=18208)
+            with patch.object(replay.native, "verified_bracket",
+                              return_value=(NATIVE, "A" * 64, None, None)):
+                report = replay.replay(index, Path(d) / "native-summary.json")
+            self.assertEqual([x["health"] for x in report["luaHealthCandidates"]],
+                             [None, None])
 
     def test_corrupt_snapshot_or_changed_native_epoch_rejected(self):
         with tempfile.TemporaryDirectory() as d:
