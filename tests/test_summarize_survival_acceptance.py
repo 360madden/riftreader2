@@ -262,6 +262,48 @@ class SurvivalAcceptanceSummaryTests(unittest.TestCase):
         self.assertFalse(result["acceptance"]["incomingDamage"])
         self.assertEqual([], result["telemetry"]["selfHealthDrops"])
 
+    def test_native_vs_addon_health_disagreement_is_visible_without_qualification(self):
+        before = self.sample(10, 100, 100)
+        after = self.sample(11, 100, 80)
+        before["native"] = {
+            "player": {"health": {"available": True, "status": "calculated-candidate",
+                                   "current": 100, "maximum": 100}},
+            "selectedTarget": {"health": {"available": True, "status": "calculated-candidate",
+                                           "current": 100, "maximum": 100}},
+        }
+        after["native"] = {
+            "player": {"health": {"available": True, "status": "calculated-candidate",
+                                   "current": 88, "maximum": 100}},
+            "selectedTarget": {"health": {"available": True, "status": "calculated-candidate",
+                                           "current": 70, "maximum": 100}},
+        }
+        result = summary.summarize([{"status": "encounter-interrupted"}], [before, after])
+        concordance = result["telemetry"]["nativeSnapshotHealthComparison"]
+        self.assertEqual("mismatch-observed", concordance["status"])
+        for key, gap in (("player", -12), ("selectedTarget", -10)):
+            data = concordance[key]
+            self.assertEqual(2, data["comparableSamples"])
+            self.assertEqual(1, data["matchingSamples"])
+            self.assertEqual(1, data["mismatchedSamples"])
+            self.assertEqual(abs(gap), data["largestAbsoluteCurrentGap"])
+            self.assertEqual(gap, data["firstMismatch"]["nativeMinusSnapshotCurrent"])
+            self.assertEqual(110, data["firstMismatch"]["sequence"])
+
+    def test_health_concordance_excludes_unavailable_and_invalid_pairs(self):
+        before = self.sample(10, 100, 100)
+        after = self.sample(11, 80, 80)
+        before["native"] = {"player": {"health": {
+            "available": False, "status": "calculated-candidate",
+            "current": 90, "maximum": 100}}}
+        after["native"] = {"player": {"health": {
+            "available": True, "status": "calculated-candidate",
+            "current": -10, "maximum": 100}}}
+        result = summary.summarize([{"status": "encounter-interrupted"}], [before, after])
+        data = result["telemetry"]["nativeSnapshotHealthComparison"]
+        self.assertEqual("unavailable", data["status"])
+        self.assertEqual(0, data["player"]["comparableSamples"])
+        self.assertEqual(0, data["selectedTarget"]["comparableSamples"])
+
     def test_conflicting_or_incomplete_release_receipts_fail_closed(self):
         bad_receipts = (
             {"releaseSucceeded": True, "allInputsReleased": False, "desktopInputsDown": []},

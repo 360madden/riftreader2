@@ -70,6 +70,57 @@ def _native_health_number(health, field):
     return _number(health.get(field))
 
 
+def _native_snapshot_health_pair(native_health, snapshot):
+    """Compare two retained HP candidates, without assuming atomic acquisition."""
+    native_current = _native_health_number(native_health, "current")
+    native_maximum = _native_health_number(native_health, "maximum")
+    snapshot_current = _number(snapshot.get("health"))
+    snapshot_maximum = _number(snapshot.get("healthMax"))
+    if any(value is None for value in (
+            native_current, native_maximum, snapshot_current, snapshot_maximum)):
+        return None
+    if (native_maximum <= 0 or snapshot_maximum <= 0
+            or not 0 <= native_current <= native_maximum
+            or not 0 <= snapshot_current <= snapshot_maximum):
+        return None
+    return {"nativeCurrent": native_current, "snapshotCurrent": snapshot_current,
+            "nativeMaximum": native_maximum, "snapshotMaximum": snapshot_maximum,
+            "nativeMinusSnapshotCurrent": native_current - snapshot_current,
+            "nativeMinusSnapshotMaximum": native_maximum - snapshot_maximum}
+
+
+def _health_concordance(samples):
+    """Surface same-wrapper native/addon disagreements, never live qualification."""
+    output = {"status": "unavailable", "scope": "retained-wrapper-candidates-only"}
+    any_comparison, any_mismatch = False, False
+    for key, field in (("player", "nativeSnapshotPlayer"),
+                       ("selectedTarget", "nativeSnapshotTarget")):
+        pairs = [(sample, sample[field]) for sample in samples
+                 if sample.get(field) is not None]
+        mismatches = [(sample, pair) for sample, pair in pairs
+                      if pair["nativeMinusSnapshotCurrent"] != 0
+                      or pair["nativeMinusSnapshotMaximum"] != 0]
+        first = mismatches[0] if mismatches else None
+        output[key] = {
+            "comparableSamples": len(pairs),
+            "matchingSamples": len(pairs) - len(mismatches),
+            "mismatchedSamples": len(mismatches),
+            "largestAbsoluteCurrentGap": max(
+                (abs(pair["nativeMinusSnapshotCurrent"]) for _, pair in pairs),
+                default=None),
+            "firstMismatch": ({
+                "sequence": first[0]["sequence"], "clock": first[0]["clock"],
+                **first[1]} if first else None),
+        }
+        any_comparison |= bool(pairs)
+        any_mismatch |= bool(mismatches)
+    if any_mismatch:
+        output["status"] = "mismatch-observed"
+    elif any_comparison:
+        output["status"] = "comparison-only"
+    return output
+
+
 def _same(left, right):
     return isinstance(left, str) and isinstance(right, str) and left.casefold() == right.casefold()
 
@@ -136,6 +187,8 @@ def _telemetry_sample(row):
         "playerId": player_id, "targetId": target_id,
         "selfCurrent": self_current, "selfMaximum": self_maximum,
         "selfBasis": self_basis,
+        "nativeSnapshotPlayer": _native_snapshot_health_pair(health, raw_player),
+        "nativeSnapshotTarget": _native_snapshot_health_pair(target_health, raw_target),
         "targetCurrent": target_current, "targetMaximum": target_maximum,
         "targetBasis": target_basis,
         "combat": player.get("inCombat", _nested(native_player, "combat", "value")),
@@ -440,6 +493,7 @@ def summarize(route_rows, telemetry_rows=None):
         "status": "observed", "sampleCount": len(samples), "identityStable": identity_stable,
         "continuityVerified": continuity_verified,
         "selfHealthDrops": self_drops, "targetHealthDrops": target_drops,
+        "nativeSnapshotHealthComparison": _health_concordance(samples),
         "incomingEvents": incoming, "outgoingEvents": outgoing,
         "incomingCorrelation": incoming_correlation,
         "outgoingCorrelation": outgoing_correlation,
