@@ -85,6 +85,23 @@ def compare(first_index, second_index, first_native_bracket, second_native_brack
                                                 (second_health, second["frameEvidence"]))
                     for row, evidence in zip(rows, evidence_rows)),
             "health-frame-sequence-mismatch")
+    # Recovered old frames are safe to discard only when matching a previously
+    # observed sequence retains the same source bytes, clock and HP projection.
+    # A counter reused by another unbound producer is not proof of continuity.
+    retained_by_sequence = {
+        frame["sequence"]: (frame, first_health[i])
+        for i, frame in enumerate(first["frameEvidence"])
+    }
+    for i in range(overlap):
+        old = retained_by_sequence.get(frames[i]["sequence"])
+        if old is None:
+            continue
+        prior_frame, prior_health = old
+        require(frames[i]["frameSha256"] == prior_frame["frameSha256"]
+                and frames[i]["clockCandidate"] == prior_frame["clockCandidate"],
+                "overlap-frame-conflict")
+        require(second_health[i]["health"] == prior_health["health"],
+                "overlap-health-conflict")
     health_trend = lua.lua_health_trend(first_health + second_health[overlap:])
 
     first_end = first["luaPositionCandidates"][-1]

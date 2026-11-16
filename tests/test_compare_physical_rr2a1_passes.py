@@ -95,7 +95,7 @@ class TwoPassTests(unittest.TestCase):
             {"sequence": 3, "clockCandidate": 20.0, "frameSha256": "B3"},
             {"sequence": 4, "clockCandidate": 21.0, "frameSha256": "B4"}]
         second["luaHealthCandidates"] = [
-            {"sequence": 2, "health": {"current": 100, "maximum": 18208}},
+            {"sequence": 2, "health": {"current": 18208, "maximum": 18208}},
             {"sequence": 3, "health": {"current": 18208, "maximum": 18208}},
             {"sequence": 4, "health": {"current": 18208, "maximum": 18208}},
         ]
@@ -115,6 +115,37 @@ class TwoPassTests(unittest.TestCase):
         self.assertAlmostEqual(out["betweenPassLuaXYZDifferenceCandidate"]["x"], 0.001)
         self.assertEqual(out["positionCandidates"]["lastLua"]["x"], 10.004)
         self.assertEqual(out["positionCandidates"]["nativeAfter"]["x"], 10.)
+
+    def test_conflicting_retained_overlap_cannot_be_silently_discarded(self):
+        for kind, reason in (("frame", "overlap-frame-conflict"),
+                             ("clock", "overlap-frame-conflict"),
+                             ("health", "overlap-health-conflict")):
+            first, second = self.sample()
+            second["luaFrameCount"] = 3
+            second["firstSequence"] = 2
+            second["firstClockCandidate"] = 11.0
+            second["frameEvidence"] = [
+                {"sequence": 2, "clockCandidate": 11.0,
+                 "frameSha256": first["frameEvidence"][-1]["frameSha256"]},
+                *second["frameEvidence"],
+            ]
+            second["luaHealthCandidates"] = [
+                deepcopy(first["luaHealthCandidates"][-1]),
+                *second["luaHealthCandidates"],
+            ]
+            second["luaPositionCandidates"].insert(
+                0, deepcopy(first["luaPositionCandidates"][-1]))
+            if kind == "frame":
+                second["frameEvidence"][0]["frameSha256"] = "conflicting-sha"
+            elif kind == "clock":
+                second["frameEvidence"][0]["clockCandidate"] = 10.75
+                second["firstClockCandidate"] = 10.75
+            else:
+                second["luaHealthCandidates"][0]["health"]["current"] = 18000
+            with self.subTest(kind=kind), patch.object(
+                    pair.lua, "replay", side_effect=[first, second]):
+                with self.assertRaisesRegex(ValueError, reason):
+                    pair.compare("first", "second", "native")
 
     def test_rejects_unaligned_health_frames(self):
         a, b = self.sample()
