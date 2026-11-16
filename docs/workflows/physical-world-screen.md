@@ -410,8 +410,19 @@ model membership and perturbation results, always with
 report is at
 `artifacts/pixel-surface-p1-20261116/three-landmark-visual-registration.json`.
 The dedicated replay refuses changed WGC receipts, rebinds, native camera drift,
-non-mesh landmarks and edited pixel/source evidence. **92 focused tests passed**
+non-mesh landmarks and edited pixel/source evidence. **93 focused tests passed**
 including this archival witness and both prior P1 paths.
+
+**Thin-silhouette negative control:** The manually marked left-wall corner
+pixel **(1115,286)** falls just beyond the thin mesh edge and the ray
+intersects **terrain 41.3167 units away** instead of the wall. A still-valid
+neighbor **(1113,286)**, only two pixels left (within the ±3-pixel manual
+uncertainty), intersects the correct curved-wall group first; one of its
+wall hits is **0.00736 native units** from the recorded corner XYZ. Therefore
+nearest-hit-from-a-single-integer-pixel is not reliable at a narrow silhouette.
+Keep multiple surface candidates and pixel-placement uncertainty visible;
+do not silently snap a user click or promote the terrain hit to a visible
+floor/collision result. This case has a focused real-archive regression.
 
 **P1 offline implementation is functional** (exact pixel ray, pinned mesh,
 multiple depth groups, explicit hit selection, repeatable historical tests).

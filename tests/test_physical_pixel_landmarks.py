@@ -11,6 +11,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from scripts import physical_pixel_landmarks as landmarks
+from scripts import physical_pixel_ray, physical_pixel_surface
 
 
 ROOT = Path(r"C:\work\RiftWorld\artifacts\thedeor-20261113-r4")
@@ -124,6 +125,35 @@ class ArchivedLandmarkProofTests(unittest.TestCase):
         result = self.run_fixture(folder)
         self.assertEqual(result["status"], "inconclusive")
         self.assertFalse(result["reprojectionInsideManualUncertainty"])
+
+    def test_thin_wall_exact_pixel_misses_but_two_pixel_neighbor_hits(self):
+        # A 1.55-pixel manual corner mismatch is enough for a narrow wall
+        # silhouette to fall behind the first-hit terrain ray at the mark.
+        # Never auto-promote the terrain as the visibly selected wall surface.
+        obs = json.loads((ROOT / "observation-final.json").read_text())
+        camera = json.loads((ROOT / "native-final-after.json").read_text())[
+            "observation"]["opticalCameraCandidate"]
+        target = json.loads((ROOT / "landmarks.json").read_text())[1]["sourceXYZ"]
+        raw = (ROOT / "riftworld-patch.obj").read_bytes()
+        self.assertEqual(hashlib.sha256(raw).hexdigest(), MESH_SHA)
+        vertices, faces = physical_pixel_surface.parse_obj(
+            raw, [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]])
+        def first_hits(x, y):
+            ray = physical_pixel_ray.pixel_ray(camera, obs["clientFrameMapping"], x, y)
+            return physical_pixel_surface.intersect_prepared(
+                vertices, faces, ray, max_distance=42)
+        exact = first_hits(1115, 286)
+        nearby = first_hits(1113, 286)
+        self.assertTrue(exact["hits"][0]["meshGroup"].startswith("world_terrain_"))
+        self.assertTrue(nearby["hits"][0]["meshGroup"].startswith(
+            "A_F_terrace_wall_curved_02"))
+        wall_hits = [hit for hit in nearby["hits"]
+                     if hit["meshGroup"].startswith("A_F_terrace_wall_curved_02")]
+        self.assertEqual(len(wall_hits), 2)
+        self.assertLess(min(sum((a-b)**2 for a, b in zip(hit["candidateXYZ"], target))**.5
+                            for hit in wall_hits), .01)
+        self.assertFalse(exact["movementEligible"])
+        self.assertFalse(nearby["movementEligible"])
 
     def test_changed_native_camera_across_wgc_bracket_refuses(self):
         folder = self.copy_small_sources()

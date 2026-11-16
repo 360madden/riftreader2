@@ -1,5 +1,18 @@
 # Current status
 
+**November 16, 09:51 EST — P1 silhouette uncertainty reproduced; live PID changed safely.**
+At the saved left-wall landmark, pixel (1115,286) misses the very thin wall
+and intersects farther terrain. Pixel (1113,286), within the original ±3-pixel
+manual-selection uncertainty, intersects the wall and reaches within 0.00736
+native units of the corresponding source vertex. Do not automatically treat
+a single center-pixel first hit as a visible floor or invent depth certainty;
+real-archive regression added. Read-only physical facing against freshly
+verified AMD-DESKTOP PID95472 succeeded at XYZ (7189.787,871.787,3036.365),
+near the separately mapped rack. A later WGC/native observation correctly
+refused `not-running`; RIFT had restarted to PID77704. No automatic process
+rebind, focus change or gameplay input. A new stable exact-process WGC/Havok
+world bracket is still needed before full P1 live registration can proceed.
+
 **November 16, 09:43 EST — P1 three-corner screenshot/OBJ visual alignment replay passed.**
 A second independently retained physical WGC frame (Nov 13, PID34468) has
 three manually selected structural corners that are exact courtyard OBJ
@@ -12,7 +25,7 @@ Deliberately translating source XYZ +10 X causes 323–427-pixel mismatch;
 **localized render-mesh X/Z alignment evidence**, unlike flat ground alone.
 New read-only CLI `scripts/physical_pixel_landmarks.py` and ignored source-hashed
 `artifacts/pixel-surface-p1-20261116/three-landmark-visual-registration.json`
-preserve the witness. **92 combined focused tests passed.** Arbitrary pixel
+preserve the witness. **93 combined focused tests passed.** Arbitrary pixel
 visible depth, full source/instance registration, obstacle collision and
 navigation clearance remain unqualified; no input was sent.
 [Landmark CLI and limits](workflows/physical-world-screen.md#offline-screenshot-pixel-to-3d-mesh-candidate-surfaces-p1-november-16).
