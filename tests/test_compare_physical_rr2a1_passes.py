@@ -304,6 +304,14 @@ class TwoPassTests(unittest.TestCase):
             "healthSampleCandidates": [value, value],
         }
 
+    @staticmethod
+    def scan_receipts():
+        return [
+            ({"startedAtUtc": "2026-11-16T12:00:02Z",
+              "completedAtUtc": "2026-11-16T12:00:03Z"}, "A" * 64),
+            ({"startedAtUtc": "2026-11-16T12:00:04Z",
+              "completedAtUtc": "2026-11-16T12:00:05Z"}, "B" * 64)]
+
     def test_two_independent_native_health_states_compare_with_lua_trend(self):
         first, second = self.sample()
         second["luaHealthCandidates"][0]["health"]["current"] = 18000
@@ -314,7 +322,8 @@ class TwoPassTests(unittest.TestCase):
                     "2026-11-16T12:01:00+00:00", "2026-11-16T12:01:01+00:00")
         with patch.object(pair.lua, "replay", side_effect=[first, second]), \
              patch.object(pair.lua.native_state, "verified_state",
-                          side_effect=[earlier, later]):
+                          side_effect=[earlier, later]), \
+             patch.object(pair.context, "load", side_effect=self.scan_receipts()):
             result = pair.compare("first", "second", "bracket",
                                   first_native_state="state1",
                                   second_native_state="state2")
@@ -364,13 +373,68 @@ class TwoPassTests(unittest.TestCase):
                     "2026-11-16T12:01:00+00:00", "2026-11-16T12:01:01+00:00")
         with patch.object(pair.lua, "replay", side_effect=[a, b]), \
              patch.object(pair.lua.native_state, "verified_state",
-                          side_effect=[unavailable, later]):
+                          side_effect=[unavailable, later]), \
+             patch.object(pair.context, "load", side_effect=self.scan_receipts()):
             linked = pair.compare("first", "second", "bracket",
                                   first_native_state="state1",
                                   second_native_state="state2")[
                                       "independentNativeHealthTrendCandidate"]
         self.assertIsNone(linked["nativeDeltaCurrentCandidate"])
         self.assertEqual("unavailable", linked["directionScreen"])
+
+    def test_native_health_direction_requires_temporally_relevant_lua_scans(self):
+        first, second = self.sample()
+        second["luaHealthCandidates"][0]["health"]["current"] = 18000
+        second["luaHealthCandidates"][1]["health"]["current"] = 18000
+        # Both native measurements happened before either Lua scan. Their
+        # matching numeric delta is NOT a same-window direction comparison.
+        earlier = self.native_health_state(18208, "1" * 64,
+                    "2026-11-16T12:00:00Z", "2026-11-16T12:00:01Z")
+        later = self.native_health_state(18000, "2" * 64,
+                    "2026-11-16T12:01:00Z", "2026-11-16T12:01:01Z")
+        receipts = [
+            ({"startedAtUtc": "2026-11-16T12:02:00Z",
+              "completedAtUtc": "2026-11-16T12:02:01Z"}, "A" * 64),
+            ({"startedAtUtc": "2026-11-16T12:03:00Z",
+              "completedAtUtc": "2026-11-16T12:03:01Z"}, "B" * 64)]
+        with patch.object(pair.lua, "replay", side_effect=[first, second]), \
+             patch.object(pair.lua.native_state, "verified_state",
+                          side_effect=[earlier, later]), \
+             patch.object(pair.context, "load", side_effect=receipts):
+            linked = pair.compare("first", "second", "bracket",
+                                  first_native_state="state1",
+                                  second_native_state="state2")[
+                                      "independentNativeHealthTrendCandidate"]
+        self.assertEqual(linked["nativeDeltaCurrentCandidate"], -208)
+        self.assertEqual(linked["luaEndpointDeltaCurrentCandidate"], -208)
+        self.assertEqual(linked["directionScreen"], "not-co-timed-host-receipts")
+        self.assertEqual(linked["rawDirectionScreen"], "same-direction-candidate")
+        self.assertEqual(linked["captureChronology"]["status"], "native-before-both-scan-receipts")
+
+    def test_capture_chronology_rejects_stale_index_receipt(self):
+        first, second = self.sample()
+        earlier = self.native_health_state(18208, "1" * 64,
+                  "2026-11-16T12:00:00Z", "2026-11-16T12:00:01Z")
+        later = self.native_health_state(18208, "2" * 64,
+                  "2026-11-16T12:01:00Z", "2026-11-16T12:01:01Z")
+        receipts = self.scan_receipts()
+        receipts[0] = (receipts[0][0], "F" * 64)
+        with patch.object(pair.context, "load", side_effect=receipts):
+            with self.assertRaisesRegex(ValueError, "scan-receipt-hash-mismatch"):
+                pair.native_lua_capture_chronology("first", "second",
+                                                   first, second, earlier, later)
+
+    def test_capture_chronology_distinguishes_scans_before_native(self):
+        first, second = self.sample()
+        earlier = self.native_health_state(18208, "1" * 64,
+                  "2026-11-16T12:04:00Z", "2026-11-16T12:04:01Z")
+        later = self.native_health_state(18000, "2" * 64,
+                  "2026-11-16T12:05:00Z", "2026-11-16T12:05:01Z")
+        with patch.object(pair.context, "load", side_effect=self.scan_receipts()):
+            report = pair.native_lua_capture_chronology("first", "second",
+                                                        first, second, earlier, later)
+        self.assertEqual(report["status"], "native-after-both-scan-receipts")
+        self.assertIn("could predate", report["qualification"])
 
     def test_replay_failure_propagates_and_existing_output_preserved(self):
         a, b = self.sample()

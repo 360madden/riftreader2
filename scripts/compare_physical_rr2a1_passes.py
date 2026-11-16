@@ -31,6 +31,52 @@ def require(ok, reason):
         raise ValueError("physical-rr2a1-pair-" + reason)
 
 
+def native_lua_capture_chronology(first_index, second_index, first, second,
+                                  earlier, later):
+    """Screen whether source-pinned native/Lua observations can share a time window.
+
+    Native captures entirely before (or after) both host scans cannot establish
+    simultaneous acquisition. Lua frames may have been produced before scanning;
+    source-receipt order neither proves nor disproves producer-time alignment.
+    """
+    scans = []
+    for path, replay in ((first_index, first), (second_index, second)):
+        raw, digest = context.load(path)
+        require(digest.upper() == replay["sourceSha256"]["scanIndex"].upper(),
+                "scan-receipt-hash-mismatch")
+        require(all(isinstance(raw.get(key), str) and raw[key]
+                    for key in ("startedAtUtc", "completedAtUtc")),
+                "missing-scan-capture-times")
+        scans.append((raw["startedAtUtc"], raw["completedAtUtc"]))
+    native_windows = [(earlier["firstStartedAtUtc"], earlier["lastCompletedAtUtc"]),
+                      (later["firstStartedAtUtc"], later["lastCompletedAtUtc"])]
+    try:
+        scan_ticks = [(_utc_tick_order_key(start), _utc_tick_order_key(end))
+                      for start, end in scans]
+        native_ticks = [(_utc_tick_order_key(start), _utc_tick_order_key(end))
+                        for start, end in native_windows]
+    except (ValueError, TypeError, OverflowError) as exc:
+        raise ValueError("physical-rr2a1-pair-invalid-state-or-scan-times") from exc
+    require(all(start <= end for start, end in scan_ticks + native_ticks),
+            "reversed-state-or-scan-window")
+    if native_ticks[-1][1] < scan_ticks[0][0]:
+        status = "native-before-both-scan-receipts"
+    elif scan_ticks[-1][1] < native_ticks[0][0]:
+        status = "native-after-both-scan-receipts"
+    elif scan_ticks[0][1] >= scan_ticks[1][0]:
+        status = "overlapping-scan-receipts"
+    else:
+        status = "interleaved-host-receipts-candidate"
+    return {"status": status, "nativeWindowsUtc": native_windows,
+            "luaScanWindowsUtc": scans,
+            "luaScanIndexSha256": [first["sourceSha256"]["scanIndex"],
+                                   second["sourceSha256"]["scanIndex"]],
+            "qualification": ("Source-replayed host scan/native acquisition order only. "
+                              "Lua production could predate a host scan; disjoint host "
+                              "receipts neither prove nor disprove frame-time alignment, "
+                              "atomicity or damage causality.")}
+
+
 def compare(first_index, second_index, first_native_bracket, second_native_bracket=None,
             *, first_native_state=None, second_native_state=None):
     """Recheck raw sources rather than trust previously generated replay summaries."""
@@ -211,6 +257,12 @@ def compare(first_index, second_index, first_native_bracket, second_native_brack
             direction = "same-direction-candidate"
         else:
             direction = "different-direction-candidate"
+        chronology = native_lua_capture_chronology(
+            first_index, second_index, first, second, earlier, later)
+        raw_direction = direction
+        if (direction != "unavailable" and
+                chronology["status"] != "interleaved-host-receipts-candidate"):
+            direction = "not-co-timed-host-receipts"
         result["independentNativeHealthTrendCandidate"] = {
             "status": "candidate-only",
             "firstNativeLuaAgreement": first_screen,
@@ -218,6 +270,8 @@ def compare(first_index, second_index, first_native_bracket, second_native_brack
             "nativeDeltaCurrentCandidate": native_delta,
             "luaEndpointDeltaCurrentCandidate": lua_delta,
             "directionScreen": direction,
+            "rawDirectionScreen": raw_direction,
+            "captureChronology": chronology,
             "nativeSourceSha256": [earlier["summarySha256"], later["summarySha256"]],
             "nativeCaptureWindowsUtc": [
                 [earlier["firstStartedAtUtc"], earlier["lastCompletedAtUtc"]],
@@ -225,8 +279,10 @@ def compare(first_index, second_index, first_native_bracket, second_native_brack
             "qualification": (
                 "Independently SHA-replayed, ordered same-process native health "
                 "candidate states versus advancing unbound Lua HP endpoints; "
-                "capture windows are not time-locked, so even the same direction "
-                "does not prove live health semantics, damage cause or RR2R1 freshness."),
+                "host acquisition windows are not time-locked, and disjoint scan "
+                "receipts suppress the displayed direction. Lua production times "
+                "remain unknown even for interleaved receipts: no live health "
+                "semantics, damage cause or RR2R1 freshness is established."),
         }
     return result
 
