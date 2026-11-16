@@ -26,6 +26,10 @@ def pass_report(start, end, *, epoch=1, scan="A", clock_start=10.0,
         "lastSequence": end,
         "firstClockCandidate": clock_start,
         "lastClockCandidate": clock_start + 1.0,
+        "luaHealthCandidates": [
+            {"sequence": start, "health": {"current": 18208, "maximum": 18208}},
+            {"sequence": end, "health": {"current": 18208, "maximum": 18208}},
+        ],
         "luaPositionCandidates": [{"x": 10., "y": 20., "z": 30.},
                                   {"x": 10.002, "y": 20., "z": 30.}],
         "nativePositionCandidate": {"x": 10., "y": 20., "z": 30.},
@@ -64,6 +68,21 @@ class TwoPassTests(unittest.TestCase):
         self.assertEqual(output["status"], "candidate-only")
         self.assertIn("remains unbound", output["qualification"])
 
+    def test_changed_health_between_passes_is_visible_but_not_damage_qualified(self):
+        first, second = self.sample()
+        second["luaHealthCandidates"][0]["health"]["current"] = 18000
+        second["luaHealthCandidates"][1]["health"]["current"] = 18000
+        with patch.object(pair.lua, "replay", side_effect=[first, second]):
+            result = pair.compare("first", "second", "native")
+        trend = result["luaHealthTrendCandidate"]
+        self.assertEqual(trend["adjacentObservedPairs"], 3)
+        self.assertEqual(trend["changedPairs"], 1)
+        self.assertEqual(trend["decreasePairs"], 1)
+        self.assertEqual(trend["transitions"][0]["fromSequence"], 2)
+        self.assertEqual(trend["transitions"][0]["toSequence"], 3)
+        self.assertEqual(trend["transitions"][0]["deltaCurrentCandidate"], -208)
+        self.assertIn("not damage", trend["qualification"])
+
     def test_retained_overlapping_frames_do_not_block_two_newer_frames(self):
         first, second = self.sample()
         second["firstSequence"] = 2
@@ -75,6 +94,11 @@ class TwoPassTests(unittest.TestCase):
              "frameSha256": first["frameEvidence"][-1]["frameSha256"]},
             {"sequence": 3, "clockCandidate": 20.0, "frameSha256": "B3"},
             {"sequence": 4, "clockCandidate": 21.0, "frameSha256": "B4"}]
+        second["luaHealthCandidates"] = [
+            {"sequence": 2, "health": {"current": 100, "maximum": 18208}},
+            {"sequence": 3, "health": {"current": 18208, "maximum": 18208}},
+            {"sequence": 4, "health": {"current": 18208, "maximum": 18208}},
+        ]
         second["luaPositionCandidates"] = [
             {"x": 10.002, "y": 20., "z": 30.},
             {"x": 10.003, "y": 20., "z": 30.},
@@ -87,9 +111,17 @@ class TwoPassTests(unittest.TestCase):
         self.assertEqual(out["discardedOverlapFrames"], 1)
         self.assertEqual(out["sequenceWindows"], [[1, 2], [3, 4]])
         self.assertEqual(out["rawSequenceWindows"], [[1, 2], [2, 4]])
+        self.assertEqual(out["luaHealthTrendCandidate"]["changedPairs"], 0)
         self.assertAlmostEqual(out["betweenPassLuaXYZDifferenceCandidate"]["x"], 0.001)
         self.assertEqual(out["positionCandidates"]["lastLua"]["x"], 10.004)
         self.assertEqual(out["positionCandidates"]["nativeAfter"]["x"], 10.)
+
+    def test_rejects_unaligned_health_frames(self):
+        a, b = self.sample()
+        b["luaHealthCandidates"][0]["sequence"] = 999
+        with patch.object(pair.lua, "replay", side_effect=[a, b]):
+            with self.assertRaisesRegex(ValueError, "health-frame-sequence-mismatch"):
+                pair.compare("first", "second", "native")
 
     def test_overlap_does_not_count_as_newer_or_ignore_stale_clock(self):
         first, second = self.sample()

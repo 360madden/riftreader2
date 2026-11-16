@@ -34,20 +34,24 @@ def save_json(path, value):
 
 
 def fixture(root, *, second_clock=20, second_sequence=2, first_sequence=1, epoch=1,
-            health=18208, health_max=18208):
+            health=18208, health_max=18208, second_health=None,
+            second_health_max=None):
     folder = root / "scan"
     folder.mkdir()
     request = {"marker": "RR2A1|", "target": deepcopy(IDENTITY)}
     request_sha = save_json(root / "request.json", request)
     candidates = []
     for i, (seq, clock) in enumerate(((first_sequence, 10), (second_sequence, second_clock)), 1):
+        hp = health if i == 1 or second_health is None else second_health
+        hp_max = (health_max if i == 1 or second_health_max is None
+                  else second_health_max)
         frame = {"schemaVersion": 1, "addonVersion": "0.1.0",
                  "sequence": seq, "epoch": epoch,
                  "clock": {"status": "ok", "value": clock},
                  "player": {"status": "ok", "value": "u" + format(int(KEY), "016X")},
                  "fields": {field: {"status": "ok", "value": value} for field, value
                             in (("coordX", 10.002), ("coordY", 20.003), ("coordZ", 30.004),
-                                 ("health", health), ("healthMax", health_max))}}
+                                 ("health", hp), ("healthMax", hp_max))}}
         raw = replay.PREFIX + json.dumps(frame).encode("ascii") + replay.SUFFIX
         chunk = raw + bytes(4096 - len(raw))
         address = 0x10000 * i
@@ -124,6 +128,40 @@ class ReplayTests(unittest.TestCase):
             changed["healthSampleCandidates"] = [18000, 18208, 18208]
             self.assertEqual(replay.compare_native_health(report, changed)
                              ["agreementScreen"], "unavailable")
+
+    def test_changing_lua_health_exposes_observed_delta_without_damage_claim(self):
+        with tempfile.TemporaryDirectory() as d:
+            index = fixture(Path(d), second_health=18000, second_sequence=5)
+            with patch.object(replay.native, "verified_bracket",
+                              return_value=(NATIVE, "A" * 64, None, None)):
+                report = replay.replay(index, Path(d) / "native-summary.json")
+            trend = report["luaHealthTrendCandidate"]
+            self.assertEqual(trend["comparablePairs"], 1)
+            self.assertEqual(trend["changedPairs"], 1)
+            self.assertEqual(trend["decreasePairs"], 1)
+            self.assertEqual(trend["increasePairs"], 0)
+            self.assertEqual(trend["unobservedIntermediateFrames"], 3)
+            self.assertEqual(trend["transitions"][0]["deltaCurrentCandidate"], -208)
+            self.assertEqual(trend["transitions"][0]["fromSequence"], 1)
+            self.assertEqual(trend["transitions"][0]["toSequence"], 5)
+            self.assertIn("not damage", trend["qualification"])
+
+    def test_health_unavailable_or_maximum_change_is_not_an_hp_delta(self):
+        for case, options, key in (
+            ("invalid", {"second_health": 19000}, "unavailablePairs"),
+            ("maximum-change", {"second_health": 18000,
+                                 "second_health_max": 19000}, "maximumChangedPairs"),
+        ):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as d:
+                index = fixture(Path(d), **options)
+                with patch.object(replay.native, "verified_bracket",
+                                  return_value=(NATIVE, "A" * 64, None, None)):
+                    report = replay.replay(index, Path(d) / "native-summary.json")
+                trend = report["luaHealthTrendCandidate"]
+                self.assertEqual(trend["comparablePairs"], 0)
+                self.assertEqual(trend["changedPairs"], 0)
+                self.assertEqual(trend[key], 1)
+                self.assertEqual(trend["transitions"], [])
 
     def test_impossible_lua_health_is_not_compared(self):
         with tempfile.TemporaryDirectory() as d:

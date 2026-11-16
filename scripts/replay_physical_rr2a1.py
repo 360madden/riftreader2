@@ -56,6 +56,58 @@ def health_candidate(fields):
     return {"current": a, "maximum": b}
 
 
+def lua_health_trend(frames):
+    """Describe adjacent observed Lua HP candidates, without inferring combat."""
+    pairs = list(zip(frames, frames[1:]))
+    compared = missing = changed_maximum = rises = drops = steady = 0
+    transitions = []
+    skipped = 0
+    for old, new in pairs:
+        gap = max(0, new["sequence"] - old["sequence"] - 1)
+        skipped += gap
+        first, second = old["health"], new["health"]
+        if first is None or second is None:
+            missing += 1
+            continue
+        if first["maximum"] != second["maximum"]:
+            changed_maximum += 1
+            continue
+        compared += 1
+        delta = second["current"] - first["current"]
+        if delta == 0:
+            steady += 1
+            continue
+        if delta < 0:
+            drops += 1
+        else:
+            rises += 1
+        transitions.append({
+            "fromSequence": old["sequence"],
+            "toSequence": new["sequence"],
+            "beforeCurrentCandidate": first["current"],
+            "afterCurrentCandidate": second["current"],
+            "maximumCandidate": first["maximum"],
+            "deltaCurrentCandidate": delta,
+            "intermediateFramesUnobserved": gap,
+        })
+    return {
+        "status": "candidate-only",
+        "adjacentObservedPairs": len(pairs),
+        "comparablePairs": compared,
+        "unavailablePairs": missing,
+        "maximumChangedPairs": changed_maximum,
+        "changedPairs": rises + drops,
+        "decreasePairs": drops,
+        "increasePairs": rises,
+        "unchangedPairs": steady,
+        "unobservedIntermediateFrames": skipped,
+        "transitions": transitions,
+        "qualification": ("Same-epoch advancing Lua observations show raw HP candidate "
+                          "differences, not damage, healing cause, atomic frame timing, "
+                          "nonce-bound RR2R1 or independently validated native semantics."),
+    }
+
+
 def compare_native_health(lua_report, native_report):
     """Screen source-pinned, same-owner *non-atomic* HP candidate agreement."""
     identity, owner = lua_report["identity"], native_report.get("target")
@@ -211,6 +263,7 @@ def replay(index_path, native_summary_path):
         "luaHealthCandidates": [{"sequence": f["sequence"], "health": f["health"]}
                                 for f in frames],
         "maxAbsCoordinateDifferenceCandidate": maxima,
+        "luaHealthTrendCandidate": lua_health_trend(frames),
         "sourceSha256": {"scanIndex": index_sha, "scanRequest": request_sha,
                          "nativeBracketSummary": native_sha},
         "frameEvidence": [{"sequence": f["sequence"], "clockCandidate": f["clock"],

@@ -75,6 +75,18 @@ def compare(first_index, second_index, first_native_bracket, second_native_brack
     require(not ({f["frameSha256"] for f in first["frameEvidence"]} &
                  {f["frameSha256"] for f in fresh}), "reused-frame")
     require(first["luaFrameCount"] >= 2, "insufficient-independent-frames")
+    first_health = first.get("luaHealthCandidates")
+    second_health = second.get("luaHealthCandidates")
+    require(isinstance(first_health, list) and isinstance(second_health, list)
+            and len(first_health) == first["luaFrameCount"]
+            and len(second_health) == second["luaFrameCount"]
+            and all(isinstance(row, dict) and row.get("sequence") == evidence["sequence"]
+                    for rows, evidence_rows in ((first_health, first["frameEvidence"]),
+                                                (second_health, second["frameEvidence"]))
+                    for row, evidence in zip(rows, evidence_rows)),
+            "health-frame-sequence-mismatch")
+    health_trend = lua.lua_health_trend(first_health + second_health[overlap:])
+
     first_end = first["luaPositionCandidates"][-1]
     second_start = second["luaPositionCandidates"][overlap]
     lua_delta = {axis: second_start[axis] - first_end[axis]
@@ -104,6 +116,7 @@ def compare(first_index, second_index, first_native_bracket, second_native_brack
         "frameCounts": [first["luaFrameCount"], len(fresh)],
         "rawFrameCounts": [first["luaFrameCount"], second["luaFrameCount"]],
         "discardedOverlapFrames": overlap,
+        "luaHealthTrendCandidate": health_trend,
         "sequenceWindows": [[first["firstSequence"], first["lastSequence"]],
                             [fresh[0]["sequence"], fresh[-1]["sequence"]]],
         "rawSequenceWindows": [[first["firstSequence"], first["lastSequence"]],
