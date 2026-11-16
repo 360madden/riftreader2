@@ -300,6 +300,10 @@ internal static class Target
 
 internal static class Probe
 {
+    // Match scripts/physical_turn_visual_pair.py's bounded PNG reader.
+    private const int MaxPngBytes = 12 * 1024 * 1024;
+    private static bool AcceptPngLength(int length) => length >= 45 && length <= MaxPngBytes;
+
     private static readonly JsonSerializerOptions Json = new()
     {
         WriteIndented = false,
@@ -362,7 +366,7 @@ internal static class Probe
             using var memory = new MemoryStream();
             image.Save(memory, ImageFormat.Png);
             var bytes = memory.ToArray();
-            if (bytes.Length < 45 || bytes.Length > 8 * 1024 * 1024)
+            if (!AcceptPngLength(bytes.Length))
                 throw new InvalidOperationException("gpu-capture-image-size-invalid");
             var imageHash = Convert.ToHexString(SHA256.HashData(bytes));
             var report = new {
@@ -490,6 +494,10 @@ internal static class Probe
         Check(ClientFrameMapping.Create(new(100, 100, 1366, 813, 99, 131, 1264, 681), 1266, 713).Status == "unavailable",
             "outside-client-withheld");
         Check(ClientFrameMapping.Create(null, 1920, 1032).Status == "unavailable", "missing-geometry-withheld");
+        Check(AcceptPngLength(8 * 1024 * 1024 + 1)
+              && AcceptPngLength(MaxPngBytes)
+              && !AcceptPngLength(44) && !AcceptPngLength(MaxPngBytes + 1),
+            "png-size-boundary-matches-reader");
         using var bitmap = new Bitmap(80, 80);
         using (var canvas = Graphics.FromImage(bitmap))
         {
