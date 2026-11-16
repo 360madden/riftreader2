@@ -162,6 +162,78 @@ def _repeated_frame_evidence(samples):
     return output
 
 
+
+def _adjacent_frame_hp_candidates(samples, field):
+    """Find exact adjacent addon HP values; not a causal or live-latency claim.
+
+    Both frames must belong to the same player/target producer and have
+    strictly advancing addon, wrapper and native acquisition timestamps.
+    A repeated frame is handled separately by _repeated_frame_evidence.
+    """
+    result = {
+        "scope": "same-owner-advancing-adjacent-frames-candidate-only",
+        "priorSnapshotMatches": 0, "nextSnapshotMatches": 0,
+        "ambiguousMatches": 0, "firstMatch": None,
+    }
+    for index, sample in enumerate(samples):
+        pair = sample.get(field)
+        if (pair is None or pair["nativeMinusSnapshotCurrent"] == 0
+                or pair["nativeMinusSnapshotMaximum"] != 0):
+            continue
+        matches = []
+        for direction, other_index in (("prior", index - 1), ("next", index + 1)):
+            if not 0 <= other_index < len(samples):
+                continue
+            adjacent = samples[other_index]
+            other_pair = adjacent.get(field)
+            if (other_pair is None
+                    or other_pair["snapshotMaximum"] != pair["nativeMaximum"]
+                    or other_pair["snapshotCurrent"] != pair["nativeCurrent"]):
+                continue
+            if not all(isinstance(sample.get(key), str) and sample[key]
+                       and _same(sample[key], adjacent.get(key))
+                       for key in ("sessionId", "playerId", "targetId")):
+                continue
+            if (type(sample.get("epoch")) is not int
+                    or sample["epoch"] != adjacent.get("epoch")):
+                continue
+            earlier, later = ((adjacent, sample) if direction == "prior"
+                              else (sample, adjacent))
+            if (type(earlier.get("sequence")) is not int
+                    or type(later.get("sequence")) is not int
+                    or earlier["sequence"] < 0
+                    or earlier["sequence"] >= later["sequence"]):
+                continue
+            early_clock, late_clock = _number(earlier.get("clock")), _number(later.get("clock"))
+            early_wall, late_wall = _number(earlier.get("wallTime")), _number(later.get("wallTime"))
+            early_native = _utc_seconds(earlier.get("nativeSampledAtUtc"))
+            late_native = _utc_seconds(later.get("nativeSampledAtUtc"))
+            if (any(value is None for value in
+                    (early_clock, late_clock, early_wall, late_wall,
+                     early_native, late_native))
+                    or early_clock >= late_clock or early_wall >= late_wall
+                    or early_native >= late_native):
+                continue
+            matches.append((direction, adjacent["sequence"], late_native - early_native))
+        if not matches:
+            continue
+        if len(matches) > 1:
+            result["ambiguousMatches"] += 1
+            direction, neighbor_sequence, gap = "ambiguous", None, None
+        else:
+            direction, neighbor_sequence, gap = matches[0]
+            result[direction + "SnapshotMatches"] += 1
+        if result["firstMatch"] is None:
+            result["firstMatch"] = {
+                "direction": direction, "sequence": sample["sequence"],
+                "matchedSequence": neighbor_sequence,
+                "nativeCurrent": pair["nativeCurrent"],
+                "snapshotCurrent": pair["snapshotCurrent"],
+                "nativeCaptureGapSeconds": gap,
+            }
+    return result
+
+
 def _health_concordance(samples):
     """Surface same-wrapper native/addon disagreements, never live qualification."""
     output = {"status": "unavailable", "scope": "retained-wrapper-candidates-only"}
@@ -178,6 +250,7 @@ def _health_concordance(samples):
             "comparableSamples": len(pairs),
             "matchingSamples": len(pairs) - len(mismatches),
             "mismatchedSamples": len(mismatches),
+            "adjacentFrameValueCandidates": _adjacent_frame_hp_candidates(samples, field),
             "largestAbsoluteCurrentGap": max(
                 (abs(pair["nativeMinusSnapshotCurrent"]) for _, pair in pairs),
                 default=None),

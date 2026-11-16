@@ -375,6 +375,85 @@ class SurvivalAcceptanceSummaryTests(unittest.TestCase):
                 self.assertEqual(0, replay["nativeChangedWhileRepeated"]["player"])
                 self.assertIsNone(replay["firstNativeChange"])
 
+
+    def test_adjacent_addon_frame_hp_matches_remain_timing_candidates(self):
+        # Native HP equals a different, adjacent advancing addon frame.
+        # Exact values alone cannot establish which acquisition path lagged.
+        samples = [self.sample(10, 100, 100),
+                   self.sample(11, 85, 100),
+                   self.sample(12, 70, 100)]
+        for index, (sample, native_hp) in enumerate(zip(samples, (85, 100, 70))):
+            sample["native"] = {
+                "sampledAtUtc": f"2026-11-14T12:16:{20 + index:02d}+00:00",
+                "player": {"health": {"available": True,
+                                      "status": "calculated-candidate",
+                                      "current": native_hp, "maximum": 100}},
+            }
+        comparison = summary.summarize(
+            [{"status": "encounter-interrupted"}], samples
+        )["telemetry"]["nativeSnapshotHealthComparison"]
+        candidate = comparison["player"]["adjacentFrameValueCandidates"]
+        self.assertEqual("mismatch-observed", comparison["status"])
+        self.assertEqual(1, candidate["nextSnapshotMatches"])
+        self.assertEqual(1, candidate["priorSnapshotMatches"])
+        self.assertEqual(0, candidate["ambiguousMatches"])
+        self.assertEqual("next", candidate["firstMatch"]["direction"])
+        self.assertEqual(100, candidate["firstMatch"]["sequence"])
+        self.assertEqual(110, candidate["firstMatch"]["matchedSequence"])
+        self.assertEqual(1.0, candidate["firstMatch"]["nativeCaptureGapSeconds"])
+        self.assertFalse(summary.summarize(
+            [{"status": "encounter-interrupted"}], samples)["acceptance"]["incomingDamage"])
+
+    def test_adjacent_frame_matches_reject_noncomparable_epochs_and_timestamps(self):
+        source = [self.sample(10, 100, 100), self.sample(11, 85, 100)]
+        for index, (sample, native_hp) in enumerate(zip(source, (85, 100))):
+            sample["native"] = {
+                "sampledAtUtc": f"2026-11-14T12:16:{20 + index:02d}+00:00",
+                "player": {"health": {"available": True,
+                                      "status": "calculated-candidate",
+                                      "current": native_hp, "maximum": 100}},
+            }
+        def evidence(rows):
+            return summary.summarize(
+                [{"status": "encounter-interrupted"}], rows
+            )["telemetry"]["nativeSnapshotHealthComparison"]["player"][
+                "adjacentFrameValueCandidates"]
+        matched = evidence(source)
+        self.assertEqual((1, 1), (matched["nextSnapshotMatches"],
+                                   matched["priorSnapshotMatches"]))
+        for condition in ("new-session", "changed-player", "changed-target",
+                          "new-epoch", "repeated-frame", "reversed-clock",
+                          "reversed-wall-time", "reversed-native-time",
+                          "missing-native-time", "different-maximum"):
+            with self.subTest(condition=condition):
+                rows = json.loads(json.dumps(source))
+                later = rows[1]
+                if condition == "new-session":
+                    later["snapshot"]["sessionId"] = "b" * 32
+                elif condition == "changed-player":
+                    later["snapshot"]["playerId"] = "u0000000000000003"
+                elif condition == "changed-target":
+                    later["snapshot"]["targetId"] = "u0000000000000003"
+                elif condition == "new-epoch":
+                    later["snapshot"]["epoch"] = 4
+                elif condition == "repeated-frame":
+                    later["snapshot"]["sequence"] = rows[0]["snapshot"]["sequence"]
+                elif condition == "reversed-clock":
+                    later["snapshot"]["frameTime"] = 9
+                elif condition == "reversed-wall-time":
+                    later["wallTime"] = 9
+                elif condition == "reversed-native-time":
+                    later["native"]["sampledAtUtc"] = "2026-11-14T12:16:19+00:00"
+                elif condition == "missing-native-time":
+                    later["native"].pop("sampledAtUtc")
+                elif condition == "different-maximum":
+                    later["native"]["player"]["health"]["maximum"] = 120
+                    later["snapshot"]["player"]["healthMax"] = 120
+                candidate = evidence(rows)
+                self.assertEqual(0, candidate["nextSnapshotMatches"])
+                self.assertEqual(0, candidate["priorSnapshotMatches"])
+                self.assertEqual(0, candidate["ambiguousMatches"])
+
     def test_conflicting_or_incomplete_release_receipts_fail_closed(self):
         bad_receipts = (
             {"releaseSucceeded": True, "allInputsReleased": False, "desktopInputsDown": []},
