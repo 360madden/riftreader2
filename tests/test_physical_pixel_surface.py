@@ -1,4 +1,4 @@
-"""P1 candidate surface intersections; synthetic only, no live RIFT access."""
+"""P1 candidate intersections; synthetic and optional archived offline RIFT evidence."""
 from __future__ import annotations
 
 import contextlib
@@ -71,6 +71,22 @@ class TriangleRayTests(unittest.TestCase):
         self.assertFalse(result["occlusionQualified"])
         self.assertFalse(result["sourceCoverageComplete"])
 
+    def test_explicit_selection_requires_actual_hit_without_floor_promotion(self):
+        chosen = surface.intersect_obj(LAYERS, RAY, IDENTITY, selected_triangle=3)
+        self.assertEqual(chosen["selectedTriangleIndex"], 3)
+        self.assertEqual(chosen["selectedHit"]["candidateXYZ"], [0.0, 0.0, 8.0])
+        self.assertEqual(chosen["selectedHit"]["depthGroup"], 2)
+        self.assertFalse(chosen["selectedHit"]["admissionEligible"])
+        self.assertFalse(chosen["selectedHit"]["worldSurfaceVerified"])
+        self.assertFalse(chosen["movementEligible"])
+        self.assertIsNone(surface.intersect_obj(LAYERS, RAY, IDENTITY)["selectedHit"])
+        for index, reason in ((0, "selected-triangle-index-invalid"),
+                              (True, "selected-triangle-index-invalid"),
+                              (4, "selected-triangle-not-intersected"),
+                              (6, "selected-triangle-out-of-mesh")):
+            with self.subTest(index=index), self.assertRaisesRegex(ValueError, reason):
+                surface.intersect_obj(LAYERS, RAY, IDENTITY, selected_triangle=index)
+
     def test_distance_clip_and_parallel_ray_do_not_invent_surface(self):
         clipped = surface.intersect_obj(LAYERS, RAY, IDENTITY, max_distance=6)
         self.assertEqual([hit["distanceNative"] for hit in clipped["hits"]], [5, 5])
@@ -108,8 +124,10 @@ class TriangleRayTests(unittest.TestCase):
 
     def test_many_identical_hits_report_truncation_but_exact_counts(self):
         raw = b"v -1 -1 5\nv 1 -1 5\nv 0 1 5\n" + b"f 1 2 3\n" * 90
-        result = surface.intersect_obj(raw, RAY, IDENTITY)
+        result = surface.intersect_obj(raw, RAY, IDENTITY, selected_triangle=90)
         self.assertEqual(result["hitCount"], 90)
+        self.assertEqual(result["selectedHit"]["triangleIndex"], 90)
+        self.assertFalse(result["selectedHit"]["admissionEligible"])
         self.assertEqual(result["distinctDepthGroups"], 1)
         self.assertTrue(result["hitsTruncated"])
         self.assertEqual(len(result["hits"]), surface.MAX_REPORTED_HITS)
@@ -195,8 +213,11 @@ class RetainedMeshTests(unittest.TestCase):
 
     def test_full_retained_wgc_to_two_mesh_depths_without_movement(self):
         before = self.mesh.read_bytes()
-        result = surface.pick_retained(self.obs, self.route, 160, 110, self.mesh, self.reg)
+        result = surface.pick_retained(self.obs, self.route, 160, 110, self.mesh, self.reg,
+                                       selected_triangle=2)
         self.assertEqual(result["schema"], surface.SCHEMA)
+        self.assertEqual(result["surface"]["selectedHit"]["triangleIndex"], 2)
+        self.assertAlmostEqual(result["surface"]["selectedHit"]["distanceNative"], 18)
         self.assertEqual(result["status"], "candidate-hits")
         self.assertEqual(result["surface"]["distinctDepthGroups"], 2)
         for hit, expected in zip(result["surface"]["hits"], (12, 18)):
@@ -215,12 +236,84 @@ class RetainedMeshTests(unittest.TestCase):
         with contextlib.redirect_stdout(output):
             self.assertEqual(surface.main(argv), 0)
         self.assertEqual(json.loads(output.getvalue())["surface"]["hitCount"], 2)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(surface.main(argv + ["--select-triangle-index", "2"]), 0)
+        self.assertEqual(json.loads(output.getvalue())["surface"]["selectedHit"]["triangleIndex"], 2)
         self.mesh.write_text(self.mesh.read_text() + "# tampered\n", encoding="utf-8")
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             self.assertEqual(surface.main(argv), 2)
         self.assertEqual(json.loads(output.getvalue())["reason"],
                          "registration-mesh-sha256-mismatch")
+
+
+class ArchivedSourceMeshTests(unittest.TestCase):
+    """Optional historical AMD replay; never contacts a current RIFT process."""
+
+    def test_eight_saved_ground_pixels_replay_against_real_riftworld_terrain(self):
+        root = Path(__file__).resolve().parents[1]
+        capture = root / "artifacts/waypoint-view-a07ef160cdd34d5f9465b13e372c44fb"
+        mesh = Path("C:/work/RiftWorld/artifacts/geometry-workflow-courtyard-20261114-r1/geometry.obj")
+        registration_path = root / "artifacts/pixel-surface-p1-20261116/courtyard-identity-hypothesis.json"
+        projection_path = capture / "projection/waypoints.json"
+        sources = (capture / "observation.json", capture / "route.json", mesh,
+                   registration_path, projection_path)
+        if not all(path.is_file() for path in sources):
+            self.skipTest("exact historical AMD-DESKTOP capture/RiftWorld OBJ not installed")
+        raw = mesh.read_bytes()
+        self.assertEqual(hashlib.sha256(raw).hexdigest(),
+                         "9638697914900f3098fbae11d3b6cabe95c663c954898fa6ca589ee759861dec")
+        self.assertEqual(hashlib.sha256(projection_path.read_bytes()).hexdigest(),
+                         "9fd64ba6f67d6a6d715d9101f25293dca313829b620ccd1cae9ee5debde68053")
+        registration = surface.load_registration(registration_path, hashlib.sha256(raw).hexdigest())
+        self.assertEqual(registration["qualification"], "candidate-only")
+        vertices, faces = surface.parse_obj(raw, registration["sourceToNativeRows"])
+        self.assertEqual((len(vertices), len(faces)), (198644, 227051))
+        projection = json.loads(projection_path.read_text(encoding="utf-8"))
+        self.assertEqual(projection["machine"], "AMD-DESKTOP")
+        self.assertEqual(len(projection["points"]), 8)
+        errors, rays = [], []
+        for point in projection["points"]:
+            with self.subTest(point=point["number"]):
+                ground = point["ground"]
+                self.assertEqual(ground["status"], "drawn-candidate")
+                x, y = ground["pixel"]
+                ray = physical_pixel_ray.pick_retained(
+                    capture / "observation.json", capture / "route.json", x, y)["ray"]
+                rays.append(ray)
+                result = surface.intersect_prepared(vertices, faces, ray, max_distance=200)
+                self.assertFalse(result["movementEligible"])
+                self.assertIsNone(result["selectedHit"])
+                self.assertGreaterEqual(result["distinctDepthGroups"], 2)
+                nearest = result["hits"][0]
+                self.assertTrue(nearest["meshGroup"].startswith("world_terrain_"))
+                recorded = [ground["worldXYZ"][axis] for axis in ("x", "y", "z")]
+                error = math.dist(nearest["candidateXYZ"], recorded)
+                self.assertLess(error, .11)
+                errors.append(error)
+        self.assertAlmostEqual(min(errors), .034596216488, delta=1e-5)
+        self.assertAlmostEqual(max(errors), .092417715537, delta=1e-5)
+        # Negative control: flat ground yields the SAME intersection even when
+        # source geometry is displaced 10 units horizontally. This cannot
+        # independently establish native/source X registration or occlusion.
+        shifted, shifted_faces = surface.parse_obj(
+            raw, [[1, 0, 0, 10], [0, 1, 0, 0], [0, 0, 1, 0]])
+        for ray, point, baseline in zip(rays, projection["points"], errors):
+            with self.subTest(negative_x_control=point["number"]):
+                shifted_hits = surface.intersect_prepared(
+                    shifted, shifted_faces, ray, max_distance=200)["hits"]
+                recorded = [point["ground"]["worldXYZ"][axis]
+                            for axis in ("x", "y", "z")]
+                self.assertAlmostEqual(math.dist(shifted_hits[0]["candidateXYZ"], recorded),
+                                       baseline, delta=1e-7)
+        raised, raised_faces = surface.parse_obj(
+            raw, [[1, 0, 0, 0], [0, 1, 0, 1], [0, 0, 1, 0]])
+        height_hits = surface.intersect_prepared(
+            raised, raised_faces, rays[0], max_distance=200)["hits"]
+        first_saved = [projection["points"][0]["ground"]["worldXYZ"][axis]
+                       for axis in ("x", "y", "z")]
+        self.assertGreater(math.dist(height_hits[0]["candidateXYZ"], first_saved), 1.0)
 
 
 if __name__ == "__main__":

@@ -199,16 +199,25 @@ def _intersect(origin, direction, a, b, c, max_distance):
             "normalXYZ": n, "frontFacing": _dot(n, direction) < 0}, False
 
 
-def intersect_obj(raw, ray, source_to_native, max_distance=2000.0):
-    """Return all positive candidate hit depths, grouped without hiding overlap."""
+def intersect_obj(raw, ray, source_to_native, max_distance=2000.0, selected_triangle=None):
+    """Parse one mesh and intersect one ray; use intersect_prepared for repeated pixels."""
+    vertices, faces = parse_obj(raw, source_to_native)
+    return intersect_prepared(vertices, faces, ray, max_distance=max_distance,
+                              selected_triangle=selected_triangle)
+
+
+def intersect_prepared(vertices, faces, ray, max_distance=2000.0, selected_triangle=None):
+    """Intersect a previously checked mesh without reparsing it for every pixel."""
     _require(type(max_distance) in (int, float) and math.isfinite(max_distance)
              and 0 < max_distance <= 10000, "max-distance-invalid")
+    _require(selected_triangle is None or
+             (type(selected_triangle) is int and 1 <= selected_triangle <= MAX_TRIANGLES),
+             "selected-triangle-index-invalid")
     _require(isinstance(ray, dict) and ray.get("status") == "available-candidate",
              "validated-pixel-ray-required")
     origin = _xyz(ray.get("nativeEyeXYZ"), "native-eye")
     direction = _xyz(ray.get("unitDirectionXYZ"), "ray-direction")
     _require(abs(math.hypot(*direction) - 1) <= 1e-6, "ray-not-unit-length")
-    vertices, faces = parse_obj(raw, source_to_native)
     hits, degenerates = [], 0
     for face_index, (indices, group) in enumerate(faces, 1):
         a, b, c = (vertices[i] for i in indices)
@@ -228,11 +237,21 @@ def intersect_obj(raw, ray, source_to_native, max_distance=2000.0):
         hit["depthGroup"] = len(groups)
     for hit in hits:
         hit["coincidentGroupSize"] = groups[hit["depthGroup"] - 1][1]
+    selected_hit = None
+    if selected_triangle is not None:
+        _require(selected_triangle <= len(faces), "selected-triangle-out-of-mesh")
+        selected_hit = next((dict(hit) for hit in hits
+                             if hit["triangleIndex"] == selected_triangle), None)
+        _require(selected_hit is not None, "selected-triangle-not-intersected")
+        selected_hit.update(admissionEligible=False, worldSurfaceVerified=False,
+                            qualification="Explicit display-only triangle candidate; "
+                                          "not a qualified floor or route destination")
     return {"status": "candidate-hits" if hits else "no-candidate-intersection",
             "trianglesChecked": len(faces), "verticesChecked": len(vertices),
             "degenerateTriangles": degenerates, "hitCount": len(hits),
             "distinctDepthGroups": len(groups), "hitsTruncated": len(hits) > MAX_REPORTED_HITS,
             "candidateFirstXYZ": hits[0]["candidateXYZ"] if hits else None,
+            "selectedTriangleIndex": selected_triangle, "selectedHit": selected_hit,
             "hits": hits[:MAX_REPORTED_HITS],
             "sourceCoverageComplete": False, "floorQualified": False,
             "movementEligible": False,
@@ -243,14 +262,15 @@ def intersect_obj(raw, ray, source_to_native, max_distance=2000.0):
                              "are not independently qualified."}
 
 
-def pick_retained(observation, route, x, y, mesh_path, registration_path, max_distance=2000.0):
+def pick_retained(observation, route, x, y, mesh_path, registration_path,
+                  max_distance=2000.0, selected_triangle=None):
     """Pair admitted saved physical screenshot with explicitly SHA-pinned mesh."""
     ray = physical_pixel_ray.pick_retained(observation, route, x, y)
     mesh_path, raw, digest = _source_bytes(mesh_path, MAX_MESH_BYTES, "mesh")
     _require(mesh_path.suffix.lower() == ".obj", "mesh-must-be-obj")
     registration = load_registration(registration_path, digest)
     intersections = intersect_obj(raw, ray["ray"], registration["sourceToNativeRows"],
-                                  max_distance=max_distance)
+                                  max_distance=max_distance, selected_triangle=selected_triangle)
     _require(hashlib.sha256(mesh_path.read_bytes()).hexdigest() == digest
              and hashlib.sha256(Path(registration["path"]).read_bytes()).hexdigest()
                  == registration["sha256"], "mesh-or-registration-changed-during-raycast")
@@ -276,10 +296,13 @@ def main(argv=None):
                         help="SHA-pinned candidate-only source-to-native affine hypothesis")
     parser.add_argument("--max-distance", type=float, default=2000.0,
                         help="maximum ray depth in hypothetical native units (default 2000)")
+    parser.add_argument("--select-triangle-index", type=int,
+                        help="exact one-based OBJ triangle ID from hits; display-only, no movement")
     args = parser.parse_args(argv)
     try:
         result = pick_retained(args.observation, args.route, args.pixel_x, args.pixel_y,
-                               args.mesh_obj, args.registration_json, args.max_distance)
+                               args.mesh_obj, args.registration_json, args.max_distance,
+                               selected_triangle=args.select_triangle_index)
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
         print(json.dumps({"schema": SCHEMA, "status": "blocked", "reason": str(error),
                           "inputSent": False, "movementEligible": False}))

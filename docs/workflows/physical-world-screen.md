@@ -297,6 +297,15 @@ weights. Same-depth edge/overlap triangles share a depth group; deeper floors
 and water remain separate. At most 64 hits are printed, with exact hit counts
 and a truncation flag. Invalid frame/camera/OBJ/hash conditions refuse.
 The parent ray's `worldSurfaceXYZ` stays null and movement remains disabled.
+For deliberate stacked-surface review, add `--select-triangle-index N` using
+an exact one-based triangle index from the hit list (for example **13693**
+for terrain, **32771** for deeper water in the historical first frame).
+`surface.selectedHit` then retains exact XYZ/group/depth/provenance as a
+**display-only candidate** with `admissionEligible: false` and
+`worldSurfaceVerified: false`. Without explicit selection it is null; a
+nonintersected index is refused, including indices beyond the 64-hit print
+limit. Repeated pixel picks can reuse `intersect_prepared` with one parsed
+mesh, avoiding repeated large-OBJ parsing.
 
 **Two genuine historical offline replays:**
 
@@ -313,15 +322,37 @@ The real RiftWorld courtyard OBJ (SHA256 `96386979...59e`) contained
 **198,644 vertices and 227,051 triangles**. Results, pinned source hashes,
 job IDs and registration are recorded in
 `artifacts/pixel-surface-p1-20261116/replay.json`.
-**75 focused/adjacent tests passed** under `C:\Python314\python.exe`.
+The independently exported terrain OBJ also matched the first surface
+for **all eight** saved ground pixels of the same historical screenshot,
+with **0.0346–0.0924** native-unit difference from their retained XYZ.
+The pixels were forward-projected from these XYZ before being rounded to
+integer screenshot positions; this is a bounded local source-mesh
+compatibility check, not independent screenshot visual-depth proof.
+The pinned projection and 8-point replay record are at
+`artifacts/pixel-surface-p1-20261116/route-ground-8points.json`.
+**77 focused/adjacent tests passed**, including an optional real-archive
+regression (skipped when archives are absent), under `C:\Python314\python.exe`.
 
-These residuals support a **historical local alignment candidate** only.
-Actual native/source world-instance registration, current Watch locality,
-scene depth/occlusion, collision response, selected walkable floor and capsule
-clearance remain unproven. `movementEligible` always stays false. Next:
-qualify the source/native frame and loaded world instance, then compare
-candidate geometry with current collision and visual-depth evidence before
-any navigation target admission.
+**Critical negative control:** Translating the entire source OBJ by **+10
+native units in X** yielded the **same eight errors** (to floating-point
+precision), since these mostly level terrain triangles can still intersect
+the viewing rays at the same Y. Translating **+1 in Y** instead raised
+errors to **1.30–2.19 units**; shifting +10 Z exposed five nearer tree
+meshes. Full receipts are in
+`artifacts/pixel-surface-p1-20261116/source-frame-negative-controls.json`.
+Therefore the eight-point matches corroborate **historical terrain height
+and ray mathematics**, but **cannot independently qualify X/Z source/native
+registration**. Do not interpret small ray-to-ground residuals as proof that
+object collision geometry is horizontally placed correctly.
+
+**P1 offline implementation is functional** (exact pixel ray, pinned mesh,
+multiple depth groups, explicit hit selection, repeatable historical tests).
+**P1 live/world qualification remains blocked** pending a same-owner,
+same-world *noncoplanar source/native object anchor* with independent current
+position/registration evidence and observed occlusion/depth. Watch-local
+MOPP/contact and actual capsule clearance remain separate prerequisites;
+`movementEligible` always stays false. No automatic route/waypoint import
+or gameplay input occurs.
 
 **Preferred live presenter: Qt/PySide6-Essentials.** The waypoint window chooses
 the installed `.local/overlay-venv` and its Qt presenter automatically. Local setup

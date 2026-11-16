@@ -10,9 +10,15 @@ player pixel (641,446) hit terrain 0.07944 units from saved player XYZ. Both
 also intersected deeper water meshes. The source-frame identity hypothesis,
 mesh hash, exact hits and replay jobs are retained in
 `artifacts/pixel-surface-p1-20261116/replay.json` (ignored local evidence).
-75 focused/adjacent tests passed. This is a **historical alignment candidate**:
-current source/native world registration, visibility, collision, correct
-floor and traversal are still unqualified; movement/input remained disabled.
+All eight saved-route ground pixels hit terrain first (0.0346–0.0924
+native-unit residuals). Exact triangle selection separates terrain from
+deeper water and rejects nonintersected choices; repeated queries reuse one
+parsed mesh. A crucial negative control showed **+10 X mesh displacement
+preserves every residual**, whereas +1 Y increases errors to 1.30–2.19:
+**flat-ground pixels corroborate terrain height, not X/Z world registration**.
+77 focused tests (including optional real-archive/negative controls) passed.
+Current source/native world registration, visibility, collision, correct
+floor and traversal remain unqualified; movement/input stayed disabled.
 [P1 workflow and limits](workflows/physical-world-screen.md#offline-screenshot-pixel-to-3d-mesh-candidate-surfaces-p1-november-16).
 
 **November 16 — physical screenshot-pixel to 3D viewing ray works offline on AMD-DESKTOP.**
