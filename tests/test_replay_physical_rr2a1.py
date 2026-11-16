@@ -6,6 +6,8 @@ from copy import deepcopy
 import hashlib
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -67,6 +69,14 @@ def fixture(root, *, second_clock=20, second_sequence=2, first_sequence=1, epoch
 
 
 class ReplayTests(unittest.TestCase):
+    def test_direct_script_help_works_without_pythonpath(self):
+        script = Path(replay.__file__).resolve()
+        result = subprocess.run([sys.executable, str(script), "--help"],
+                                cwd=script.parents[1], capture_output=True, text=True,
+                                timeout=15, check=False)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("--scan-index", result.stdout)
+
     def test_independent_lua_native_candidate_xyz(self):
         with tempfile.TemporaryDirectory() as d:
             index = fixture(Path(d))
