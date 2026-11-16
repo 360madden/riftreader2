@@ -61,6 +61,15 @@ def _number(value):
     return number if math.isfinite(number) else None
 
 
+def _native_health_number(health, field):
+    # An unavailable native candidate can still carry a cached numeric slot.
+    # Declared availability and source status take precedence over that number.
+    if ("available" in health and health["available"] is not True
+            or "status" in health and health["status"] != "calculated-candidate"):
+        return None
+    return _number(health.get(field))
+
+
 def _same(left, right):
     return isinstance(left, str) and isinstance(right, str) and left.casefold() == right.casefold()
 
@@ -88,10 +97,10 @@ def _telemetry_sample(row):
 
     health = native_player.get("health") if isinstance(native_player.get("health"), dict) else {}
     target_health = native_target.get("health") if isinstance(native_target.get("health"), dict) else {}
-    self_current = _number(health.get("current"))
-    self_maximum = _number(health.get("maximum"))
-    target_current = _number(target_health.get("current"))
-    target_maximum = _number(target_health.get("maximum"))
+    self_current = _native_health_number(health, "current")
+    self_maximum = _native_health_number(health, "maximum")
+    target_current = _native_health_number(target_health, "current")
+    target_maximum = _native_health_number(target_health, "maximum")
     self_basis = "native-absolute" if self_current is not None else None
     target_basis = "native-absolute" if target_current is not None else None
     # A normalized-only wrapper still provides useful percentage trends, but

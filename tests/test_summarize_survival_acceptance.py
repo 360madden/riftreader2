@@ -209,6 +209,34 @@ class SurvivalAcceptanceSummaryTests(unittest.TestCase):
         self.assertTrue(result["acceptance"]["incomingDamage"])
         self.assertEqual(12, result["telemetry"]["selfHealthDrops"][0]["amount"])
 
+    def test_declared_unavailable_native_health_cannot_fabricate_damage(self):
+        player_id, target_id = "u0000000000000001", "u0000000000000002"
+        incoming = {"sequence": 7, "clock": 10.5, "kind": "damage",
+                    "damage": 25, "caster": target_id, "target": player_id,
+                    "selectedTargetId": target_id}
+        outgoing = {"sequence": 8, "clock": 10.5, "kind": "damage",
+                    "damage": 25, "caster": player_id, "target": target_id,
+                    "selectedTargetId": target_id}
+        for field, label in (("player", "incomingDamage"),
+                             ("selectedTarget", "outgoingDamage")):
+            for rejection in ({"available": False, "status": "calculated-candidate"},
+                              {"available": True, "status": "unavailable"}):
+                with self.subTest(field=field, rejection=rejection):
+                    before = self.sample(10, 100, 100)
+                    after = self.sample(11, 100, 100,
+                                        incoming=incoming, outgoing=outgoing)
+                    before["native"] = {field: {"health": {
+                        "available": True, "status": "calculated-candidate",
+                        "current": 100, "maximum": 100}}}
+                    after["native"] = {field: {"health": {
+                        **rejection, "current": 75, "maximum": 100}}}
+                    result = summary.summarize(
+                        [{"status": "encounter-interrupted"}], [before, after])
+                    self.assertFalse(result["acceptance"][label])
+                    drop_field = ("selfHealthDrops" if field == "player"
+                                  else "targetHealthDrops")
+                    self.assertEqual([], result["telemetry"][drop_field])
+
     def test_native_to_snapshot_target_fallback_cannot_claim_outgoing_damage(self):
         player_id, target_id = "u0000000000000001", "u0000000000000002"
         outgoing = {"sequence": 7, "clock": 10.4, "kind": "damage", "damage": 20,
