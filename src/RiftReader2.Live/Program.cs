@@ -603,7 +603,7 @@ internal static class Program
                     reason),
                 deliveryState)
             {
-                NativePower = LivePowerRead.Unavailable(reason)
+                NativePower = LivePowerRead.Unavailable(reason, freshness?.Identity.ExecutableSha256)
             };
         }
         await delivery.DeliverAsync(Build(delivery.State), cancellationToken);
