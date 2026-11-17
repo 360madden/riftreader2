@@ -15,14 +15,15 @@ internal sealed record LivePowerRead(
     NativeProcessIdentity? Identity, PowerCandidateObservation? Observation,
     long StartedAtTimestamp, string? Failure)
 {
-    internal static LivePowerReport Unavailable(string reason) => new(
-        "native-power-observation/1", "player.resource.power", "native", PowerCandidateReader.Recipe,
+    internal static LivePowerReport Unavailable(string reason, string? executableSha256 = null) => new(
+        "native-power-observation/1", "player.resource.power", "native",
+        PowerCandidateReader.RecipeFor(executableSha256),
         "unavailable", reason, null, null, null, null, null, 0, null);
 
     internal LivePowerReport Present(TimeProvider timeProvider, TimeSpan timeout)
     {
         if (Failure is not null || Observation is null || Observation.Status != "complete")
-            return Unavailable(Failure ?? Observation?.Reason ?? "native-power-unavailable");
+            return Unavailable(Failure ?? Observation?.Reason ?? "native-power-unavailable", Identity?.ExecutableSha256);
         var age = timeProvider.GetElapsedTime(StartedAtTimestamp).TotalMilliseconds;
         var remaining = Math.Max(0, timeout.TotalMilliseconds - age);
         // Expire values again at publication (including after delivery), never renew their age.

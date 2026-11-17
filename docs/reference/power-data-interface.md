@@ -16,7 +16,12 @@ sampler completed 3/3 unchanged physical samples at 100/100 with preserved
 process/type/sequence checks and a running clock. The stream's `fresh` status
 means a temporally fresh native observation, **not** proof of fresh Lua
 agreement, changed-state behavior or game-restart survival on build 1179.
-Unrecognized builds remain unavailable. See the
+Unrecognized builds remain unavailable. An isolated eight-second normal
+Live-reader run on the physical 1179 process emitted ten fresh local
+`nativePower` snapshots at 100/100 and one final unavailable/null snapshot.
+The termination snapshot correctly retains the 1179 recipe instead of
+mislabeling it with the historical one; local delivery was disabled, and no
+fresh Lua comparison or gameplay input occurred. See the
 [1179 recovery evidence](native-power-locator.md#november-17-exact-build-1179-recovery-candidate).
 
 ## Read the normal live snapshot

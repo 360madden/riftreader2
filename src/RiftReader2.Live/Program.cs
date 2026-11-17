@@ -655,7 +655,7 @@ internal static class Program
                 "reader-terminated"),
             delivery)
         {
-            NativePower = LivePowerRead.Unavailable("reader-terminated")
+            NativePower = LivePowerRead.Unavailable("reader-terminated", target?.Identity.ExecutableSha256)
         };
     }
 

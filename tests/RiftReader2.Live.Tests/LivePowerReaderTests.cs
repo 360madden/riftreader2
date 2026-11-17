@@ -72,6 +72,15 @@ public sealed class LivePowerReaderTests
         Assert.Equal("fresh", report.Status);
         Assert.Equal(PowerCandidateReader.UpdatedRecipe, report.Recipe);
         Assert.Equal(0, report.Value);
+        var terminated = LivePowerRead.Unavailable("reader-terminated", updatedIdentity.ExecutableSha256);
+        Assert.Equal(PowerCandidateReader.UpdatedRecipe, terminated.Recipe);
+        Assert.Equal("unavailable", terminated.Status);
+        Assert.Null(terminated.Value);
+        var failed = new LivePowerRead(updatedIdentity,
+            Observation with { Status = "unavailable", Reason = "resource-changed-during-read" }, 0, null)
+            .Present(new Clock(), TimeSpan.FromSeconds(5));
+        Assert.Equal(PowerCandidateReader.UpdatedRecipe, failed.Recipe);
+        Assert.Null(failed.Value);
     }
 
     [Fact]
