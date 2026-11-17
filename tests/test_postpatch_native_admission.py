@@ -70,7 +70,7 @@ class PostpatchNativeAdmissionTests(unittest.TestCase):
 
     def test_admitted_kinds_pass_the_exact_sha_to_native_reader(self):
         # A synthetic nonzero native exit proves command assembly, not live semantics.
-        for kind in ("position", "facing", "actor-pose", "orientation", "unit-positions"):
+        for kind in ("position", "facing", "actor-pose", "orientation", "unit-positions", "selected-position"):
             with self.subTest(kind=kind), patch.object(
                 physical_rift.subprocess, "run",
                 return_value=subprocess.CompletedProcess([], 3, "", "offline-refusal"),

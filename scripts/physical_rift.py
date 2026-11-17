@@ -28,6 +28,7 @@ NATIVE_READS = {
     "orientation": "sample-current-orientation",
     "facing": "sample-current-facing",
     "unit-positions": "sample-current-unit-positions",
+    "selected-position": "sample-current-selected-position",
     "smoothed-scalar": "sample-current-smoothed-scalar",
     "actor-pose": "sample-current-actor-pose",
     "player-context": "sample-current-player-context",
@@ -43,6 +44,7 @@ NATIVE_RECEIPTS = {
     "orientation": "native-current-orientation-summary/1",
     "facing": "native-current-facing-summary/1",
     "unit-positions": "native-current-unit-positions-summary/1",
+    "selected-position": "native-current-selected-position-summary/1",
     "smoothed-scalar": "native-current-smoothed-scalar-summary/1",
     "actor-pose": "native-current-actor-pose-summary/1",
     "player-context": "native-current-player-context-candidate-summary/1",
@@ -592,6 +594,58 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
                 "startedAtUtc": row["startedAtUtc"], "sampledAtUtc": row["completedAtUtc"],
                 "acquisitionElapsedMilliseconds": elapsed, "qualification": qualification,
                 "worldInstanceStatus": "unavailable"}
+    if kind == "selected-position":
+        observation = report.get("observation")
+        if (report.get("schemaVersion") != 1 or report.get("status") != "complete"
+                or report.get("contractVersion") != "native-current-selected-position-candidate-sample/1"
+                or not isinstance(observation, dict) or not isinstance(observation.get("identity"), dict)
+                or observation.get("qualification") !=
+                "conditional raw selection and cached position candidate; selected-target semantics, freshness and restart unverified"):
+            raise ValueError("invalid-native-selected-position-report")
+        self_key, raw_key, target_key = (observation.get(field) for field in
+                                         ("selfKey", "rawFallbackKey", "targetKey"))
+        if (not _unit_key(self_key) or not isinstance(raw_key, str) or not raw_key.isdecimal()
+                or not 0 <= int(raw_key) < 2**64 or str(int(raw_key)) != raw_key
+                or (target_key is not None and not _unit_key(target_key))):
+            raise ValueError("invalid-native-selected-position-key")
+        started, ended = (_utc_tick_order_key(observation.get(field)) for field in
+                          ("startedAtUtc", "completedAtUtc"))
+        if started >= ended:
+            raise ValueError("invalid-native-selected-position-time")
+        status, branch = observation.get("status"), observation.get("selectionBranch")
+        fallback = branch in ("presence-component-fallback", "selection-component-missing-fallback",
+                              "selection-state-fallback", "empty-selection-fallback")
+        if (not fallback and branch != "selection-override-active"
+                or (fallback and target_key != (raw_key if int(raw_key) else None))
+                or (not fallback and target_key is not None)):
+            raise ValueError("invalid-native-selected-position-branch")
+        present = status == "position-candidate"
+        position = observation.get("targetPositionCandidate")
+        bits = observation.get("targetPositionRawBits")
+        entity = observation.get("targetEntityDecimal")
+        if (status not in ("no-target", "target-key-candidate", "position-unavailable",
+                           "position-candidate", "selection-override-unresolved")
+                or (not fallback and status != "selection-override-unresolved")
+                or (fallback and int(raw_key) == 0 and status != "no-target")
+                or (fallback and int(raw_key) != 0 and status not in ("position-candidate", "position-unavailable"))
+                or (present and (not _unit_key(target_key) or not _unit_key(entity)
+                                 or observation.get("targetUnitIdCandidate") != f"u{int(target_key):016X}"))
+                or (not present and any(value is not None for value in (position, bits, entity)))
+                or (target_key is None and observation.get("targetUnitIdCandidate") is not None)):
+            raise ValueError("invalid-native-selected-position-payload")
+        xyz = _xyz_from_raw_bits(position, bits, "invalid-native-selected-position-xyz") if present else None
+        camera = observation.get("opticalCameraCandidate")
+        stable = observation.get("cameraStableCandidate")
+        if type(stable) is not bool or stable != _same_optical_projection_snapshot(
+                camera, observation.get("opticalCameraAfterCandidate")):
+            raise ValueError("invalid-native-selected-position-camera")
+        return {"status": status, "selectionBranch": branch, "selfKey": self_key,
+                "rawFallbackKey": raw_key, "targetKey": target_key,
+                "targetPositionXYZCandidate": xyz, "cameraStableCandidate": stable,
+                "targetScreenPointCandidate": _project_world_point(camera, xyz) if present and stable else
+                {"status": "unavailable", "reason": "target-position-or-camera-unavailable"},
+                "sampledAtUtc": observation["completedAtUtc"],
+                "qualification": observation["qualification"]}
     if kind == "unit-positions":
         observation = report.get("observation")
         if (report.get("schemaVersion") != 1 or report.get("status") != "complete"
@@ -1412,7 +1466,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
     # Other older-build native readers must not silently inherit admission.
     updated_sha = "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"
     if str(target.get("executableSha256", "")).casefold() == updated_sha.casefold():
-        if kind not in ("position", "facing", "actor-pose", "orientation", "unit-positions"):
+        if kind not in ("position", "facing", "actor-pose", "orientation", "unit-positions", "selected-position"):
             return dict(selection, status="blocked", reason="postpatch-native-read-unqualified")
         if include_target:
             return dict(selection, status="blocked", reason="postpatch-target-projection-unqualified")
