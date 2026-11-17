@@ -341,7 +341,7 @@ class StateTests(unittest.TestCase):
     def test_cli_exposes_actual_native_candidates_without_claiming_qualification(self):
         report = {
             "status": "complete-candidate", "selfKeyCandidate": "239816685251645959",
-            "target": OWNER, "qualification": "Native candidates only; no Lua validation.",
+            "target": deepcopy(OWNER), "qualification": "Native candidates only; no Lua validation.",
             "sources": {
                 "player-context": {"sourceSha256": "a" * 64, "candidateValues": {
                     "level": {"status": "numeric-getter-and-presentation-candidate", "rawCandidate": 45},
@@ -372,8 +372,22 @@ class StateTests(unittest.TestCase):
         self.assertIsNone(shown["playerContextCandidate"]["target"]["unitIdCandidate"])
         self.assertEqual(18208, shown["vitalsCandidate"]["health"]["current"])
         self.assertEqual("unavailable", shown["vitalsCandidate"]["energy"]["status"])
+        self.assertNotIn("resourceKindCandidate", shown["vitalsCandidate"])
         self.assertEqual("a" * 64, shown["sources"]["player-context"])
         self.assertEqual(report["qualification"], shown["qualification"])
+
+        report["target"]["executableSha256"] = next(
+            sha for sha in state.SUPPORTED_BUILDS if sha != state.BUILD_SHA)
+        report["sources"]["vitals"]["candidateValues"].update(
+            resourceKindCandidate=1, resourceKindSamplesCandidate=[1, 1])
+        updated_output = StringIO()
+        with patch.object(state, "collect", return_value=(Path("updated/summary.json"), report)), \
+             redirect_stdout(updated_output):
+            self.assertEqual(0, state.main(["--physical-pid", "123"]))
+        updated_shown = json.loads(updated_output.getvalue())
+        self.assertEqual(1, updated_shown["vitalsCandidate"]["resourceKindCandidate"])
+        self.assertEqual([1, 1], updated_shown["vitalsCandidate"]["resourceKindSamplesCandidate"])
+        self.assertEqual("unavailable", updated_shown["vitalsCandidate"]["energy"]["status"])
 
 
 if __name__ == "__main__":

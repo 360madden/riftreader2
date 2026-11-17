@@ -167,7 +167,11 @@ def main(argv=None):
         "selfKeyCandidate": report["selfKeyCandidate"],
         "playerContextCandidate": {k: player.get(k) for k in ("level", "calling", "combat", "target")},
         "positionCandidate": {k: position.get(k) for k in ("x", "y", "z", "refreshGuardStatus")},
-        "vitalsCandidate": {k: vitals.get(k) for k in ("health", "mana", "energy")},
+        "vitalsCandidate": {
+            **{k: vitals.get(k) for k in ("health", "mana", "energy")},
+            **{k: vitals[k] for k in ("resourceKindCandidate", "resourceKindSamplesCandidate")
+               if k in vitals},
+        },
         **({"statsCandidate": values["stats"]} if "stats" in values else {}),
         "sources": {k: v["sourceSha256"] for k, v in report["sources"].items()},
         "qualification": report["qualification"],
