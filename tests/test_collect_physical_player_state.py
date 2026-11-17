@@ -63,24 +63,30 @@ class StateTests(unittest.TestCase):
                 self.assertEqual(hashlib.sha256(Path(row["path"]).read_bytes()).hexdigest().upper(),
                                  row["sourceSha256"])
 
-    def test_updated_build_collects_three_sources_and_refuses_unqualified_stats(self):
+    def test_updated_build_collects_three_or_four_pinned_sources(self):
         updated = deepcopy(SELECTION)
         updated["target"]["executableSha256"] = next(
             sha for sha in state.SUPPORTED_BUILDS if sha != state.BUILD_SHA)
+        def fake(selection, kind, path, **options):
+            return (self.stats_read(selection, kind, path, **options) if kind == "stats"
+                    else self.fake_read(selection, kind, path, **options))
         with (TemporaryDirectory() as temp,
               patch.object(state.socket, "gethostname", return_value=state.HOST),
               patch.object(state.physical_rift, "select_physical", return_value=updated),
-              patch.object(state.physical_rift, "read_native", side_effect=self.fake_read) as read):
+              patch.object(state.physical_rift, "read_native", side_effect=fake) as read):
             path, report = state.collect(123, Path(temp) / "updated", samples=2)
             self.assertEqual(set(report["sources"]), set(state.KINDS))
             self.assertEqual(report["target"]["executableSha256"],
                              updated["target"]["executableSha256"])
             self.assertEqual(json.loads(path.read_text()), report)
             self.assertEqual(read.call_count, 3)
-            with self.assertRaisesRegex(ValueError, "postpatch-stats-unqualified"):
-                state.collect(123, Path(temp) / "refused", include_stats=True)
-            self.assertFalse((Path(temp) / "refused").exists())
-            self.assertEqual(read.call_count, 3)
+            path4, report4 = state.collect(123, Path(temp) / "with-stats",
+                                           samples=2, include_stats=True)
+            self.assertEqual(set(report4["sources"]), set(state.KINDS) | {"stats"})
+            self.assertEqual(report4["sources"]["stats"]["samples"], 1)
+            self.assertEqual(report4["sources"]["stats"]["candidateValues"]["selectorCount"], 20)
+            self.assertEqual(json.loads(path4.read_text()), report4)
+            self.assertEqual(read.call_count, 7)
 
     def stats_read(self, selection, kind, path, **options):
         self.assertEqual(kind, "stats")
@@ -106,7 +112,7 @@ class StateTests(unittest.TestCase):
             "status": "complete", "observation": {
                 "identity": {"processId": OWNER["processId"],
                              "processStartUtcTicks": int(OWNER["processStartUtcTicks"]),
-                             "executableSha256": state.BUILD_SHA,
+                             "executableSha256": selection["target"]["executableSha256"].upper(),
                              "moduleBaseAddress": 123456, "moduleSize": 1234567},
                 "unitKey": 239816685251645959,
                 "startedAtUtc": "2026-11-15T18:00:03Z",

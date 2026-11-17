@@ -165,10 +165,19 @@ class StateReplayTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "vitals-burst-pin-mismatch"):
             replay.verified_state(self.summary)
 
-    def test_updated_build_refuses_unqualified_stats(self):
+    def test_updated_build_replays_sha_pinned_stats_as_fourth_source(self):
         self.synthetic_updated_build()
         self.attach_stats()
-        with self.assertRaisesRegex(ValueError, "postpatch-stats-unqualified"):
+        result = replay.verified_state(self.summary)
+        self.assertEqual(set(result["sources"]), set(replay.state.KINDS) | {"stats"})
+        self.assertEqual(result["candidateValues"]["stats"]["selectorCount"], 5)
+
+    def test_updated_build_rejects_mixed_stats_source_identity(self):
+        self.synthetic_updated_build()
+        self.attach_stats()
+        self.edit_source("stats", lambda r: r["observation"]["identity"].update(
+            executableSha256=replay.state.BUILD_SHA))
+        with self.assertRaisesRegex(ValueError, "stats-invalid-source-owner"):
             replay.verified_state(self.summary)
 
     def test_original_composite_three_reader_sources_replay(self):

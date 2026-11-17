@@ -38,9 +38,6 @@ def verified_state(filename):
     receipt, receipt_sha = context.load(filename)
     owner = receipt.get("target")
     build_sha = str(owner.get("executableSha256", "")).upper() if isinstance(owner, dict) else ""
-    source_rows = receipt.get("sources")
-    require(build_sha == state.BUILD_SHA or not isinstance(source_rows, dict)
-            or "stats" not in source_rows, "postpatch-stats-unqualified")
     kinds = state.KINDS + (("stats",) if isinstance(receipt.get("sources"), dict)
                            and "stats" in receipt["sources"] else ())
     require(receipt.get("schemaVersion") == 1

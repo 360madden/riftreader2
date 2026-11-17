@@ -52,7 +52,7 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False)
     first = pin(pid)
     owner = first["target"]
     build_sha = str(owner["executableSha256"]).upper()
-    require(not include_stats or build_sha == BUILD_SHA, "postpatch-stats-unqualified")
+    # Standalone stats are now separately qualified for both exact builds.
     output_dir = Path(output_dir)
     if not output_dir.is_absolute():
         output_dir = ROOT / output_dir
