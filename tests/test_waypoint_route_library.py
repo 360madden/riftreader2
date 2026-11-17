@@ -87,6 +87,39 @@ class RouteLibraryTests(unittest.TestCase):
         row = library.list_routes(library_dir=self.directory)[0]
         self.assertEqual((25, 24), (row["waypointCount"], row["planarDistance"]))
 
+    def test_screenshot_composite_wrapped_as_route_refuses_library_paths(self):
+        # Ray-hit candidates are advisory, even with injected valid-looking points.
+        advisory = {"schema": "rr2.retained-wgc-composite-candidates/1",
+                    "status": "candidate-only", "pixels": [{"pixel": [850, 530]}],
+                    "waypoints": [["Unqualified ray", 7218.0, 3026.0]],
+                    "heights": [873.0], "movementEligible": False}
+        refusal = "pixel-composite-candidate-requires-independent-route-evidence"
+        with self.assertRaisesRegex(ValueError, refusal):
+            library._validate(advisory)
+        with self.assertRaisesRegex(ValueError, refusal):
+            library.save_route(advisory, "Unqualified", "bad", library_dir=self.directory)
+        self.assertFalse((self.directory / "bad.json").exists())
+
+        source = Path(self.temp.name) / "advisory.json"
+        source.write_text(json.dumps(advisory), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, refusal):
+            library.import_route(source, "Unqualified", "imported", library_dir=self.directory)
+        self.assertFalse((self.directory / "imported.json").exists())
+
+        self.directory.mkdir(exist_ok=True)
+        (self.directory / "manually-injected.json").write_text(
+            json.dumps(advisory), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, refusal):
+            library.load_route("manually-injected", self.directory)
+        rows = library.list_routes(library_dir=self.directory)
+        self.assertEqual(len(rows), 1)
+        self.assertIn(refusal, rows[0]["error"])
+
+        # Refusal applies to provenance, not ordinary manually authored routes.
+        library.save_route(self.route, "Ordinary", "ordinary", library_dir=self.directory)
+        self.assertEqual(library.load_route("ordinary", self.directory)["waypoints"],
+                         self.route["waypoints"])
+
     def test_corrupt_receipts_and_oversized_entries_are_reported(self):
         corrupt = dict(self.route, pointMeasurements=[{"kind": "forged"}, None])
         with self.assertRaisesRegex(ValueError, "invalid-route-measurement"):

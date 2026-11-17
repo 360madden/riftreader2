@@ -110,6 +110,10 @@ def _existing_path(route_id, library_dir):
 
 
 def _validate(document):
+    # Use the same review/admission boundary as the direct Waypoints loader.
+    # Local import avoids a cycle: candidate adoption imports this module.
+    from scripts.waypoint_candidate_adoption import reject_review_route
+    reject_review_route(document)
     _route(document)
     if "routeName" in document and (not isinstance(document["routeName"], str)
             or not document["routeName"].strip() or len(document["routeName"]) > 120):
