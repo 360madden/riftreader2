@@ -89,7 +89,7 @@ public static class NativeCommandRunner
             if (args[0] == "sample-current-ability-records")
                 return await CurrentBuildAbilityRecordsSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--keys", "--output", "--include-costs", "--include-timing", "--include-range", "--include-variants"), output, cancellationToken);
             if (args[0] == "sample-current-unit-positions")
-                return await CurrentBuildUnitPositionsSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--unit-limit", "--start-bucket"), output, cancellationToken);
+                return await CurrentBuildUnitPositionsSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--unit-limit", "--start-bucket", "--sha256"), output, cancellationToken);
             if (args[0] == "sample-current-world-casts")
                 return await CurrentBuildWorldCastSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--samples", "--interval-ms"), output, cancellationToken);
             if (args[0] == "sample-current-localization")

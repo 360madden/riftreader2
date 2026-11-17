@@ -31,13 +31,13 @@ internal static class CurrentBuildUnitPositionsCandidateReader
         var started = DateTimeOffset.UtcNow;
         var session = new BoundedSession(source);
         var id = session.Identity;
-        if (id.ProcessId <= 0 || id.ProcessStartUtcTicks <= 0 || id.ModuleSize < 0x33624B0 ||
-            !string.Equals(id.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256, StringComparison.OrdinalIgnoreCase))
+        if (id.ProcessId <= 0 || id.ProcessStartUtcTicks <= 0 || id.ModuleSize < CurrentBuildPlayerLookup.ManagerRvaFor(id.ExecutableSha256) + 8 ||
+            !CurrentBuildPlayerLookup.IsCoreBuild(id.ExecutableSha256))
             throw new InvalidDataException("Unit positions require the exact build and process epoch.");
         byte[] Take(ulong address, int count) => CurrentBuildPlayerLookup.Exact(session, address, count);
         ulong Ptr(ulong address, int count = 8) => CurrentBuildPlayerLookup.Pointer(address, count);
         var lookup = CurrentBuildPlayerLookup.Resolve(session);
-        var selfComponent = lookup.ResolveComponent(0x2F588A0);
+        var selfComponent = lookup.ResolveComponent(CurrentBuildPlayerLookup.PositionIndexRvaFor(id.ExecutableSha256));
         CurrentBuildOwnedPosition ReadSelf() => CurrentBuildPositionCandidateReader.ReadOwned(session,
             _ => new(lookup.PlayerKey, lookup.EntityAddress, selfComponent, lookup.VerifyUnchanged));
         var self = ReadSelf();
@@ -49,7 +49,7 @@ internal static class CurrentBuildUnitPositionsCandidateReader
             globals.Add((address, bytes));
             return bytes;
         }
-        var manager = Ptr(U64(Global(id.ModuleBaseAddress + 0x33624A8, 8)));
+        var manager = Ptr(U64(Global(id.ModuleBaseAddress + CurrentBuildPlayerLookup.ManagerRvaFor(id.ExecutableSha256), 8)));
         var table = Ptr(U64(Global(manager + 0x50, 8)));
         var header = Global(table, 24);
         var buckets = Ptr(U64(header));
@@ -58,7 +58,7 @@ internal static class CurrentBuildUnitPositionsCandidateReader
         if (stride is < 24 or > 4096 || stride % 8 != 0 || count is < 1 or > 4096)
             throw new InvalidDataException("Invalid unit-position table header.");
         Ptr(buckets, checked((int)((count - 1) * stride + 24)));
-        var selector = BinaryPrimitives.ReadInt32LittleEndian(Global(id.ModuleBaseAddress + 0x2F588A0, 4));
+        var selector = BinaryPrimitives.ReadInt32LittleEndian(Global(id.ModuleBaseAddress + CurrentBuildPlayerLookup.PositionIndexRvaFor(id.ExecutableSha256), 4));
         if (selector is < 0 or >= 0x60) throw new InvalidDataException("Invalid unit-position selector.");
         startBucket %= count;
         var rows = new List<UnitPositionCandidateRow>();

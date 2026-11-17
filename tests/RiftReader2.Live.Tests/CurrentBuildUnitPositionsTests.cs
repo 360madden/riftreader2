@@ -28,6 +28,16 @@ public sealed class CurrentBuildUnitPositionsTests
         Assert.InRange(value.ReadBytes, 1, 2 * 1024 * 1024);
     }
 
+    [Fact]
+    public void UpdatedBuildUsesRelocatedManagerSelectorAndPositionType()
+    {
+        var observation = CurrentBuildUnitPositionsCandidateReader.Read(new Fake(updated: true));
+        Assert.Equal("42", observation.SelfKey);
+        Assert.Equal(2, observation.Examined);
+        Assert.Equal(2, observation.Rows.Count);
+        Assert.Equal(5, Assert.Single(observation.Rows, row => row.UnitKey == ulong.MaxValue.ToString()).HorizontalDistanceCandidate);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
@@ -109,6 +119,35 @@ public sealed class CurrentBuildUnitPositionsTests
         finally { if (File.Exists(path)) File.Delete(path); }
     }
 
+    [Fact]
+    public async Task UpdatedBuildCommandRequiresMatchingExplicitSha()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "rr2-1179-units-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            var session = new Fake(updated: true);
+            var options = new Dictionary<string, string>
+            {
+                ["--pid"] = "123", ["--start-ticks"] = "456", ["--output"] = path,
+                ["--sha256"] = CurrentBuildPlayerLookup.GameSha256
+            };
+            Task<int> Run() => CurrentBuildUnitPositionsSampleCommand.RunAsync(
+                options, new StringWriter(), CancellationToken.None,
+                (_, _, _) => Task.FromResult<IAsyncDisposable>(new Lease(() => { })),
+                (_, _, _) => Task.FromResult<IReadOnlyNativeMemorySession>(session),
+                CurrentBuildUnitPositionsCandidateReader.Read);
+            await Assert.ThrowsAsync<InvalidDataException>(Run);
+            Assert.False(File.Exists(path));
+            options["--sha256"] = CurrentBuildPlayerLookup.UpdatedGameSha256;
+            Assert.Equal(0, await Run());
+            using var report = JsonDocument.Parse(await File.ReadAllTextAsync(path));
+            Assert.Equal(CurrentBuildPlayerLookup.UpdatedGameSha256,
+                report.RootElement.GetProperty("observation").GetProperty("identity")
+                    .GetProperty("executableSha256").GetString());
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
     private sealed class Lease(Action release) : IAsyncDisposable
     {
         public ValueTask DisposeAsync() { release(); return ValueTask.CompletedTask; }
@@ -116,8 +155,8 @@ public sealed class CurrentBuildUnitPositionsTests
 
     private sealed class Fake : IReadOnlyNativeMemorySession
     {
-        public NativeProcessIdentity Identity { get; } = new(123, 456, "rift_x64.exe",
-            CurrentBuildPlayerLookup.GameSha256, Module, 64 * 1024 * 1024);
+        public NativeProcessIdentity Identity { get; }
+        private readonly bool updated;
         public Dictionary<ulong, byte[]> Memory { get; } = [];
         public bool ChangeTargetPosition { get; init; }
         public bool ChangeTargetNode { get; init; }
@@ -128,14 +167,18 @@ public sealed class CurrentBuildUnitPositionsTests
         public int Reads { get; private set; }
         private bool readTarget;
         private int targetNodeReads;
-        public Fake()
+        public Fake(bool updated = false)
         {
-            Memory[Module + 0x33623E0] = Q(SystemAddress);
+            this.updated = updated;
+            Identity = new(123, 456, "rift_x64.exe", updated
+                ? CurrentBuildPlayerLookup.UpdatedGameSha256 : CurrentBuildPlayerLookup.GameSha256,
+                Module, 64 * 1024 * 1024);
+            Memory[Module + (updated ? 0x3373BA0UL : 0x33623E0UL)] = Q(SystemAddress);
             Memory[SystemAddress + 0x360] = Q(42);
-            Memory[Module + 0x33624A8] = Q(Manager);
+            Memory[Module + (updated ? 0x3373C68UL : 0x33624A8UL)] = Q(Manager);
             Memory[Manager + 0x50] = Q(Table);
             Memory[Table] = Q(Bucket).Concat(Q(24)).Concat(Q(1)).ToArray();
-            Memory[Module + 0x2F588A0] = BitConverter.GetBytes(0);
+            Memory[Module + CurrentBuildPlayerLookup.PositionIndexRvaFor(Identity.ExecutableSha256)] = BitConverter.GetBytes(0);
             Memory[Bucket] = Q(TargetNode).Concat(Q(42)).Concat(Q(SelfEntity)).ToArray();
             Memory[TargetNode] = Q(0).Concat(Q(ulong.MaxValue)).Concat(Q(TargetEntity)).ToArray();
             Entity(SelfEntity, SelfSlots, SelfPosition, 100, 200);
@@ -148,7 +191,7 @@ public sealed class CurrentBuildUnitPositionsTests
             Memory[entity] = bytes;
             Memory[slots] = Q(position);
             bytes = new byte[0x110];
-            Q(Module + 0x26B4FB0).CopyTo(bytes, 0);
+            Q(Module + (updated ? 0x26C35C0UL : 0x26B4FB0UL)).CopyTo(bytes, 0);
             Q(entity).CopyTo(bytes, 0x10);
             BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(0x48), x);
             BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(0x4C), 20);

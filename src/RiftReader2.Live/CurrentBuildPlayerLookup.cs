@@ -24,6 +24,8 @@ internal sealed class CurrentBuildPlayerLookup
         string.Equals(sha, UpdatedGameSha256, StringComparison.OrdinalIgnoreCase);
     internal static bool IsCoreBuild(string? sha) => IsUpdatedBuild(sha) ||
         string.Equals(sha, GameSha256, StringComparison.OrdinalIgnoreCase);
+    internal static ulong ManagerRvaFor(string? sha) =>
+        IsUpdatedBuild(sha) ? UpdatedManagerRva : ManagerRva;
     internal static ulong PositionIndexRvaFor(string? sha) =>
         IsUpdatedBuild(sha) ? 0x2F698A0UL : 0x2F588A0UL;
     private const ulong MinimumUserAddress = 0x10000;
