@@ -89,3 +89,35 @@ P0/P1 unfinished:
 4. For any live test later, reverify current PID/start time/executable hash/camera, obey AGENTS STOP/GO, and request distinct authorization before keyboard/mouse/gameplay actions.
 
 Do not clear blockers based on ray overlap, image alignment, or historical process identity alone.
+
+## Consolidated P1 follow-through — 2026-11-16 19:56 EST
+
+### Offline implementation, independent checks, and provenance
+
+- The independently retained second camera frame (`observe-wgc-f37599014aaa422a94682503abb6d532`) passed its own before/WGC/after SHA and stable-camera bracket (2.211218 seconds). The 27-ray boundary has terrain at `(1950,400)` and temple candidate at `(1970,400)` near the right pillar; `(2200,1000)` intersects temple behind UI and correctly stays `visibleSurfaceQualified=false`. This is a negative visibility control, not optical proof.
+- Source code now requires both SHA-pinned native reports, matching process/player/orientation/camera observations, temporal bracket, actual PNG dimensions/quality, and exclusive-create preview output. Rejects mismatched but self-consistent PNGs, changed camera, bad bracket, and existing output.
+- An exact-parity, dependency-free BVH lives in `scripts/physical_pixel_mesh_accel.py` and is enabled only with `--accel bvh` on `scripts/physical_pixel_composite.py`; default `off` is unchanged. Query and footprint payloads remain candidate-only, `visibleSurfaceQualified=false`, `movementEligible=false`. Do not infer clearance or make live input from them.
+- Offline screen-to-world suite: `C:\Python314\python.exe -m unittest discover -s tests -p 'test_physical_pixel*.py' -v` => **80/80 passed**. Separate BVH parity included 200 seeded fuzz rays with zero mismatches, all 64 pin-based per-layer rays matching, and independent CLI exact-JSON comparison across seven workloads.
+- Key pushed milestones: `f6d54882` second retained view; `912fcb8c` provenance/race fixes; `5af9d48f` immutable BVH; `bf0addd4` opt-in CLI integration. See each commit for tests and changed files.
+
+### AMD-DESKTOP end-to-end runtime evidence (single paired executions)
+
+| Workload | `--accel off` | `--accel bvh` | Result |
+|---|---:|---:|---|
+| 1 pixel | 2.068 s | 4.603 s | off faster |
+| 8 pixels | 4.798 s | 5.050 s | off faster |
+| 9 pixels | 5.403 s | 4.823 s | BVH 1.12x |
+| 10 pixels | 5.721 s | 4.522 s | BVH 1.27x |
+| 26 pixels | 13.382 s | 4.905 s | BVH 2.73x |
+| 32 pixels | 16.188 s | 4.799 s | BVH 3.37x |
+| 1 pixel + radius-2 footprint | 6.161 s | 8.331 s | off faster |
+
+The observed batch crossover on this pinned scene was **8–9 pixels**, including full process launch and BVH building. Peak working set was about 163 MiB (off), 270 MiB (regular BVH), and 462 MiB (radius-2 BVH). Keep the `off` default, opt into BVH for repeatable 9+ pixel batches; rerun measurements for any other mesh/hardware.
+
+### P0 physics/route gate remains STOP
+
+- RiftWorld's existing source HKX temple has native collision shape/MOPP/filter qualification, but not a current physics-step timestamp or live obstacle response; 20 stored manifold observations were unchanged over approximately 1h49m. Stored contact data must not be presented as fresh blocking evidence.
+- A **read-only** Atank pose at approximately 19:27 EST was `(7220.81055, 872.28076, 3034.23047)`. Earlier proposed side faces 46–48 were now about 9.89 units from the player; new nearby candidates #231/#215 were approximately 3 units away, underfoot #221 0.082 unit. Treat all as snapshots, not a collision qualification or movement permit.
+- Existing waypoint bridge scripts (`waypoint_destination_plan.py` and `waypoint_candidate_adoption.py`) and viewer already exist; reuse rather than replace. If displaying this composite, label pixels as **advisory candidates only**.
+- Next meaningful external gate: supervised bounded contact/visual confirmation at the latest verified physical client identity **only after separate explicit user authorization**. No keyboard, mouse, click-to-move, casting, or navigation input was used during this work. Keep `STOP=true` until proven.
+
