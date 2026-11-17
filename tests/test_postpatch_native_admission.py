@@ -46,7 +46,7 @@ class PostpatchNativeAdmissionTests(unittest.TestCase):
     def test_unqualified_fields_are_refused_before_native_launch(self):
         # Old-build research is not an implicit qualification for build 1179.
         for kind in (
-            "vitals", "orientation", "unit-positions", "smoothed-scalar",
+            "vitals", "unit-positions", "smoothed-scalar",
             "player-context", "selected-target", "stats", "zone-context",
             "target-name", "unit-names",
         ):
@@ -70,7 +70,7 @@ class PostpatchNativeAdmissionTests(unittest.TestCase):
 
     def test_admitted_kinds_pass_the_exact_sha_to_native_reader(self):
         # A synthetic nonzero native exit proves command assembly, not live semantics.
-        for kind in ("position", "facing", "actor-pose"):
+        for kind in ("position", "facing", "actor-pose", "orientation"):
             with self.subTest(kind=kind), patch.object(
                 physical_rift.subprocess, "run",
                 return_value=subprocess.CompletedProcess([], 3, "", "offline-refusal"),

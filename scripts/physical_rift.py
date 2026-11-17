@@ -1403,10 +1403,11 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
     command = [str(NATIVE_EXE), NATIVE_READS[kind], "--pid", str(pid),
                "--start-ticks", ticks, "--output", str(path)]
     # Build 1179 has independently verified player/position/facing/actor-owner anchors.
+    # Raw orientation reuses the owner-checked pose component exercised by facing.
     # Other older-build native readers must not silently inherit that admission.
     updated_sha = "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"
     if str(target.get("executableSha256", "")).casefold() == updated_sha.casefold():
-        if kind not in ("position", "facing", "actor-pose"):
+        if kind not in ("position", "facing", "actor-pose", "orientation"):
             return dict(selection, status="blocked", reason="postpatch-native-read-unqualified")
         if include_target:
             return dict(selection, status="blocked", reason="postpatch-target-projection-unqualified")

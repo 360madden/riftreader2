@@ -9,13 +9,25 @@ namespace RiftReader2.Live;
 internal static class CurrentBuildOrientationSampleCommand
 {
     internal static Task<int> RunAsync(IReadOnlyDictionary<string, string> options,
-        TextWriter output, CancellationToken ct) =>
-        RunAsync(options, output, ct,
-            static async (pid, ticks, token) => await NativeReadFileLease.AcquireAsync(
-                pid, ticks, CurrentBuildPlayerLookup.GameSha256, TimeSpan.FromSeconds(1), token),
-            static async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(
-                pid, ticks, CurrentBuildPlayerLookup.GameSha256, token),
+        TextWriter output, CancellationToken ct)
+    {
+        var expectedSha = ExpectedSha(options);
+        return RunAsync(options, output, ct,
+            async (pid, ticks, token) => await NativeReadFileLease.AcquireAsync(
+                pid, ticks, expectedSha, TimeSpan.FromSeconds(1), token),
+            async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(
+                pid, ticks, expectedSha, token),
             CurrentBuildOrientationCandidateReader.Read);
+    }
+
+    private static string ExpectedSha(IReadOnlyDictionary<string, string> options)
+    {
+        var sha = options.TryGetValue("--sha256", out var requested)
+            ? requested : CurrentBuildPlayerLookup.GameSha256;
+        if (!CurrentBuildPlayerLookup.IsCoreBuild(sha))
+            throw new ArgumentException("Unqualified executable SHA256 for native orientation.");
+        return sha;
+    }
 
     // Injection seam is for offline lifecycle/publication tests, not alternate runtime sources.
     internal static async Task<int> RunAsync(IReadOnlyDictionary<string, string> options,
@@ -37,6 +49,7 @@ internal static class CurrentBuildOrientationSampleCommand
             throw new ArgumentException("--pid, --start-ticks and --output required.");
         var samples = BoundedInt(options, "--samples", 1, 1, 30);
         var intervalMilliseconds = BoundedInt(options, "--interval-ms", 500, 0, 2000);
+        var expectedSha = ExpectedSha(options);
         ct.ThrowIfCancellationRequested();
         if (File.Exists(path)) throw new IOException("Output exists; never overwrite an earlier observation.");
         await using var lease = await acquireLease(pid, ticks, ct);
@@ -45,7 +58,7 @@ internal static class CurrentBuildOrientationSampleCommand
         ct.ThrowIfCancellationRequested();
         var identity = session.Identity;
         if (identity.ProcessId != pid || identity.ProcessStartUtcTicks != ticks ||
-            !string.Equals(identity.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256, StringComparison.OrdinalIgnoreCase))
+            !string.Equals(identity.ExecutableSha256, expectedSha, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Opened orientation process identity mismatch.");
         var elapsed = Stopwatch.StartNew();
         // The session holds an exact-epoch process handle; each read checks

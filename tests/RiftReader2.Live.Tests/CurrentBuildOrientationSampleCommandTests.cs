@@ -27,6 +27,31 @@ public sealed class CurrentBuildOrientationSampleCommandTests
     }
 
     [Fact]
+    public async Task UpdatedBuildRequiresExplicitShaAndMatchingOpenProcess()
+    {
+        using var updated = new Fixture();
+        updated.Options["--sha256"] = CurrentBuildPlayerLookup.UpdatedGameSha256;
+        updated.Session.Identity = updated.Session.Identity with
+        {
+            ExecutableSha256 = CurrentBuildPlayerLookup.UpdatedGameSha256
+        };
+        Assert.Equal(0, await updated.Run(new StringWriter()));
+        Assert.True(updated.Session.Revalidated);
+
+        using var mismatch = new Fixture();
+        mismatch.Options["--sha256"] = CurrentBuildPlayerLookup.UpdatedGameSha256;
+        await Assert.ThrowsAsync<InvalidDataException>(
+            () => mismatch.Run(new StringWriter()));
+        Assert.False(File.Exists(mismatch.Path));
+
+        using var unqualified = new Fixture();
+        unqualified.Options["--sha256"] = new string('A', 64);
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => unqualified.Run(new StringWriter()));
+        Assert.False(unqualified.Opened);
+    }
+
+    [Fact]
     public async Task PassiveBurstPublishesThreeOwnerPinnedMatricesAndRefreshStates()
     {
         using var f = new Fixture();
