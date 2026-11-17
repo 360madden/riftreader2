@@ -415,6 +415,14 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
                 options["path_points"] = guides
                 if any(guide.get("controlPause") is True for guide in guides):
                     options["control_pauses"] = True
+            # Even a perfectly straight pass through the ordered guides must
+            # fit the distance left by previously verified native movement.
+            planned_points = [movement_start, *(guides or []), {"x": x, "z": z}]
+            if (_path_planar_distance(planned_points)
+                    > MAX_ROUTE_DISTANCE - actual_travel_distance + 1e-9):
+                policy.coordinator.critical("critical-unavailable")
+                policy.state = "halt"
+                raise WaypointError("Survival span exceeds the remaining travel budget")
             result = mover(adapter, x, z, stop, named, **options)
         except Stopped as exc:
             # A validated native STOP can contain a completed guide prefix.

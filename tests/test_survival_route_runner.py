@@ -638,6 +638,30 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
         self.assertEqual(["first"], [e["name"] for e in events
                                       if e.get("status") == "arrived"])
 
+    def test_next_leg_minimum_distance_is_budgeted_before_mover(self):
+        calls = []
+        prior = [0.0, 0.0]
+
+        def mover(adapter, x, z, stop, emit, **options):
+            calls.append((x, z))
+            result = arrived(x, z, *prior)
+            if len(calls) == 1:
+                path = [{"x": prior[0], "y": 5, "z": prior[1]}]
+                for _ in range(int(MAX_ROUTE_DISTANCE * .4)):
+                    path.extend(({"x": prior[0] + 1, "y": 5, "z": prior[1]},
+                                 {"x": prior[0], "y": 5, "z": prior[1]}))
+                path.append({"x": x, "y": 5, "z": z})
+                result.update(path=path, pathTruncated=False,
+                              readCount=len(path))
+            prior[:] = [x, z]
+            return result
+
+        with self.assertRaisesRegex(Exception, "remaining travel budget"):
+            self.invoke([("first", 1, 0), ("second", 401, 0)],
+                        Backend([observed()]), mover)
+        self.assertEqual([(1.0, 0.0)], calls,
+                         "An impossible second leg must not launch native input")
+
     def test_shared_deadline_is_passed_as_decreasing_leg_budget(self):
         ticks = iter((0, 0, 1, 1, 4, 4, 4))
         budgets = []
