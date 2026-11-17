@@ -1316,6 +1316,17 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
                 raise ValueError("invalid-native-vitals-report")
             result[resource] = {name: entry.get(name) for name in
                                 ("status", "current", "maximum", "unavailableReason")}
+        # Expose the newly probed raw kind on 1179; historical projection contracts
+        # remain unchanged for SHA-pinned replay of earlier player-state receipts.
+        if str(observation.get("identity", {}).get("executableSha256", "")).upper() == \
+                "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01":
+            kinds = [row.get("resourceKindCandidate") for row in (observations or [observation])]
+            if any(kind is not None and (type(kind) is not int or not 0 <= kind <= 16)
+                   for kind in kinds):
+                raise ValueError("invalid-native-vitals-resource-kind")
+            result["resourceKindCandidate"] = kinds[-1]
+            if observations is not None:
+                result["resourceKindSamplesCandidate"] = kinds
         return result
     if kind == "position":
         observations = report.get("observations")

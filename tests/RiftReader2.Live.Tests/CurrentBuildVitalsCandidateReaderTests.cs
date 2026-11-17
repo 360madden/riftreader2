@@ -50,9 +50,37 @@ public sealed class CurrentBuildVitalsCandidateReaderTests
         Assert.Equal(10635, observation.Health.Maximum);
         Assert.Equal("postpatch-energy-type-unqualified", observation.Energy.UnavailableReason);
         Assert.Equal("postpatch-mana-type-unqualified", observation.Mana.UnavailableReason);
-        Assert.Null(observation.ResourceKindCandidate);
+        Assert.Equal(4, observation.ResourceKindCandidate);
         session.Put(Module + 0x2C3A0A0, Q(Module + 0x20F8D11));
         Assert.Throws<InvalidDataException>(() => Read(session));
+    }
+
+    [Theory]
+    [InlineData("missing-pointer")]
+    [InlineData("changed-pointer")]
+    [InlineData("changed-kind")]
+    [InlineData("unknown-kind")]
+    public void UpdatedBuildPreservesVerifiedHpWhenOptionalResourceKindIsUnusable(string defect)
+    {
+        var session = Fixture();
+        session.Identity = session.Identity with { ExecutableSha256 = CurrentBuildPlayerLookup.UpdatedGameSha256 };
+        session.Put(Module + 0x33EDA70, Q(Clock));
+        var raw = HealthRaw();
+        Q(Module + 0x2C2B330).CopyTo(raw, 0);
+        session.Put(Hp, raw);
+        session.Put(Module + 0x2C2B370, Q(Module + 0x20C7AC0));
+        session.Put(Module + 0x3572B30, Q(Module + 0x2C3A098));
+        session.Put(Module + 0x2C3A0A0, Q(Module + 0x20F8D10));
+        if (defect == "missing-pointer") session.Put(Component + 0x40, Q(0));
+        if (defect == "changed-pointer") session.ChangeAfterFirst(Component + 0x40, Q(KindOwner + 0x1000));
+        if (defect == "changed-kind") session.ChangeAfterFirst(KindOwner + 0x168, D(3));
+        if (defect == "unknown-kind") session.Put(KindOwner + 0x168, D(37));
+        var result = Read(session);
+        Assert.Equal(10635, result.Health.Current);
+        Assert.Equal(10635, result.Health.Maximum);
+        Assert.Null(result.ResourceKindCandidate);
+        Assert.Equal("postpatch-mana-type-unqualified", result.Mana.UnavailableReason);
+        Assert.Equal("postpatch-energy-type-unqualified", result.Energy.UnavailableReason);
     }
 
     [Fact]

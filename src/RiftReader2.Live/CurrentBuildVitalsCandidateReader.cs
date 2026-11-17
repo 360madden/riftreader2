@@ -82,6 +82,24 @@ internal static class CurrentBuildVitalsCandidateReader
         var health = CalculateHealth(healthRaw, hpCache, clock);
         if (CurrentBuildPlayerLookup.IsUpdatedBuild(identity.ExecutableSha256))
         {
+            // Read a bounded discriminator without admitting unqualified resource record types.
+            // It is optional: a broken/changed resource branch must not discard proven HP.
+            int? resourceKind = null;
+            try
+            {
+                var kindOwnerAddress = checked(component + 0x40);
+                var kindOwnerRaw = Take(kindOwnerAddress, 8, false);
+                var resourceOwner = Pointer(U64(kindOwnerRaw));
+                var kindAddress = checked(resourceOwner + 0x168);
+                var kindRaw = Take(kindAddress, 4, false);
+                var candidate = I32(kindRaw);
+                if (candidate is >= 0 and <= 16 &&
+                    Take(kindOwnerAddress, 8, false).AsSpan().SequenceEqual(kindOwnerRaw) &&
+                    Take(kindAddress, 4, false).AsSpan().SequenceEqual(kindRaw))
+                    resourceKind = candidate;
+            }
+            catch (InvalidDataException) { /* Optional resource path unavailable. */ }
+            catch (OverflowException) { /* Unusable optional resource pointer. */ }
             // Energy and Mana have independent record types, still unqualified on 1179.
             foreach (var anchor in anchors)
                 if (!Take(anchor.Address, anchor.Bytes.Length, false).AsSpan().SequenceEqual(anchor.Bytes))
@@ -92,7 +110,8 @@ internal static class CurrentBuildVitalsCandidateReader
             return new(identity, started, DateTimeOffset.UtcNow, owner.UnitKey, health,
                 new("unavailable", "postpatch-energy-type-unqualified"))
             {
-                Mana = new("unavailable", "postpatch-mana-type-unqualified")
+                Mana = new("unavailable", "postpatch-mana-type-unqualified"),
+                ResourceKindCandidate = resourceKind
             };
         }
         var kindOwner = Ptr(checked(component + 0x40));

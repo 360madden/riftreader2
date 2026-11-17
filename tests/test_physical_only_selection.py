@@ -152,6 +152,29 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         self.assertEqual(result["nativeValues"]["unitKey"], "239816685251645959")
         self.assertIn("candidate-only", result["qualification"])
 
+    def test_updated_vitals_project_resource_kind_without_claiming_resource_values(self):
+        identity = {**REPORT_IDENTITY, "executableSha256":
+                    "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"}
+        first = {"identity": identity, "unitKey": 42, "resourceKindCandidate": 1,
+                 "health": {"status": "calculated-candidate", "current": 18208, "maximum": 18208},
+                 "energy": {"status": "unavailable", "unavailableReason": "postpatch-energy-type-unqualified"},
+                 "mana": {"status": "unavailable", "unavailableReason": "postpatch-mana-type-unqualified"}}
+        second = {**first, "resourceKindCandidate": 1}
+        report = {"identity": identity, "observation": second,
+                  "requestedSamples": 2, "completedSamples": 2,
+                  "observations": [first, second]}
+        value = physical._native_values("vitals", report)
+        self.assertEqual([1, 1], value["resourceKindSamplesCandidate"])
+        self.assertEqual(1, value["resourceKindCandidate"])
+        self.assertIsNone(value["energy"]["current"])
+        self.assertIsNone(value["mana"]["current"])
+        first["resourceKindCandidate"] = True
+        with self.assertRaisesRegex(ValueError, "invalid-native-vitals-resource-kind"):
+            physical._native_values("vitals", report)
+        first["resourceKindCandidate"] = 37
+        with self.assertRaisesRegex(ValueError, "invalid-native-vitals-resource-kind"):
+            physical._native_values("vitals", report)
+
     def test_native_orientation_projects_matrix_candidates_without_promoting_heading(self):
         primary_values = [1., 0., 0., 0., 1., 0., 0., 0., 1.]
         secondary_values = [0., 0., -1., 0., 1., 0., 1., 0., 0.]
