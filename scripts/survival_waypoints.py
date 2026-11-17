@@ -104,8 +104,17 @@ def _read_route(path, direction):
         raise UsageError(f"route is unreadable: {exc}") from None
     if len(raw) > MAX_ROUTE_BYTES:
         raise UsageError(f"route exceeds {MAX_ROUTE_BYTES} bytes")
+    def reject_duplicate_keys(pairs):
+        fields = {}
+        for key, value in pairs:
+            if key in fields:
+                raise UsageError(f"duplicate route key: {key}")
+            fields[key] = value
+        return fields
+
     try:
         document = json.loads(raw.decode("utf-8-sig"),
+                              object_pairs_hook=reject_duplicate_keys,
                               parse_constant=lambda value: (_ for _ in ()).throw(
                                   ValueError("non-finite JSON number " + value)))
     except (UnicodeError, ValueError, json.JSONDecodeError) as exc:

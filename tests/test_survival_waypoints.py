@@ -88,6 +88,18 @@ class SurvivalWaypointsTests(unittest.TestCase):
             value = Runtime(); self.runtimes.append(value); return value
         return adapter, runtime
 
+    def test_duplicate_route_keys_fail_closed_before_game_contact(self):
+        # Python's default json.loads silently accepts the last duplicate key.
+        # Never let ambiguous route/heights definitions reach the live adapter.
+        for raw in (
+            '{"waypoints":[["Start",1,2]],"waypoints":[["End",2,3]]}',
+            '{"waypoints":[["Start",1,2],["End",2,3]],"heights":[5,5],"heights":[8,8]}',
+        ):
+            with self.subTest(raw=raw):
+                self.route.write_text(raw, encoding="utf-8")
+                with self.assertRaisesRegex(cli.UsageError, "duplicate route key"):
+                    cli._read_route(self.route, "forward")
+
     def test_status_profile_is_offline_structured_and_needs_no_adapter(self):
         args = self.parse("status-profile", "--profile", str(self.profile))
         adapter, runtime = self.factories()
