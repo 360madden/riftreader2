@@ -862,6 +862,28 @@ class SurvivalAcceptanceSummaryTests(unittest.TestCase):
                 report = summary.summarize([{"status": "stopped"}], samples)
                 self.assertEqual("unavailable", report["acceptance"]["stopInvariant"])
 
+    def test_survival_rejoin_gate_requires_an_observed_retreat_cycle(self):
+        arrived = {"status": "arrived", "releaseSucceeded": True,
+                   "desktopInputsDown": [], "waypointCount": 2, "nextWaypoint": 2}
+        telemetry = [self.sample(10 + index, 100, 100, state="travel")
+                     for index in range(3)]
+        report = summary.summarize([arrived], telemetry)
+        self.assertEqual("admitted", report["route"]["completionGate"]["status"])
+        self.assertEqual("blocked", report["route"]["survivalCompletionGate"]["status"])
+        self.assertEqual("retreat-not-exercised",
+                         report["route"]["survivalCompletionGate"]["reason"])
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "route.jsonl"
+            frames = Path(directory) / "frames.jsonl"
+            source.write_text(json.dumps(arrived) + "\n", encoding="utf-8")
+            frames.write_text("".join(json.dumps(row) + "\n" for row in telemetry),
+                              encoding="utf-8")
+            self.assertEqual(0, summary.main(["--route", str(source),
+                                              "--require-complete-route"]))
+            self.assertEqual(2, summary.main(["--route", str(source),
+                                              "--telemetry", str(frames),
+                                              "--require-survival-route"]))
+
     def test_survival_route_gate_requires_recovery_and_matching_encounters(self):
         interrupted = {"status": "encounter-interrupted", "releaseSucceeded": True,
                        "desktopInputsDown": []}

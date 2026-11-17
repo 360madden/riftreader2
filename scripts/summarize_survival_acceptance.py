@@ -635,7 +635,11 @@ def _survival_completion_gate(summary):
                        for index, state in enumerate(states))
         if retreats != route["encounterInterruptCount"]:
             reason = "encounter-retreat-count-mismatch"
-        elif retreats and acceptance["checkpointInvariant"] != "preserved":
+        elif retreats == 0:
+            # A clean travel-only arrival is valid route completion, but it
+            # cannot qualify the stricter retreat/recovery/rejoin acceptance.
+            reason = "retreat-not-exercised"
+        elif acceptance["checkpointInvariant"] != "preserved":
             reason = "checkpoint-unverified"
         elif retreats and acceptance["recoveryResumeInvariant"] != "preserved":
             reason = "recovery-unverified"
