@@ -10,16 +10,28 @@ namespace RiftReader2.Live;
 internal static class CurrentBuildActorPoseSampleCommand
 {
     internal static Task<int> RunAsync(IReadOnlyDictionary<string, string> options,
-        TextWriter output, CancellationToken ct) =>
-        RunAsync(options, output, ct,
-            static async (pid, ticks, token) => await NativeReadFileLease.AcquireAsync(
-                pid, ticks, CurrentBuildPlayerLookup.GameSha256, TimeSpan.FromSeconds(1), token),
-            static async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(
-                pid, ticks, CurrentBuildPlayerLookup.GameSha256, token),
+        TextWriter output, CancellationToken ct)
+    {
+        var sha = ExpectedSha(options);
+        return RunAsync(options, output, ct,
+            async (pid, ticks, token) => await NativeReadFileLease.AcquireAsync(
+                pid, ticks, sha, TimeSpan.FromSeconds(1), token),
+            async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(
+                pid, ticks, sha, token),
             options.TryGetValue("--include-transform-sources", out var rawInclude) && rawInclude == "true"
                 ? static session => CurrentBuildActorPoseCandidateReader.ReadWithTranslationSources(session)
                 : CurrentBuildActorPoseCandidateReader.Read,
             CurrentBuildPositionCandidateReader.ReadOwned);
+    }
+
+    private static string ExpectedSha(IReadOnlyDictionary<string, string> options)
+    {
+        var sha = options.TryGetValue("--sha256", out var requested)
+            ? requested : CurrentBuildPlayerLookup.GameSha256;
+        if (!CurrentBuildPlayerLookup.IsCoreBuild(sha))
+            throw new ArgumentException("Unqualified executable SHA256 for native actor pose.");
+        return sha;
+    }
 
     // Offline injection seam preserves the exact production lease/session/publication path.
     internal static async Task<int> RunAsync(IReadOnlyDictionary<string, string> options,
@@ -35,6 +47,7 @@ internal static class CurrentBuildActorPoseSampleCommand
         ArgumentNullException.ThrowIfNull(open);
         ArgumentNullException.ThrowIfNull(read);
         ArgumentNullException.ThrowIfNull(readPosition);
+        var expectedSha = ExpectedSha(options);
         if (!options.TryGetValue("--pid", out var rawPid) ||
             !int.TryParse(rawPid, NumberStyles.None, CultureInfo.InvariantCulture, out var pid) || pid <= 0 ||
             !options.TryGetValue("--start-ticks", out var rawTicks) ||
@@ -54,7 +67,7 @@ internal static class CurrentBuildActorPoseSampleCommand
         await using var session = await open(pid, ticks, ct);
         var identity = session.Identity;
         if (identity.ProcessId != pid || identity.ProcessStartUtcTicks != ticks ||
-            !string.Equals(identity.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256, StringComparison.OrdinalIgnoreCase))
+            !string.Equals(identity.ExecutableSha256, expectedSha, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Opened actor pose process identity mismatch.");
         var elapsed = Stopwatch.StartNew();
         // The opened session holds a stable process handle, and every

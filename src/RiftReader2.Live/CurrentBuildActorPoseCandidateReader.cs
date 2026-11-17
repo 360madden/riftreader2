@@ -61,6 +61,10 @@ internal static class CurrentBuildActorPoseCandidateReader
 {
     internal const ulong ActorSelectorRva = 0x2F58490;
     internal const ulong PositionSelectorRva = 0x2F588A0;
+    internal const ulong UpdatedActorSelectorRva = 0x2F69490;
+
+    private static ulong ActorSelectorRvaFor(string? sha) =>
+        CurrentBuildPlayerLookup.IsUpdatedBuild(sha) ? UpdatedActorSelectorRva : ActorSelectorRva;
 
     internal static CurrentBuildActorPoseCandidate Read(IReadOnlyNativeMemorySession session) =>
         ReadWithTranslationSources(session, false);
@@ -72,8 +76,8 @@ internal static class CurrentBuildActorPoseCandidateReader
         var lookup = CurrentBuildPlayerLookup.Resolve(session);
         return ReadResolved(session, session.Identity, DateTimeOffset.UtcNow,
             lookup.PlayerKey, lookup.EntityAddress,
-            lookup.ResolveComponent(ActorSelectorRva),
-            lookup.ResolveComponent(PositionSelectorRva),
+            lookup.ResolveComponent(ActorSelectorRvaFor(session.Identity.ExecutableSha256)),
+            lookup.ResolveComponent(CurrentBuildPlayerLookup.PositionIndexRvaFor(session.Identity.ExecutableSha256)),
             lookup.VerifyUnchanged, includeTranslationSources);
     }
 
@@ -87,9 +91,9 @@ internal static class CurrentBuildActorPoseCandidateReader
         ArgumentNullException.ThrowIfNull(verifyOwner);
         if (session.Identity != identity || identity.ProcessId <= 0
             || identity.ProcessStartUtcTicks <= 0 || playerKey == 0
-            || !string.Equals(identity.ExecutableSha256,
-                CurrentBuildPlayerLookup.GameSha256, StringComparison.OrdinalIgnoreCase)
-            || identity.ModuleSize < PositionSelectorRva + 4)
+            || !CurrentBuildPlayerLookup.IsCoreBuild(identity.ExecutableSha256)
+            || identity.ModuleSize < Math.Max(ActorSelectorRvaFor(identity.ExecutableSha256),
+                 CurrentBuildPlayerLookup.PositionIndexRvaFor(identity.ExecutableSha256)) + 4)
             throw new InvalidDataException("Actor pose requires exact current-build process and owner.");
         CurrentBuildPlayerLookup.Pointer(playerEntity, 128);
         var actor = CurrentBuildPlayerLookup.Pointer(actorComponent,

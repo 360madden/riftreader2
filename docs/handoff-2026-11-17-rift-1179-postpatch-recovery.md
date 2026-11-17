@@ -2,7 +2,7 @@
 
 ## Outcome (AMD-DESKTOP only)
 
-The physical RIFT x64 game updated to `STABLE-1-1179-a-1256672`. RR2 native player owner, position and body-facing readers are working again; the Waypoints 1.4.0 GUI is started on AMD-DESKTOP and is bound to a freshly measured movement calibration. No route was executed and no combat/casting occurred.
+The physical RIFT x64 game updated to `STABLE-1-1179-a-1256672`. RR2 native player owner, position, body-facing and actor-pose readers are working again; the Waypoints 1.4.0 GUI is started on AMD-DESKTOP and is bound to a freshly measured movement calibration. No route was executed and no combat/casting occurred.
 
 - New `rift_x64.exe` SHA-256: `DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01`.
 - Historical exact build SHA retained for replay: `1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8`.
@@ -30,6 +30,14 @@ Authentic new-build receipts (ignored research artifacts, preserved locally):
 
 GUI visual acceptance: `Joey D's Waypoints v1.4.0` showed live coordinates X `7208.423`, Y `842.877`, Z `3118.577`, facing `45.80°`, and `Fresh` pose. Persistent launch after transient test: GUI PID `75688` with RIFT PID `77980`; one-time task used to start it was removed after verifying GUI stayed open. Any restarted game requires fresh process selection and basis identity validation. No route started.
 
+## Actor-pose follow-up (same patched build)
+
+- New actor selector RVA `0x2F69490` (historical `0x2F58490` retained). The actor reader dynamically resolves the selector and the current position component, owner-checks both, and brackets matrices with exact-build/epoch proof.
+- C# `sample-current-actor-pose --sha256 DF954B...` returned three valid samples: player key `239816685251645959`, position XYZ bracket stable and actor matrix orthonormal error approximately `2.24e-7`. Independent current native facing confirmed the actor angle `135.2565°` corresponds to body bearing `-135.2565°` under the existing sign convention.
+- Python physical wrapper `--read-native actor-pose --samples 2 --include-position` also returned complete on AMD-DESKTOP. Optional transform source reads returned finite values and zero *internal* reconstruction delta, not proof of absolute world-space semantic meaning.
+- `MoveKey --measure-actor-pose` is now admitted for this exact executable SHA with its live actor owner path. No additional live movement was issued to test this combined option; the separate native actor reader and independently measured A/D turns were verified.
+- Position and facing changed between observations while other sessions may have been active; do not treat samples from different times as a single continuous movement experiment.
+
 ## Validation
 
 - `dotnet build src\RiftReader2.Live\RiftReader2.Live.csproj -c Debug --no-restore`: 0 warnings, 0 errors.
@@ -39,11 +47,11 @@ GUI visual acceptance: `Joey D's Waypoints v1.4.0` showed live coordinates X `72
 
 ## Remaining work / guarded limitations
 
-1. **Target projection, optical camera, native target/health/mana/energy and actor pose sampler**: not requalified yet on new EXE; current bridge deliberately rejects unsupported new-build native reader kinds. Revalidate per field, do not silently accept old offsets.
+1. **Target projection, optical camera, native target/health/mana/energy and other legacy samplers**: not requalified yet on new EXE; current bridge deliberately rejects unsupported new-build native reader kinds. Revalidate per field, do not silently accept old offsets.
 2. **Old recorded routes** remain tied to a previous build/player and are intentionally blocked from replay. Record a new route or explicitly migrate route metadata only after its geometry, world-instance and safety checks pass; do not simply edit hashes.
 3. **Autonomous navigation and combat** were not claimed proven by these tests. A bounded motion sample + GUI health does not demonstrate whole-zone path execution or safe collision handling. The Atank cliff location makes blindly replaying old routes unsafe.
 4. After any further patch or client restart, require fresh EXE hash, machine, process epoch, window, player owner, movement/turn calibration and route validation. `Update Helper` is the central before/after file evidence store; this RR2 repository owns RR2-specific fixes.
 
 ## Code scope
 
-Updated exact-build allowlist/owner and selectors in `CurrentBuildPlayerLookup`, position/orientation/facing readers and commands; `NativeCommandRunner`; physical Python routing; and `MoveKeyCommand` exact-build XYZ feedback. Historical old-build constants preserved. No unrelated dirty developer files touched.
+Updated exact-build allowlist/owner and selectors in `CurrentBuildPlayerLookup`, position/orientation/facing/actor-pose readers and commands; `NativeCommandRunner`; physical Python routing; and `MoveKeyCommand` exact-build XYZ feedback. Historical old-build constants preserved. No unrelated dirty developer files touched.

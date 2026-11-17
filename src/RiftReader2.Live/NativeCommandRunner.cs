@@ -73,7 +73,7 @@ public static class NativeCommandRunner
             if (args[0] == "sample-current-smoothed-scalar")
                 return await CurrentBuildSmoothedScalarSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--samples", "--interval-ms"), output, cancellationToken);
             if (args[0] == "sample-current-actor-pose")
-                return await CurrentBuildActorPoseSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--samples", "--interval-ms", "--include-position", "--include-transform-sources"), output, cancellationToken);
+                return await CurrentBuildActorPoseSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--samples", "--interval-ms", "--include-position", "--include-transform-sources", "--sha256"), output, cancellationToken);
             if (args[0] == "sample-current-location-context")
                 return await CurrentBuildLocationContextSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output"), output, cancellationToken);
             if (args[0] == "sample-current-paired-position")
