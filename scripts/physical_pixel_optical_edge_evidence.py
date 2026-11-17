@@ -78,6 +78,109 @@ def _median_luminance(image: Image.Image, x: int, y: int) -> float:
               for yy in range(y - 2, y + 3))
     return float(median(.2126 * r + .7152 * g + .0722 * b for r, g, b in pixels))
 
+def _median_rgb(image: Image.Image, x: int, y: int) -> tuple[int, int, int]:
+    """Channel-wise median of a 5x5 retained screenshot neighborhood."""
+    return tuple(int(median(image.getpixel((xx, yy))[channel]
+                            for xx in range(x - 2, x + 3)
+                            for yy in range(y - 2, y + 3)))
+                 for channel in range(3))
+
+
+def _rgb_luminance(rgb: tuple[int, int, int]) -> float:
+    return .2126 * rgb[0] + .7152 * rgb[1] + .0722 * rgb[2]
+
+
+def _dark_profile_row(image: Image.Image, y: int, projected_terrain_x: int) -> dict:
+    """Image-only local dark trough and four-pixel derivative; NOT a silhouette."""
+    p = projected_terrain_x
+    if not (2 <= y < image.height - 2 and 26 <= p < image.width - 24):
+        raise ValueError("optical-dark-gradient-roi-out-of-bounds")
+    colors = {x: _median_rgb(image, x, y) for x in range(p - 24, p + 21)}
+    values = {x: _rgb_luminance(color) for x, color in colors.items()}
+    pre = median(values[x] for x in range(p - 16, p - 6))
+    trough = min(range(p - 4, p + 11), key=lambda x: (values[x], x))
+    slope = min(range(p - 8, p + 11),
+                key=lambda x: (values[x + 2] - values[x - 2], x))
+    drop = pre - values[trough]
+    delta = values[slope + 2] - values[slope - 2]
+    before_rgb = tuple(int(median(colors[x][c] for x in range(p - 16, p - 6)))
+                       for c in range(3))
+    return {
+        "darkTroughX": trough,
+        "darkTroughMinusTerrainPixel": trough - p,
+        "darkTroughRGB": list(colors[trough]),
+        "precedingMedianRGB": list(before_rgb),
+        "precedingMedianLuminance": round(pre, 2),
+        "darkTroughLuminance": round(values[trough], 2),
+        "darkDropFromPrecedingLuminance": round(drop, 2),
+        "strongestNegativeGradientX": slope,
+        "strongestNegativeGradientDelta4Px": round(delta, 2),
+        "darkBandCandidate": bool(drop >= 8 and delta <= -8 and trough >= p - 1),
+    }
+
+
+def dark_gradient_profile(image: Image.Image, *, y: int, projected_boundary: tuple[int, int],
+                          bright_interior_x: int) -> dict:
+    """Opt-in local optical evidence; ray projection is fixed to the central row."""
+    left, right = projected_boundary
+    if right != left + 1:
+        raise ValueError("optical-dark-gradient-nonadjacent-projected-boundary")
+    center = (left + right) / 2
+    measured = _dark_profile_row(image, y, left)
+    neighbors = []
+    for offset in (-8, -4, 0, 4, 8):
+        row = _dark_profile_row(image, y + offset, left)
+        neighbors.append({
+            "y": y + offset,
+            "darkTroughX": row["darkTroughX"],
+            "darkTroughMinusTerrainPixel": row["darkTroughMinusTerrainPixel"],
+            "darkDropFromPrecedingLuminance": row["darkDropFromPrecedingLuminance"],
+            "darkBandCandidate": row["darkBandCandidate"],
+        })
+    measured.update({
+        "y": y,
+        "projectedLayerBoundaryPixels": [left, right],
+        "projectedBoundaryMidpointX": center,
+        "darkTroughMinusProjectedPixels": round(measured["darkTroughX"] - center, 2),
+        "brightInteriorOnsetX": bright_interior_x,
+        "brightInteriorMinusProjectedPixels": round(bright_interior_x - center, 2),
+        "brightInteriorRGB": list(_median_rgb(image, bright_interior_x, y)),
+        "neighborRows": neighbors,
+        "neighborRowsNotReprojected": True,
+        "measurement": "image-only-dark-gradient-candidate-not-outer-silhouette",
+        "uncertainty": "Manual ROI; dark trough may be shadow or terrain texture, not an "
+                       "outer silhouette. Five-by-five filtering shifts edges; neighboring "
+                       "rows reuse the central-row projection, not new ray casts.",
+        "opticalVisibilityQualified": False,
+        "visibleSurfaceQualified": False,
+        "opticalDepthQualified": False,
+        "physicalBlockingQualified": False,
+        "movementEligible": False,
+    })
+    return measured
+
+
+def hud_gradient_false_positive_control(image: Image.Image, *, point: tuple[int, int],
+                                        ui_rect: tuple[int, int, int, int]) -> dict:
+    x, y = point
+    x0, y0, x1, y1 = ui_rect
+    if not (x0 <= x < x1 and y0 <= y < y1 and
+            x >= 12 and y >= 2 and x < image.width - 12 and y < image.height - 2):
+        raise ValueError("optical-dark-gradient-hud-control-invalid")
+    profile = [_rgb_luminance(_median_rgb(image, xx, y))
+               for xx in range(x - 10, x + 11)]
+    return {
+        "pixel": [x, y],
+        "manualUiMask": True,
+        "horizontalLuminanceRange21Px": round(max(profile) - min(profile), 2),
+        "opticalGradientMayComeFromHud": True,
+        "pixelIsQualifiedWorldFragment": False,
+        "opticalVisibilityQualified": False,
+        "movementEligible": False,
+    }
+
+
+
 
 def bright_interior_onset(image: Image.Image, *, y: int, search: tuple[int, int],
                           background: tuple[int, int],
@@ -130,7 +233,7 @@ def _projected_boundary(frame, layers, indices, y: int,
     return terrain_x + first_temple - 1, terrain_x + first_temple
 
 
-def analyze_view(view_name: str) -> dict:
+def analyze_view(view_name: str, *, dark_gradient: bool = False) -> dict:
     if view_name not in VIEWS:
         raise ValueError("optical-edge-unknown-view")
     entry = VIEWS[view_name]
@@ -179,6 +282,14 @@ def analyze_view(view_name: str) -> dict:
                    _first_layer(frame, layers, indices, px, py),
                "pixelIsQualifiedWorldFragment": False,
                "visibleSurfaceQualified": False}
+        if dark_gradient:
+            dark_profiles = [dark_gradient_profile(
+                image, y=row["y"],
+                projected_boundary=tuple(row["projectedLayerBoundaryPixels"]),
+                bright_interior_x=row["brightInteriorOnsetX"])
+                for row in results]
+            hud_gradient = hud_gradient_false_positive_control(
+                image, point=entry["uiProbe"], ui_rect=entry["uiRect"])
     for path, digest in ((image_path, entry["imageSha"]),
                          (receipt_path, entry["receiptSha"]),
                          (before_path, entry["beforeSha"]),
@@ -187,7 +298,7 @@ def analyze_view(view_name: str) -> dict:
     for layer in layers:
         for path, digest in layer["pins"]:
             _pinned(Path(path), digest)
-    return {"schema": SCHEMA, "status": "candidate-only", "view": view_name,
+    report = {"schema": SCHEMA, "status": "candidate-only", "view": view_name,
             "host": frame["identity"]["host"], "pid": frame["identity"]["pid"],
             "frameSha256": entry["imageSha"], "nativeBracketSeconds":
                 frame["source"]["nativeBracketSeconds"], "rows": results,
@@ -198,23 +309,33 @@ def analyze_view(view_name: str) -> dict:
             "qualification": "The image itself supplies brightness onset independent "
                              "of the source mesh; bright interior is not the outer "
                              "silhouette, physical collision, or a visibility proof."}
+    if dark_gradient:
+        report.update({"darkGradientProfiles": dark_profiles,
+                       "hudGradientFalsePositiveControl": hud_gradient,
+                       "opticalVisibilityQualified": False})
+    return report
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--view", choices=("first", "second", "both"), default="both")
+    parser.add_argument("--dark-gradient", action="store_true",
+                        help="Opt-in retained-PNG dark-trough optical candidate profile")
     args = parser.parse_args(argv)
     try:
         names = list(VIEWS) if args.view == "both" else [args.view]
-        results = [analyze_view(name) for name in names]
+        results = [analyze_view(name, dark_gradient=args.dark_gradient)
+                   for name in names]
     except (ValueError, OSError, KeyError, TypeError) as error:
         print(json.dumps({"schema": SCHEMA, "status": "blocked", "reason": str(error),
                           "inputSent": False, "movementEligible": False}))
         return 2
-    print(json.dumps({"schema": SCHEMA, "status": "candidate-only",
-                      "views": results, "inputSent": False,
-                      "visibleSurfaceQualified": False,
-                      "movementEligible": False}, allow_nan=False))
+    output = {"schema": SCHEMA, "status": "candidate-only",
+              "views": results, "inputSent": False,
+              "visibleSurfaceQualified": False, "movementEligible": False}
+    if args.dark_gradient:
+        output["opticalVisibilityQualified"] = False
+    print(json.dumps(output, allow_nan=False))
     return 0
 
 

@@ -49,6 +49,8 @@ class RetainedRealImageOpticalTests(unittest.TestCase):
                 raise unittest.SkipTest("retained AMD-DESKTOP WGC/source files unavailable")
         cls.first = edge.analyze_view("first")
         cls.second = edge.analyze_view("second")
+        cls.first_dark = edge.analyze_view("first", dark_gradient=True)
+        cls.second_dark = edge.analyze_view("second", dark_gradient=True)
 
     def test_first_view_two_very_close_bright_boundaries(self):
         rows = self.first["rows"]
@@ -80,6 +82,52 @@ class RetainedRealImageOpticalTests(unittest.TestCase):
                           {"terrain", "temple-render"})
             self.assertFalse(report["inputSent"])
             self.assertFalse(report["navigationQualified"])
+
+
+    def test_dark_gradient_opt_in_preserves_default_output(self):
+        self.assertNotIn("darkGradientProfiles", self.first)
+        self.assertNotIn("darkGradientProfiles", self.second)
+        for original, profiled in ((self.first, self.first_dark),
+                                   (self.second, self.second_dark)):
+            self.assertEqual(original["rows"], profiled["rows"])
+            self.assertEqual(original["hudOcclusionControl"],
+                             profiled["hudOcclusionControl"])
+            self.assertFalse(profiled["opticalVisibilityQualified"])
+            self.assertFalse(profiled["movementEligible"])
+
+    def test_second_view_dark_boundary_is_near_projection_not_bright_onset(self):
+        profiles = self.second_dark["darkGradientProfiles"]
+        self.assertEqual(len(profiles), 2)
+        for result in profiles:
+            self.assertGreaterEqual(result["brightInteriorMinusProjectedPixels"], 30)
+            self.assertLessEqual(result["brightInteriorMinusProjectedPixels"], 40)
+            self.assertGreaterEqual(result["darkTroughMinusProjectedPixels"], 2)
+            self.assertLessEqual(result["darkTroughMinusProjectedPixels"], 5)
+            self.assertTrue(result["darkBandCandidate"])
+            self.assertLess(result["strongestNegativeGradientDelta4Px"], -8)
+            self.assertIn("not-outer-silhouette", result["measurement"])
+            self.assertTrue(result["neighborRowsNotReprojected"])
+            self.assertFalse(result["opticalVisibilityQualified"])
+            self.assertFalse(result["movementEligible"])
+
+    def test_first_view_does_not_infer_dark_silhouette(self):
+        for result in self.first_dark["darkGradientProfiles"]:
+            self.assertLessEqual(abs(result["brightInteriorMinusProjectedPixels"]), 4)
+            self.assertFalse(result["darkBandCandidate"])
+            self.assertFalse(result["opticalVisibilityQualified"])
+
+    def test_hud_gradient_false_positive_is_explicitly_blocked(self):
+        first = self.first_dark["hudGradientFalsePositiveControl"]
+        second = self.second_dark["hudGradientFalsePositiveControl"]
+        self.assertTrue(first["manualUiMask"])
+        self.assertTrue(second["manualUiMask"])
+        self.assertGreater(second["horizontalLuminanceRange21Px"], 50)
+        for item in (first, second):
+            self.assertTrue(item["opticalGradientMayComeFromHud"])
+            self.assertFalse(item["pixelIsQualifiedWorldFragment"])
+            self.assertFalse(item["opticalVisibilityQualified"])
+            self.assertFalse(item["movementEligible"])
+
 
 
 if __name__ == "__main__":
