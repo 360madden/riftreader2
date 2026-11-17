@@ -104,6 +104,31 @@ class RetainedSecondViewTests(unittest.TestCase):
                       "physicalBlockingQualified", "navigationQualified"):
             self.assertFalse(report[field], field)
 
+    def test_pillar_edge_switch_and_ui_occluded_world_candidate(self):
+        """Screen alignment candidates must not be promoted to optical visibility."""
+        frame = self._frame()
+        layers = [composite.load_terrain(self.terrain, self.terrain_reg),
+                  composite.load_temple(self.temple, self.anchor, self.anchor_sha,
+                                        frame["identity"])]
+        points = [(1950, 400), (1970, 400), (2200, 1000)]
+        report = composite.analyze_pixels(frame, layers, points, max_distance=200)
+        for row, expected, depth in zip(
+                report["pixels"], ("terrain", "temple-render", "temple-render"),
+                (34.71, 7.72, 8.94)):
+            with self.subTest(pixel=row["pixel"]):
+                candidate = row["surfaceCandidates"]
+                self.assertEqual(candidate["candidateFirst"]["layer"], expected)
+                self.assertAlmostEqual(
+                    candidate["candidateFirst"]["distanceNative"], depth, delta=.04)
+                self.assertFalse(candidate["visibleSurfaceQualified"])
+                self.assertFalse(candidate["occlusionQualified"])
+                self.assertFalse(candidate["movementEligible"])
+        self.assertEqual(report["pixels"][2]["pixel"], [2200, 1000])
+        for flag in ("inputSent", "visibleSurfaceQualified",
+                     "physicalBlockingQualified", "navigationQualified",
+                     "movementEligible"):
+            self.assertFalse(report[flag])
+
     def test_tampered_before_sha_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "native-before-sha256-mismatch"):
             composite.load_frame(
