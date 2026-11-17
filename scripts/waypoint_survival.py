@@ -338,6 +338,14 @@ class WaypointSurvivalRunner:
         if player["dead"]:
             self._critical("death")
             return self.snapshot()
+        # A missing selected encounter does not mean player combat has ended.
+        # Neither forward travel nor rejoin may proceed with an unclassified
+        # active attacker: release the owned movement and latch until Resume.
+        if (self.state in ("travel", "rejoin") and player["inCombat"]
+                and not encounter["present"]):
+            self._critical("critical-unavailable", SurvivalPolicyError(
+                "player-in-combat-without-qualified-encounter"))
+            return self.snapshot()
 
         if self.state == "travel":
             if encounter["present"]:

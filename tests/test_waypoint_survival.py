@@ -104,6 +104,32 @@ class WaypointSurvivalTests(unittest.TestCase):
         with self.assertRaisesRegex(SurvivalPolicyError, "cannot advance"):
             runner.route_checkpoint_advanced(8, {"from": 8, "to": 9})
 
+    def test_unattributed_combat_during_travel_latches_before_continuation(self):
+        runner, h = self.runner([observation(present=False, combat=True)])
+        runner.start()
+        state = runner.step()
+        self.assertEqual("halt", state["state"])
+        self.assertEqual("critical-unavailable", state["coordinator"]["latchReason"])
+        self.assertIn("player-in-combat-without-qualified-encounter", state["failureDetail"])
+        self.assertTrue(any(call[0] == "move-release" for call in h.calls))
+        self.assertFalse(any(call[0] in ("cast", "move-redirect") for call in h.calls))
+        self.assertEqual("halt", runner.step()["state"])
+
+    def test_unattributed_combat_blocks_rejoin_from_resuming_travel(self):
+        runner, h = self.runner([
+            observation(off=True),
+            observation(present=False, combat=True, on=True),
+        ])
+        runner.record_route_trail_point((1, 2, 3))
+        runner.start()
+        self.assertEqual("rejoin", runner.step()["state"])
+        state = runner.step()
+        self.assertEqual("halt", state["state"])
+        self.assertEqual("critical-unavailable", state["coordinator"]["latchReason"])
+        self.assertIn("player-in-combat-without-qualified-encounter", state["failureDetail"])
+        self.assertFalse(any(call[:2] == ("move-redirect", "travel") for call in h.calls))
+        self.assertTrue(any(call[0] == "move-release" for call in h.calls))
+
     def test_unknown_or_losing_threat_retreats_only_over_known_reverse_trail(self):
         runner, h = self.runner([observation(present=True, combat=True, known=False)])
         runner.record_route_trail_point((1, 2))
