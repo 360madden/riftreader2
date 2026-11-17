@@ -645,6 +645,25 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
         self.assertEqual([], calls)
         self.assertEqual([], backend.calls)
 
+    def test_stop_during_successful_native_return_never_publishes_arrival(self):
+        # A late STOP can race a mover that reports arrival rather than raising
+        # Stopped; the outer runner must not mark the route completed.
+        stop = threading.Event()
+        events = []
+        backend = Backend([observed()])
+
+        def mover(adapter, x, z, ignored_stop, emit, **options):
+            receipt = arrived(x, z)
+            stop.set()
+            emit(receipt)
+            return receipt
+
+        with self.assertRaisesRegex(Exception, "Stopped"):
+            self.invoke([("destination", 2, 0)], backend, mover,
+                        stop=stop, events=events)
+        self.assertTrue(stop.is_set())
+        self.assertFalse(any(event["status"] == "arrived" for event in events))
+
     def test_total_route_distance_is_checked_before_input(self):
         calls = []
         backend = Backend([observed()])

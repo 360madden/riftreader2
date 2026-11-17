@@ -503,6 +503,16 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
             evidence.update(traversedPath=traversed,
                             corridorQualification="native-retained traversed samples")
             return None
+        if stop.is_set():
+            # A native helper may return arrival just as operator STOP is set.
+            # Latch STOP and use its release receipt, but never publish the
+            # arrived leg or advance checkpoints after that boundary.
+            movement_release = (result if isinstance(result, dict) else
+                                {"releaseSucceeded": False,
+                                 "reason": "Native movement receipt unavailable after STOP"})
+            policy.operator_stop()
+            publish_policy_state()
+            raise Stopped("Stopped after survival movement; route progress not admitted")
         if not isinstance(result, dict) or result.get("status") != "arrived":
             raise WaypointError("Survival movement did not return an arrived leg")
         if not _release_confirmed(result):
