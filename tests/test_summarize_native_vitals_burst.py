@@ -97,6 +97,24 @@ class VitalsBurstTests(unittest.TestCase):
             self.assertEqual(source_sha, summary["sourceReportSha256"])
             self.assertIn("not independently qualified", summary["qualification"])
 
+    def test_updated_build_health_only_burst_is_admitted_with_both_resources_unqualified(self):
+        report = burst()
+        report["sourceBuildSha256"] = tool.UPDATED_GAME_SHA
+        report["identity"]["executableSha256"] = tool.UPDATED_GAME_SHA
+        for row in report["observations"]:
+            row["identity"]["executableSha256"] = tool.UPDATED_GAME_SHA
+            row["energy"] = unavailable("postpatch-energy-type-unqualified")
+            row["mana"] = unavailable("postpatch-mana-type-unqualified")
+        report["observation"] = copy.deepcopy(report["observations"][-1])
+        summary = tool.summarize(report, "d" * 64)
+        self.assertEqual(tool.UPDATED_GAME_SHA, summary["sourceBuildSha256"])
+        self.assertEqual(-20, summary["resources"]["health"]["deltaCurrentCandidate"])
+        self.assertEqual(0, summary["resources"]["mana"]["availableSamples"])
+        self.assertEqual(0, summary["resources"]["energy"]["availableSamples"])
+        report["identity"]["executableSha256"] = tool.GAME_SHA
+        with self.assertRaises(ValueError):
+            tool.summarize(report, "d" * 64)
+
     def test_valid_health_and_energy_candidates_remain_unqualified(self):
         report = burst()
         original = copy.deepcopy(report)

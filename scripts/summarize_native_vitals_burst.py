@@ -18,6 +18,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from scripts.project_xyz_track import GAME_SHA
 
+UPDATED_GAME_SHA = "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"
+SUPPORTED_GAME_SHA = (GAME_SHA, UPDATED_GAME_SHA)
 CONTRACT = "native-current-vitals-candidate-burst/1"
 QUALIFICATION = "candidate-only; semantics/passive-freshness/restart-unverified"
 SOURCE = "native-process-memory"
@@ -70,11 +72,13 @@ def _field(value, name):
 
 
 def summarize(report, source_sha):
+    build_sha = report.get("sourceBuildSha256") if isinstance(report, dict) else None
+    need(build_sha in SUPPORTED_GAME_SHA, "unqualified-build")
     need(type(report) is dict and report.get("schemaVersion") == 1
          and type(report.get("schemaVersion")) is int
          and report.get("contractVersion") == CONTRACT
          and report.get("status") == "complete"
-         and report.get("sourceBuildSha256") == GAME_SHA
+         and report.get("sourceBuildSha256") == build_sha
          and report.get("source") == SOURCE
          and report.get("qualification") == QUALIFICATION, "contract-invalid")
     identity = report.get("identity")
@@ -82,7 +86,7 @@ def summarize(report, source_sha):
          and 0 < identity["processId"] < 2**31
          and type(identity.get("processStartUtcTicks")) is int
          and 0 < identity["processStartUtcTicks"] < 2**63
-         and identity.get("executableSha256") == GAME_SHA, "identity-invalid")
+         and identity.get("executableSha256") == build_sha, "identity-invalid")
     count = report.get("requestedSamples")
     rows = report.get("observations")
     need(type(count) is int and 2 <= count <= 30
@@ -160,7 +164,7 @@ def summarize(report, source_sha):
     return {
         "schemaVersion": 1, "status": "candidate-only",
         "mode": "offline-retained-native-vitals-burst",
-        "sourceReportSha256": source_sha.upper(), "sourceBuildSha256": GAME_SHA,
+        "sourceReportSha256": source_sha.upper(), "sourceBuildSha256": build_sha,
         "processId": identity["processId"],
         "processStartUtcTicks": str(identity["processStartUtcTicks"]),
         "unitKey": str(unit), "sampleCount": count,

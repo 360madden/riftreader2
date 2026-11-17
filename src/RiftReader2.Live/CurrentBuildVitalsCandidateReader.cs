@@ -30,7 +30,8 @@ internal static class CurrentBuildVitalsCandidateReader
         Read(session, source =>
         {
             var snapshot = CurrentBuildPlayerLookup.Resolve(source);
-            var component = snapshot.ResolveComponent(0x2F57850);
+            var component = snapshot.ResolveComponent(CurrentBuildPlayerLookup.IsUpdatedBuild(source.Identity.ExecutableSha256)
+                ? 0x2F68850UL : 0x2F57850UL);
             return new(snapshot.PlayerKey, component, snapshot.VerifyUnchanged);
         });
 
@@ -40,9 +41,9 @@ internal static class CurrentBuildVitalsCandidateReader
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(resolveOwner);
         var identity = session.Identity;
-        if (!string.Equals(identity.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256,
-                StringComparison.OrdinalIgnoreCase) || identity.ProcessId <= 0 ||
-            identity.ProcessStartUtcTicks <= 0 || identity.ModuleSize < 0x35AEB88)
+        if (!CurrentBuildPlayerLookup.IsCoreBuild(identity.ExecutableSha256) || identity.ProcessId <= 0 ||
+            identity.ProcessStartUtcTicks <= 0 || identity.ModuleSize <
+                (CurrentBuildPlayerLookup.IsUpdatedBuild(identity.ExecutableSha256) ? 0x3572B38UL : 0x35AEB88UL))
             throw new InvalidDataException("Current-build vitals require exact build and process epoch.");
         var started = DateTimeOffset.UtcNow;
         var owner = resolveOwner(session);
@@ -62,7 +63,8 @@ internal static class CurrentBuildVitalsCandidateReader
         ulong Ptr(ulong address) => Pointer(U64(Take(address, 8)));
         var component = Pointer(owner.ComponentAddress);
         var module = Pointer(identity.ModuleBaseAddress);
-        var clockOwner = Ptr(checked(module + 0x33DC2B0));
+        var clockOwner = Ptr(checked(module +
+            (CurrentBuildPlayerLookup.IsUpdatedBuild(identity.ExecutableSha256) ? 0x33EDA70UL : 0x33DC2B0UL)));
         // Clock itself may advance normally; bracket the pointer, not its value.
         var clock = F32(Take(checked(clockOwner + 0x18), 4, false));
         // The HP owner pointer and HP cache are adjacent in this exact build.
@@ -73,8 +75,26 @@ internal static class CurrentBuildVitalsCandidateReader
         var healthRecord = Ptr(checked(container + 0x640));
         var healthRaw = Take(healthRecord, 128);
         var hpCache = healthOwnerAndCache[8..16];
-        CheckType(healthRaw, 0x2C0EE88, 0x20CCC60, 0x355F430, 0x2C281B0, 0x20F2480);
+        if (CurrentBuildPlayerLookup.IsUpdatedBuild(identity.ExecutableSha256))
+            CheckType(healthRaw, 0x2C2B330, 0x20C7AC0, 0x3572B30, 0x2C3A098, 0x20F8D10);
+        else
+            CheckType(healthRaw, 0x2C0EE88, 0x20CCC60, 0x355F430, 0x2C281B0, 0x20F2480);
         var health = CalculateHealth(healthRaw, hpCache, clock);
+        if (CurrentBuildPlayerLookup.IsUpdatedBuild(identity.ExecutableSha256))
+        {
+            // Energy and Mana have independent record types, still unqualified on 1179.
+            foreach (var anchor in anchors)
+                if (!Take(anchor.Address, anchor.Bytes.Length, false).AsSpan().SequenceEqual(anchor.Bytes))
+                    throw new InvalidDataException("HP ownership, type or mutable inputs changed during capture.");
+            owner.VerifyUnchanged();
+            if (session.Identity != identity)
+                throw new InvalidDataException("HP owner or process epoch changed during capture.");
+            return new(identity, started, DateTimeOffset.UtcNow, owner.UnitKey, health,
+                new("unavailable", "postpatch-energy-type-unqualified"))
+            {
+                Mana = new("unavailable", "postpatch-mana-type-unqualified")
+            };
+        }
         var kindOwner = Ptr(checked(component + 0x40));
         var kind = I32(Take(checked(kindOwner + 0x168), 4));
         CurrentBuildVitalCandidate mana;

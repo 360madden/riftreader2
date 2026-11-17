@@ -31,6 +31,31 @@ public sealed class CurrentBuildVitalsCandidateReaderTests
     }
 
     [Fact]
+    public void UpdatedBuildReadsHealthOnlyAndWithholdsUnqualifiedResources()
+    {
+        var session = Fixture();
+        session.Identity = session.Identity with
+        {
+            ExecutableSha256 = CurrentBuildPlayerLookup.UpdatedGameSha256
+        };
+        session.Put(Module + 0x33EDA70, Q(Clock));
+        var raw = HealthRaw();
+        Q(Module + 0x2C2B330).CopyTo(raw, 0);
+        session.Put(Hp, raw);
+        session.Put(Module + 0x2C2B370, Q(Module + 0x20C7AC0));
+        session.Put(Module + 0x3572B30, Q(Module + 0x2C3A098));
+        session.Put(Module + 0x2C3A0A0, Q(Module + 0x20F8D10));
+        var observation = Read(session);
+        Assert.Equal(10635, observation.Health.Current);
+        Assert.Equal(10635, observation.Health.Maximum);
+        Assert.Equal("postpatch-energy-type-unqualified", observation.Energy.UnavailableReason);
+        Assert.Equal("postpatch-mana-type-unqualified", observation.Mana.UnavailableReason);
+        Assert.Null(observation.ResourceKindCandidate);
+        session.Put(Module + 0x2C3A0A0, Q(Module + 0x20F8D11));
+        Assert.Throws<InvalidDataException>(() => Read(session));
+    }
+
+    [Fact]
     public void EnergyCaptureBatchesAdjacentInputsWithoutLosingFinalBrackets()
     {
         var s = Fixture();

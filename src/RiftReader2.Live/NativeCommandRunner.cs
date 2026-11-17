@@ -81,7 +81,7 @@ public static class NativeCommandRunner
             if (args[0] == "sample-current-paired-zone-key")
                 return await CurrentBuildPairedZoneKeySampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--max-acquisition-ms"), output, cancellationToken);
             if (args[0] == "sample-current-vitals")
-                return await CurrentBuildVitalsSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--samples", "--interval-ms"), output, cancellationToken);
+                return await CurrentBuildVitalsSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--samples", "--interval-ms", "--sha256"), output, cancellationToken);
             if (args[0] == "sample-current-ability-maps")
                 return await CurrentBuildAbilityMapsSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output"), output, cancellationToken);
             if (args[0] == "sample-current-localization-dictionary")

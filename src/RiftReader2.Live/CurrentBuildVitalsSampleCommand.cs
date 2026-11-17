@@ -11,7 +11,7 @@ internal sealed record CurrentBuildVitalsReport(CurrentBuildVitalsObservation Ob
     public int SchemaVersion => 1;
     public string ContractVersion => "native-current-vitals-candidate-sample/2";
     public string Status => "complete";
-    public string SourceBuildSha256 => CurrentBuildPositionSampleCommand.GameSha256;
+    public string SourceBuildSha256 => Observation.Identity.ExecutableSha256;
     public string Source => Observation.Source;
     public string Qualification => Observation.Qualification;
     public string[] Limitations =>
@@ -30,13 +30,24 @@ internal static class CurrentBuildVitalsSampleCommand
 {
     internal static Task<int> RunAsync(
         IReadOnlyDictionary<string, string> options, TextWriter output,
-        CancellationToken cancellationToken) =>
-        RunAsync(options, output, cancellationToken,
-            async (pid, ticks, ct) => await WindowsNativeMemorySession.OpenAsync(
-                pid, ticks, CurrentBuildPositionSampleCommand.GameSha256, ct),
+        CancellationToken cancellationToken)
+    {
+        var sha = ExpectedSha(options);
+        return RunAsync(options, output, cancellationToken,
+            async (pid, ticks, ct) => await WindowsNativeMemorySession.OpenAsync(pid, ticks, sha, ct),
             CurrentBuildVitalsCandidateReader.Read,
-            async (pid, ticks, sha, ct) => await NativeReadFileLease.AcquireAsync(
-                pid, ticks, sha, TimeSpan.FromSeconds(1), ct));
+            async (pid, ticks, expected, ct) => await NativeReadFileLease.AcquireAsync(
+                pid, ticks, expected, TimeSpan.FromSeconds(1), ct));
+    }
+
+    private static string ExpectedSha(IReadOnlyDictionary<string, string> options)
+    {
+        var sha = options.TryGetValue("--sha256", out var value)
+            ? value : CurrentBuildPlayerLookup.GameSha256;
+        if (!CurrentBuildPlayerLookup.IsCoreBuild(sha))
+            throw new ArgumentException("Unqualified executable SHA256 for native vitals.");
+        return sha;
+    }
 
     // Explicit offline lifecycle seam; production always acquires the shared lease.
     internal static async Task<int> RunAsync(
@@ -60,15 +71,15 @@ internal static class CurrentBuildVitalsSampleCommand
         var samples = BoundedInt(options, "--samples", 1, 1, 30);
         var interval = BoundedInt(options, "--interval-ms", 500, 0, 2000);
         RequireNewOutput(path);
+        var expectedSha = ExpectedSha(options);
         cancellationToken.ThrowIfCancellationRequested();
-        await using var lease = await acquireLease(pid, ticks,
-            CurrentBuildPositionSampleCommand.GameSha256, cancellationToken);
+        await using var lease = await acquireLease(pid, ticks, expectedSha, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         // Reverse disposal order keeps the lease through all session cleanup.
         await using var session = await openSession(pid, ticks, cancellationToken);
         if (session.Identity.ProcessId != pid || session.Identity.ProcessStartUtcTicks != ticks ||
             !string.Equals(session.Identity.ExecutableSha256,
-                CurrentBuildPositionSampleCommand.GameSha256, StringComparison.OrdinalIgnoreCase))
+                expectedSha, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Native vitals session does not match requested process epoch/build.");
         return samples == 1
             ? await CaptureAndPublishAsync(session, path, output, read, cancellationToken)
@@ -129,7 +140,7 @@ internal static class CurrentBuildVitalsSampleCommand
             schemaVersion = 1,
             contractVersion = "native-current-vitals-candidate-burst/1",
             status = "complete",
-            sourceBuildSha256 = CurrentBuildPositionSampleCommand.GameSha256,
+            sourceBuildSha256 = session.Identity.ExecutableSha256,
             session.Identity,
             source = last.Source,
             qualification = last.Qualification,
