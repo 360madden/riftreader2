@@ -8,6 +8,7 @@ from scripts.survival_route_runner import (_coalesce_retained_corridor,
                                             _corridor_arrival, _release_confirmed,
                                             _traversed_path, run_survival_route)
 from scripts.waypoint_survival import VerifiedBindingProfile
+from scripts.waypoint_limits import MAX_ROUTE_DISTANCE
 
 
 PROFILE = VerifiedBindingProfile(damage="ability:actual-damage-id")
@@ -606,6 +607,36 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
             self.invoke([("far", 1001, 0)], backend,
                         lambda *args, **kwargs: calls.append(args))
         self.assertEqual([], calls)
+
+    def test_native_receipt_cannot_exceed_actual_distance_budget(self):
+        # Each one-unit sample is continuous; the whole native trail is not bounded.
+        path = [{"x": float(index % 2), "y": 5, "z": 0}
+                for index in range(2 * int(MAX_ROUTE_DISTANCE) + 1)]
+        receipt = {"path": path, "pathTruncated": False, "readCount": len(path)}
+        with self.assertRaisesRegex(ValueError, "travel budget"):
+            _traversed_path(receipt, {"x": 0, "y": 5, "z": 0},
+                            {"x": 0, "y": 5, "z": 0})
+
+    def test_native_receipt_distance_budget_is_cumulative_across_route_legs(self):
+        events = []
+        prior = [0.0, 0.0]
+
+        def mover(adapter, x, z, stop, emit, **options):
+            result = arrived(x, z, *prior)
+            path = [{"x": prior[0], "y": 5, "z": prior[1]}]
+            for _ in range(int(MAX_ROUTE_DISTANCE // 3)):
+                path.extend(({"x": prior[0] + 1, "y": 5, "z": prior[1]},
+                             {"x": prior[0], "y": 5, "z": prior[1]}))
+            path.append({"x": x, "y": 5, "z": z})
+            result.update(path=path, pathTruncated=False, readCount=len(path))
+            prior[:] = [x, z]
+            return result
+
+        with self.assertRaisesRegex(Exception, "travel budget"):
+            self.invoke([("first", 1, 0), ("second", 2, 0)],
+                        Backend([observed()]), mover, events=events)
+        self.assertEqual(["first"], [e["name"] for e in events
+                                      if e.get("status") == "arrived"])
 
     def test_shared_deadline_is_passed_as_decreasing_leg_budget(self):
         ticks = iter((0, 0, 1, 1, 4, 4, 4))

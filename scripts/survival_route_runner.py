@@ -30,7 +30,13 @@ def _position(value):
     return result
 
 
-def _traversed_path(receipt, final_position, anchor):
+def _path_planar_distance(points):
+    return sum(math.hypot(b["x"] - a["x"], b["z"] - a["z"])
+               for a, b in zip(points, points[1:]))
+
+
+def _traversed_path(receipt, final_position, anchor, *,
+                    remaining_distance=MAX_ROUTE_DISTANCE):
     """Admit only the native-retained, continuous corridor actually traversed."""
     raw = receipt.get("path") if isinstance(receipt, dict) else None
     if not isinstance(raw, list) or not 1 <= len(raw) <= 8192:
@@ -56,6 +62,9 @@ def _traversed_path(receipt, final_position, anchor):
     if any(not near(earlier, later, 2.0, 1.0)
            for earlier, later in zip(points, points[1:])):
         raise ValueError("Native traversed path is discontinuous in distance or height")
+    if (not math.isfinite(remaining_distance) or remaining_distance < 0
+            or _path_planar_distance(points) > remaining_distance + 1e-9):
+        raise ValueError("Native traversed path exceeds the remaining travel budget")
     return points
 
 
@@ -345,6 +354,16 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
     publish_policy_state()
     requested_moves.clear()  # The outer loop owns ordinary forward travel.
     auxiliary_distance = 0.0
+    actual_travel_distance = 0.0
+
+    def accept_traversed(receipt, end_position, anchor, events):
+        nonlocal actual_travel_distance
+        path = _traversed_path(
+            receipt, end_position, anchor,
+            remaining_distance=MAX_ROUTE_DISTANCE - actual_travel_distance)
+        _verify_passages_on_path(path, events)
+        actual_travel_distance += _path_planar_distance(path)
+        return path
 
     def remaining_seconds():
         if stop.is_set():
@@ -405,8 +424,8 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
             if forward and passed_events and _release_confirmed(receipt):
                 try:
                     stopped_position = _position(receipt.get("position"))
-                    traversed = _traversed_path(receipt, stopped_position, movement_start)
-                    _verify_passages_on_path(traversed, passed_events)
+                    traversed = accept_traversed(receipt, stopped_position,
+                                                 movement_start, passed_events)
                 except (TypeError, ValueError):
                     pass  # Keep the checkpoint unchanged if evidence is incomplete.
                 else:
@@ -445,11 +464,10 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
                 raise WaypointError("Survival policy halted: uncertain-release; "
                                     "native input inventory is not verified")
             try:
-                traversed = _traversed_path(movement_release, current,
+                traversed = accept_traversed(movement_release, current,
                                              {"x": policy.trail[-1][0],
                                               "y": policy.trail[-1][1],
-                                              "z": policy.trail[-1][2]})
-                _verify_passages_on_path(traversed, passed_events)
+                                              "z": policy.trail[-1][2]}, passed_events)
             except (ValueError, IndexError) as invalid:
                 policy.coordinator.critical("critical-unavailable")
                 policy.state = "halt"
@@ -486,8 +504,8 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
                 "Survival movement did not confirm the retained destination height")
         movement_release = result
         try:
-            traversed = _traversed_path(result, current, movement_start)
-            _verify_passages_on_path(traversed, passed_events)
+            traversed = accept_traversed(result, current, movement_start,
+                                         passed_events)
         except ValueError as invalid:
             policy.coordinator.critical("critical-unavailable")
             policy.state = "halt"
