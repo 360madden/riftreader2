@@ -61,7 +61,7 @@ public static class NativeCommandRunner
             if (args[0] == "sample-position")
                 return await PositionSampleCommand.RunAsync(ParseOptions(args[1..], "--profile", "--output", "--samples", "--interval-ms"), output, cancellationToken);
             if (args[0] == "sample-current-position")
-                return await CurrentBuildPositionSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--samples", "--interval-ms"), output, cancellationToken);
+                return await CurrentBuildPositionSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--samples", "--interval-ms", "--sha256"), output, cancellationToken);
             if (args[0] == "sample-current-position-refresh-branch")
                 return await CurrentBuildPositionRefreshBranchSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output"), output, cancellationToken);
             if (args[0] == "sample-current-orientation")
@@ -69,7 +69,7 @@ public static class NativeCommandRunner
             if (args[0] == "sample-current-facing-stream")
                 return await CurrentBuildFacingStreamCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--samples", "--interval-ms", "--duration-ms", "--include-target"), output, cancellationToken);
             if (args[0] == "sample-current-facing")
-                return await CurrentBuildFacingSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--samples", "--interval-ms", "--include-target"), output, cancellationToken);
+                return await CurrentBuildFacingSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--samples", "--interval-ms", "--include-target", "--sha256"), output, cancellationToken);
             if (args[0] == "sample-current-smoothed-scalar")
                 return await CurrentBuildSmoothedScalarSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--samples", "--interval-ms"), output, cancellationToken);
             if (args[0] == "sample-current-actor-pose")

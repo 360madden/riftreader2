@@ -9,15 +9,26 @@ namespace RiftReader2.Live;
 internal static class CurrentBuildFacingSampleCommand
 {
     internal static Task<int> RunAsync(IReadOnlyDictionary<string, string> options,
-        TextWriter output, CancellationToken ct) => RunAsync(options, output, ct,
-        static async (pid, ticks, token) => await NativeReadFileLease.AcquireAsync(
-            // A paced recorder holds this lease across a short burst. Wait for
-            // its release before opening the session and timestamping our pose.
-            pid, ticks, CurrentBuildPlayerLookup.GameSha256, TimeSpan.FromSeconds(3), token),
-        static async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(
-            pid, ticks, CurrentBuildPlayerLookup.GameSha256, token),
-        session => CurrentBuildFacingCandidateReader.ReadStableObservation(session, ct),
-        CurrentBuildFacingCandidateReader.Read);
+        TextWriter output, CancellationToken ct)
+    {
+        var expectedSha = ExpectedSha(options);
+        return RunAsync(options, output, ct,
+            async (pid, ticks, token) => await NativeReadFileLease.AcquireAsync(
+                pid, ticks, expectedSha, TimeSpan.FromSeconds(3), token),
+            async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(
+                pid, ticks, expectedSha, token),
+            session => CurrentBuildFacingCandidateReader.ReadStableObservation(session, ct),
+            CurrentBuildFacingCandidateReader.Read);
+    }
+
+    private static string ExpectedSha(IReadOnlyDictionary<string, string> options)
+    {
+        var sha = options.TryGetValue("--sha256", out var requested)
+            ? requested : CurrentBuildPlayerLookup.GameSha256;
+        if (!CurrentBuildPlayerLookup.IsCoreBuild(sha))
+            throw new ArgumentException("Unqualified executable SHA256 for native facing.");
+        return sha;
+    }
 
     internal static async Task<int> RunAsync(IReadOnlyDictionary<string, string> options,
         TextWriter output, CancellationToken ct,
@@ -38,13 +49,16 @@ internal static class CurrentBuildFacingSampleCommand
         var includeTarget = options.TryGetValue("--include-target", out var rawTarget) &&
             (rawTarget == "true" ? true : rawTarget == "false" ? false :
              throw new ArgumentException("--include-target must be true or false."));
+        var expectedSha = ExpectedSha(options);
+        if (includeTarget && CurrentBuildPlayerLookup.IsUpdatedBuild(expectedSha))
+            throw new InvalidDataException("Post-update selected-target projection has not been requalified.");
         ct.ThrowIfCancellationRequested();
         if (File.Exists(path)) throw new IOException("Facing output already exists.");
         await using var lease = await acquireLease(pid, ticks, ct);
         await using var session = await open(pid, ticks, ct);
         var identity = session.Identity;
         if (identity.ProcessId != pid || identity.ProcessStartUtcTicks != ticks ||
-            !string.Equals(identity.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256,
+            !string.Equals(identity.ExecutableSha256, expectedSha,
                            StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Facing session identity mismatch.");
         var observations = new List<CurrentBuildFacingCandidate>(count);

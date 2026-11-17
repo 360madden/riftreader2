@@ -37,7 +37,9 @@ internal static class CurrentBuildOrientationCandidateReader
         Read(session, source =>
         {
             var owner = CurrentBuildPlayerLookup.Resolve(source);
-            return new(owner.PlayerKey, owner.EntityAddress, owner.ResolveComponent(PositionIndexRva), owner.VerifyUnchanged);
+            return new(owner.PlayerKey, owner.EntityAddress,
+                owner.ResolveComponent(CurrentBuildPlayerLookup.PositionIndexRvaFor(source.Identity.ExecutableSha256)),
+                owner.VerifyUnchanged);
         });
 
     internal static CurrentBuildOrientationCandidate Read(IReadOnlyNativeMemorySession session,
@@ -48,8 +50,9 @@ internal static class CurrentBuildOrientationCandidateReader
         ArgumentNullException.ThrowIfNull(resolveOwner);
         var started = DateTimeOffset.UtcNow;
         var identity = session.Identity;
-        if (!string.Equals(identity.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256, StringComparison.OrdinalIgnoreCase)
-            || identity.ProcessId <= 0 || identity.ProcessStartUtcTicks <= 0 || identity.ModuleSize < PositionIndexRva + 4)
+        if (!CurrentBuildPlayerLookup.IsCoreBuild(identity.ExecutableSha256)
+            || identity.ProcessId <= 0 || identity.ProcessStartUtcTicks <= 0 ||
+            identity.ModuleSize < CurrentBuildPlayerLookup.PositionIndexRvaFor(identity.ExecutableSha256) + 4)
             throw new InvalidDataException("Orientation candidate requires exact build and process epoch.");
         var owner = resolveOwner(session);
         ArgumentNullException.ThrowIfNull(owner.VerifyUnchanged);

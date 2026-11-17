@@ -1402,6 +1402,15 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
         return dict(selection, status="blocked", reason="native-output-exists")
     command = [str(NATIVE_EXE), NATIVE_READS[kind], "--pid", str(pid),
                "--start-ticks", ticks, "--output", str(path)]
+    # Build 1179 has independently qualified player/position/facing anchors.
+    # Other older-build native readers must not silently inherit that admission.
+    updated_sha = "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"
+    if str(target.get("executableSha256", "")).casefold() == updated_sha.casefold():
+        if kind not in ("position", "facing"):
+            return dict(selection, status="blocked", reason="postpatch-native-read-unqualified")
+        if include_target:
+            return dict(selection, status="blocked", reason="postpatch-target-projection-unqualified")
+        command.extend(("--sha256", updated_sha))
     if samples is not None:
         command.extend(("--samples", str(samples)))
     if interval_ms is not None:

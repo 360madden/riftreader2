@@ -12,8 +12,20 @@ internal sealed class CurrentBuildPlayerLookup
 {
     internal const string GameSha256 =
         "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8";
+    // Historical SHA remains the default for older candidate tools and tests.
+    // Only the source-verified player/position/facing path is admitted on 1179.
+    internal const string UpdatedGameSha256 =
+        "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01";
     private const ulong ManagerRva = 0x33624A8;
     private const ulong PlayerSystemRva = 0x33623E0;
+    private const ulong UpdatedManagerRva = 0x3373C68;
+    private const ulong UpdatedPlayerSystemRva = 0x3373BA0;
+    internal static bool IsUpdatedBuild(string? sha) =>
+        string.Equals(sha, UpdatedGameSha256, StringComparison.OrdinalIgnoreCase);
+    internal static bool IsCoreBuild(string? sha) => IsUpdatedBuild(sha) ||
+        string.Equals(sha, GameSha256, StringComparison.OrdinalIgnoreCase);
+    internal static ulong PositionIndexRvaFor(string? sha) =>
+        IsUpdatedBuild(sha) ? 0x2F698A0UL : 0x2F588A0UL;
     private const ulong MinimumUserAddress = 0x10000;
     private const ulong MaximumUserAddress = 0x7FFF_FFFF_FFFF;
     private readonly IReadOnlyNativeMemorySession session;
@@ -36,18 +48,19 @@ internal sealed class CurrentBuildPlayerLookup
         ArgumentNullException.ThrowIfNull(session);
         var lookup = new CurrentBuildPlayerLookup(session);
         var identity = lookup.identity;
-        if (!string.Equals(identity.ExecutableSha256,
-                GameSha256, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("Current-build player lookup requires exact matching executable SHA256.");
+        if (!IsCoreBuild(identity.ExecutableSha256))
+            throw new InvalidDataException("Player lookup requires a qualified exact executable SHA256.");
+        var managerRva = IsUpdatedBuild(identity.ExecutableSha256) ? UpdatedManagerRva : ManagerRva;
+        var playerSystemRva = IsUpdatedBuild(identity.ExecutableSha256) ? UpdatedPlayerSystemRva : PlayerSystemRva;
         if (identity.ProcessId <= 0 || identity.ProcessStartUtcTicks <= 0 ||
             identity.ModuleBaseAddress < MinimumUserAddress ||
             identity.ModuleBaseAddress > MaximumUserAddress ||
-            identity.ModuleSize < ManagerRva + 8 ||
+            identity.ModuleSize < managerRva + 8 ||
             identity.ModuleSize > MaximumUserAddress - identity.ModuleBaseAddress)
             throw new InvalidDataException("Invalid current RIFT process/module identity.");
 
         var module = identity.ModuleBaseAddress;
-        var system = Pointer(ReadU64(lookup.Take(checked(module + PlayerSystemRva), 8)));
+        var system = Pointer(ReadU64(lookup.Take(checked(module + playerSystemRva), 8)));
         lookup.PlayerSystemAddress = system;
         var key = ReadU64(lookup.Take(checked(system + 0x360), 8));
         if (key == 0)
@@ -63,7 +76,8 @@ internal sealed class CurrentBuildPlayerLookup
     private ulong ResolveEntity(ulong key)
     {
         if (key == 0) throw new InvalidDataException("Native unit key missing.");
-        var manager = Pointer(ReadU64(Take(checked(identity.ModuleBaseAddress + ManagerRva), 8)));
+        var managerRva = IsUpdatedBuild(identity.ExecutableSha256) ? UpdatedManagerRva : ManagerRva;
+        var manager = Pointer(ReadU64(Take(checked(identity.ModuleBaseAddress + managerRva), 8)));
         var table = Pointer(ReadU64(Take(checked(manager + 0x50), 8)));
         var header = Take(table, 24);
         var buckets = Pointer(ReadU64(header.AsSpan(0, 8)));

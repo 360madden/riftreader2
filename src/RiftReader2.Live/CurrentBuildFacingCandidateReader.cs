@@ -63,7 +63,8 @@ internal static class CurrentBuildFacingCandidateReader
         IReadOnlyNativeMemorySession session, CancellationToken token)
     {
         var lookup = CurrentBuildPlayerLookup.Resolve(session);
-        var component = lookup.ResolveComponent(CurrentBuildPositionCandidateReader.PositionIndexRva);
+        var component = lookup.ResolveComponent(
+            CurrentBuildPlayerLookup.PositionIndexRvaFor(session.Identity.ExecutableSha256));
         var owner = new CurrentBuildFacingOwner(lookup.PlayerKey, lookup.EntityAddress,
             lookup.PlayerSystemAddress, lookup.VerifyUnchanged);
         var positionOwner = new CurrentBuildPositionOwnerSnapshot(lookup.PlayerKey,
@@ -111,8 +112,7 @@ internal static class CurrentBuildFacingCandidateReader
     {
         var identity = session.Identity;
         if (identity.ProcessId <= 0 || identity.ProcessStartUtcTicks <= 0 ||
-            !string.Equals(identity.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256,
-                           StringComparison.OrdinalIgnoreCase))
+            !CurrentBuildPlayerLookup.IsCoreBuild(identity.ExecutableSha256))
             throw new InvalidDataException("Facing requires the exact current game build and epoch.");
         var started = DateTimeOffset.UtcNow;
         var owner = resolve(session);

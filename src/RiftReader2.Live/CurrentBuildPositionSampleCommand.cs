@@ -20,13 +20,24 @@ internal static class CurrentBuildPositionSampleCommand
 
     internal static Task<int> RunAsync(
         IReadOnlyDictionary<string, string> options, TextWriter output,
-        CancellationToken cancellationToken) =>
-        RunAsync(options, output, cancellationToken,
-            static async (pid, ticks, token) => await NativeReadFileLease.AcquireAsync(
-                pid, ticks, GameSha256, TimeSpan.FromSeconds(1), token),
-            static async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(
-                pid, ticks, GameSha256, token),
+        CancellationToken cancellationToken)
+    {
+        var expectedSha = ExpectedSha(options);
+        return RunAsync(options, output, cancellationToken,
+            async (pid, ticks, token) => await NativeReadFileLease.AcquireAsync(
+                pid, ticks, expectedSha, TimeSpan.FromSeconds(1), token),
+            async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(
+                pid, ticks, expectedSha, token),
             CurrentBuildPositionCandidateReader.ReadOwned);
+    }
+
+    private static string ExpectedSha(IReadOnlyDictionary<string, string> options)
+    {
+        var sha = options.TryGetValue("--sha256", out var requested) ? requested : GameSha256;
+        if (!CurrentBuildPlayerLookup.IsCoreBuild(sha))
+            throw new ArgumentException("Unqualified executable SHA256 for native position.");
+        return sha;
+    }
 
     // Explicit offline-only seam: production entry always supplies the real lease.
     internal static async Task<int> RunAsync(
@@ -98,7 +109,7 @@ internal static class CurrentBuildPositionSampleCommand
             schemaVersion = 1,
             contractVersion = "native-current-position-candidate-samples/1",
             qualification = "candidate-only-not-passive-fresh-or-player-semantic-qualified",
-            sourceBuildSha256 = GameSha256,
+            sourceBuildSha256 = session.Identity.ExecutableSha256,
             session.Identity,
             requestedSamples = samples,
             completedSamples = readings.Count,
@@ -185,6 +196,7 @@ internal static class CurrentBuildPositionCandidateReader
     internal const ulong PositionIndexRva = 0x2F588A0;
     // Historical exact-build position components: 49/49 headers matched this RVA.
     private const ulong PositionComponentVptrRva = 0x26B4FB0;
+    private const ulong UpdatedPositionComponentVptrRva = 0x26C35C0;
 
     internal static CurrentBuildXyz Read(IReadOnlyNativeMemorySession session) =>
         ReadOwned(session).Position;
@@ -197,7 +209,9 @@ internal static class CurrentBuildPositionCandidateReader
         ReadOwned(session, source =>
         {
             var owner = CurrentBuildPlayerLookup.Resolve(source);
-            return new(owner.PlayerKey, owner.EntityAddress, owner.ResolveComponent(PositionIndexRva), owner.VerifyUnchanged);
+            return new(owner.PlayerKey, owner.EntityAddress,
+                owner.ResolveComponent(CurrentBuildPlayerLookup.PositionIndexRvaFor(source.Identity.ExecutableSha256)),
+                owner.VerifyUnchanged);
         });
 
     internal static CurrentBuildOwnedPosition ReadOwned(IReadOnlyNativeMemorySession session,
@@ -207,8 +221,9 @@ internal static class CurrentBuildPositionCandidateReader
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(resolveOwner);
         var identity = session.Identity;
-        if (!string.Equals(identity.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256, StringComparison.OrdinalIgnoreCase)
-            || identity.ProcessId <= 0 || identity.ProcessStartUtcTicks <= 0 || identity.ModuleSize < PositionIndexRva + 4)
+        if (!CurrentBuildPlayerLookup.IsCoreBuild(identity.ExecutableSha256)
+            || identity.ProcessId <= 0 || identity.ProcessStartUtcTicks <= 0 ||
+            identity.ModuleSize < CurrentBuildPlayerLookup.PositionIndexRvaFor(identity.ExecutableSha256) + 4)
             throw new InvalidDataException("Current-build position requires exact build and process epoch.");
         var owner = resolveOwner(session);
         ArgumentNullException.ThrowIfNull(owner.VerifyUnchanged);
@@ -216,7 +231,9 @@ internal static class CurrentBuildPositionCandidateReader
         var entity = CurrentBuildPlayerLookup.Pointer(owner.EntityAddress);
         var component = CurrentBuildPlayerLookup.Pointer(owner.ComponentAddress, 0x110);
         var valueRaw = CurrentBuildPlayerLookup.Exact(session, component, 0x110);
-        var expectedVptr = checked(identity.ModuleBaseAddress + PositionComponentVptrRva);
+        var vptrRva = CurrentBuildPlayerLookup.IsUpdatedBuild(identity.ExecutableSha256)
+            ? UpdatedPositionComponentVptrRva : PositionComponentVptrRva;
+        var expectedVptr = checked(identity.ModuleBaseAddress + vptrRva);
         if (BinaryPrimitives.ReadUInt64LittleEndian(valueRaw.AsSpan(0, 8)) != expectedVptr)
             throw new InvalidDataException("Position component dispatch pointer differs from exact-build position type.");
         if (BinaryPrimitives.ReadUInt64LittleEndian(valueRaw.AsSpan(0x10, 8)) != entity)

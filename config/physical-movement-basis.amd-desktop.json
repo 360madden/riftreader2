@@ -3,40 +3,40 @@
   "gameResponseVerified": false,
   "geometry": {
     "backwardVsLeftStrafe": {
-      "firstSpeedOverSecondCandidate": 0.4973348669474812,
-      "normalizedCrossCandidate": 0.9999994953377593,
-      "normalizedDotCandidate": -0.0010046512961644522,
-      "signedAngleDegreesCandidate": 90.05756228883575,
-      "unsignedAngleDegreesCandidate": 90.05756228883575
+      "firstSpeedOverSecondCandidate": 0.5022782830865286,
+      "normalizedCrossCandidate": 0.9999975951752718,
+      "normalizedDotCandidate": -0.0021930899830126457,
+      "signedAngleDegreesCandidate": 90.12565490084506,
+      "unsignedAngleDegreesCandidate": 90.12565490084506
     },
     "forwardVsBackward": {
-      "firstSpeedOverSecondCandidate": 2.074792080872266,
-      "normalizedCrossCandidate": 0.0007949331289634207,
-      "normalizedDotCandidate": -0.9999996840406103,
-      "signedAngleDegreesCandidate": 179.95445368191835,
-      "unsignedAngleDegreesCandidate": 179.95445368192017
+      "firstSpeedOverSecondCandidate": 2.1934250797439097,
+      "normalizedCrossCandidate": -0.000480037495516835,
+      "normalizedDotCandidate": -0.999999884781995,
+      "signedAngleDegreesCandidate": -179.97249587644254,
+      "unsignedAngleDegreesCandidate": 179.97249587646198
     },
     "forwardVsLeftStrafe": {
-      "firstSpeedOverSecondCandidate": 1.0318664434842961,
-      "normalizedCrossCandidate": -0.9999999780091274,
-      "normalizedDotCandidate": 0.00020971825094477474,
-      "signedAngleDegreesCandidate": -89.98798402924592,
-      "unsignedAngleDegreesCandidate": 89.98798402924592
+      "firstSpeedOverSecondCandidate": 1.101709783132703,
+      "normalizedCrossCandidate": -0.9999964271921206,
+      "normalizedDotCandidate": 0.0026731260714399534,
+      "signedAngleDegreesCandidate": -89.84684097559747,
+      "unsignedAngleDegreesCandidate": 89.84684097559747
     },
     "leftVsRightStrafe": {
-      "firstSpeedOverSecondCandidate": 1.007973335994147,
-      "normalizedCrossCandidate": 0.0007388535945523543,
-      "normalizedDotCandidate": -0.9999997270476456,
-      "signedAngleDegreesCandidate": 179.95766680350243,
-      "unsignedAngleDegreesCandidate": 179.95766680349914
+      "firstSpeedOverSecondCandidate": 1.000850230613686,
+      "normalizedCrossCandidate": 0.0016537479648170233,
+      "normalizedDotCandidate": -0.9999986325578994,
+      "signedAngleDegreesCandidate": 179.90524717804797,
+      "unsignedAngleDegreesCandidate": 179.90524717804672
     }
   },
   "headingQualified": false,
   "identity": {
-    "gameBuildSha256": "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8",
+    "gameBuildSha256": "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01",
     "machine": "AMD-DESKTOP",
-    "processId": 18092,
-    "processStartUtcTicks": "639300391441133615",
+    "processId": 77980,
+    "processStartUtcTicks": "639305214834918403",
     "unitKey": "239816685251645959"
   },
   "laterFacingReprojectionCandidate": null,
@@ -53,72 +53,73 @@
   "sameFacingConfirmed": false,
   "samples": {
     "e": {
-      "afterSampleUtc": "2026-11-12T02:26:16.4890396+00:00",
-      "beforeSampleUtc": "2026-11-12T02:26:16.2235849+00:00",
-      "horizontalSpeedPerMillisecondCandidate": 0.0060229492361166094,
-      "observedHoldMilliseconds": 108.55535,
-      "vxCandidate": -0.005941849307749457,
-      "vzCandidate": -0.000985060558968305
+      "afterSampleUtc": "2026-11-17T14:49:46.4135206+00:00",
+      "beforeSampleUtc": "2026-11-17T14:49:45.6830642+00:00",
+      "horizontalSpeedPerMillisecondCandidate": 0.006071599888572949,
+      "observedHoldMilliseconds": 257.4615,
+      "vxCandidate": -0.004280448848662809,
+      "vzCandidate": 0.004306051887855078
     },
     "q": {
-      "afterSampleUtc": "2026-11-12T02:26:15.2231088+00:00",
-      "beforeSampleUtc": "2026-11-12T02:26:14.9509923+00:00",
-      "horizontalSpeedPerMillisecondCandidate": 0.006070972234051858,
-      "observedHoldMilliseconds": 109.66675000000001,
-      "vxCandidate": 0.005988490415280839,
-      "vzCandidate": 0.0009973396676750245
+      "afterSampleUtc": "2026-11-17T14:49:29.3517429+00:00",
+      "beforeSampleUtc": "2026-11-17T14:49:28.6129608+00:00",
+      "horizontalSpeedPerMillisecondCandidate": 0.006076762148672266,
+      "observedHoldMilliseconds": 256.7021,
+      "vxCandidate": 0.004291209538215698,
+      "vzCandidate": -0.00430262232954074
     },
     "s": {
-      "afterSampleUtc": "2026-11-12T02:21:29.8868301+00:00",
-      "beforeSampleUtc": "2026-11-12T02:21:29.5737152+00:00",
-      "horizontalSpeedPerMillisecondCandidate": 0.003019306168264033,
-      "observedHoldMilliseconds": 165.39505,
-      "vxCandidate": 0.0004930194026362941,
-      "vzCandidate": -0.0029787818997606035
+      "afterSampleUtc": "2026-11-17T14:49:12.0776481+00:00",
+      "beforeSampleUtc": "2026-11-17T14:49:11.3381615+00:00",
+      "horizontalSpeedPerMillisecondCandidate": 0.0030522256587603097,
+      "observedHoldMilliseconds": 257.00965,
+      "vxCandidate": -0.002165835504620157,
+      "vzCandidate": -0.0021506366589737
     },
     "w": {
-      "afterSampleUtc": "2026-11-12T02:20:03.6621901+00:00",
-      "beforeSampleUtc": "2026-11-12T02:20:03.3734133+00:00",
-      "horizontalSpeedPerMillisecondCandidate": 0.0062644325276430025,
-      "observedHoldMilliseconds": 116.3903,
-      "vxCandidate": -0.0010278253965321853,
-      "vzCandidate": 0.006179537996293506
+      "afterSampleUtc": "2026-11-17T14:48:52.5314713+00:00",
+      "beforeSampleUtc": "2026-11-17T14:48:51.7757316+00:00",
+      "horizontalSpeedPerMillisecondCandidate": 0.00669482830896274,
+      "observedHoldMilliseconds": 264.23225,
+      "vxCandidate": 0.00475286182894026,
+      "vzCandidate": 0.004714979376571179
     }
   },
   "schemaVersion": 1,
   "sourceKind": "same-epoch-distinct-helper-receipts",
   "sourceReceiptsSha256": {
-    "e": "544EDE91CC12884456A713C8D3ADB202AD7F403AD741E422CBA145E0247E5F8C",
-    "q": "64EC7AB99E990942C0953DE984FCF80C2E867288C2F5FD662CA17D47868A2D75",
-    "s": "FC5292816833CF49A4482BFCDF1284F4DEBADDD266ABB9045AB5F89289A9E231",
-    "w": "77C7DAE22F56F6A011FE59E1A9EDB31F6EDFF4056296B5F5DE7B6A9FC8E4575C"
+    "e": "02BF1B6A61BFD6026AD638BD3A98D22603460B4E333257D62FC565EF42F181E8",
+    "q": "A3252524E92C1860FD0231B07C40941AD6E2E2176E6748AA76BBA66DBDEBE92F",
+    "s": "8605D9C0751336D6AD6E9B2344BF0F4693EB5FEA3F19A72B3E8BFCEB13953AA4",
+    "w": "EDEB739305D67BA0874CB3264994B396100229401982D3CD9AD3DD06F287F099"
   },
   "status": "offline-physical-key-basis-candidate",
   "timeBetweenSamplesSeconds": {
-    "q_to_e": 1.000476,
-    "s_to_q": 285.064162,
-    "w_to_s": 85.911525
+    "q_to_e": 16.331322,
+    "s_to_q": 16.535312,
+    "w_to_s": 18.80669
   },
   "turnCalibrationCandidate": {
-    "sourceDirectory": "artifacts\\physical-ad-settled-20261111-201818",
+    "sourceDirectory": "artifacts\\postpatch-turn-calibration-20261117",
     "turnResponseQualified": false,
     "headingQualified": false,
+    "method": "independent-exact-build-facing-samples-and-bounded-A-D-input-receipts",
     "rates": {
       "a": {
-        "degreesPerMillisecondCandidate": 0.17014922756060666,
-        "bodyBearingDeltaDegreesCandidate": 43.880277728364774,
-        "observedHoldMidpointMsCandidate": 257.8929,
-        "pulseSha256": "CB43A4FFC0705075670C0B5EAF03B9F172305A294D824E4D38EDDC78B26728C4",
-        "beforePoseSha256": "EF1ABE7C571EF032717E90FFDA16B3B80D8F26B4EEFD9692E12F90B90E728681",
-        "afterPoseSha256": "DCC0ABC82ECEBB133642F032A6E1A82EA17F9A55A76CF14FF9D9357D9255D112"
+        "degreesPerMillisecondCandidate": 0.17223314607809778,
+        "bodyBearingDeltaDegreesCandidate": 44.49419425837755,
+        "observedHoldMidpointMsCandidate": 258.337,
+        "pulseSha256": "2E22F5A2C6351D6B07DDC08B641AC6F11BD0F2F8613CB20AA1A29D545447F773",
+        "beforePoseSha256": "13737D102BC318007AB694E3997DBD9CD49CAC8ABD4A17033930078226854755",
+        "afterPoseSha256": "8E7CD98F8B1C681DC42D5C14E026156754064FBC2B5E8C360AE69633893F090F"
       },
       "d": {
-        "degreesPerMillisecondCandidate": -0.17323356288234767,
-        "bodyBearingDeltaDegreesCandidate": -45.96022411615547,
-        "observedHoldMidpointMsCandidate": 265.30785000000003,
-        "pulseSha256": "FFA167EDE15EBA0B082B5532FA8BF19BD7C42FC465232B285AE63638AE9E8862",
-        "beforePoseSha256": "DCC0ABC82ECEBB133642F032A6E1A82EA17F9A55A76CF14FF9D9357D9255D112",
-        "afterPoseSha256": "A6B447883C055F371A536D814BAACA263A6D34E4A7388E0A2D880252064486A1"
+        "degreesPerMillisecondCandidate": -0.17274044024325605,
+        "bodyBearingDeltaDegreesCandidate": -43.90767468532954,
+        "observedHoldMidpointMsCandidate": 254.18295,
+        "pulseSha256": "054C7A918B0B985C8B9E5F7D2A9F0BC478C5611A883A7F4ECA284962EB9392AF",
+        "beforePoseSha256": "8E7CD98F8B1C681DC42D5C14E026156754064FBC2B5E8C360AE69633893F090F",
+        "afterPoseSha256": "E9825893E4A22C639F424029172AF30CCE716B28EAA45917BBA2BFDDC1C46265"
       }
     }
   }

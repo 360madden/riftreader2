@@ -420,8 +420,9 @@ internal static class MoveKeyCommand
         if (options.ExpectedSha256 is not null
             && !string.Equals(options.ExpectedSha256, sha, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("RIFT executable hash changed.");
-        if ((options.MeasureXyz || options.MeasureActorPose) && !string.Equals(sha,
-            CurrentBuildPositionSampleCommand.GameSha256, StringComparison.OrdinalIgnoreCase))
+        if ((options.MeasureXyz && !CurrentBuildPlayerLookup.IsCoreBuild(sha)) ||
+            (options.MeasureActorPose && !string.Equals(sha,
+                CurrentBuildPositionSampleCommand.GameSha256, StringComparison.OrdinalIgnoreCase)))
             throw new InvalidOperationException(
                 "Native XYZ/actor-pose measurement is unavailable for this RIFT build; no game input sent.");
 
@@ -513,7 +514,7 @@ internal static class MoveKeyCommand
         // An unavailable BEFORE capture blocks the pulse; an unavailable AFTER
         // capture never conceals a completed action or causes it to be repeated.
         var before = options.MeasureXyz
-            ? await CaptureXyzAsync(options.Pid, startTicks, token) : null;
+            ? await CaptureXyzAsync(options.Pid, startTicks, sha, token) : null;
         var beforePose = options.MeasureActorPose
             ? await CaptureActorPoseAsync(options.Pid, startTicks, token) : null;
         if ((before is not null || beforePose is not null) && !Inspect().IsForeground)
@@ -553,7 +554,7 @@ internal static class MoveKeyCommand
                         await Task.Delay(options.XyzSettleMilliseconds, token);
                         xyzSettleApplied = true;
                     }
-                    var after = await CaptureXyzAsync(options.Pid, startTicks, token);
+                    var after = await CaptureXyzAsync(options.Pid, startTicks, sha, token);
                     xyzFeedback = CompareXyz(before, after);
                 }
                 catch (Exception exception)
@@ -650,9 +651,10 @@ internal static class MoveKeyCommand
     }
 
     private static async Task<XyzSample> CaptureXyzAsync(
-        int pid, long startTicks, CancellationToken token)
+        int pid, long startTicks, string build, CancellationToken token)
     {
-        var build = CurrentBuildPositionSampleCommand.GameSha256;
+        if (!CurrentBuildPlayerLookup.IsCoreBuild(build))
+            throw new InvalidDataException("Unqualified native XYZ build.");
         await using var lease = await NativeReadFileLease.AcquireAsync(
             pid, startTicks, build, TimeSpan.FromSeconds(1), token);
         await using var session = await WindowsNativeMemorySession.OpenAsync(
