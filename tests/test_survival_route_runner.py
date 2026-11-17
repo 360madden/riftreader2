@@ -798,6 +798,29 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
                             initial_retreat_trail=trail,
                             assess_before_travel=True, finish_after_retreat=True)
 
+    def test_seeded_retreat_refuses_safe_endpoint_on_wrong_floor(self):
+        # A safe trail sharing the destination's x/z is not proof that the
+        # actual retained safe endpoint occupies the requested floor.
+        trail = [{"x": 0, "y": 5, "z": 0},
+                 {"x": 2, "y": 5, "z": 0}]
+        mover_calls = []
+        def must_not_move(*args, **kwargs):
+            mover_calls.append((args, kwargs))
+            self.fail("Wrong-floor safe retreat launched movement")
+        backend = Backend([observed()])
+        with patch("scripts.physical_waypoints.read_stationary",
+                   return_value=pose(2, 0)):
+            with self.assertRaisesRegex(Exception, "safe endpoint height"):
+                run_survival_route(
+                    object(), [("hunt", 2, 0), ("safe", 0, 0)],
+                    threading.Event(), profile=PROFILE,
+                    telemetry=backend.telemetry, action_backend=backend,
+                    mover=must_not_move, encounter_error=Interrupted,
+                    initial_retreat_trail=trail,
+                    assess_before_travel=True, finish_after_retreat=True,
+                    goal_heights=[5, 9])
+        self.assertEqual([], mover_calls)
+
     def test_initial_unsafe_encounter_retreats_safeward_and_recovers_before_route_travel(self):
         unsafe=observed(present=True,combat=True); unsafe["player"]["healthPct"]=20
         recovering=observed(); recovering["player"]["healthPct"]=50
@@ -814,7 +837,8 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
                 action_backend=backend,mover=mover,encounter_error=Interrupted,wait_seconds=0,
                 initial_retreat_trail=[{"x":0,"y":5,"z":0},{"x":2,"y":5,"z":0},
                                        {"x":4,"y":5,"z":0}],
-                assess_before_travel=True,finish_after_retreat=True)
+                assess_before_travel=True,finish_after_retreat=True,
+                goal_heights=[5,5])
         self.assertEqual([(0.0,0.0,"retreat")],calls)
         self.assertTrue(results[0]["safeRetreat"])
         self.assertEqual({"x":0.0,"y":5.0,"z":0.0},results[0]["position"])

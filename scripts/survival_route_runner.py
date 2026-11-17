@@ -274,6 +274,8 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
         safe = seeded_trail[0]
         if not _corridor_arrival(safe, rows[-1][1], safe["y"], rows[-1][2]):
             raise WaypointError("Return route does not end at the retained safe endpoint")
+        if heights[-1] is not None and abs(safe["y"] - heights[-1]) > .5:
+            raise WaypointError("Retained safe endpoint height does not match the requested destination")
     if finish_after_retreat and seeded_trail is None:
         raise WaypointError("Terminal safe retreat requires a retained trail")
     original_distance = math.hypot(rows[0][1] - current["x"], rows[0][2] - current["z"])
