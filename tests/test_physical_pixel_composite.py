@@ -143,6 +143,33 @@ class RetainedSanctumWatchTests(unittest.TestCase):
                 negative = surface.intersect_prepared(v, f, ray, max_distance=200)
                 self.assertEqual(negative["hitCount"], 0)
 
+    def test_pinned_horizontal_pillar_edge_candidates(self):
+        """Replay candidate layer changes at pictured pillar edges, not optical depth."""
+        frame = composite.load_frame(
+            self.image, self.receipt, self.receipt_sha, self.native, self.native_sha,
+            expected_host="AMD-DESKTOP")
+        layers = [composite.load_terrain(self.terrain, self.terrain_reg),
+                  composite.load_temple(self.temple, self.anchor, self.anchor_sha,
+                                        frame["identity"])]
+        # The retained left pillar has candidates between x=835..850 and
+        # x=950..980 at y=530; the right pillar begins between x=2150..2200.
+        # These are renderer-space hypotheses, never physics or nav evidence.
+        points = [(835, 530), (850, 530), (950, 530), (980, 530),
+                  (2150, 500), (2200, 500), (2500, 500)]
+        expected = ("terrain", "temple-render", "temple-render", "terrain",
+                    "terrain", "temple-render", "temple-render")
+        report = composite.analyze_pixels(frame, layers, points, max_distance=200)
+        self.assertEqual(report["status"], "candidate-only")
+        for row, layer_name in zip(report["pixels"], expected):
+            with self.subTest(pixel=row["pixel"]):
+                candidates = row["surfaceCandidates"]
+                self.assertEqual(candidates["candidateFirst"]["layer"], layer_name)
+                self.assertFalse(candidates["ambiguousFirstLayer"])
+                self.assertFalse(candidates["visibleSurfaceQualified"])
+        self.assertFalse(report["physicalBlockingQualified"])
+        self.assertFalse(report["navigationQualified"])
+        self.assertFalse(report["inputSent"])
+
     def test_reused_cardinal_footprint_keeps_candidate_only(self):
         frame = composite.load_frame(
             self.image, self.receipt, self.receipt_sha, self.native, self.native_sha,
