@@ -212,19 +212,43 @@ def compare_layers(ray, layers, max_distance=200.0):
             "movementEligible": False}
 
 
-def analyze_pixels(frame, layers, pixels, max_distance=200.0):
+def analyze_pixels(frame, layers, pixels, max_distance=200.0,
+                   pixel_selection_radius=0):
     surface._require(1 <= len(pixels) <= MAX_PIXELS, "pixel-count-invalid")
+    surface._require(type(pixel_selection_radius) is int
+                     and 0 <= pixel_selection_radius <= surface.MAX_FOOTPRINT_RADIUS,
+                     "pixel-selection-radius-invalid")
     seen = set()
     for x, y in pixels:
         surface._require((x, y) not in seen, "duplicate-pixel")
         seen.add((x, y))
+    # Reuse the existing footprint algorithm on a joined, layer-labelled mesh.
+    # Vertex indices are shifted only in this transient read-only representation.
+    merged_vertices, merged_faces = [], []
+    if pixel_selection_radius:
+        for layer in layers:
+            offset = len(merged_vertices)
+            merged_vertices.extend(layer["vertices"])
+            merged_faces.extend((tuple(i + offset for i in indices), layer["name"])
+                                for indices, _ in layer["faces"])
+        surface._require(len(merged_vertices) <= surface.MAX_VERTICES
+                         and len(merged_faces) <= surface.MAX_TRIANGLES,
+                         "composite-footprint-mesh-limit-exceeded")
     result = []
     for x, y in pixels:
         ray = physical_pixel_ray.pixel_ray(frame["camera"], frame["mapping"], x, y)
-        result.append({"pixel": [x, y],
-                       "rayForwardReprojectionErrorPixels":
-                           ray["forwardReprojectionErrorPixels"],
-                       "surfaceCandidates": compare_layers(ray, layers, max_distance)})
+        record = {"pixel": [x, y],
+                  "rayForwardReprojectionErrorPixels":
+                      ray["forwardReprojectionErrorPixels"],
+                  "surfaceCandidates": compare_layers(ray, layers, max_distance)}
+        if pixel_selection_radius:
+            center = surface.intersect_prepared(
+                merged_vertices, merged_faces, ray, max_distance=max_distance)
+            record["pixelFootprint"] = surface.sample_pixel_footprint(
+                merged_vertices, merged_faces, frame["camera"], frame["mapping"],
+                x, y, pixel_selection_radius, center_ray=ray,
+                center_surface=center, max_distance=max_distance)
+        result.append(record)
     # Refuse to return a clean result if a source changed during offline work.
     for layer in layers:
         for path, digest in layer["pins"]:
@@ -248,6 +272,58 @@ def analyze_pixels(frame, layers, pixels, max_distance=200.0):
                              "completeness and route clearance remain unverified."}
 
 
+def render_preview(frame, report, output_path):
+    """Optional separate annotated PNG for human review; never overwrite inputs."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    source = Path(frame["source"]["imagePath"]).resolve()
+    output = Path(output_path).resolve()
+    surface._require(output.suffix.lower() == ".png" and output != source
+                     and not output.exists() and output.parent.is_dir(),
+                     "preview-output-must-be-new-png-in-existing-directory")
+    surface._require(hashlib.sha256(source.read_bytes()).hexdigest()
+                     == frame["source"]["imageSha256"],
+                     "preview-source-image-changed")
+    with Image.open(source) as original:
+        image = original.convert("RGB")
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default(size=17)
+    draw.rectangle((0, 0, image.width - 1, 43), fill="#13202b")
+    draw.text((12, 9),
+              "RR2 OFFLINE CANDIDATES | no optical depth, blocking, or route proof",
+              fill="#ffffff", font=font)
+    for row in report["pixels"]:
+        x, y = row["pixel"]
+        result = row["surfaceCandidates"]
+        hit = result["candidateFirst"]
+        if hit is None:
+            label, color = "UNKNOWN / AMBIGUOUS", "#ffda4d"
+        else:
+            kind = "TEMPLE" if hit["layer"] == "temple-render" else "TERRAIN"
+            color = "#ff9a30" if kind == "TEMPLE" else "#52d7f9"
+            label = f"{kind} {hit['distanceNative']:.2f}u (candidate)"
+        footprint = row.get("pixelFootprint")
+        if footprint is not None:
+            group = hit["layer"] if hit is not None else None
+            count = next((item["count"] for item in footprint["firstMeshGroupCounts"]
+                          if item["meshGroup"] == group), 0)
+            label += f" | {count}/{footprint['sampleCount']} neighbors"
+        bbox = draw.textbbox((0, 0), label, font=font)
+        width = bbox[2] - bbox[0]
+        tx = max(2, min(image.width - width - 10, x + 14))
+        ty = max(46, min(image.height - 28, y - 24))
+        draw.line((x, y, tx, ty + 12), fill=color, width=2)
+        draw.rectangle((tx - 3, ty - 2, tx + width + 5, ty + 24),
+                       fill="#13202b", outline=color, width=1)
+        draw.text((tx, ty), label, fill=color, font=font)
+        draw.ellipse((x - 6, y - 6, x + 6, y + 6),
+                     fill=color, outline="#101010", width=2)
+    image.save(output, format="PNG")
+    return {"status": "offline-candidate-preview", "path": str(output),
+            "sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+            "inputSent": False, "visibleSurfaceQualified": False,
+            "movementEligible": False}
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", type=Path, required=True)
@@ -264,6 +340,10 @@ def main(argv=None):
     parser.add_argument("--pixel", type=int, nargs=2, action="append", required=True,
                         metavar=("X", "Y"), help="repeat for 1..32 frame pixel pairs")
     parser.add_argument("--max-distance", type=float, default=200.0)
+    parser.add_argument("--pixel-selection-radius", type=int, default=0,
+                        help="0..3 cardinal neighbor candidates per pixel; never depth proof")
+    parser.add_argument("--preview-png", type=Path,
+                        help="write an annotated candidate-only PNG to a new path")
     args = parser.parse_args(argv)
     try:
         frame = load_frame(args.image, args.receipt, args.receipt_sha256,
@@ -272,7 +352,10 @@ def main(argv=None):
         layers = [load_terrain(args.terrain_obj, args.terrain_registration),
                   load_temple(args.temple_obj, args.temple_anchor,
                               args.temple_anchor_sha256, frame["identity"])]
-        result = analyze_pixels(frame, layers, args.pixel, args.max_distance)
+        result = analyze_pixels(frame, layers, args.pixel, args.max_distance,
+                                args.pixel_selection_radius)
+        if args.preview_png is not None:
+            result["preview"] = render_preview(frame, result, args.preview_png)
     except (ValueError, KeyError, OSError, TypeError, OverflowError) as error:
         print(json.dumps({"schema": SCHEMA, "status": "blocked", "reason": str(error),
                           "inputSent": False, "movementEligible": False}))

@@ -56,6 +56,10 @@ class CompositeMathTests(unittest.TestCase):
         self.assertIsNone(result["candidateFirst"])
         self.assertFalse(result["sourceCoverageComplete"])
 
+    def test_footprint_radius_is_bounded_before_any_ray(self):
+        with self.assertRaisesRegex(ValueError, "pixel-selection-radius-invalid"):
+            composite.analyze_pixels({}, [], [(10, 10)], pixel_selection_radius=4)
+
     def test_pinned_image_hash_and_duplicate_json_rejected(self):
         with TemporaryDirectory() as folder:
             path = Path(folder) / "receipt.json"
@@ -138,6 +142,50 @@ class RetainedSanctumWatchTests(unittest.TestCase):
                                                    *pixel)
                 negative = surface.intersect_prepared(v, f, ray, max_distance=200)
                 self.assertEqual(negative["hitCount"], 0)
+
+    def test_reused_cardinal_footprint_keeps_candidate_only(self):
+        frame = composite.load_frame(
+            self.image, self.receipt, self.receipt_sha, self.native, self.native_sha,
+            expected_host="AMD-DESKTOP")
+        layers = [composite.load_terrain(self.terrain, self.terrain_reg),
+                  composite.load_temple(self.temple, self.anchor, self.anchor_sha,
+                                        frame["identity"])]
+        result = composite.analyze_pixels(
+            frame, layers, [(850, 530), (1100, 640)],
+            pixel_selection_radius=2)
+        for row, expected in zip(result["pixels"], ("temple-render", "terrain")):
+            footprint = row["pixelFootprint"]
+            self.assertEqual(footprint["sampleCount"], 9)
+            self.assertEqual(footprint["radiusPixels"], 2)
+            self.assertEqual(footprint["samples"][0]["firstMeshGroup"], expected)
+            self.assertFalse(footprint["visibleSurfaceQualified"])
+            self.assertFalse(footprint["movementEligible"])
+        self.assertFalse(result["movementEligible"])
+
+    def test_preview_is_separate_and_does_not_overwrite_source(self):
+        from PIL import Image
+
+        frame = composite.load_frame(
+            self.image, self.receipt, self.receipt_sha, self.native, self.native_sha,
+            expected_host="AMD-DESKTOP")
+        layers = [composite.load_terrain(self.terrain, self.terrain_reg),
+                  composite.load_temple(self.temple, self.anchor, self.anchor_sha,
+                                        frame["identity"])]
+        report = composite.analyze_pixels(frame, layers, [(850, 530)])
+        with TemporaryDirectory() as folder:
+            output = Path(folder) / "candidate-preview.png"
+            preview = composite.render_preview(frame, report, output)
+            self.assertTrue(output.is_file())
+            self.assertEqual(preview["status"], "offline-candidate-preview")
+            self.assertEqual(preview["sha256"],
+                             hashlib.sha256(output.read_bytes()).hexdigest())
+            with Image.open(output) as rendered:
+                self.assertEqual(rendered.size, (2560, 1392))
+            self.assertEqual(hashlib.sha256(self.image.read_bytes()).hexdigest(),
+                             frame["source"]["imageSha256"])
+            with self.assertRaisesRegex(
+                    ValueError, "preview-output-must-be-new-png-in-existing-directory"):
+                composite.render_preview(frame, report, output)
 
     def test_rejects_wrong_process_and_native_source(self):
         frame = composite.load_frame(
