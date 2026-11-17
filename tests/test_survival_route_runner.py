@@ -714,6 +714,29 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
         self.assertTrue(stop.is_set())
         self.assertFalse(any(event["status"] == "arrived" for event in events))
 
+    def test_stop_during_native_arrival_validation_never_publishes_progress(self):
+        # STOP can land after the mover returns, while its retained native
+        # samples are being qualified. A valid receipt cannot defeat STOP.
+        from scripts.physical_waypoints import Stopped
+        from scripts.survival_route_runner import _verify_passages_on_path
+
+        stop, events = threading.Event(), []
+
+        def validate_then_stop(points, passages):
+            _verify_passages_on_path(points, passages)
+            stop.set()
+
+        with patch("scripts.survival_route_runner._verify_passages_on_path",
+                   side_effect=validate_then_stop):
+            with self.assertRaises(Stopped):
+                self.invoke([("destination", 2, 0)], Backend([observed()]),
+                            lambda adapter, x, z, *args, **kwargs: arrived(x, z),
+                            stop=stop, events=events)
+        self.assertTrue(stop.is_set())
+        self.assertFalse(any(event["status"] == "arrived" for event in events))
+        self.assertEqual("halt", [event["survival"]["state"] for event in events
+                                  if event["status"] == "survival-state"][-1])
+
     def test_total_route_distance_is_checked_before_input(self):
         calls = []
         backend = Backend([observed()])

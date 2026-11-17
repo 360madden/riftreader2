@@ -540,6 +540,12 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
             raise WaypointError(
                 "Arrived leg cannot establish a known traversed corridor: "
                 + str(invalid)) from invalid
+        # Corridor qualification can take time after the mover has returned;
+        # STOP during that interval must win before publishing any passage.
+        if stop.is_set():
+            policy.operator_stop()
+            publish_policy_state()
+            raise Stopped("Stopped during native arrival qualification; no route progress admitted")
         if on_pass is not None:
             expected = list(guides or [])
             if len(passed_events) != len(expected):
