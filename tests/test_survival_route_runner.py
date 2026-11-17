@@ -696,6 +696,29 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
                         minimum_trail_points=3)
         self.assertEqual([(10.0, 0.0)], calls)
 
+    def test_initial_retreat_trail_requires_continuous_native_samples_before_any_move(self):
+        # A seed from a previous walk must not turn a gap or height jump into
+        # an apparently known return corridor, even when its endpoints match.
+        for name, coordinates in (
+            ("planar-gap", ((0, 5, 0), (3, 5, 0), (6, 5, 0))),
+            ("height-gap", ((0, 5, 0), (1, 7, 0), (2, 5, 0))),
+        ):
+            with self.subTest(name=name):
+                trail = [dict(zip(("x", "y", "z"), point))
+                         for point in coordinates]
+                def must_not_move(*args, **kwargs):
+                    self.fail("A discontinuous seeded trail launched the movement helper")
+                with patch("scripts.physical_waypoints.read_stationary",
+                           return_value=pose(coordinates[-1][0], coordinates[-1][2])):
+                    with self.assertRaisesRegex(Exception, "retreat trail is discontinuous"):
+                        run_survival_route(
+                            object(), [("safe", 0, 0)], threading.Event(),
+                            profile=PROFILE, telemetry=Backend([observed()]).telemetry,
+                            action_backend=Backend([observed()]),
+                            mover=must_not_move, encounter_error=Interrupted,
+                            initial_retreat_trail=trail,
+                            assess_before_travel=True, finish_after_retreat=True)
+
     def test_initial_unsafe_encounter_retreats_safeward_and_recovers_before_route_travel(self):
         unsafe=observed(present=True,combat=True); unsafe["player"]["healthPct"]=20
         recovering=observed(); recovering["player"]["healthPct"]=50

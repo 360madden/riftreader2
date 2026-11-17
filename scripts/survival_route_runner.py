@@ -244,6 +244,10 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
         for item in initial_retreat_trail:
             point = _position(item)
             if seeded_trail:
+                if (math.hypot(point["x"] - seeded_trail[-1]["x"],
+                               point["z"] - seeded_trail[-1]["z"]) > 2.0
+                        or abs(point["y"] - seeded_trail[-1]["y"]) > 1.0):
+                    raise WaypointError("Initial retreat trail is discontinuous")
                 seeded_distance += math.hypot(point["x"]-seeded_trail[-1]["x"],
                                               point["z"]-seeded_trail[-1]["z"])
             seeded_trail.append(point)
