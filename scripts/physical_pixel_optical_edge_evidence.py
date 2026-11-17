@@ -120,20 +120,41 @@ def _dark_profile_row(image: Image.Image, y: int, projected_terrain_x: int) -> d
 
 
 def dark_gradient_profile(image: Image.Image, *, y: int, projected_boundary: tuple[int, int],
-                          bright_interior_x: int) -> dict:
-    """Opt-in local optical evidence; ray projection is fixed to the central row."""
+                          bright_interior_x: int,
+                          neighbor_boundaries: dict[int, tuple[int, int] | None]) -> dict:
+    """Opt-in candidate-only optical evidence with row-specific ray projections."""
     left, right = projected_boundary
     if right != left + 1:
         raise ValueError("optical-dark-gradient-nonadjacent-projected-boundary")
+    offsets = (-8, -4, 0, 4, 8)
+    if (set(neighbor_boundaries) != set(offsets)
+            or neighbor_boundaries[0] != projected_boundary):
+        raise ValueError("optical-dark-gradient-neighbor-projections-invalid")
     center = (left + right) / 2
     measured = _dark_profile_row(image, y, left)
     neighbors = []
-    for offset in (-8, -4, 0, 4, 8):
-        row = _dark_profile_row(image, y + offset, left)
+    for offset in offsets:
+        boundary = neighbor_boundaries[offset]
+        if boundary is None:
+            neighbors.append({
+                "y": y + offset, "projectionStatus": "unavailable",
+                "projectedLayerBoundaryPixels": None,
+                "darkBandCandidate": False,
+                "reason": "optical-edge-neighbor-projection-unavailable",
+            })
+            continue
+        a, b = boundary
+        if type(a) is not int or type(b) is not int or b != a + 1:
+            raise ValueError("optical-dark-gradient-neighbor-projections-invalid")
+        row = _dark_profile_row(image, y + offset, a)
+        midpoint = (a + b) / 2
         neighbors.append({
-            "y": y + offset,
+            "y": y + offset, "projectionStatus": "candidate-bracketed",
+            "projectedLayerBoundaryPixels": [a, b],
+            "projectedBoundaryMidpointX": midpoint,
             "darkTroughX": row["darkTroughX"],
             "darkTroughMinusTerrainPixel": row["darkTroughMinusTerrainPixel"],
+            "darkTroughMinusProjectedPixels": round(row["darkTroughX"] - midpoint, 2),
             "darkDropFromPrecedingLuminance": row["darkDropFromPrecedingLuminance"],
             "darkBandCandidate": row["darkBandCandidate"],
         })
@@ -146,11 +167,13 @@ def dark_gradient_profile(image: Image.Image, *, y: int, projected_boundary: tup
         "brightInteriorMinusProjectedPixels": round(bright_interior_x - center, 2),
         "brightInteriorRGB": list(_median_rgb(image, bright_interior_x, y)),
         "neighborRows": neighbors,
-        "neighborRowsNotReprojected": True,
+        "neighborRowsNotReprojected": False,
+        "neighborRowsFullyReprojected":
+            all(row["projectionStatus"] == "candidate-bracketed" for row in neighbors),
         "measurement": "image-only-dark-gradient-candidate-not-outer-silhouette",
         "uncertainty": "Manual ROI; dark trough may be shadow or terrain texture, not an "
-                       "outer silhouette. Five-by-five filtering shifts edges; neighboring "
-                       "rows reuse the central-row projection, not new ray casts.",
+                       "outer silhouette. Five-by-five filtering shifts edges; each "
+                       "neighbor uses its own candidate ray projection, where available.",
         "opticalVisibilityQualified": False,
         "visibleSurfaceQualified": False,
         "opticalDepthQualified": False,
@@ -283,11 +306,30 @@ def analyze_view(view_name: str, *, dark_gradient: bool = False) -> dict:
                "pixelIsQualifiedWorldFragment": False,
                "visibleSurfaceQualified": False}
         if dark_gradient:
-            dark_profiles = [dark_gradient_profile(
-                image, y=row["y"],
-                projected_boundary=tuple(row["projectedLayerBoundaryPixels"]),
-                bright_interior_x=row["brightInteriorOnsetX"])
-                for row in results]
+            dark_profiles = []
+            # Neighbor rows need their own geometry rays: fixed-pixel dark
+            # gradients are not necessarily aligned to the projected edge.
+            for row, (_, y, left, right, *_roi) in zip(results, entry["rows"]):
+                neighbors = {0: tuple(row["projectedLayerBoundaryPixels"])}
+                for offset in (-8, -4, 4, 8):
+                    try:
+                        # The bounded +/-16px bracket tolerates a sloping edge;
+                        # the monotonic-layer test still refuses multiple crossings.
+                        neighbors[offset] = _projected_boundary(
+                            frame, layers, indices, y + offset, left - 16, right + 16)
+                    except ValueError as error:
+                        if str(error) not in {
+                            "optical-edge-geometry-layer-ambiguous",
+                            "optical-edge-projection-bracket-invalid",
+                            "optical-edge-projection-not-monotonic",
+                        }:
+                            raise
+                        neighbors[offset] = None
+                dark_profiles.append(dark_gradient_profile(
+                    image, y=y,
+                    projected_boundary=tuple(row["projectedLayerBoundaryPixels"]),
+                    bright_interior_x=row["brightInteriorOnsetX"],
+                    neighbor_boundaries=neighbors))
             hud_gradient = hud_gradient_false_positive_control(
                 image, point=entry["uiProbe"], ui_rect=entry["uiRect"])
     for path, digest in ((image_path, entry["imageSha"]),

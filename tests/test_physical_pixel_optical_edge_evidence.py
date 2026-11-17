@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest import mock
 
 from PIL import Image
 
@@ -28,6 +29,21 @@ class BrightInteriorMathTests(unittest.TestCase):
             edge.bright_interior_onset(
                 image, y=16, search=(40, 80), background=(20, 35),
                 foreground=(90, 105))
+
+    def test_unbracketed_neighbor_is_unknown_not_projected(self):
+        image = Image.new("RGB", (128, 64), (45, 45, 45))
+        boundaries = {-8: (59, 60), -4: None, 0: (59, 60),
+                      4: (59, 60), 8: (59, 60)}
+        result = edge.dark_gradient_profile(
+            image, y=32, projected_boundary=(59, 60), bright_interior_x=75,
+            neighbor_boundaries=boundaries)
+        unknown = result["neighborRows"][1]
+        self.assertEqual(unknown["projectionStatus"], "unavailable")
+        self.assertIsNone(unknown["projectedLayerBoundaryPixels"])
+        self.assertFalse(unknown["darkBandCandidate"])
+        self.assertFalse(result["neighborRowsFullyReprojected"])
+        self.assertFalse(result["opticalVisibilityQualified"])
+        self.assertFalse(result["movementEligible"])
 
     def test_bad_hash_fails_closed(self):
         with TemporaryDirectory() as folder:
@@ -106,9 +122,40 @@ class RetainedRealImageOpticalTests(unittest.TestCase):
             self.assertTrue(result["darkBandCandidate"])
             self.assertLess(result["strongestNegativeGradientDelta4Px"], -8)
             self.assertIn("not-outer-silhouette", result["measurement"])
-            self.assertTrue(result["neighborRowsNotReprojected"])
+            self.assertFalse(result["neighborRowsNotReprojected"])
+            self.assertTrue(result["neighborRowsFullyReprojected"])
+            self.assertEqual([r["projectionStatus"] for r in result["neighborRows"]],
+                             ["candidate-bracketed"] * 5)
             self.assertFalse(result["opticalVisibilityQualified"])
             self.assertFalse(result["movementEligible"])
+
+    def test_second_view_neighbor_boundaries_shift_with_y(self):
+        upper, middle = self.second_dark["darkGradientProfiles"]
+        self.assertEqual([row["projectedLayerBoundaryPixels"] for row in upper["neighborRows"]],
+                         [[1967, 1968], [1966, 1967], [1966, 1967],
+                          [1965, 1966], [1964, 1965]])
+        self.assertEqual([row["projectedLayerBoundaryPixels"] for row in middle["neighborRows"]],
+                         [[1947, 1948], [1946, 1947], [1946, 1947],
+                          [1945, 1946], [1944, 1945]])
+        self.assertFalse(upper["opticalVisibilityQualified"])
+        self.assertFalse(middle["movementEligible"])
+
+    def test_unbracketed_projected_neighbor_is_marked_unknown(self):
+        original = edge._projected_boundary
+
+        def missing_one_row(frame, layers, indices, y, left, right):
+            if y == 408:  # second-view upper pillar, +8 from its central row
+                raise ValueError("optical-edge-projection-bracket-invalid")
+            return original(frame, layers, indices, y, left, right)
+
+        with mock.patch.object(edge, "_projected_boundary", side_effect=missing_one_row):
+            report = edge.analyze_view("second", dark_gradient=True)
+        upper = report["darkGradientProfiles"][0]
+        self.assertFalse(upper["neighborRowsFullyReprojected"])
+        self.assertEqual(upper["neighborRows"][-1]["projectionStatus"], "unavailable")
+        self.assertFalse(upper["neighborRows"][-1]["darkBandCandidate"])
+        self.assertFalse(report["opticalVisibilityQualified"])
+        self.assertFalse(report["navigationQualified"])
 
     def test_first_view_does_not_infer_dark_silhouette(self):
         for result in self.first_dark["darkGradientProfiles"]:
