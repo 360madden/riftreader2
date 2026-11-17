@@ -10,8 +10,8 @@ internal sealed record CurrentBuildOpticalCameraCandidate(
     uint[]? RawBits, double? BearingDegreesCandidate, double? PitchDegreesCandidate,
     double[]? WorldEyeXYZ)
 {
-    public string SourceRootRva => "0x3362848";
-    public string SelectedModeCameraGetterRva => "0xF88580";
+    public string SourceRootRva { get; init; } = "0x3362848";
+    public string SelectedModeCameraGetterRva { get; init; } = "0xF88580";
     public bool CameraYawQualified => false;
     public float[]? ProjectionRowMajor { get; init; }
     public float[]? ViewportLeftRightTopBottom { get; init; }
@@ -34,6 +34,7 @@ internal static class CurrentBuildOpticalCameraCandidateReader
     internal static CurrentBuildOpticalCameraCandidate TryRead(
         IReadOnlyNativeMemorySession session, ulong playerSystem)
     {
+        var updated = CurrentBuildPlayerLookup.IsUpdatedBuild(session.Identity.ExecutableSha256);
         for (var attempt = 1; attempt <= PayloadReadAttempts; attempt++)
         {
             try { return Read(session, playerSystem); }
@@ -45,22 +46,27 @@ internal static class CurrentBuildOpticalCameraCandidateReader
             }
             catch (Exception error) when (error is InvalidDataException or IOException or OverflowException)
             {
-                return Unavailable(error.Message);
+                return Unavailable(error.Message, updated);
             }
         }
 
-        return Unavailable("Optical camera payload changed during read.");
+        return Unavailable("Optical camera payload changed during read.", updated);
     }
 
-    private static CurrentBuildOpticalCameraCandidate Unavailable(string reason) =>
-        new("unavailable", reason, null, null, null, null, null, null, null, null);
+    private static CurrentBuildOpticalCameraCandidate Unavailable(string reason, bool updated) =>
+        new("unavailable", reason, null, null, null, null, null, null, null, null)
+        {
+            SourceRootRva = updated ? "0x3374008" : "0x3362848",
+            SelectedModeCameraGetterRva = updated ? "0xF88550" : "0xF88580"
+        };
 
     private static CurrentBuildOpticalCameraCandidate Read(
         IReadOnlyNativeMemorySession session, ulong playerSystem)
     {
         var identity = session.Identity;
-        if (!string.Equals(identity.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256,
-                           StringComparison.OrdinalIgnoreCase) || identity.ModuleSize < 0x33724F8)
+        var updated = CurrentBuildPlayerLookup.IsUpdatedBuild(identity.ExecutableSha256);
+        if (!CurrentBuildPlayerLookup.IsCoreBuild(identity.ExecutableSha256) ||
+            identity.ModuleSize < (updated ? 0x3383CB8UL : 0x33724F8UL))
             throw new InvalidDataException("Optical camera build or module mismatch.");
         var anchors = new List<(ulong Address, byte[] Bytes, bool IsPayload)>();
         byte[] Take(ulong address, int count, bool isPayload = false)
@@ -74,18 +80,18 @@ internal static class CurrentBuildOpticalCameraCandidateReader
         var module = identity.ModuleBaseAddress;
         // The selected provider's getter has a statically verified direct chain.
         // Validate the dispatch slot without calling any game code.
-        var manager = PointerAt(checked(module + 0x33724F0));
+        var manager = PointerAt(checked(module + (updated ? 0x3383CB0UL : 0x33724F0UL)));
         var provider = PointerAt(checked(manager + 0x1B0));
         var providerVtable = PointerAt(provider);
-        if (providerVtable != module + 0x2710320 ||
-            PointerAt(providerVtable + 0xB8) != module + 0xF88580)
+        if (providerVtable != module + (updated ? 0x271E930UL : 0x2710320UL) ||
+            PointerAt(providerVtable + 0xB8) != module + (updated ? 0xF88550UL : 0xF88580UL))
             throw new InvalidDataException("Optical camera selected mode is unsupported.");
-        var owner = PointerAt(module + 0x3362848);
+        var owner = PointerAt(module + (updated ? 0x3374008UL : 0x3362848UL));
         var wrapper = PointerAt(checked(owner + 0x78));
-        if (PointerAt(wrapper) != module + 0x27106A8)
+        if (PointerAt(wrapper) != module + (updated ? 0x271ECB8UL : 0x27106A8UL))
             throw new InvalidDataException("Optical camera wrapper type mismatch.");
         var camera = PointerAt(checked(wrapper + 0x28));
-        if (PointerAt(camera) != module + 0x274D630)
+        if (PointerAt(camera) != module + (updated ? 0x275BC40UL : 0x274D630UL))
             throw new InvalidDataException("Optical camera type mismatch.");
         var transform = Take(checked(camera + 0xD4), 48, isPayload: true);
         var origin = Take(checked(CurrentBuildPlayerLookup.Pointer(playerSystem, 0x444) + 0x438), 12,
@@ -159,7 +165,9 @@ internal static class CurrentBuildOpticalCameraCandidateReader
         {
             ProjectionRowMajor = projectionValues[..16],
             ViewportLeftRightTopBottom = projectionValues[16..20],
-            ProjectionRawBits = projectionBits
+            ProjectionRawBits = projectionBits,
+            SourceRootRva = updated ? "0x3374008" : "0x3362848",
+            SelectedModeCameraGetterRva = updated ? "0xF88550" : "0xF88580"
         };
     }
 }

@@ -141,9 +141,13 @@ def _optical_projection_values(camera, transform):
 def _optical_camera_values(camera):
     if camera is None:
         return None
+    known_sources = {
+        ("0x3362848", "0xF88580"),
+        ("0x3374008", "0xF88550"),
+    }
     if (not isinstance(camera, dict) or camera.get("cameraYawQualified") is not False
-            or camera.get("sourceRootRva") != "0x3362848"
-            or camera.get("selectedModeCameraGetterRva") != "0xF88580"):
+            or (camera.get("sourceRootRva"),
+                camera.get("selectedModeCameraGetterRva")) not in known_sources):
         raise ValueError("invalid-native-optical-camera-source")
     if camera.get("status") == "unavailable":
         if (not isinstance(camera.get("unavailableReason"), str) or not camera["unavailableReason"]

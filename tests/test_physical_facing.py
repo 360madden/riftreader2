@@ -213,6 +213,16 @@ class PhysicalFacingTests(unittest.TestCase):
         parsed = physical._native_values('facing', source)['opticalCamera']
         self.assertEqual([7427, 871, 2936], parsed['worldEyeXYZ'])
         self.assertFalse(parsed['cameraYawQualified'])
+        updated = dict(camera, sourceRootRva='0x3374008',
+                       selectedModeCameraGetterRva='0xF88550')
+        self.assertEqual('available-candidate',
+                         physical._optical_camera_values(updated)['status'])
+        with self.assertRaisesRegex(ValueError, 'source'):
+            physical._optical_camera_values(
+                dict(camera, sourceRootRva='0x3374008'))
+        with self.assertRaisesRegex(ValueError, 'source'):
+            physical._optical_camera_values(
+                dict(camera, selectedModeCameraGetterRva='0xF88550'))
         for field, value in (('rawBits', [0] * 15), ('bearingDegreesCandidate', 10),
                              ('worldEyeXYZ', [7424, 832, 2944])):
             with self.subTest(field=field), self.assertRaises(ValueError):
