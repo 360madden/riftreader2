@@ -597,7 +597,9 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
     if kind == "selected-position":
         observation = report.get("observation")
         if (report.get("schemaVersion") != 1 or report.get("status") != "complete"
-                or report.get("contractVersion") != "native-current-selected-position-candidate-sample/1"
+                or report.get("contractVersion") not in (
+                    "native-current-selected-position-candidate-sample/1",
+                    "native-current-selected-position-candidate-burst/1")
                 or not isinstance(observation, dict) or not isinstance(observation.get("identity"), dict)
                 or observation.get("qualification") !=
                 "conditional raw selection and cached position candidate; selected-target semantics, freshness and restart unverified"):
@@ -1434,7 +1436,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
     if ((unit_limit is not None and (type(unit_limit) is not int or not 1 <= unit_limit <= 512))
             or (start_bucket is not None and (type(start_bucket) is not int or not 0 <= start_bucket < 2**64))):
         return dict(selection, status="blocked", reason="invalid-unit-scan-options")
-    if kind not in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation", "facing", "player-context") and (samples is not None or interval_ms is not None):
+    if kind not in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation", "facing", "player-context", "selected-position") and (samples is not None or interval_ms is not None):
         return dict(selection, status="blocked", reason="sampling-options-require-supported-native-burst")
     if ((samples is not None and (type(samples) is not int or not 1 <= samples <= 30))
             or (interval_ms is not None and (type(interval_ms) is not int or not 0 <= interval_ms <= 2000))):
@@ -1491,7 +1493,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
     timeout = (30 + ((samples if samples is not None else
                       (3 if kind == "position" else 1)) - 1)
                * (interval_ms if interval_ms is not None else 500) / 1000
-               if kind in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation", "facing", "player-context") else 30)
+               if kind in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation", "facing", "player-context", "selected-position") else 30)
     try:
         timed_read = kind in ("zone-context", "target-name", "unit-names")
         invocation_started = datetime.now(timezone.utc) if timed_read else None
@@ -1542,6 +1544,38 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
                 raise ValueError("incomplete-native-position-burst")
         if kind == "facing" and report.get("completedSamples") != (1 if samples is None else samples):
             raise ValueError("incomplete-native-facing-burst")
+        selected_burst_values = None
+        if kind == "selected-position":
+            burst = samples is not None and samples > 1
+            contract = ("native-current-selected-position-candidate-burst/1" if burst
+                        else "native-current-selected-position-candidate-sample/1")
+            if (report.get("contractVersion") != contract
+                    or summary.get("completedSamples") != (samples if burst else 1)):
+                raise ValueError("incomplete-native-selected-position-burst")
+            if burst:
+                rows = report.get("observations")
+                if (report.get("identity") != identity
+                        or type(report.get("requestedSamples")) is not int
+                        or report["requestedSamples"] != samples
+                        or report.get("completedSamples") != samples
+                        or not isinstance(rows, list) or len(rows) != samples
+                        or rows[-1] != observation):
+                    raise ValueError("invalid-native-selected-position-burst")
+                selected_burst_values = []
+                previous_end = None
+                for row in rows:
+                    if (not isinstance(row, dict) or row.get("identity") != identity
+                            or (previous_end is not None and
+                                _utc_tick_order_key(row.get("startedAtUtc")) < previous_end)):
+                        raise ValueError("selected-position-burst-owner-or-time-drift")
+                    previous_end = _utc_tick_order_key(row.get("completedAtUtc"))
+                    candidate = _native_values(kind, {
+                        "schemaVersion": 1, "status": "complete",
+                        "contractVersion": "native-current-selected-position-candidate-sample/1",
+                        "observation": row})
+                    if selected_burst_values and candidate["selfKey"] != selected_burst_values[0]["selfKey"]:
+                        raise ValueError("selected-position-burst-self-drift")
+                    selected_burst_values.append(candidate)
         if (kind == "player-context" and samples is not None and samples > 1
                 and (report.get("completedSamples") != samples or
                      not isinstance(report.get("observations"), list))):
@@ -1587,7 +1621,8 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
                 qualification="candidate-only; changed-state/freshness/restart-unverified",
                 **({"nativeSourceSha256": hashlib.sha256(report_bytes).hexdigest()}
                     if timed_read or kind == "stats" else {}),
-                **({"nativeBurstSummary": burst_summary} if burst_summary is not None else {}))
+                **({"nativeBurstSummary": burst_summary} if burst_summary is not None else {}),
+                **({"nativeBurstValues": selected_burst_values} if selected_burst_values is not None else {}))
 
 
 def main(argv=None):
@@ -1649,9 +1684,9 @@ def main(argv=None):
     elif (args.unit_limit is not None or args.start_bucket is not None) and args.read_native != "unit-positions":
         result = {"status": "blocked", "workflow": "physical",
                   "reason": "unit-scan-options-require-unit-positions"}
-    elif (args.samples is not None or args.interval_ms is not None) and args.read_native not in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation", "facing", "player-context"):
+    elif (args.samples is not None or args.interval_ms is not None) and args.read_native not in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation", "facing", "player-context", "selected-position"):
         result = {"status": "blocked", "workflow": "physical",
-                  "reason": "sampling-options-require-position-vitals-or-actor-pose"}
+                  "reason": "sampling-options-require-supported-native-burst"}
     else:
         result = select_physical(args.expected_host, args.physical_pid)
     if args.output is not None and args.read_native is None:

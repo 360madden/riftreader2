@@ -67,6 +67,83 @@ public sealed class CurrentBuildSelectedPositionTests
         Assert.Throws<InvalidDataException>(() => CurrentBuildSelectedPositionCandidateReader.Read(changedKey));
     }
 
+    [Fact]
+    public async Task BurstRetainsOrderedSamplesWithStablePlayerAndChangingTarget()
+    {
+        var first = CurrentBuildSelectedPositionCandidateReader.Read(new Fake());
+        var second = first with
+        {
+            StartedAtUtc = first.CompletedAtUtc.AddMilliseconds(1),
+            CompletedAtUtc = first.CompletedAtUtc.AddMilliseconds(3),
+            Status = "no-target", RawFallbackKey = "0", TargetKey = null,
+            TargetUnitIdCandidate = null, TargetEntityDecimal = null,
+            TargetPositionCandidate = null, TargetPositionRawBits = null
+        };
+        var queue = new Queue<CurrentBuildSelectedPositionObservation>([first, second]);
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + "-target-burst.json");
+        var options = new Dictionary<string, string>
+        {
+            ["--pid"] = "123", ["--start-ticks"] = "456",
+            ["--sha256"] = CurrentBuildPlayerLookup.UpdatedGameSha256,
+            ["--output"] = path, ["--samples"] = "2", ["--interval-ms"] = "0"
+        };
+        try
+        {
+            var code = await CurrentBuildSelectedPositionSampleCommand.RunAsync(
+                options, new StringWriter(), CancellationToken.None,
+                (_, _, _) => Task.FromResult<IAsyncDisposable>(new NoOpLease()),
+                (_, _, _) => Task.FromResult<IReadOnlyNativeMemorySession>(new Fake()),
+                _ => queue.Dequeue());
+            Assert.Equal(0, code);
+            using var json = global::System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+            var root = json.RootElement;
+            Assert.Equal("native-current-selected-position-candidate-burst/1",
+                root.GetProperty("contractVersion").GetString());
+            Assert.Equal(2, root.GetProperty("requestedSamples").GetInt32());
+            Assert.Equal(2, root.GetProperty("completedSamples").GetInt32());
+            Assert.Equal("position-candidate", root.GetProperty("observations")[0]
+                .GetProperty("status").GetString());
+            Assert.Equal("no-target", root.GetProperty("observations")[1]
+                .GetProperty("status").GetString());
+            Assert.Equal("no-target", root.GetProperty("observation")
+                .GetProperty("status").GetString());
+            Assert.Empty(queue);
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task BurstRejectsChangedSelfWithoutPublishingFile()
+    {
+        var first = CurrentBuildSelectedPositionCandidateReader.Read(new Fake());
+        var second = first with
+        {
+            StartedAtUtc = first.CompletedAtUtc.AddMilliseconds(1),
+            CompletedAtUtc = first.CompletedAtUtc.AddMilliseconds(2),
+            SelfKey = "99"
+        };
+        var queue = new Queue<CurrentBuildSelectedPositionObservation>([first, second]);
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + "-target-burst.json");
+        var options = new Dictionary<string, string>
+        {
+            ["--pid"] = "123", ["--start-ticks"] = "456",
+            ["--sha256"] = CurrentBuildPlayerLookup.UpdatedGameSha256,
+            ["--output"] = path, ["--samples"] = "2", ["--interval-ms"] = "0"
+        };
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            CurrentBuildSelectedPositionSampleCommand.RunAsync(
+                options, new StringWriter(), CancellationToken.None,
+                (_, _, _) => Task.FromResult<IAsyncDisposable>(new NoOpLease()),
+                (_, _, _) => Task.FromResult<IReadOnlyNativeMemorySession>(new Fake()),
+                _ => queue.Dequeue()));
+        Assert.False(File.Exists(path));
+    }
+
+    private sealed class NoOpLease : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
     private sealed class Fake : IReadOnlyNativeMemorySession
     {
         public NativeProcessIdentity Identity { get; } = new(123, 456, "rift_x64.exe",
