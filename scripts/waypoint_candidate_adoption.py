@@ -250,9 +250,11 @@ def _adoption_digest(document):
 
 
 def reject_review_route(document):
-    """A raw RiftWorld review export is not an ordinary or adopted route."""
+    """Raw review and screenshot candidates are not executable route documents."""
     if "riftWorldCandidate" in document:
         raise ValueError("review-candidate-requires-scoped-adoption")
+    if isinstance(document, dict) and document.get("schema") == "rr2.retained-wgc-composite-candidates/1":
+        raise ValueError("pixel-composite-candidate-requires-independent-route-evidence")
 
 
 def validate_adopted_route(document, identity, current_context, direction):
