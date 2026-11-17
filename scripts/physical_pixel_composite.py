@@ -10,9 +10,11 @@ from datetime import datetime
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import re
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -28,6 +30,7 @@ MAX_NATIVE_BYTES = 2 * 1024 * 1024
 MAX_ANCHOR_BYTES = 32 * 1024
 MAX_PIXELS = 32
 MAX_BATCH_PIXELS = 256
+MAX_STDOUT_REPORT_BYTES = 512 * 1024
 SHA = re.compile(r"[0-9a-fA-F]{64}\Z")
 
 
@@ -392,6 +395,50 @@ def render_preview(frame, report, output_path):
             "inputSent": False, "visibleSurfaceQualified": False,
             "movementEligible": False}
 
+def _json_output_target(path):
+    """Require a new JSON file inside an existing directory, before source reads."""
+    output = Path(path).resolve()
+    surface._require(output.suffix.lower() == ".json" and output.parent.is_dir()
+                     and not output.exists(),
+                     "output-json-must-be-new-json-in-existing-directory")
+    return output
+
+
+def _write_json_report(output, serialized):
+    """Stage and verify bytes, then atomically publish without clobbering a target."""
+    raw = serialized.encode("utf-8")
+    expected_sha = hashlib.sha256(raw).hexdigest()
+    staged = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="wb", dir=output.parent, delete=False,
+                                         prefix=".rr2-composite-json-",
+                                         suffix=".tmp") as stream:
+            staged = Path(stream.name)
+            written = stream.write(raw)
+            surface._require(written == len(raw), "output-json-stage-short-write")
+            stream.flush()
+            os.fsync(stream.fileno())
+        persisted = staged.read_bytes()
+        persisted_sha = hashlib.sha256(persisted).hexdigest()
+        surface._require(len(persisted) == len(raw) and persisted_sha == expected_sha,
+                         "output-json-stage-verification-failed")
+        # Hardlink on the same directory/volume is atomic and never replaces
+        # an existing destination. If unsupported, fail; do not rename over it.
+        try:
+            os.link(staged, output)
+        except OSError as error:
+            raise OSError("output-json-atomic-publish-failed: " + str(error)) from error
+    finally:
+        if staged is not None:
+            staged.unlink(missing_ok=True)
+    return {"schema": SCHEMA, "status": "candidate-only-json-written",
+            "outputJson": {"status": "written", "path": str(output),
+                           "sha256": persisted_sha, "byteCount": len(persisted)},
+            "inputSent": False, "movementEligible": False,
+            "visibleSurfaceQualified": False,
+            "physicalBlockingQualified": False, "navigationQualified": False}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", type=Path, required=True)
@@ -419,9 +466,13 @@ def main(argv=None):
                         help="opt-in offline BVH acceleration (default: off)")
     parser.add_argument("--preview-png", type=Path,
                         help="write an annotated candidate-only PNG to a new path")
+    parser.add_argument("--output-json", type=Path,
+                        help="write full candidate JSON to a new file; emit a small SHA receipt")
     args = parser.parse_args(argv)
     try:
         _validate_pixel_budget(len(args.pixel), args.max_pixels, args.accel)
+        json_output = (_json_output_target(args.output_json)
+                       if args.output_json is not None else None)
         frame = load_frame(args.image, args.receipt, args.receipt_sha256,
                            args.native_before, args.native_before_sha256,
                            args.native_after, args.native_after_sha256,
@@ -432,13 +483,27 @@ def main(argv=None):
         result = analyze_pixels(frame, layers, args.pixel, args.max_distance,
                                 args.pixel_selection_radius, accel_mode=args.accel,
                                 max_pixels=args.max_pixels)
+        serialized = json.dumps(result, allow_nan=False)
+        if json_output is None:
+            # Reject oversize stdout before an optional PNG preview creates a file.
+            preview_reserve = 8192 if args.preview_png is not None else 0
+            surface._require(len(serialized.encode("utf-8"))
+                             <= MAX_STDOUT_REPORT_BYTES - preview_reserve,
+                             "stdout-json-exceeds-512KiB: rerun with --output-json NEW.json")
         if args.preview_png is not None:
             result["preview"] = render_preview(frame, result, args.preview_png)
+            serialized = json.dumps(result, allow_nan=False)
+        if json_output is not None:
+            print(json.dumps(_write_json_report(json_output, serialized),
+                             allow_nan=False))
+        else:
+            surface._require(len(serialized.encode("utf-8")) <= MAX_STDOUT_REPORT_BYTES,
+                             "stdout-json-exceeds-512KiB: rerun with --output-json NEW.json")
+            print(serialized)
     except (ValueError, KeyError, OSError, TypeError, OverflowError) as error:
         print(json.dumps({"schema": SCHEMA, "status": "blocked", "reason": str(error),
                           "inputSent": False, "movementEligible": False}))
         return 2
-    print(json.dumps(result, allow_nan=False))
     return 0
 
 
