@@ -22,8 +22,12 @@ def _position(value):
     else:
         raw = {axis: getattr(value, axis) for axis in ("x", "y", "z")}
     try:
+        # Movement receipts must contain native numeric values, not coercible
+        # JSON strings or booleans masquerading as corridor coordinates.
+        if any(type(raw[axis]) not in (int, float) for axis in ("x", "y", "z")):
+            raise ValueError("Movement coordinates are not numeric")
         result = {axis: float(raw[axis]) for axis in ("x", "y", "z")}
-    except (KeyError, TypeError, ValueError) as exc:
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
         raise ValueError("Movement position is unavailable") from exc
     if any(not math.isfinite(item) for item in result.values()):
         raise ValueError("Movement position is unavailable")

@@ -252,6 +252,18 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
                                  [e["name"] for e in events if e.get("status") == "passed"])
                 self.assertEqual([], backend.calls)
 
+    def test_native_traversed_corridor_rejects_non_numeric_coordinates(self):
+        # A retained native movement coordinate must be a genuine number.
+        # Python silently converts booleans and numeric strings to float;
+        # those malformed receipts cannot prove a traversed corridor.
+        anchor = {"x": 0, "y": 5, "z": 0}
+        final = {"x": 1, "y": 5, "z": 0}
+        for bad_x in (True, "1", 10 ** 400, None):
+            with self.subTest(bad_type=type(bad_x).__name__):
+                receipt = {"path": [anchor, {"x": bad_x, "y": 5, "z": 0}]}
+                with self.assertRaisesRegex(ValueError, "position is unavailable"):
+                    _traversed_path(receipt, final, anchor)
+
     def test_truncated_loop_path_never_becomes_a_retreat_corridor(self):
         # Endpoints and retained sample gaps are close; the missing loop cannot
         # be detected from geometry alone.
