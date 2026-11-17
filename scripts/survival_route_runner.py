@@ -715,6 +715,10 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
             # recovery so knockback or outside displacement cannot inherit the
             # earlier safe pose.
             final_stationary = read_stationary(adapter, stop)
+            if stop.is_set():
+                policy.operator_stop()
+                publish_policy_state()
+                raise Stopped("Stopped during final safe-retreat pose verification")
             current = _position(final_stationary)
             if not _corridor_arrival(current, safe["x"], safe["y"], safe["z"]):
                 raise WaypointError("Safe retreat did not finish at the retained safe endpoint")

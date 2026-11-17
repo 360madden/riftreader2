@@ -952,6 +952,51 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
                                            {"x":4,"y":5,"z":0}],
                     assess_before_travel=True,finish_after_retreat=True)
 
+    def test_stop_during_terminal_pose_recheck_never_publishes_safe_return(self):
+        # Recovery's final stationary read must not publish a successful
+        # retreat if operator STOP arrives during that read.
+        from scripts.physical_waypoints import Stopped
+        unsafe = observed(present=True, combat=True)
+        unsafe["player"]["healthPct"] = 20
+        recovering = observed()
+        recovering["player"]["healthPct"] = 50
+        backend = Backend([observed(present=True, combat=True), unsafe,
+                           recovering, observed()])
+        stop = threading.Event()
+        events, calls = [], []
+        current = [4.0, 0.0]
+        reads = [0]
+
+        def mover(adapter, x, z, shared_stop, emit, **options):
+            calls.append((x, z, options["survival_guard"]))
+            result = arrived(x, z, *current)
+            current[:] = [x, z]
+            emit(result)
+            return result
+
+        def stationary(*_):
+            reads[0] += 1
+            if reads[0] == 3:
+                stop.set()
+            return pose(*current)
+
+        with patch("scripts.physical_waypoints.read_stationary",
+                   side_effect=stationary):
+            with self.assertRaises(Stopped):
+                run_survival_route(
+                    object(), [("hunt", 4, 0), ("safe", 0, 0)], stop,
+                    events.append, profile=PROFILE,
+                    telemetry=backend.telemetry, action_backend=backend,
+                    mover=mover, encounter_error=Interrupted, wait_seconds=0,
+                    initial_retreat_trail=[{"x": 0, "y": 5, "z": 0},
+                                           {"x": 2, "y": 5, "z": 0},
+                                           {"x": 4, "y": 5, "z": 0}],
+                    assess_before_travel=True, finish_after_retreat=True)
+        self.assertEqual(3, reads[0])
+        self.assertEqual([(0.0, 0.0, "retreat")], calls)
+        self.assertTrue(stop.is_set())
+        self.assertFalse(any(event.get("safeRetreat") for event in events))
+
     def test_stop_during_terminal_safe_recovery_never_starts_ordinary_return(self):
         unsafe=observed(present=True,combat=True); unsafe["player"]["healthPct"]=20
         recovering=observed(); recovering["player"]["healthPct"]=50
