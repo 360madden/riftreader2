@@ -11,32 +11,51 @@ internal sealed record StatsObservation(object Identity,DateTimeOffset StartedAt
  public IReadOnlyList<int> SelectorMapCandidate { get; init; } = [];}
 internal static class CurrentBuildStatsSampleCommand
 {
- internal static Task<int> RunAsync(IReadOnlyDictionary<string,string> options,TextWriter output,CancellationToken ct) =>
+ internal static Task<int> RunAsync(IReadOnlyDictionary<string,string> options,TextWriter output,CancellationToken ct)
+  {
+   var expectedSha=ExpectedSha(options);
+   return
   RunAsync(options,output,ct,
-   async (pid,ticks,token)=>await NativeReadFileLease.AcquireAsync(pid,ticks,CurrentBuildPlayerLookup.GameSha256,TimeSpan.FromSeconds(1),token),
-   async (pid,ticks,token)=>await WindowsNativeMemorySession.OpenAsync(pid,ticks,CurrentBuildPlayerLookup.GameSha256,token),
+   async (pid,ticks,token)=>await NativeReadFileLease.AcquireAsync(pid,ticks,expectedSha,TimeSpan.FromSeconds(1),token),
+   async (pid,ticks,token)=>await WindowsNativeMemorySession.OpenAsync(pid,ticks,expectedSha,token),
    (session,pid)=>Read(session));
+  }
+  private static string ExpectedSha(IReadOnlyDictionary<string,string> options)
+  {
+   var sha=options.TryGetValue("--sha256",out var requested)?requested:CurrentBuildPlayerLookup.GameSha256;
+   if(!CurrentBuildPlayerLookup.IsCoreBuild(sha))
+    throw new ArgumentException("Unqualified executable SHA256 for stats.");
+   return sha;
+  }
  internal static async Task<int> RunAsync(IReadOnlyDictionary<string,string> options,TextWriter output,CancellationToken ct,
   Func<int,long,CancellationToken,Task<IAsyncDisposable>> acquire,
   Func<int,long,CancellationToken,Task<IReadOnlyNativeMemorySession>> open,
   Func<IReadOnlyNativeMemorySession,int,StatsObservation> read)
  {
   if(!options.TryGetValue("--pid",out var p)||!int.TryParse(p,NumberStyles.None,CultureInfo.InvariantCulture,out var pid)||pid<=0||!options.TryGetValue("--start-ticks",out var t)||!long.TryParse(t,NumberStyles.None,CultureInfo.InvariantCulture,out var ticks)||ticks<=0||!options.TryGetValue("--output",out var path)||string.IsNullOrWhiteSpace(path))throw new ArgumentException("--pid, --start-ticks and --output required.");
-  if(File.Exists(path))throw new IOException("Output exists.");await using var lease=await acquire(pid,ticks,ct);ct.ThrowIfCancellationRequested();await using var session=await open(pid,ticks,ct);ct.ThrowIfCancellationRequested();var observation=read(session,pid);if(await session.RevalidateAsync(ct) is not null)throw new InvalidDataException("Process invalidated.");ct.ThrowIfCancellationRequested();await JsonReportWriter.WriteNewAsync(path,new{schemaVersion=1,contractVersion="native-current-stats-candidate/1",status="complete",observation,limitations=new[]{"Raw signed values and double conversions are candidates, not proven API presence, units or adjusted semantics.","Sequential reads cannot exclude ABA; loaded module bytes are not independently hashed.","No game getter, initializer, refcount or memory write is performed."}},ct);await output.WriteLineAsync(JsonSerializer.Serialize(new{recordType="native-current-stats-summary/1",output=Path.GetFullPath(path)},new JsonSerializerOptions(JsonFormat.Options){WriteIndented=false}));return 0;
+  if(File.Exists(path))throw new IOException("Output exists.");await using var lease=await acquire(pid,ticks,ct);ct.ThrowIfCancellationRequested();await using var session=await open(pid,ticks,ct);ct.ThrowIfCancellationRequested();
+   if(session.Identity.ProcessId!=pid||session.Identity.ProcessStartUtcTicks!=ticks||
+      !string.Equals(session.Identity.ExecutableSha256,ExpectedSha(options),StringComparison.OrdinalIgnoreCase))
+    throw new InvalidDataException("Stats source identity mismatch.");
+   var observation=read(session,pid);if(await session.RevalidateAsync(ct) is not null)throw new InvalidDataException("Process invalidated.");ct.ThrowIfCancellationRequested();await JsonReportWriter.WriteNewAsync(path,new{schemaVersion=1,contractVersion="native-current-stats-candidate/1",status="complete",observation,limitations=new[]{"Raw signed values and double conversions are candidates, not proven API presence, units or adjusted semantics.","Sequential reads cannot exclude ABA; loaded module bytes are not independently hashed.","No game getter, initializer, refcount or memory write is performed."}},ct);await output.WriteLineAsync(JsonSerializer.Serialize(new{recordType="native-current-stats-summary/1",output=Path.GetFullPath(path)},new JsonSerializerOptions(JsonFormat.Options){WriteIndented=false}));return 0;
  }
- internal static StatsObservation Read(IReadOnlyNativeMemorySession session)=>Read(session,null,s=>{var l=CurrentBuildPlayerLookup.Resolve(s);return new(l.PlayerKey,l.EntityAddress,l.ResolveComponent(0x2F57850),l.VerifyUnchanged);});
+ internal static StatsObservation Read(IReadOnlyNativeMemorySession session)=>Read(session,null,s=>{var l=CurrentBuildPlayerLookup.Resolve(s);return new(l.PlayerKey,l.EntityAddress,l.ResolveComponent(CurrentBuildPlayerLookup.IsUpdatedBuild(s.Identity.ExecutableSha256)?0x2F68850UL:0x2F57850UL),l.VerifyUnchanged);});
  internal static StatsObservation Read(IReadOnlyNativeMemorySession session,Func<IReadOnlyNativeMemorySession,CurrentBuildPlayerContextObservation>? context,Func<IReadOnlyNativeMemorySession,PlayerContextOwner> resolve)
  {
-  var started=DateTimeOffset.UtcNow;var id=session.Identity;if(id.ProcessId<=0||id.ProcessStartUtcTicks<=0||id.ModuleSize<0x355F438||!string.Equals(id.ExecutableSha256,CurrentBuildPlayerLookup.GameSha256,StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Invalid stats build or epoch.");var before=context?.Invoke(session);var lookup=resolve(session);
+  var started=DateTimeOffset.UtcNow;var id=session.Identity;var updated=CurrentBuildPlayerLookup.IsUpdatedBuild(id.ExecutableSha256);if(id.ProcessId<=0||id.ProcessStartUtcTicks<=0||id.ModuleSize<(updated?0x3572B38UL:0x355F438UL)||!CurrentBuildPlayerLookup.IsCoreBuild(id.ExecutableSha256))throw new InvalidDataException("Invalid stats build or epoch.");var before=context?.Invoke(session);var lookup=resolve(session);
   if(before is not null&&(before.Identity!=id||before.UnitKey!=lookup.Key||before.Entity!=lookup.Entity||before.HealthComponent!=lookup.Health))throw new InvalidDataException("Stats self mismatch.");
   var anchors=new Dictionary<(ulong,int),byte[]>();int budget=0;byte[] Take(ulong a,int n,bool save=true){budget=checked(budget+n);if(budget>2*1024*1024)throw new InvalidDataException("Stats read budget exceeded.");var b=CurrentBuildPlayerLookup.Exact(session,a,n);if(save){if(anchors.TryGetValue((a,n),out var old)&&!old.AsSpan().SequenceEqual(b))throw new InvalidDataException("Stats bytes changed.");anchors[(a,n)]=b.ToArray();}return b;}
   ulong Ptr(ulong a,int n=8)=>CurrentBuildPlayerLookup.Pointer(a,n);ulong Q(ulong a)=>BinaryPrimitives.ReadUInt64LittleEndian(Take(a,8));
   bool Type(ulong a,ulong vt,ulong getter,ulong desc,ulong descVt,ulong method)=>Q(a)==id.ModuleBaseAddress+vt&&Q(id.ModuleBaseAddress+vt+0x40)==id.ModuleBaseAddress+getter&&Q(id.ModuleBaseAddress+desc)==id.ModuleBaseAddress+descVt&&Q(id.ModuleBaseAddress+descVt+8)==id.ModuleBaseAddress+method;
-  var entity=Ptr(lookup.Entity,128);var health=Ptr(lookup.Health,0x48);var system=Ptr(Q(id.ModuleBaseAddress+0x33623E0),0x408);
+  var entity=Ptr(lookup.Entity,128);var health=Ptr(lookup.Health,0x48);var system=Ptr(Q(id.ModuleBaseAddress+(updated?0x3373BA0UL:0x33623E0UL)),0x408);
   if(Q(system+0x360)!=lookup.Key||Q(system+0x3F8)!=entity||Q(system+0x400)!=health||Q(health+0x10)!=entity)throw new InvalidDataException("Cached stat receiver mismatch.");
-  var owner=Ptr(Q(health+0x40),0x648);if((before is not null&&owner!=before.Owner)||!Type(owner,0x2927448,0x19D21E0,0x34731B0,0x2929BD0,0x19F4D60))throw new InvalidDataException("Stat owner fingerprint mismatch.");
-  var record=Ptr(Q(owner+0x640),0x158);if(!Type(record,0x2C0EE88,0x20CCC60,0x355F430,0x2C281B0,0x20F2480))throw new InvalidDataException("Stat record fingerprint mismatch.");
-  var map=Ptr(Q(id.ModuleBaseAddress+0x33E3AE8),336);
+  var owner=Ptr(Q(health+0x40),0x648);if((before is not null&&owner!=before.Owner)||
+      (updated
+       ? Q(owner)!=id.ModuleBaseAddress+0x2933218UL||
+         Q(id.ModuleBaseAddress+0x2933218UL+0x40UL)!=id.ModuleBaseAddress+0x19D2020UL
+       : !Type(owner,0x2927448,0x19D21E0,0x34731B0,0x2929BD0,0x19F4D60)))throw new InvalidDataException("Stat owner fingerprint mismatch.");
+  var record=Ptr(Q(owner+0x640),0x158);if(!(updated?Type(record,0x2C2B330,0x20C7AC0,0x3572B30,0x2C3A098,0x20F8D10):Type(record,0x2C0EE88,0x20CCC60,0x355F430,0x2C281B0,0x20F2480)))throw new InvalidDataException("Stat record fingerprint mismatch.");
+  var map=Ptr(Q(id.ModuleBaseAddress+(updated?0x33F52A8UL:0x33E3AE8UL)),336);
   (ulong Begin,ulong Count) Span(ulong address){var h=Take(address,16);var b=U64(h);var e=U64(h.AsSpan(8));if((b==0)!=(e==0)||e<b||(e-b)%8!=0||(e-b)/8>4096)throw new InvalidDataException("Invalid stat vector.");if(b!=0)Ptr(b,e==b?8:checked((int)(e-b)));return(b,(e-b)/8);}
   var ordinary=Span(record+0x78);var unbuffed=Span(record+0x148);
   var mappedIndices=Take(map,336);

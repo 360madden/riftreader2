@@ -87,8 +87,65 @@ public sealed class CurrentBuildStatsSampleCommandTests
  [Fact] public void CachedReceiverMismatchFails(){var s=Fixture();s.Put(S+0x400,Q(H+8));Assert.Throws<InvalidDataException>(()=>Read(s));}
  [Fact] public void MappingAndValueMutationFail(){var s=Fixture();var changedMap=s.Get(Map);BinaryPrimitives.WriteInt32LittleEndian(changedMap.AsSpan(37*4,4),1);s.Change(Map,changedMap);Assert.Throws<InvalidDataException>(()=>Read(s));s=Fixture();s.Change(A,Q(124));Assert.Throws<InvalidDataException>(()=>Read(s));}
  [Fact] public void WrongRecordTypeFails(){var s=Fixture();s.Put(R,Q(M+0x1234));Assert.Throws<InvalidDataException>(()=>Read(s));}
- static StatsObservation Read(Fake s)=>CurrentBuildStatsSampleCommand.Read(s,_=>new(s.Identity,DateTimeOffset.UtcNow,DateTimeOffset.UtcNow,44,E,H,O,H,0,"x",null,null,0,"x",0,"x",false),_=>new(44,E,H,()=>{}));
- static Fake Fixture(){var s=new Fake();s.Put(M+0x33623E0,Q(S));s.Put(S+0x360,Q(44));s.Put(S+0x3F8,Q(E));s.Put(S+0x400,Q(H));s.Put(H+0x10,Q(E));s.Put(H+0x40,Q(O));s.Put(O,Q(M+0x2927448));s.Put(M+0x2927488,Q(M+0x19D21E0));s.Put(M+0x34731B0,Q(M+0x2929BD0));s.Put(M+0x2929BD8,Q(M+0x19F4D60));s.Put(O+0x640,Q(R));s.Put(R,Q(M+0x2C0EE88));s.Put(M+0x2C0EEC8,Q(M+0x20CCC60));s.Put(M+0x355F430,Q(M+0x2C281B0));s.Put(M+0x2C281B8,Q(M+0x20F2480));s.Put(M+0x33E3AE8,Q(Map));var rawMap=new byte[336];for(var i=0;i<84;i++)BinaryPrimitives.WriteInt32LittleEndian(rawMap.AsSpan(i*4,4),-1);BinaryPrimitives.WriteInt32LittleEndian(rawMap.AsSpan(37*4,4),0);s.Put(Map,rawMap);s.Put(R+0x78,Header(A));s.Put(R+0x148,Header(U));s.Put(A,Q(123));s.Put(U,BitConverter.GetBytes(-7L));return s;}
+ [Fact] public void UpdatedBuildReadsPatchedStatsAndDoesNotUseHistoricalGlobals()
+  {
+   var s=Fixture(updated:true);var result=Read(s);
+   Assert.Equal(CurrentBuildPlayerLookup.UpdatedGameSha256,((NativeProcessIdentity)result.Identity).ExecutableSha256);
+   Assert.Equal(20,result.Stats.Count);
+   Assert.Equal(123L,result.Stats[0].Ordinary.RawSigned64);
+   Assert.Equal(-7L,result.Stats[0].Unbuffed.RawSigned64);
+   Assert.Equal(2,s.ReadCount(M+0x3373BA0));
+   Assert.Equal(2,s.ReadCount(M+0x33F52A8));
+   Assert.Equal(0,s.ReadCount(M+0x33623E0));
+   Assert.Equal(0,s.ReadCount(M+0x33E3AE8));
+   Assert.Equal(0,s.ReadCount(M+0x34731B0));
+  }
+  [Fact] public void UpdatedBuildRefusesOldOwnerRecordAndMapAnchors()
+  {
+   var s=Fixture(updated:true);s.Put(O,Q(M+0x2927448));
+   Assert.Throws<InvalidDataException>(()=>Read(s));
+   s=Fixture(updated:true);s.Put(R,Q(M+0x2C0EE88));
+   Assert.Throws<InvalidDataException>(()=>Read(s));
+   s=Fixture(updated:true);s.Put(M+0x3572B30,Q(M+0x2C281B0));
+   Assert.Throws<InvalidDataException>(()=>Read(s));
+   s=Fixture(updated:true);s.Put(M+0x33F52A8,Q(Map+8));
+   Assert.Throws<InvalidDataException>(()=>Read(s));
+  }
+  [Fact] public async Task ExplicitUpdatedShaRefusesOldSessionBeforeReadingOrWriting()
+  {
+   var s=Fixture();var output=Path.Combine(Path.GetTempPath(),Guid.NewGuid().ToString("N")+".json");
+   var options=new Dictionary<string,string> {
+    ["--pid"]="123",["--start-ticks"]="456",["--output"]=output,
+    ["--sha256"]=CurrentBuildPlayerLookup.UpdatedGameSha256};
+   var called=false;
+   await Assert.ThrowsAsync<InvalidDataException>(()=>CurrentBuildStatsSampleCommand.RunAsync(
+    options,TextWriter.Null,CancellationToken.None,
+    (_,_,_)=>Task.FromResult<IAsyncDisposable>(s),
+    (_,_,_)=>Task.FromResult<IReadOnlyNativeMemorySession>(s),
+    (_,_)=>{called=true;throw new Exception("Reader must not run on wrong session SHA.");}));
+   Assert.False(called);Assert.False(File.Exists(output));
+  }
+  [Fact] public async Task StatsCliAcceptsExactBuildShaOptionBeforePidValidation()
+  {
+   using var output=new StringWriter();using var error=new StringWriter();
+   var code=await NativeCommandRunner.RunAsync(
+    ["sample-current-stats","--pid","0","--start-ticks","1","--output","unused.json",
+     "--sha256",CurrentBuildPlayerLookup.UpdatedGameSha256],output,error);
+   Assert.Equal(2,code);
+   Assert.Contains("--pid",error.ToString());
+   Assert.DoesNotContain("Unknown option",error.ToString());
+  }
+  static StatsObservation Read(Fake s)=>CurrentBuildStatsSampleCommand.Read(s,_=>new(s.Identity,DateTimeOffset.UtcNow,DateTimeOffset.UtcNow,44,E,H,O,H,0,"x",null,null,0,"x",0,"x",false),_=>new(44,E,H,()=>{}));
+ static Fake Fixture(bool updated=false){var s=new Fake(updated?CurrentBuildPlayerLookup.UpdatedGameSha256:CurrentBuildPlayerLookup.GameSha256);s.Put(M+0x33623E0,Q(S));s.Put(S+0x360,Q(44));s.Put(S+0x3F8,Q(E));s.Put(S+0x400,Q(H));s.Put(H+0x10,Q(E));s.Put(H+0x40,Q(O));s.Put(O,Q(M+0x2927448));s.Put(M+0x2927488,Q(M+0x19D21E0));s.Put(M+0x34731B0,Q(M+0x2929BD0));s.Put(M+0x2929BD8,Q(M+0x19F4D60));s.Put(O+0x640,Q(R));s.Put(R,Q(M+0x2C0EE88));s.Put(M+0x2C0EEC8,Q(M+0x20CCC60));s.Put(M+0x355F430,Q(M+0x2C281B0));s.Put(M+0x2C281B8,Q(M+0x20F2480));s.Put(M+0x33E3AE8,Q(Map));var rawMap=new byte[336];for(var i=0;i<84;i++)BinaryPrimitives.WriteInt32LittleEndian(rawMap.AsSpan(i*4,4),-1);BinaryPrimitives.WriteInt32LittleEndian(rawMap.AsSpan(37*4,4),0);s.Put(Map,rawMap);s.Put(R+0x78,Header(A));s.Put(R+0x148,Header(U));s.Put(A,Q(123));s.Put(U,BitConverter.GetBytes(-7L));
+   if(updated)
+   {
+    s.Put(M+0x3373BA0,Q(S));
+    s.Put(O,Q(M+0x2933218));s.Put(M+0x2933258,Q(M+0x19D2020));
+    s.Put(R,Q(M+0x2C2B330));s.Put(M+0x2C2B370,Q(M+0x20C7AC0));
+    s.Put(M+0x3572B30,Q(M+0x2C3A098));s.Put(M+0x2C3A0A0,Q(M+0x20F8D10));
+    s.Put(M+0x33F52A8,Q(Map));
+   }
+   return s;}
  static byte[] Header(ulong a,int count=1){var b=new byte[16];Q(a).CopyTo(b,0);Q(a+(ulong)count*8).CopyTo(b,8);return b;}static byte[] Q(ulong v){var b=new byte[8];BinaryPrimitives.WriteUInt64LittleEndian(b,v);return b;}
- sealed class Fake:IReadOnlyNativeMemorySession{readonly Dictionary<ulong,byte[]> data=[];readonly Dictionary<ulong,byte[]> changed=[];readonly HashSet<ulong> seen=[];readonly Dictionary<ulong,int> counts=[];public NativeProcessIdentity Identity{get;}=new(123,456,@"C:\RIFT\rift_x64.exe",CurrentBuildPlayerLookup.GameSha256,M,0x4000000);public void Put(ulong a,byte[] b)=>data[a]=b;public byte[] Get(ulong a)=>data[a].ToArray();public int ReadCount(ulong a)=>counts.GetValueOrDefault(a);public void Change(ulong a,byte[] b)=>changed[a]=b;public NativeReadResult Read(ulong a,int n){counts[a]=ReadCount(a)+1;var b=!seen.Add(a)&&changed.TryGetValue(a,out var c)?c:data.GetValueOrDefault(a);return b is not null&&b.Length==n?new("success",b.ToArray(),null,null):new("unavailable",[],null,null);}public ValueTask<string?> RevalidateAsync(CancellationToken c)=>ValueTask.FromResult<string?>(null);public ValueTask DisposeAsync()=>ValueTask.CompletedTask;}
+ sealed class Fake:IReadOnlyNativeMemorySession{readonly Dictionary<ulong,byte[]> data=[];readonly Dictionary<ulong,byte[]> changed=[];readonly HashSet<ulong> seen=[];readonly Dictionary<ulong,int> counts=[];public NativeProcessIdentity Identity{get;} public Fake(string sha){Identity=new(123,456,@"C:\RIFT\rift_x64.exe",sha,M,0x4000000);}public void Put(ulong a,byte[] b)=>data[a]=b;public byte[] Get(ulong a)=>data[a].ToArray();public int ReadCount(ulong a)=>counts.GetValueOrDefault(a);public void Change(ulong a,byte[] b)=>changed[a]=b;public NativeReadResult Read(ulong a,int n){counts[a]=ReadCount(a)+1;var b=!seen.Add(a)&&changed.TryGetValue(a,out var c)?c:data.GetValueOrDefault(a);return b is not null&&b.Length==n?new("success",b.ToArray(),null,null):new("unavailable",[],null,null);}public ValueTask<string?> RevalidateAsync(CancellationToken c)=>ValueTask.FromResult<string?>(null);public ValueTask DisposeAsync()=>ValueTask.CompletedTask;}
 }
