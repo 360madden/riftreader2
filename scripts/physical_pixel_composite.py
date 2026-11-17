@@ -27,6 +27,7 @@ MAX_RECEIPT_BYTES = 32 * 1024
 MAX_NATIVE_BYTES = 2 * 1024 * 1024
 MAX_ANCHOR_BYTES = 32 * 1024
 MAX_PIXELS = 32
+MAX_BATCH_PIXELS = 256
 SHA = re.compile(r"[0-9a-fA-F]{64}\Z")
 
 
@@ -249,14 +250,25 @@ def compare_layers(ray, layers, max_distance=200.0, *, indices=None):
             "movementEligible": False}
 
 
+def _validate_pixel_budget(count, max_pixels, accel_mode):
+    """Fail before opening captured sources when an opt-in batch is invalid."""
+    surface._require(type(accel_mode) is str and accel_mode in ("off", "bvh"),
+                     "composite-accel-mode-invalid")
+    surface._require(type(max_pixels) is int
+                     and MAX_PIXELS <= max_pixels <= MAX_BATCH_PIXELS,
+                     "composite-max-pixels-invalid")
+    surface._require(max_pixels == MAX_PIXELS or accel_mode == "bvh",
+                     "composite-large-batch-requires-bvh")
+    surface._require(1 <= count <= max_pixels, "pixel-count-invalid")
+
+
 def analyze_pixels(frame, layers, pixels, max_distance=200.0,
-                   pixel_selection_radius=0, *, accel_mode="off"):
-    surface._require(1 <= len(pixels) <= MAX_PIXELS, "pixel-count-invalid")
+                   pixel_selection_radius=0, *, accel_mode="off",
+                   max_pixels=MAX_PIXELS):
+    _validate_pixel_budget(len(pixels), max_pixels, accel_mode)
     surface._require(type(pixel_selection_radius) is int
                      and 0 <= pixel_selection_radius <= surface.MAX_FOOTPRINT_RADIUS,
                      "pixel-selection-radius-invalid")
-    surface._require(type(accel_mode) is str and accel_mode in ("off", "bvh"),
-                     "composite-accel-mode-invalid")
     seen = set()
     for x, y in pixels:
         surface._require((x, y) not in seen, "duplicate-pixel")
@@ -396,7 +408,10 @@ def main(argv=None):
     parser.add_argument("--temple-anchor", type=Path, required=True)
     parser.add_argument("--temple-anchor-sha256", required=True)
     parser.add_argument("--pixel", type=int, nargs=2, action="append", required=True,
-                        metavar=("X", "Y"), help="repeat for 1..32 frame pixel pairs")
+                        metavar=("X", "Y"), help="repeat for frame pixels (default cap 32)")
+    parser.add_argument("--max-pixels", type=int, default=MAX_PIXELS,
+                        help="opt-in pixel cap up to 256 requires --accel bvh; "
+                             "default stays at 32")
     parser.add_argument("--max-distance", type=float, default=200.0)
     parser.add_argument("--pixel-selection-radius", type=int, default=0,
                         help="0..3 cardinal neighbor candidates per pixel; never depth proof")
@@ -406,6 +421,7 @@ def main(argv=None):
                         help="write an annotated candidate-only PNG to a new path")
     args = parser.parse_args(argv)
     try:
+        _validate_pixel_budget(len(args.pixel), args.max_pixels, args.accel)
         frame = load_frame(args.image, args.receipt, args.receipt_sha256,
                            args.native_before, args.native_before_sha256,
                            args.native_after, args.native_after_sha256,
@@ -414,7 +430,8 @@ def main(argv=None):
                   load_temple(args.temple_obj, args.temple_anchor,
                               args.temple_anchor_sha256, frame["identity"])]
         result = analyze_pixels(frame, layers, args.pixel, args.max_distance,
-                                args.pixel_selection_radius, accel_mode=args.accel)
+                                args.pixel_selection_radius, accel_mode=args.accel,
+                                max_pixels=args.max_pixels)
         if args.preview_png is not None:
             result["preview"] = render_preview(frame, result, args.preview_png)
     except (ValueError, KeyError, OSError, TypeError, OverflowError) as error:
