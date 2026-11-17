@@ -1112,5 +1112,46 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
         self.assertEqual(1, results[-1]["survival"]["state"]["checkpoint"])
 
 
+    def test_injured_retreat_recovers_rejoins_and_resumes_same_pending_leg(self):
+        # End-to-end offline path: interrupt, leave combat, heal, restore the
+        # interrupted frontier, then retry the original waypoint without
+        # inventing a checkpoint during the auxiliary movements.
+        current = [0.0, 0.0]
+        calls, events = [], []
+        injured = observed(present=True, combat=True)
+        injured["player"]["healthPct"] = 20
+        recovering = observed()
+        recovering["player"]["healthPct"] = 40
+        backend = Backend([injured, injured, recovering, recovering,
+                           observed(on=True), observed(on=True)])
+        backend.position = current
+
+        def mover(adapter, x, z, stop, emit, **options):
+            calls.append((x, z, options["survival_guard"]))
+            if len(calls) == 2:
+                current[:] = [3.0, 0.0]
+                raise Interrupted(
+                    {"releaseSucceeded": True, "desktopInputsDown": [],
+                     "path": [{"x": k, "y": 5, "z": 0} for k in (1, 2, 3)]},
+                    {"x": 3, "y": 5, "z": 0})
+            result = arrived(x, z, *current)
+            current[:] = [x, z]
+            emit(result)
+            return result
+
+        result, _, _ = self.invoke([("checkpoint", 1, 0), ("pending", 5, 0)],
+                                   backend, mover, events=events)
+        self.assertEqual([(1.0, 0.0, True), (5.0, 0.0, True),
+                          (0.0, 0.0, "retreat"), (3.0, 0.0, True),
+                          (5.0, 0.0, True)], calls)
+        self.assertEqual(["travel", "fight", "retreat", "recover", "rejoin", "travel"],
+                         [event["survival"]["state"] for event in events
+                          if event["status"] == "survival-state"])
+        self.assertEqual(2, len(result))
+        self.assertEqual(["checkpoint", "pending"], [leg["name"] for leg in result])
+        self.assertEqual(1, result[-1]["survival"]["state"]["checkpoint"])
+        self.assertIn(("recovery-start",), backend.calls)
+        self.assertIn(("recovery-release", "recovery-complete"), backend.calls)
+
 if __name__ == "__main__":
     unittest.main()
