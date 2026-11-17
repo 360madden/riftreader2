@@ -45,3 +45,20 @@ Using only the already retained screenshot, its stable native-camera-after repor
 A radius-2 cardinal footprint replay (9 rays per point) returned **9/9 first candidate hits in that terrain group** for both visually pillar-occupied pixels and 9/9 for the open-path control. No missing hits or within-footprint mesh-group ambiguity was reported; ray depth ranges were left pillar `54.5306–55.7799`, right pillar `46.1959–46.3304`, open path `32.6039–33.0670` native units. Commands retained in Workbridge jobs `rr2-p1-live-frame-mesh-four-pixels-20261116-a` and `rr2-p1-live-frame-three-footprints-20261116-a` (both exit 0). This is a **negative visual/coverage observation**, not proof of a specific missing mesh: registration, clipping, source scope and object-instance identity remain hypotheses.
 
 **Engineering decision:** a locally consistent terrain raycast or even a unanimous 9-pixel group vote must **never** be promoted to visible surface, walkable floor or collision clearance when scene imagery contains an intervening object. Next P0/P1 payoff: qualify source-mapped pillar/shrine geometry and Havok collision channels/instance transforms, or independently establish rendered-depth/occlusion evidence for those exact pixels; retain `occlusionQualified=false`, `obstacleQualified=false`, `movementEligible=false` meanwhile. No new screenshot, game memory acquisition or gameplay input was required for this continuation.
+
+## Source-specific temple render reconciliation — 19:00 EST (supersedes missing-object speculation)
+
+Read-only cross-project inspection found that **RiftWorld already qualified** the true Sanctum Watch `world_7168_2816.cdr|223` / `A_F_temple_small_01` native temple body, complete 2,754-byte MOPP code and 148-vertex/290-triangle child in the **same physical Atank PID 77704/process epoch** (two independent 13:05/13:06 ET read-only captures). See `C:\work\RiftWorld\START-HERE.md` and `P0-WATCH-TEMPLE-HANDOFF-2026-11-16.md`. This geometry/identity work **must be reused**, not repeated. Its 1,980-vertex/1,805-face **render OBJ** is preserved at `C:\work\RiftWorld\artifacts\p0-watch-temple-source-render-20261116-agent-iso-r1\geometry.obj`, SHA-256 `7e0a0900fbb7f7334129990086f1ed0bf2338c8b3685c9eea18a962b68126fcd`. The exact source model/placement anchor JSON SHA-256 is `6be1402cb71e1f5ddae18cc8634aa5d479e414afdda640757d879aea5380a525`.
+
+Using the anchor's **local-to-native render matrix** (rows `[0.632250828728,0,-0.774764107964,7222.62061]`, `[0,1,0,871.7162]`, `[0.774764107964,0,0.632250828728,3026.56177]`) with the **same immutable WGC frame/native camera** changes the picture:
+
+| Frame pixel | Temple render first hit | Prior terrain first hit | Source-temple relationship |
+| --- | ---: | ---: | --- |
+| Left pillar `(850,530)` | 13.8198 (render triangle 653) | 55.1519 | Temple in front of terrain |
+| Right pillar `(2200,500)` | 6.0409 (triangle 374) | 46.2630 | Temple in front of terrain |
+| Decorative plaza `(1280,1200)` | 8.6406 (triangle 1485) | 11.5240 | Temple in front of terrain |
+| Open path `(1100,640)` | **no temple hit** | 32.8338 | Terrain candidate only |
+
+**Negative placement controls:** shifting the temple +10 X or +10 Z eliminates **both** pillar hits; the original documented source placement hits both. Replays passed (exit 0) in `rr2-p1-temple-render-live-frame-ray-20261116-a` and `rr2-p1-temple-render-pose-negative-controls-20261116-a`. These are strong scene-registration **candidates**, not independently measured rendered depth, exact visual fragment identity or proof the entire object set is represented.
+
+**Revised practical P1 target:** compose the known terrain and **placed source temple render geometry** under explicit SHA/pose provenance for screenshot-ray analysis; preserve nearest-hit ambiguity and independently seek optical depth/visibility evidence. Reuse RiftWorld's already-qualified native temple/body/child join, while keeping `currentFrameContactQualified=false`, `physicalBlockingQualified=false`, `navigationQualified=false`, `movementEligible=false`. No more native reads or RIFT input occurred in these offline replays.
