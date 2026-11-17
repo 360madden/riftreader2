@@ -5,8 +5,19 @@ Implemented and guest-validated October 25, 2026 (local date).
 The normal Windows Live reader now publishes `nativePower` in its existing
 JSON snapshot. The [Power field catalog](../../config/field-catalog/power/catalog.json)
 retains the validated locator, two observed game sessions, and one complete
-exit/relaunch. Patch recovery remains deferred. The underlying
-[locator and changed-state evidence](native-power-locator.md) are unchanged.
+exit/relaunch. That historical field-catalog qualification remains scoped to
+its original executable SHA; the 1179 recovery does not inherit it. The
+[original locator and changed-state evidence](native-power-locator.md) are unchanged.
+
+As of November 17, the normal Live reader also admits the exact RIFT 1179 SHA
+`DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01`
+and reports distinct recipe `player-power-DF954B79-v1`. Its native C# Power
+sampler completed 3/3 unchanged physical samples at 100/100 with preserved
+process/type/sequence checks and a running clock. The stream's `fresh` status
+means a temporally fresh native observation, **not** proof of fresh Lua
+agreement, changed-state behavior or game-restart survival on build 1179.
+Unrecognized builds remain unavailable. See the
+[1179 recovery evidence](native-power-locator.md#november-17-exact-build-1179-recovery-candidate).
 
 ## Read the normal live snapshot
 

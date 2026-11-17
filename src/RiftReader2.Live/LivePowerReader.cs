@@ -27,7 +27,8 @@ internal sealed record LivePowerRead(
         var remaining = Math.Max(0, timeout.TotalMilliseconds - age);
         // Expire values again at publication (including after delivery), never renew their age.
         var fresh = age >= 0 && remaining > 0;
-        return new("native-power-observation/1", "player.resource.power", "native", PowerCandidateReader.Recipe,
+        return new("native-power-observation/1", "player.resource.power", "native",
+            PowerCandidateReader.RecipeFor(Identity?.ExecutableSha256),
             fresh ? "fresh" : "expired", fresh ? null : "native-power-expired",
             fresh ? Observation.Power : null, fresh ? Observation.Maximum : null,
             Observation.StartedAtUtc,
@@ -42,13 +43,13 @@ internal static class LivePowerReader
         DiscoveredTarget target, TimeProvider timeProvider, CancellationToken cancellationToken)
     {
         var started = timeProvider.GetTimestamp();
-        if (target.Identity.ExecutableSha256 != PowerCandidateReader.ExecutableSha256)
+        if (!PowerCandidateReader.IsSupportedBuild(target.Identity.ExecutableSha256))
             return new(null, null, started, "unsupported-native-power-build");
         try
         {
             await using var session = await WindowsNativeMemorySession.OpenAsync(
                 target.Identity.ProcessId, target.Identity.ProcessStartUtcTicks,
-                PowerCandidateReader.ExecutableSha256, cancellationToken);
+                target.Identity.ExecutableSha256, cancellationToken);
             return new(session.Identity,
                 await PowerCandidateReader.ReadAsync(session, cancellationToken), started, null);
         }

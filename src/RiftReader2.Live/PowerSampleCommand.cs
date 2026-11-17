@@ -25,8 +25,12 @@ internal static class PowerSampleCommand
         if (pid <= 0 || ticks <= 0 || count is < 1 or > 600 || interval is < 0 or > 2000 ||
             (long)(count - 1) * interval > 60_000)
             throw new ArgumentException("Invalid identity or sampling schedule (maximum 600 samples / 60 seconds).");
+        var sha = options.TryGetValue("--sha256", out var suppliedSha)
+            ? suppliedSha : PowerCandidateReader.ExecutableSha256;
+        if (!PowerCandidateReader.IsSupportedBuild(sha))
+            throw new ArgumentException("Unqualified executable SHA256 for native Power.");
         await using var session = await WindowsNativeMemorySession.OpenAsync(
-            pid, ticks, PowerCandidateReader.ExecutableSha256, cancellationToken);
+            pid, ticks, sha, cancellationToken);
         var samples = new List<PowerCandidateObservation>();
         var timer = Stopwatch.StartNew();
         for (var i = 0; i < count && timer.ElapsedMilliseconds < 60_000; i++)
@@ -39,12 +43,12 @@ internal static class PowerSampleCommand
             SchemaVersion = 1,
             ContractVersion = "native-power-samples/1",
             Qualification = "candidate-only",
-            PowerCandidateReader.Recipe,
+            Recipe = PowerCandidateReader.RecipeFor(session.Identity.ExecutableSha256),
             session.Identity,
             Status = samples.Count == count && samples.All(s => s.Status == "complete") ? "complete" : "partial",
             RequestedSamples = count,
             Samples = samples,
-            Limitations = new[] { "Exact-build Warrior Power only. No patch recovery or semantic/restart qualification is implied by this read.",
+            Limitations = new[] { "Exact-build Warrior Power only. Postpatch 1179 values are structural candidates without changed-state or restart qualification.",
                 "Every observation resolves fresh pointers and checks stable record inputs; reads are not atomic with Lua or the game.",
                 "Sequence changes and unavailable reads produce null values, never cached Power. Raw record base is not current Power." }
         };

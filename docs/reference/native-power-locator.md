@@ -9,6 +9,42 @@ with fresh Lua during consumption and regeneration, both before and after
 recovery or a claim about other classes/resources. Health-change testing stays
 deferred.
 
+## November 17: exact build 1179 recovery (candidate)
+
+The original Warrior Power reader remains available for historical executable SHA
+`7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD`.
+The new exact SHA `DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01`
+uses separate recipe `player-power-DF954B79-v1`; unknown builds fail closed.
+
+| Locator RVA | Historical | Build 1179 |
+|---|---|---|
+| Player-system root | `0x32E0200` | `0x3373BA0` |
+| Component vtable | `0x2648E90` | `0x26BE1B0` |
+| Wrapper vtable | `0x27184F0` | `0x278DB40` |
+| Resource-record vtable | `0x2B378D8` | `0x2BCF4F0` |
+| Clock global | `0x335A0E0` | `0x33EDA70` |
+| Getter's float32 scale | `0x2649B94` | `0x26BEEB4` |
+
+Independent SHA-verified disassembly of the old and updated executables matched
+multiple function slots across all three vtables. The relocated getter at
+`0x133D190` references clock global `0x33EDA70` twice and scale RVA
+`0x26BEEB4` directly; the scale bytes remain exactly `BC23D70A`. The
+existing resource chain and numeric offsets still resolve: physical Atank
+kind candidate 1, base 100, cap 100, matching wrapper/record sequence and rate 1200.
+
+A bounded read-only C# sample on physical AMD-DESKTOP PID 77980, process start
+`639305214834918403`, completed **3/3** at 100/100 with clock advancing and
+stable owner/type checks. Ignored evidence:
+`artifacts/physical-native-power-1179-20261117-1722est.json`, SHA-256
+`92656160B01520AF0215E1900A27D5D34EF720E8ED973D83577ED87F3EE31CDA`.
+Use the explicit `--sha256` argument when calling `sample-power` on 1179.
+Focused 19 Application / 5 Live tests and Release build passed.
+
+This establishes read-only **structural/static-value recovery**, not changed-Power
+agreement with fresh Lua, timing during an actual spend/regeneration, or
+restart-survival on 1179. Those historical qualifications below belong to the
+older executable only. No gameplay input was sent for this recovery.
+
 ## Reusable locator
 
 Applicable executable SHA-256:

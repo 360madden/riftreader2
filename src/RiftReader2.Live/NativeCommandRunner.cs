@@ -131,7 +131,7 @@ public static class NativeCommandRunner
             if (args[0] == "sample-current-stats")
                 return await CurrentBuildStatsSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--sha256"), output, cancellationToken);
             if (args[0] == "sample-power")
-                return await PowerSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--samples", "--interval-ms"), output, cancellationToken);
+                return await PowerSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--samples", "--interval-ms", "--sha256"), output, cancellationToken);
             throw new ArgumentException($"Unknown command '{args[0]}'.");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

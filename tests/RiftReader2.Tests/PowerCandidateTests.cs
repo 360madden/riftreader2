@@ -71,6 +71,26 @@ public sealed class PowerCandidateTests
         Assert.NotEqual(first.PointerChain![4], second.PointerChain![4]);
     }
 
+    [Fact]
+    public async Task UpdatedBuildUsesVerifiedRelocatedPowerObjectsAndRejectsLegacyVtable()
+    {
+        var session = new Fixture(updated: true);
+        var read = await PowerCandidateReader.ReadAsync(session, CancellationToken.None);
+        Assert.Equal("complete", read.Status);
+        Assert.Equal(100, read.Power);
+        Assert.Equal(100, read.Maximum);
+        Assert.Equal(PowerCandidateReader.UpdatedRecipe,
+            PowerCandidateReader.RecipeFor(session.Identity.ExecutableSha256));
+        Assert.Equal(2, session.Validations);
+
+        var legacyType = new Fixture(updated: true);
+        legacyType.Pointer(0x400000, 0x1427184F0);
+        var invalid = await PowerCandidateReader.ReadAsync(legacyType, CancellationToken.None);
+        Assert.Equal("unavailable", invalid.Status);
+        Assert.Equal("object-type-mismatch", invalid.Reason);
+        Assert.Null(invalid.Power);
+    }
+
     private sealed class Fixture : IReadOnlyNativeMemorySession
     {
         public Dictionary<ulong, byte> Memory { get; } = [];
@@ -78,26 +98,31 @@ public sealed class PowerCandidateTests
         public int Validations { get; private set; }
         public int Reads { get; private set; }
         private int recordReads;
+        private readonly bool updated;
         public NativeProcessIdentity Identity => new(42, 12345, "rift_x64.exe",
-            Fault == "build" ? new string('0', 64) : PowerCandidateReader.ExecutableSha256, 0x140000000, 0x4000000);
-        public Fixture()
+            Fault == "build" ? new string('0', 64) :
+                updated ? PowerCandidateReader.UpdatedExecutableSha256 : PowerCandidateReader.ExecutableSha256,
+            0x140000000, 0x4000000);
+        public Fixture(bool updated = false)
         {
+            this.updated = updated;
             foreach (ulong address in new ulong[] { 0x300000, 0x400000, 0x600000 })
                 for (ulong i = 0; i < 64; i++) Memory[address + i] = 0;
-            Pointer(0x1432E0200, 0x200000);
+            Pointer(0x140000000 + (updated ? 0x3373BA0UL : 0x32E0200UL), 0x200000);
             Pointer(0x200400, 0x300000);
-            Pointer(0x300000, 0x142648E90);
+            Pointer(0x300000, 0x140000000 + (updated ? 0x26BE1B0UL : 0x2648E90UL));
             Pointer(0x300038, 0x400000);
             Pointer(0x300040, 0x800000);
             Int(0x800168, 1);
-            Pointer(0x400000, 0x1427184F0);
+            Pointer(0x400000, 0x140000000 + (updated ? 0x278DB40UL : 0x27184F0UL));
             Pointer(0x400010, 0x500000);
             Pointer(0x500000, 0x600000);
-            Pointer(0x600000, 0x142B378D8);
+            Pointer(0x600000, 0x140000000 + (updated ? 0x2BCF4F0UL : 0x2B378D8UL));
             Int(0x400018, 8); Float(0x40001C, 100);
             Int(0x600018, 100); Int(0x60001C, 8); Int(0x600020, 100); Int(0x60002C, 1200);
-            Pointer(0x14335A0E0, 0x700000);
-            Float(0x700018, 100.5f); Int(0x142649B94, unchecked((int)0xBC23D70A));
+            Pointer(0x140000000 + (updated ? 0x33EDA70UL : 0x335A0E0UL), 0x700000);
+            Float(0x700018, 100.5f);
+            Int(0x140000000 + (updated ? 0x26BEEB4UL : 0x2649B94UL), unchecked((int)0xBC23D70A));
         }
         private void Put(ulong address, byte[] value)
         {

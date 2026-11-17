@@ -62,6 +62,19 @@ public sealed class LivePowerReaderTests
     }
 
     [Fact]
+    public void UpdatedBuildIsAdmittedAndPublishesItsOwnRecipe()
+    {
+        var updatedIdentity = Identity with { ExecutableSha256 = PowerCandidateReader.UpdatedExecutableSha256 };
+        Assert.True(PowerCandidateReader.IsSupportedBuild(updatedIdentity.ExecutableSha256));
+        Assert.False(PowerCandidateReader.IsSupportedBuild(new string('F', 64)));
+        var report = new LivePowerRead(updatedIdentity, Observation, 0, null)
+            .Present(new Clock(), TimeSpan.FromSeconds(5));
+        Assert.Equal("fresh", report.Status);
+        Assert.Equal(PowerCandidateReader.UpdatedRecipe, report.Recipe);
+        Assert.Equal(0, report.Value);
+    }
+
+    [Fact]
     public void NativeValueSerializesSeparatelyWithoutFabricatingAddonData()
     {
         var report = new LiveReaderSnapshot(1, Guid.NewGuid(), new string('1', 32), 1,
