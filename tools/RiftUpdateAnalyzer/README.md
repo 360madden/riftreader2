@@ -1,0 +1,58 @@
+# RIFT Update Analyzer (.NET 10)
+
+Standalone **read-only file comparison** for RR2 game-update preparation. It never launches RIFT, sends keys, modifies game files, reads process memory, or installs patches.
+
+## Build and verify (AMD-DESKTOP only)
+
+From PowerShell in `C:\work\riftreader2`:
+
+```powershell
+dotnet build tools\RiftUpdateAnalyzer\RiftUpdateAnalyzer.csproj -c Release
+C:\Python314\python.exe -m unittest discover -s tests -p test_rift_update_analyzer.py -v
+```
+
+No external NuGet dependencies. Requires .NET SDK/runtime 10.0.
+
+## One-command comparison after the patch
+
+Run from **AMD-DESKTOP** PowerShell after Glyph finishes and game files are settled:
+
+```powershell
+dotnet tools\RiftUpdateAnalyzer\bin\Release\net10.0\RiftUpdateAnalyzer.dll run --expected-host AMD-DESKTOP --baseline-dir C:\work\riftreader2\artifacts\prepatch-20261117-0631 --game-exe "C:\Program Files (x86)\Glyph\Games\RIFT\Live\rift_x64.exe" --interface-dir C:\Users\mrkoo\OneDrive\Documents\Rift\Interface --routes-dir C:\work\riftreader2\artifacts\waypoint-routes --out-dir C:\work\riftreader2\artifacts\patch-comparison-AFTER-20261117
+```
+
+Choose a **new, not-yet-existing** output directory each time. Four immutable artifacts are written there:
+
+- `before.json`: baseline hashes + root/host provenance.
+- `after.json`: current hashes + root/host provenance.
+- `changes.json`: added, removed and modified selected files; executable-change and requalification flags.
+- `REPORT.md`: readable summary, SHA-256 changes and source coverage.
+
+The exit code is `0` when the selected content is unchanged, `1` when any selected file changes, `2` for bad arguments and `3` when a scan is incomplete, unsafe or inaccessible. **Exit 1 is an expected comparison result, not a crash.**
+
+## Reusable three-step CLI
+
+Create snapshots from arbitrary explicit sources (use a new output filename for every capture):
+
+```powershell
+dotnet tools\RiftUpdateAnalyzer\bin\Release\net10.0\RiftUpdateAnalyzer.dll capture --expected-host AMD-DESKTOP --source "game=C:\Program Files (x86)\Glyph\Games\RIFT\Live\rift_x64.exe" --source "routes=C:\work\riftreader2\artifacts\waypoint-routes" --out C:\work\riftreader2\artifacts\example-current.json
+dotnet tools\RiftUpdateAnalyzer\bin\Release\net10.0\RiftUpdateAnalyzer.dll compare --before C:\path\baseline.json --after C:\path\current.json --out C:\path\changes.json
+dotnet tools\RiftUpdateAnalyzer\bin\Release\net10.0\RiftUpdateAnalyzer.dll report --comparison C:\path\changes.json --out C:\path\changes.md
+```
+
+Source groups create stable logical keys (such as `game/rift_x64.exe` or `routes/silverwood.json`) independent of absolute machine path. SHA-256 + byte length decides change, not timestamps.
+
+The scan rejects the wrong computer, traversal or reparse links, duplicate groups/keys, malformed manifests, incomplete concurrent source writes, inaccessible files and exceeded file/byte limits (default 5,000 files / 512 MiB per snapshot). File handles are closed promptly.
+
+## Coverage and qualification limits
+
+The November 17 prepatch backup is **selected**, not a complete RIFT installation. The automatic `run` command covers:
+
+- The single game executable `rift_x64.exe`
+- The saved addon variables within `Interface\Saved`
+- Only the **15 addon directory names** preserved under the baseline's `interface-addons` directory
+- The saved RR2 `artifacts\waypoint-routes` directory
+
+It does **not** diff RIFT's complete game assets or archives. A data-only game patch can leave all selected hashes unchanged. File hashes alone cannot validate live RIFT offsets, pointer chains, collision data, movement or addon semantics. If the game was updated, **reacquire exact process/executable identity and independently requalify affected live readers** before relying on them. An unchanged report is a statement about selected files, not proof of game version or navigation safety.
+
+Latest implementation verified independently of live gameplay; **no RIFT patch installation was initiated by this tool**.
