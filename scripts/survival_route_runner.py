@@ -445,10 +445,10 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
                 except (TypeError, ValueError):
                     pass  # Keep the checkpoint unchanged if evidence is incomplete.
                 else:
-                    for point in traversed:
-                        policy.record_route_trail_point((point["x"], point["y"], point["z"]))
                     if on_pass is not None:
                         on_pass(passed_events, guides or [])
+                    for point in traversed:
+                        policy.record_route_trail_point((point["x"], point["y"], point["z"]))
             raise
         except encounter_error as exc:
             if not forward:
@@ -490,6 +490,10 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
                 raise WaypointError(
                     "Encounter path cannot establish a known traversed corridor: "
                     + str(invalid)) from invalid
+            # Passage qualification precedes any mutation of the safe reverse
+            # trail. An invalid native guide must not become retreat evidence.
+            if on_pass is not None:
+                on_pass(passed_events, guides or [])
             for point in traversed:
                 policy.record_route_trail_point((point["x"], point["y"], point["z"]))
             motion_speed = _receipt_speed_seed(movement_release, motion_speed)
@@ -498,8 +502,6 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
             for coast in response["coastObservations"]:
                 if coast["key"] == "W" and 0 <= coast["sampledDistance"] <= 5:
                     observed_coast = max(observed_coast, coast["sampledDistance"])
-            if on_pass is not None:
-                on_pass(passed_events, guides or [])
             evidence.update(traversedPath=traversed,
                             corridorQualification="native-retained traversed samples")
             return None
@@ -538,6 +540,11 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
             raise WaypointError(
                 "Arrived leg cannot establish a known traversed corridor: "
                 + str(invalid)) from invalid
+        if on_pass is not None:
+            expected = list(guides or [])
+            if len(passed_events) != len(expected):
+                raise WaypointError("Survival span omitted a required passage")
+            on_pass(passed_events, expected)
         if forward:
             for point in traversed:
                 policy.record_route_trail_point((point["x"], point["y"], point["z"]))
@@ -550,11 +557,6 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
         for coast in response["coastObservations"]:
             if coast["key"] == "W" and 0 <= coast["sampledDistance"] <= 5:
                 observed_coast = max(observed_coast, coast["sampledDistance"])
-        if on_pass is not None:
-            expected = list(guides or [])
-            if len(passed_events) != len(expected):
-                raise WaypointError("Survival span omitted a required passage")
-            on_pass(passed_events, expected)
         verified = dict(result, name=label)
         if forward:
             emit(verified)

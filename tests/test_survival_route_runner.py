@@ -7,7 +7,7 @@ from unittest.mock import patch
 from scripts.survival_route_runner import (_coalesce_retained_corridor,
                                             _corridor_arrival, _release_confirmed,
                                             _traversed_path, run_survival_route)
-from scripts.waypoint_survival import VerifiedBindingProfile
+from scripts.waypoint_survival import VerifiedBindingProfile, WaypointSurvivalRunner
 from scripts.waypoint_limits import MAX_ROUTE_DISTANCE
 
 
@@ -445,6 +445,56 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
                         Backend([observed()]), mover, events=events,
                         goal_heights=[5, 5, 5], point_kinds=["pass", "pass", "stop"])
         self.assertFalse(any(event.get("status") == "passed" for event in events))
+
+    def test_invalid_arrival_passage_cannot_poison_survival_retreat_trail(self):
+        # A geometrically real path is not enough if its claimed guide fails
+        # passage qualification. The rejected batch cannot become retreat data.
+        recorded = []
+        original = WaypointSurvivalRunner.record_route_trail_point
+
+        def record(policy, point):
+            recorded.append(tuple(point))
+            return original(policy, point)
+
+        def mover(adapter, x, z, stop, emit, **options):
+            guide = options["path_points"][0]
+            emit({"status": "passed", "index": 0, "name": guide["name"],
+                  "position": {"x": guide["x"], "y": 5, "z": guide["z"]},
+                  "passageVerified": False, "releaseSucceeded": True,
+                  "desktopInputsDown": []})
+            return arrived(x, z)
+
+        with patch.object(WaypointSurvivalRunner, "record_route_trail_point", record):
+            with self.assertRaisesRegex(Exception, "Unverified survival route passage"):
+                self.invoke([("guide", 1, 0), ("end", 3, 0)],
+                            Backend([observed()]), mover,
+                            goal_heights=[5, 5], point_kinds=["pass", "stop"])
+        self.assertEqual([(0.0, 5.0, 0.0)], recorded)
+
+    def test_invalid_interrupted_passage_cannot_poison_survival_retreat_trail(self):
+        recorded = []
+        original = WaypointSurvivalRunner.record_route_trail_point
+
+        def record(policy, point):
+            recorded.append(tuple(point))
+            return original(policy, point)
+
+        def mover(adapter, x, z, stop, emit, **options):
+            guide = options["path_points"][0]
+            emit({"status": "passed", "index": 0, "name": guide["name"],
+                  "position": {"x": guide["x"], "y": 5, "z": guide["z"]},
+                  "passageVerified": False, "releaseSucceeded": True,
+                  "desktopInputsDown": []})
+            raise Interrupted({"releaseSucceeded": True, "desktopInputsDown": [],
+                               "path": arrived(2, 0)["path"]},
+                              {"x": 2, "y": 5, "z": 0})
+
+        with patch.object(WaypointSurvivalRunner, "record_route_trail_point", record):
+            with self.assertRaisesRegex(Exception, "Unverified survival route passage"):
+                self.invoke([("guide", 1, 0), ("end", 3, 0)],
+                            Backend([observed(present=True, combat=True)]), mover,
+                            goal_heights=[5, 5], point_kinds=["pass", "stop"])
+        self.assertEqual([(0.0, 5.0, 0.0)], recorded)
 
     def test_passage_off_native_traversed_path_never_advances(self):
         events = []
