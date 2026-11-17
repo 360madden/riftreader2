@@ -754,6 +754,9 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
                        > (.30 if guide.get("controlPause") is True else .50) + 1e-9
                     or ("y" in guide and abs(actual["y"] - guide["y"]) > .5 + 1e-9)):
                     raise WaypointError("Unverified survival route passage")
+            # Admit the whole retained passage batch before publishing any
+            # prefix; a malformed later guide cannot partially commit progress.
+            for offset, event in enumerate(events):
                 emit(dict(event, batchIndex=offset, index=index))
                 index += 1
                 if index < len(rows):

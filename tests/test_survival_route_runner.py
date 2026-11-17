@@ -425,6 +425,27 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "arrived.*destination"):
             self.invoke([("pending", 4, 0)], backend, mover)
 
+    def test_invalid_later_passage_never_publishes_earlier_batch_prefix(self):
+        # A final native receipt is valid, but one of its claimed guide
+        # passages fails qualification. No checkpoint from the same batch
+        # should be published before all the guides are verified.
+        events = []
+
+        def mover(adapter, x, z, stop, emit, **options):
+            for index, guide in enumerate(options["path_points"]):
+                emit({"status": "passed", "index": index, "name": guide["name"],
+                      "position": {"x": guide["x"], "y": 5, "z": guide["z"]},
+                      "passageVerified": index == 0,
+                      "releaseSucceeded": True, "desktopInputsDown": [],
+                      "source": "settled-corner"})
+            return arrived(x, z)
+
+        with self.assertRaisesRegex(Exception, "Unverified survival route passage"):
+            self.invoke([("one", 1, 0), ("two", 2, 0), ("end", 3, 0)],
+                        Backend([observed()]), mover, events=events,
+                        goal_heights=[5, 5, 5], point_kinds=["pass", "pass", "stop"])
+        self.assertFalse(any(event.get("status") == "passed" for event in events))
+
     def test_passage_off_native_traversed_path_never_advances(self):
         events = []
 
