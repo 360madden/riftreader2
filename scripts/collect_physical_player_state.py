@@ -19,6 +19,8 @@ from scripts import compare_physical_player_context_pair as context
 from scripts.compare_physical_player_context_pair import BUILD_SHA
 
 HOST = "AMD-DESKTOP"
+SUPPORTED_BUILDS = frozenset((BUILD_SHA,
+    "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"))
 KINDS = ("player-context", "position", "vitals")
 
 
@@ -36,7 +38,7 @@ def pin(pid):
             and selection.get("ownerHost") == HOST and isinstance(target, dict)
             and target.get("hostName") == HOST and target.get("processId") == pid
             and str(target.get("processStartUtcTicks", "")).isdecimal()
-            and str(target.get("executableSha256", "")).upper() == BUILD_SHA
+            and str(target.get("executableSha256", "")).upper() in SUPPORTED_BUILDS
             and type(target.get("hwnd")) is int and target["hwnd"] > 0,
             "physical-process-identity-unavailable")
     return selection
@@ -49,6 +51,8 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False)
             "invalid-sampling-bounds")
     first = pin(pid)
     owner = first["target"]
+    build_sha = str(owner["executableSha256"]).upper()
+    require(not include_stats or build_sha == BUILD_SHA, "postpatch-stats-unqualified")
     output_dir = Path(output_dir)
     if not output_dir.is_absolute():
         output_dir = ROOT / output_dir
@@ -79,7 +83,7 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False)
         require(isinstance(identity, dict)
                 and identity.get("processId") == pid
                 and str(identity.get("processStartUtcTicks")) == owner["processStartUtcTicks"]
-                and str(identity.get("executableSha256", "")).upper() == BUILD_SHA
+                and str(identity.get("executableSha256", "")).upper() == build_sha
                 and type(identity.get("moduleBaseAddress")) is int
                 and type(identity.get("moduleSize")) is int
                 and identity["moduleBaseAddress"] > 0 and identity["moduleSize"] > 0
@@ -104,7 +108,7 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False)
             burst = result["nativeBurstSummary"]
             require(isinstance(burst, dict)
                     and str(burst.get("sourceReportSha256", "")).upper() == source_sha
-                    and str(burst.get("sourceBuildSha256", "")).upper() == BUILD_SHA
+                    and str(burst.get("sourceBuildSha256", "")).upper() == build_sha
                     and burst.get("processId") == pid
                     and str(burst.get("processStartUtcTicks")) == owner["processStartUtcTicks"]
                     and str(burst.get("unitKey")) == self_key

@@ -37,6 +37,10 @@ def verified_state(filename):
     filename = Path(filename)
     receipt, receipt_sha = context.load(filename)
     owner = receipt.get("target")
+    build_sha = str(owner.get("executableSha256", "")).upper() if isinstance(owner, dict) else ""
+    source_rows = receipt.get("sources")
+    require(build_sha == state.BUILD_SHA or not isinstance(source_rows, dict)
+            or "stats" not in source_rows, "postpatch-stats-unqualified")
     kinds = state.KINDS + (("stats",) if isinstance(receipt.get("sources"), dict)
                            and "stats" in receipt["sources"] else ())
     require(receipt.get("schemaVersion") == 1
@@ -47,7 +51,7 @@ def verified_state(filename):
             and owner.get("hostName") == state.HOST
             and type(owner.get("processId")) is int and owner["processId"] > 0
             and str(owner.get("processStartUtcTicks", "")).isdecimal()
-            and str(owner.get("executableSha256", "")).upper() == state.BUILD_SHA
+            and build_sha in state.SUPPORTED_BUILDS
             and isinstance(receipt.get("sources"), dict)
             and set(receipt["sources"]) == set(kinds)
             and isinstance(receipt.get("selfKeyCandidate"), str)
@@ -78,7 +82,7 @@ def verified_state(filename):
         require(isinstance(identity, dict)
                 and identity.get("processId") == owner["processId"]
                 and str(identity.get("processStartUtcTicks")) == owner["processStartUtcTicks"]
-                and str(identity.get("executableSha256", "")).upper() == state.BUILD_SHA
+                and str(identity.get("executableSha256", "")).upper() == build_sha
                 and (identity.get("moduleBaseAddress"), identity.get("moduleSize")) == module
                 and report.get("status") == "complete"
                 and ((kind == "stats" and report.get("contractVersion") == "native-current-stats-candidate/1")
@@ -112,7 +116,7 @@ def verified_state(filename):
             burst = saved["burstSummary"]
             require(isinstance(burst, dict)
                     and str(burst.get("sourceReportSha256", "")).upper() == actual_sha
-                    and str(burst.get("sourceBuildSha256", "")).upper() == state.BUILD_SHA
+                    and str(burst.get("sourceBuildSha256", "")).upper() == build_sha
                     and burst.get("processId") == owner["processId"]
                     and str(burst.get("processStartUtcTicks")) == owner["processStartUtcTicks"]
                     and str(burst.get("unitKey")) == receipt["selfKeyCandidate"]

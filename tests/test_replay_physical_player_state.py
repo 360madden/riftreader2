@@ -118,6 +118,59 @@ class StateReplayTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     replay.verified_state(self.summary)
 
+    def synthetic_updated_build(self):
+        """Re-pin each historical fixture source to a consistent synthetic 1179 owner."""
+        updated_sha = next(sha for sha in replay.state.SUPPORTED_BUILDS
+                           if sha != replay.state.BUILD_SHA)
+        self.edit_summary(lambda s: s["target"].update(executableSha256=updated_sha))
+        for kind in replay.state.KINDS:
+            def update(report):
+                if isinstance(report.get("identity"), dict):
+                    report["identity"]["executableSha256"] = updated_sha
+                if isinstance(report.get("observation"), dict):
+                    identity = report["observation"].get("identity")
+                    if isinstance(identity, dict):
+                        identity["executableSha256"] = updated_sha
+                for row in report.get("observations", []):
+                    if isinstance(row.get("identity"), dict):
+                        row["identity"]["executableSha256"] = updated_sha
+                if kind == "vitals":
+                    report["sourceBuildSha256"] = updated_sha
+            source = self.edit_source(kind, update)
+            self.edit_summary(lambda s: s["sources"][kind].update(
+                candidateValues=replay._native_values(kind, source)))
+            if kind == "vitals":
+                self.edit_summary(lambda s: s["sources"]["vitals"]["burstSummary"].update(
+                    sourceReportSha256=s["sources"]["vitals"]["sourceSha256"],
+                    sourceBuildSha256=updated_sha))
+        return updated_sha
+
+    def test_updated_build_consistent_sources_replay(self):
+        updated_sha = self.synthetic_updated_build()
+        replayed = replay.verified_state(self.summary)
+        self.assertEqual(replayed["target"]["executableSha256"], updated_sha)
+        self.assertEqual(set(replayed["sources"]), set(replay.state.KINDS))
+
+    def test_updated_build_rejects_mixed_source_identity(self):
+        self.synthetic_updated_build()
+        self.edit_source("position", lambda r: r["identity"].update(
+            executableSha256=replay.state.BUILD_SHA))
+        with self.assertRaisesRegex(ValueError, "position-invalid-source-owner"):
+            replay.verified_state(self.summary)
+
+    def test_updated_build_rejects_mixed_vitals_burst(self):
+        self.synthetic_updated_build()
+        self.edit_summary(lambda s: s["sources"]["vitals"]["burstSummary"].update(
+            sourceBuildSha256=replay.state.BUILD_SHA))
+        with self.assertRaisesRegex(ValueError, "vitals-burst-pin-mismatch"):
+            replay.verified_state(self.summary)
+
+    def test_updated_build_refuses_unqualified_stats(self):
+        self.synthetic_updated_build()
+        self.attach_stats()
+        with self.assertRaisesRegex(ValueError, "postpatch-stats-unqualified"):
+            replay.verified_state(self.summary)
+
     def test_original_composite_three_reader_sources_replay(self):
         result = replay.verified_state(self.summary)
         self.assertEqual(result["status"], "candidate-only")
