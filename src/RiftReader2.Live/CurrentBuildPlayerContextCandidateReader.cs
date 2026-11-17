@@ -9,34 +9,37 @@ internal sealed record CurrentBuildPlayerContextObservation(NativeProcessIdentit
 }
 internal static class CurrentBuildPlayerContextCandidateReader
 {
- internal static CurrentBuildPlayerContextObservation Read(IReadOnlyNativeMemorySession session)=>Read(session,s=>{var l=CurrentBuildPlayerLookup.Resolve(s);return new(l.PlayerKey,l.EntityAddress,l.ResolveComponent(0x2F57850),l.VerifyUnchanged);});
+ internal static CurrentBuildPlayerContextObservation Read(IReadOnlyNativeMemorySession session)=>Read(session,s=>{var l=CurrentBuildPlayerLookup.Resolve(s);return new(l.PlayerKey,l.EntityAddress,l.ResolveComponent(CurrentBuildPlayerLookup.IsUpdatedBuild(s.Identity.ExecutableSha256)?0x2F68850UL:0x2F57850UL),l.VerifyUnchanged);});
  internal static CurrentBuildPlayerContextObservation Read(IReadOnlyNativeMemorySession session,Func<IReadOnlyNativeMemorySession,PlayerContextOwner> resolve)
  {
   var started=DateTimeOffset.UtcNow;var id=session.Identity;
-  if(id.ProcessId<=0||id.ProcessStartUtcTicks<=0||id.ModuleSize<0x34731B8||!string.Equals(id.ExecutableSha256,CurrentBuildPlayerLookup.GameSha256,StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Invalid player context build or epoch.");
+  var updated=CurrentBuildPlayerLookup.IsUpdatedBuild(id.ExecutableSha256);
+  if(id.ProcessId<=0||id.ProcessStartUtcTicks<=0||id.ModuleSize<(updated?0x3373BA8UL:0x34731B8UL)||!CurrentBuildPlayerLookup.IsCoreBuild(id.ExecutableSha256))throw new InvalidDataException("Invalid player context build or epoch.");
   var lookup=resolve(session);if(lookup.Key==0)throw new InvalidDataException("Missing self key.");
   var anchors=new Dictionary<(ulong,int),byte[]>();int budget=0;
   byte[] Take(ulong a,int n,bool remember=true){budget=checked(budget+n);if(budget>2*1024*1024)throw new InvalidDataException("Read budget exceeded.");var raw=CurrentBuildPlayerLookup.Exact(session,a,n);if(remember){if(anchors.TryGetValue((a,n),out var old)&&!old.AsSpan().SequenceEqual(raw))throw new InvalidDataException("Player context changed.");anchors[(a,n)]=raw.ToArray();}return raw;}
   ulong Ptr(ulong a,int n=8)=>CurrentBuildPlayerLookup.Pointer(a,n);ulong Q(ulong a)=>U64(Take(a,8));
-  var entity=Ptr(lookup.Entity,128);var health=Ptr(lookup.Health,0x328);var system=Ptr(Q(id.ModuleBaseAddress+0x33623E0),0x408);
+  var entity=Ptr(lookup.Entity,128);var health=Ptr(lookup.Health,0x328);var system=Ptr(Q(id.ModuleBaseAddress+(updated?0x3373BA0UL:0x33623E0UL)),0x408);
   if(Q(system+0x360)!=lookup.Key||Q(system+0x3F8)!=entity||Q(health+0x10)!=entity)throw new InvalidDataException("Cached self identity mismatch.");
   var cachedContext=Q(system+0x400);var owner=Ptr(Q(health+0x40),0x19E);
-  if(Q(owner)!=id.ModuleBaseAddress+0x2927448||Q(id.ModuleBaseAddress+0x2927488)!=id.ModuleBaseAddress+0x19D21E0||Q(id.ModuleBaseAddress+0x34731B0)!=id.ModuleBaseAddress+0x2929BD0||Q(id.ModuleBaseAddress+0x2929BD8)!=id.ModuleBaseAddress+0x19F4D60)throw new InvalidDataException("Player owner type fingerprint mismatch.");
+  var ownerVptr=updated?0x2933218UL:0x2927448UL;
+  var ownerGetter=updated?0x19D2020UL:0x19D21E0UL;
+  if(Q(owner)!=id.ModuleBaseAddress+ownerVptr||Q(id.ModuleBaseAddress+ownerVptr+0x40)!=id.ModuleBaseAddress+ownerGetter||(!updated&&(Q(id.ModuleBaseAddress+0x34731B0)!=id.ModuleBaseAddress+0x2929BD0||Q(id.ModuleBaseAddress+0x2929BD8)!=id.ModuleBaseAddress+0x19F4D60)))throw new InvalidDataException("Player owner type fingerprint mismatch.");
   var fallback=Q(owner+0x20);var level=BinaryPrimitives.ReadInt32LittleEndian(Take(owner+0x100,4));var combat=Take(owner+0x19D,1)[0];var calling=BinaryPrimitives.ReadUInt32LittleEndian(Take(owner+0x168,4));
   byte Selector(ulong rva){var index=BinaryPrimitives.ReadInt32LittleEndian(Take(id.ModuleBaseAddress+rva,4));if(index is <0 or >=0x60)throw new InvalidDataException("Invalid component selector.");return Take(entity+0x18+(ulong)index,1)[0];}
   ulong Component(byte slot){if(slot==0xFF)return 0;var table=Ptr(Q(entity+0x78));return Q(checked(table+slot*8UL));}
   string levelStatus;
-  var levelSlot=Selector(0x2F58270);var alternate=Component(levelSlot);
+  var levelSlot=Selector(updated?0x2F69270UL:0x2F58270UL);var alternate=Component(levelSlot);
   if(alternate!=0)levelStatus="alternate-component-unavailable";
   else levelStatus=cachedContext==health?"numeric-getter-and-presentation-candidate":"numeric-getter-candidate-presentation-unqualified";
   var targetStatus="override-unavailable";ulong? target=null;
   try
   {
-   bool useFallback=false;var targetSlot=Selector(0x2F582E0);
+   bool useFallback=false;var targetSlot=Selector(updated?0x2F692E0UL:0x2F582E0UL);
    if(targetSlot!=0xFF)useFallback=true;
    else
    {
-    var selectionSlot=Selector(0x2F57260);var selection=Component(selectionSlot);
+    var selectionSlot=Selector(updated?0x2F68260UL:0x2F57260UL);var selection=Component(selectionSlot);
     if(selection==0)useFallback=true;
     else
     {

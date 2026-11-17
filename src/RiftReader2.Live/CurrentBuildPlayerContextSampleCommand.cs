@@ -17,11 +17,23 @@ internal sealed record CurrentBuildPlayerContextReport(CurrentBuildPlayerContext
 
 internal static class CurrentBuildPlayerContextSampleCommand
 {
-    internal static Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken cancellationToken) =>
-        RunAsync(options,output,cancellationToken,
-            async (pid,ticks,ct)=>await NativeReadFileLease.AcquireAsync(pid,ticks,CurrentBuildPlayerLookup.GameSha256,TimeSpan.FromSeconds(1),ct),
-            async (pid,ticks,ct)=>await WindowsNativeMemorySession.OpenAsync(pid,ticks,CurrentBuildPlayerLookup.GameSha256,ct),
+    internal static Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken cancellationToken)
+    {
+        var expectedSha = ExpectedSha(options);
+        return RunAsync(options, output, cancellationToken,
+            async (pid,ticks,ct)=>await NativeReadFileLease.AcquireAsync(pid,ticks,expectedSha,TimeSpan.FromSeconds(1),ct),
+            async (pid,ticks,ct)=>await WindowsNativeMemorySession.OpenAsync(pid,ticks,expectedSha,ct),
             CurrentBuildPlayerContextCandidateReader.Read);
+    }
+
+    private static string ExpectedSha(IReadOnlyDictionary<string, string> options)
+    {
+        var sha = options.TryGetValue("--sha256", out var requested)
+            ? requested : CurrentBuildPlayerLookup.GameSha256;
+        if (!CurrentBuildPlayerLookup.IsCoreBuild(sha))
+            throw new ArgumentException("Unqualified executable SHA256 for player context.");
+        return sha;
+    }
     internal static async Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken cancellationToken,
         Func<int,long,CancellationToken,Task<IAsyncDisposable>> acquire,
         Func<int,long,CancellationToken,Task<IReadOnlyNativeMemorySession>> open,
@@ -33,11 +45,15 @@ internal static class CurrentBuildPlayerContextSampleCommand
             throw new ArgumentException("--pid, --start-ticks and --output are required.");
         var samples = BoundedInt(options, "--samples", 1, 1, 30);
         var intervalMilliseconds = BoundedInt(options, "--interval-ms", 500, 0, 2000);
+        var expectedSha = ExpectedSha(options);
         if (File.Exists(path)) throw new IOException("Output exists; never overwrite an earlier observation.");
         await using var lease = await acquire(pid,ticks,cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         await using var session = await open(pid,ticks,cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
+        if (session.Identity.ProcessId != pid || session.Identity.ProcessStartUtcTicks != ticks ||
+            !string.Equals(session.Identity.ExecutableSha256, expectedSha, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Player context source identity mismatch.");
         if (samples == 1)
         {
             var observation = read(session);

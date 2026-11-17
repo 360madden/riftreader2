@@ -60,6 +60,40 @@ public sealed class CurrentBuildPlayerContextBurstTests
         Assert.True(session.Disposed && lease.Disposed);
     }
 
+    [Fact]
+    public async Task UpdatedBuildRequiresMatchingShaAndSessionBeforePublishing()
+    {
+        var path = TempPath();
+        var lease = new Lease();
+        var session = new Session(lease);
+        var options = Options(path);
+        options["--sha256"] = CurrentBuildPlayerLookup.UpdatedGameSha256;
+        try
+        {
+            await Assert.ThrowsAsync<InvalidDataException>(() =>
+                CurrentBuildPlayerContextSampleCommand.RunAsync(options, TextWriter.Null,
+                    CancellationToken.None, (_, _, _) => Task.FromResult<IAsyncDisposable>(lease),
+                    (_, _, _) => Task.FromResult<IReadOnlyNativeMemorySession>(session),
+                    s => Make(s, 1)));
+            Assert.False(File.Exists(path));
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task UnqualifiedShaFailsBeforeAcquiringTheLease()
+    {
+        var options = Options(TempPath());
+        options["--sha256"] = new string('0', 64);
+        var opened = false;
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            CurrentBuildPlayerContextSampleCommand.RunAsync(options, TextWriter.Null,
+                CancellationToken.None,
+                (_, _, _) => { opened = true; throw new Exception(); },
+                (_, _, _) => throw new Exception(), _ => throw new Exception()));
+        Assert.False(opened);
+    }
+
     [Theory]
     [InlineData("--samples", "0")]
     [InlineData("--samples", "31")]
