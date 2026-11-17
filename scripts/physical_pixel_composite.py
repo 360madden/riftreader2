@@ -55,11 +55,16 @@ def _iso(value):
     return parsed
 
 
-def load_frame(image_path, receipt_path, receipt_sha, native_path, native_sha,
-               *, expected_host):
-    """Admit only a preserved same-process WGC image/native-after candidate."""
+def load_frame(image_path, receipt_path, receipt_sha, native_before_path,
+               native_before_sha, native_path, native_sha, *, expected_host):
+    """Admit a preserved two-sided stable native/WGC/native camera bracket."""
+    from scripts import physical_rift
+    from scripts.physical_turn_visual_pair import verified_frame
+
     receipt_path, receipt, receipt_digest = _json_pinned(
         receipt_path, receipt_sha, MAX_RECEIPT_BYTES, "wgc-receipt")
+    before_path, native_before, before_digest = _json_pinned(
+        native_before_path, native_before_sha, MAX_NATIVE_BYTES, "native-before")
     native_path, native, native_digest = _json_pinned(
         native_path, native_sha, MAX_NATIVE_BYTES, "native-after")
     surface._require(receipt.get("schemaVersion") == 1
@@ -71,62 +76,88 @@ def load_frame(image_path, receipt_path, receipt_sha, native_path, native_sha,
     surface._require(receipt.get("inputSent") is False
                      and receipt.get("focusChangedByProbe") is False,
                      "wgc-unexpected-input-or-focus")
-    before, after = receipt.get("targetBefore"), receipt.get("targetAfter")
-    surface._require(type(before) is dict and type(after) is dict,
+    target_before, target_after = receipt.get("targetBefore"), receipt.get("targetAfter")
+    surface._require(type(target_before) is dict and type(target_after) is dict,
                      "wgc-target-identity-missing")
     keys = ("pid", "startTicks", "sha256", "hwnd", "processName")
-    surface._require(all(before.get(k) == after.get(k) for k in keys)
-                     and before.get("processName") == "rift_x64"
-                     and type(before.get("pid")) is int
-                     and type(before.get("startTicks")) is int
-                     and type(before.get("hwnd")) is int,
+    surface._require(all(target_before.get(k) == target_after.get(k) for k in keys)
+                     and target_before.get("processName") == "rift_x64"
+                     and type(target_before.get("pid")) is int
+                     and target_before["pid"] > 0
+                     and type(target_before.get("startTicks")) is int
+                     and target_before["startTicks"] > 0
+                     and type(target_before.get("hwnd")) is int
+                     and target_before["hwnd"] > 0,
                      "wgc-target-changed-or-invalid")
-    surface._require(native.get("status") == "complete"
-                     and type(native.get("identity")) is dict
-                     and type(native.get("observation")) is dict,
-                     "native-after-incomplete")
+    reports = (native_before, native)
+    surface._require(all(report.get("status") == "complete"
+                         and type(report.get("identity")) is dict
+                         and type(report.get("observation")) is dict
+                         for report in reports), "native-bracket-incomplete")
     n_id = native["identity"]
-    o_id = native["observation"].get("identity")
-    surface._require(type(o_id) is dict and all(
-        n_id.get(k) == o_id.get(k) for k in (
-            "processId", "processStartUtcTicks", "executableSha256"))
-        and n_id.get("processId") == before["pid"]
-        and n_id.get("processStartUtcTicks") == before["startTicks"]
-        and str(n_id.get("executableSha256", "")).lower()
-            == str(before["sha256"]).lower(), "native-wgc-identity-mismatch")
-    delta = (_iso(native["observation"]["startedAtUtc"])
-             - _iso(receipt["capturedCompletedAtUtc"])).total_seconds()
-    surface._require(0 <= delta <= 30, "native-after-wgc-bracket-invalid")
-    surface._require(native["observation"].get("headingQualified") is False
-                     and native["observation"].get("cameraYawQualified") is False,
-                     "unexpected-native-facing-contract")
-    camera = native["observation"].get("opticalCameraCandidate")
-    mapping = receipt.get("clientFrameMapping")
-    surface._require(type(camera) is dict and type(mapping) is dict
-                     and mapping.get("frameWidth") == receipt.get("frameWidth")
-                     and mapping.get("frameHeight") == receipt.get("frameHeight"),
-                     "wgc-camera-or-mapping-invalid")
-    image_path = Path(image_path).resolve()
-    surface._require(image_path == Path(receipt.get("outputPath", "")).resolve(),
-                     "wgc-image-path-mismatch")
-    image_sha = receipt.get("imageSha256")
-    _, raw_image, image_digest = _read_pinned(
-        image_path, image_sha, MAX_IMAGE_BYTES, "wgc-image")
-    surface._require(raw_image.startswith(b"\x89PNG\r\n\x1a\n"),
-                     "wgc-image-not-png")
+    surface._require(native_before["identity"] == n_id
+                     and all(report["observation"].get("identity") == n_id
+                             for report in reports)
+                     and n_id.get("processId") == target_before["pid"]
+                     and n_id.get("processStartUtcTicks") == target_before["startTicks"]
+                     and str(n_id.get("executableSha256", "")).lower()
+                         == str(target_before["sha256"]).lower(),
+                     "native-wgc-identity-mismatch")
+    # Reuse native facing schema/bits/owner validation; never read live memory.
+    for report in reports:
+        physical_rift._native_values("facing", report)
+    first, last = (report["observation"] for report in reports)
+    t0, t1 = _iso(first["startedAtUtc"]), _iso(first["completedAtUtc"])
+    t2, t3 = (_iso(receipt[key]) for key in
+              ("capturedStartedAtUtc", "capturedCompletedAtUtc"))
+    t4, t5 = _iso(last["startedAtUtc"]), _iso(last["completedAtUtc"])
+    bracket_seconds = (t5 - t0).total_seconds()
+    surface._require(t0 < t1 <= t2 <= t3 <= t4 < t5
+                     and 0 < bracket_seconds <= 5,
+                     "native-before-wgc-after-bracket-invalid")
+    for field in ("playerKeyDecimal", "playerEntityDecimal", "playerSystemDecimal",
+                  "rawBits", "entityPositionRawBits", "opticalCameraCandidate"):
+        surface._require(first.get(field) == last.get(field),
+                         "native-frame-player-or-camera-changed")
+    for name in ("primary", "secondary"):
+        surface._require(
+            first["positionOrientationCandidate"][name]["rawBits"]
+            == last["positionOrientationCandidate"][name]["rawBits"],
+            "native-frame-orientation-changed")
+    camera = last.get("opticalCameraCandidate")
+    surface._require(type(camera) is dict and camera.get("status") == "available-candidate"
+                     and all(row.get("targetProjectionCameraStableCandidate") is True
+                             and row.get("opticalCameraCandidate")
+                                 == row.get("opticalCameraAfterTargetCandidate")
+                             for row in (first, last)),
+                     "native-frame-camera-unstable")
+    # Existing verified_frame checks PNG decoding/IHDR dimensions, image byte count,
+    # WGC receipt timing/quality and exact target-frame mapping.
+    image_path = Path(image_path)
+    verified_receipt, decoded, image_digest, checked_receipt_sha = verified_frame(
+        image_path, receipt_path)
+    decoded.close()
+    surface._require(verified_receipt == receipt
+                     and checked_receipt_sha.lower() == receipt_digest
+                     and image_digest.lower() == str(receipt.get("imageSha256", "")).lower(),
+                     "validated-wgc-receipt-or-image-mismatch")
+    image_path = image_path.resolve()
+    mapping = receipt["clientFrameMapping"]
     return {"camera": camera, "mapping": mapping,
-            "identity": {"host": expected_host, "pid": before["pid"],
-                         "processStartUtcTicks": before["startTicks"],
-                         "executableSha256": before["sha256"]},
-            "source": {"imageSha256": image_digest,
+            "identity": {"host": expected_host, "pid": target_before["pid"],
+                         "processStartUtcTicks": target_before["startTicks"],
+                         "executableSha256": target_before["sha256"]},
+            "source": {"imageSha256": image_digest.lower(),
                        "receiptSha256": receipt_digest,
+                       "nativeBeforeSha256": before_digest,
                        "nativeAfterSha256": native_digest,
                        "capturedAtUtc": receipt["capturedCompletedAtUtc"],
-                       "nativeAfterDeltaSeconds": delta,
+                       "nativeBracketSeconds": bracket_seconds,
+                       "nativeAfterDeltaSeconds": (t4 - t3).total_seconds(),
                        "imagePath": str(image_path),
                        "receiptPath": str(receipt_path),
+                       "nativeBeforePath": str(before_path),
                        "nativeAfterPath": str(native_path)}}
-
 
 def load_terrain(path, registration_path):
     mesh_path, raw, digest = surface._source_bytes(path, surface.MAX_MESH_BYTES,
@@ -255,6 +286,7 @@ def analyze_pixels(frame, layers, pixels, max_distance=200.0,
             surface._require(hashlib.sha256(Path(path).read_bytes()).hexdigest()
                              == digest, "scene-source-changed-during-query")
     for name, digest in (("image", "imageSha256"), ("receipt", "receiptSha256"),
+                         ("nativeBefore", "nativeBeforeSha256"),
                          ("nativeAfter", "nativeAfterSha256")):
         source_path = Path(frame["source"][name + "Path"])
         surface._require(hashlib.sha256(source_path.read_bytes()).hexdigest()
@@ -318,7 +350,9 @@ def render_preview(frame, report, output_path):
         draw.text((tx, ty), label, fill=color, font=font)
         draw.ellipse((x - 6, y - 6, x + 6, y + 6),
                      fill=color, outline="#101010", width=2)
-    image.save(output, format="PNG")
+    # Exclusive creation closes the check/create race: never overwrite another file.
+    with output.open("xb") as stream:
+        image.save(stream, format="PNG")
     return {"status": "offline-candidate-preview", "path": str(output),
             "sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
             "inputSent": False, "visibleSurfaceQualified": False,
@@ -329,6 +363,8 @@ def main(argv=None):
     parser.add_argument("--image", type=Path, required=True)
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--receipt-sha256", required=True)
+    parser.add_argument("--native-before", type=Path, required=True)
+    parser.add_argument("--native-before-sha256", required=True)
     parser.add_argument("--native-after", type=Path, required=True)
     parser.add_argument("--native-after-sha256", required=True)
     parser.add_argument("--expected-host", required=True)
@@ -347,6 +383,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         frame = load_frame(args.image, args.receipt, args.receipt_sha256,
+                           args.native_before, args.native_before_sha256,
                            args.native_after, args.native_after_sha256,
                            expected_host=args.expected_host)
         layers = [load_terrain(args.terrain_obj, args.terrain_registration),

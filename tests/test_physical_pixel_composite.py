@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest import mock
 
 from scripts import physical_pixel_composite as composite
 from scripts import physical_pixel_ray
@@ -81,6 +83,8 @@ class RetainedSanctumWatchTests(unittest.TestCase):
             "artifacts/observe-wgc-27d58645e80e4880aa48faacb04ff743")
         cls.image = cls.capture / "image.png"
         cls.receipt = cls.capture / "image.png.json"
+        cls.native_before = cls.root / (
+            "artifacts/physical-native-facing-bf8006fadcf04512a338a90ef534976e.json")
         cls.native = cls.root / (
             "artifacts/physical-native-facing-24b80f583f3a49778dacf9b8337862aa.json")
         cls.terrain = Path(
@@ -92,22 +96,27 @@ class RetainedSanctumWatchTests(unittest.TestCase):
         cls.temple = cls.temple_root / "geometry.obj"
         cls.anchor = cls.temple_root / "atank-source-floor-anchor-exact-r2.json"
         cls.receipt_sha = "d4fafc4bb56a365b6a41cf76229e7cbbf2a9bb03867c558ca8601c06e977b4d6"
+        cls.before_sha = "609037b2a0058a4ea7f16e2d0cbb1faae630c5cea4fad125a4603d0fb5c24ae7"
         cls.native_sha = "88c69d36ebbf1722d83869e288b01446240492f45b051dc5e0dca5ad8e893e0f"
         cls.anchor_sha = "6be1402cb71e1f5ddae18cc8634aa5d479e414afdda640757d879aea5380a525"
-        files = (cls.image, cls.receipt, cls.native, cls.terrain, cls.terrain_reg,
-                 cls.temple, cls.anchor)
+        files = (cls.image, cls.receipt, cls.native_before, cls.native,
+                 cls.terrain, cls.terrain_reg, cls.temple, cls.anchor)
         if not all(path.is_file() for path in files):
             raise unittest.SkipTest("exact historical AMD-DESKTOP WGC/RiftWorld sources absent")
         for path, sha in ((cls.receipt, cls.receipt_sha),
+                          (cls.native_before, cls.before_sha),
                           (cls.native, cls.native_sha), (cls.anchor, cls.anchor_sha)):
             if hashlib.sha256(path.read_bytes()).hexdigest() != sha:
                 raise unittest.SkipTest("historical source has changed: " + str(path))
 
     def test_same_process_frame_and_four_landmark_composite(self):
         frame = composite.load_frame(
-            self.image, self.receipt, self.receipt_sha, self.native, self.native_sha,
+            self.image, self.receipt, self.receipt_sha,
+            self.native_before, self.before_sha, self.native, self.native_sha,
             expected_host="AMD-DESKTOP")
         self.assertEqual(frame["identity"]["pid"], 77704)
+        self.assertEqual(frame["source"]["nativeBeforeSha256"], self.before_sha)
+        self.assertLess(frame["source"]["nativeBracketSeconds"], 5)
         layers = [composite.load_terrain(self.terrain, self.terrain_reg),
                   composite.load_temple(self.temple, self.anchor, self.anchor_sha,
                                         frame["identity"])]
@@ -146,7 +155,8 @@ class RetainedSanctumWatchTests(unittest.TestCase):
     def test_pinned_horizontal_pillar_edge_candidates(self):
         """Replay candidate layer changes at pictured pillar edges, not optical depth."""
         frame = composite.load_frame(
-            self.image, self.receipt, self.receipt_sha, self.native, self.native_sha,
+            self.image, self.receipt, self.receipt_sha,
+            self.native_before, self.before_sha, self.native, self.native_sha,
             expected_host="AMD-DESKTOP")
         layers = [composite.load_terrain(self.terrain, self.terrain_reg),
                   composite.load_temple(self.temple, self.anchor, self.anchor_sha,
@@ -172,7 +182,8 @@ class RetainedSanctumWatchTests(unittest.TestCase):
 
     def test_reused_cardinal_footprint_keeps_candidate_only(self):
         frame = composite.load_frame(
-            self.image, self.receipt, self.receipt_sha, self.native, self.native_sha,
+            self.image, self.receipt, self.receipt_sha,
+            self.native_before, self.before_sha, self.native, self.native_sha,
             expected_host="AMD-DESKTOP")
         layers = [composite.load_terrain(self.terrain, self.terrain_reg),
                   composite.load_temple(self.temple, self.anchor, self.anchor_sha,
@@ -193,7 +204,8 @@ class RetainedSanctumWatchTests(unittest.TestCase):
         from PIL import Image
 
         frame = composite.load_frame(
-            self.image, self.receipt, self.receipt_sha, self.native, self.native_sha,
+            self.image, self.receipt, self.receipt_sha,
+            self.native_before, self.before_sha, self.native, self.native_sha,
             expected_host="AMD-DESKTOP")
         layers = [composite.load_terrain(self.terrain, self.terrain_reg),
                   composite.load_temple(self.temple, self.anchor, self.anchor_sha,
@@ -213,16 +225,83 @@ class RetainedSanctumWatchTests(unittest.TestCase):
             with self.assertRaisesRegex(
                     ValueError, "preview-output-must-be-new-png-in-existing-directory"):
                 composite.render_preview(frame, report, output)
+            # Simulate TOCTOU: another writer creates the target after a stale
+            # existence precheck. Exclusive 'xb' open must preserve its bytes.
+            before = output.read_bytes()
+            real_exists = Path.exists
+            def stale_exists(path):
+                return False if str(path) == str(output) else real_exists(path)
+            with mock.patch.object(Path, "exists", stale_exists):
+                with self.assertRaises(FileExistsError):
+                    composite.render_preview(frame, report, output)
+            self.assertEqual(output.read_bytes(), before)
+
+    def test_native_before_hash_and_camera_stability_fail_closed(self):
+        with self.assertRaisesRegex(ValueError, "native-before-sha256-mismatch"):
+            composite.load_frame(
+                self.image, self.receipt, self.receipt_sha,
+                self.native_before, "0" * 64, self.native, self.native_sha,
+                expected_host="AMD-DESKTOP")
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / "unstable-before.json"
+            data = json.loads(self.native_before.read_text(encoding="utf-8"))
+            data["observation"]["targetProjectionCameraStableCandidate"] = False
+            data["observations"][-1]["targetProjectionCameraStableCandidate"] = False
+            path.write_text(json.dumps(data), encoding="utf-8")
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            with self.assertRaisesRegex(ValueError, "camera"):
+                composite.load_frame(
+                    self.image, self.receipt, self.receipt_sha,
+                    path, digest, self.native, self.native_sha,
+                    expected_host="AMD-DESKTOP")
+
+    def test_native_before_wgc_after_timestamp_order_required(self):
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / "late-before.json"
+            data = json.loads(self.native_before.read_text(encoding="utf-8"))
+            stamp = "2026-11-16T23:49:44.5000000+00:00"
+            data["observation"]["completedAtUtc"] = stamp
+            data["observations"][-1]["completedAtUtc"] = stamp
+            path.write_text(json.dumps(data), encoding="utf-8")
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            with self.assertRaisesRegex(ValueError, "native-before-wgc-after-bracket-invalid"):
+                composite.load_frame(
+                    self.image, self.receipt, self.receipt_sha,
+                    path, digest, self.native, self.native_sha,
+                    expected_host="AMD-DESKTOP")
+
+    def test_actual_png_dimensions_must_match_pinned_receipt(self):
+        from PIL import Image
+
+        with TemporaryDirectory() as folder:
+            directory = Path(folder)
+            small = directory / "tiny.png"
+            Image.new("RGB", (64, 64), (32, 80, 150)).save(small)
+            receipt = json.loads(self.receipt.read_text(encoding="utf-8"))
+            raw = small.read_bytes()
+            receipt["outputPath"] = str(small.resolve())
+            receipt["imageSha256"] = hashlib.sha256(raw).hexdigest().upper()
+            receipt["imageBytes"] = len(raw)
+            receipt_path = directory / "receipt.json"
+            receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+            digest = hashlib.sha256(receipt_path.read_bytes()).hexdigest()
+            with self.assertRaisesRegex(ValueError, "visual-png-dimensions-mismatch"):
+                composite.load_frame(
+                    small, receipt_path, digest, self.native_before,
+                    self.before_sha, self.native, self.native_sha,
+                    expected_host="AMD-DESKTOP")
 
     def test_rejects_wrong_process_and_native_source(self):
         frame = composite.load_frame(
-            self.image, self.receipt, self.receipt_sha, self.native, self.native_sha,
+            self.image, self.receipt, self.receipt_sha,
+            self.native_before, self.before_sha, self.native, self.native_sha,
             expected_host="AMD-DESKTOP")
         wrong = {**frame["identity"], "pid": 77705}
         with self.assertRaisesRegex(ValueError, "temple-anchor-process-epoch-mismatch"):
             composite.load_temple(self.temple, self.anchor, self.anchor_sha, wrong)
         with self.assertRaisesRegex(ValueError, "native-after-sha256-mismatch"):
             composite.load_frame(self.image, self.receipt, self.receipt_sha,
+                                 self.native_before, self.before_sha,
                                  self.native, "0" * 64, expected_host="AMD-DESKTOP")
 
 
