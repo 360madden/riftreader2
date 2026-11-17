@@ -237,6 +237,33 @@ class RetainedMeshTests(unittest.TestCase):
         self.assertEqual(explicit_zero, baseline)
         self.assertNotIn("pixelFootprint", baseline)
 
+    def test_footprint_intersector_callback_is_opt_in_and_exact(self):
+        camera = self.fixture.after["observation"]["opticalCameraCandidate"]
+        mapping = self.fixture.frame["clientFrameMapping"]
+        vertices, faces = surface.parse_obj(self.mesh.read_bytes(), IDENTITY)
+        center_ray = physical_pixel_ray.pixel_ray(camera, mapping, 160, 110)
+        center_surface = surface.intersect_prepared(
+            vertices, faces, center_ray, max_distance=30)
+        kwargs = {"center_ray": center_ray, "center_surface": center_surface,
+                  "max_distance": 30}
+        baseline = surface.sample_pixel_footprint(
+            vertices, faces, camera, mapping, 160, 110, 1, **kwargs)
+        calls = []
+        def intersector(v, f, ray, *, max_distance):
+            calls.append((v is vertices, f is faces, max_distance))
+            return surface.intersect_prepared(v, f, ray,
+                                              max_distance=max_distance)
+        injected = surface.sample_pixel_footprint(
+            vertices, faces, camera, mapping, 160, 110, 1,
+            intersector=intersector, **kwargs)
+        self.assertEqual(injected, baseline)
+        self.assertEqual(calls, [(True, True, 30)] * 4)
+        self.assertFalse(injected["movementEligible"])
+        with self.assertRaisesRegex(ValueError, "pixel-footprint-intersector-invalid"):
+            surface.sample_pixel_footprint(
+                vertices, faces, camera, mapping, 160, 110, 1,
+                intersector=object(), **kwargs)
+
     def test_footprint_cardinal_neighbor_exposes_thin_surface(self):
         camera = self.fixture.after["observation"]["opticalCameraCandidate"]
         mapping = self.fixture.frame["clientFrameMapping"]

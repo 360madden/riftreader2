@@ -306,7 +306,8 @@ def _verified_footprint_camera(observation_path, retained_ray, x, y):
 
 
 def sample_pixel_footprint(vertices, faces, camera, mapping, x, y, radius, *,
-                           center_ray, center_surface, max_distance=2000.0):
+                           center_ray, center_surface, max_distance=2000.0,
+                           intersector=None):
     """Report candidate first-surface disagreement across bounded cardinal pixels.
 
     This is not a screen-space depth buffer or a visible-surface decision. Offsets
@@ -328,10 +329,11 @@ def sample_pixel_footprint(vertices, faces, camera, mapping, x, y, radius, *,
     _require(rays[0] == center_ray, "pixel-footprint-center-ray-mismatch")
     samples, group_counts, depths = [], {}, []
     missing = 0
+    query = intersect_prepared if intersector is None else intersector
+    _require(callable(query), "pixel-footprint-intersector-invalid")
     for (dx, dy), ray in zip(offsets, rays):
         intersection = (center_surface if dx == 0 and dy == 0
-                        else intersect_prepared(vertices, faces, ray,
-                                                max_distance=max_distance))
+                        else query(vertices, faces, ray, max_distance=max_distance))
         hits = intersection["hits"]
         nearest = hits[0] if hits else None
         if nearest is None:

@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest import mock
 
+from scripts import physical_pixel_mesh_accel as mesh_accel
 from scripts import physical_pixel_composite as composite
 from scripts import physical_pixel_ray
 from scripts import physical_pixel_surface as surface
@@ -61,6 +62,29 @@ class CompositeMathTests(unittest.TestCase):
     def test_footprint_radius_is_bounded_before_any_ray(self):
         with self.assertRaisesRegex(ValueError, "pixel-selection-radius-invalid"):
             composite.analyze_pixels({}, [], [(10, 10)], pixel_selection_radius=4)
+
+    def test_bvh_exact_synthetic_depth_ties_and_no_hits(self):
+        for case_layers in (
+                [layer("terrain", 25), layer("temple-render", 8)],
+                [layer("terrain", 10), layer("temple-render", 10)],
+                [layer("terrain", 10, shift_x=10),
+                 layer("temple-render", 8, shift_x=10)],
+                [layer("terrain", 25), layer("temple-render", 8, shift_x=10)]):
+            with self.subTest(depths=[
+                    row["faces"][0][1] for row in case_layers]):
+                baseline = composite.compare_layers(RAY, case_layers, max_distance=200)
+                indices = [mesh_accel.prepare(row["vertices"], row["faces"])
+                           for row in case_layers]
+                fast = composite.compare_layers(
+                    RAY, case_layers, max_distance=200, indices=indices)
+                self.assertEqual(fast, baseline)
+                for flag in ("movementEligible", "visibleSurfaceQualified",
+                             "obstacleQualified", "sourceCoverageComplete"):
+                    self.assertFalse(fast[flag])
+
+    def test_accel_mode_rejected_before_source_access(self):
+        with self.assertRaisesRegex(ValueError, "composite-accel-mode-invalid"):
+            composite.analyze_pixels({}, [], [(10, 10)], accel_mode="unexpected")
 
     def test_pinned_image_hash_and_duplicate_json_rejected(self):
         with TemporaryDirectory() as folder:
@@ -199,6 +223,42 @@ class RetainedSanctumWatchTests(unittest.TestCase):
             self.assertFalse(footprint["visibleSurfaceQualified"])
             self.assertFalse(footprint["movementEligible"])
         self.assertFalse(result["movementEligible"])
+
+    def test_bvh_exact_full_reports_on_pinned_edges_and_radius_two(self):
+        frame = composite.load_frame(
+            self.image, self.receipt, self.receipt_sha,
+            self.native_before, self.before_sha, self.native, self.native_sha,
+            expected_host="AMD-DESKTOP")
+        layers = [composite.load_terrain(self.terrain, self.terrain_reg),
+                  composite.load_temple(self.temple, self.anchor, self.anchor_sha,
+                                        frame["identity"])]
+        # 26 edge pixels + four physical landmarks; scan remains candidate-only.
+        edge_pixels = ([(x, 530) for x in
+                        (600, 700, 760, 800, 820, 835, 850, 880, 920,
+                         950, 980, 1010, 1050, 1100)] +
+                       [(x, 500) for x in
+                        (1800, 1900, 1980, 2020, 2060, 2100, 2150, 2200,
+                         2250, 2300, 2400, 2500)])
+        landmarks = [(850, 530), (2200, 500), (1280, 1200), (1100, 640)]
+        self.assertEqual(len(edge_pixels), 26)
+        for points, radius in ((edge_pixels, 0), (landmarks, 2)):
+            with self.subTest(pixels=len(points), radius=radius):
+                baseline = composite.analyze_pixels(
+                    frame, layers, points, max_distance=200,
+                    pixel_selection_radius=radius)
+                fast = composite.analyze_pixels(
+                    frame, layers, points, max_distance=200,
+                    pixel_selection_radius=radius, accel_mode="bvh")
+                self.assertEqual(fast, baseline)
+                self.assertEqual(fast["status"], "candidate-only")
+                for flag in ("inputSent", "navigationQualified",
+                             "movementEligible", "physicalBlockingQualified",
+                             "visibleSurfaceQualified"):
+                    self.assertFalse(fast[flag])
+                if radius:
+                    self.assertTrue(all(
+                        row["pixelFootprint"]["sampleCount"] == 9
+                        for row in fast["pixels"]))
 
     def test_preview_is_separate_and_does_not_overwrite_source(self):
         from PIL import Image

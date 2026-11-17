@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from scripts import physical_pixel_mesh_accel as mesh_accel
 from scripts import physical_pixel_ray, physical_pixel_surface as surface
 
 SCHEMA = "rr2.retained-wgc-composite-candidates/1"
@@ -215,12 +216,17 @@ def load_temple(path, anchor_path, anchor_sha, frame_identity):
             "pins": [(mesh_path, digest), (anchor_path, digest_anchor)]}
 
 
-def compare_layers(ray, layers, max_distance=200.0):
+def compare_layers(ray, layers, max_distance=200.0, *, indices=None):
     """Depth-order first hits per layer; never infer optical visibility from them."""
+    if indices is not None:
+        surface._require(len(indices) == len(layers), "composite-index-count-mismatch")
     found, summary = [], []
-    for layer in layers:
-        result = surface.intersect_prepared(layer["vertices"], layer["faces"], ray,
-                                            max_distance=max_distance)
+    for layer_index, layer in enumerate(layers):
+        result = (mesh_accel.intersect(indices[layer_index], ray,
+                                       max_distance=max_distance)
+                  if indices is not None else
+                  surface.intersect_prepared(layer["vertices"], layer["faces"], ray,
+                                             max_distance=max_distance))
         nearest = result["hits"][0] if result["hits"] else None
         candidate = ({"layer": layer["name"], "distanceNative": nearest["distanceNative"],
                       "candidateXYZ": nearest["candidateXYZ"],
@@ -244,16 +250,21 @@ def compare_layers(ray, layers, max_distance=200.0):
 
 
 def analyze_pixels(frame, layers, pixels, max_distance=200.0,
-                   pixel_selection_radius=0):
+                   pixel_selection_radius=0, *, accel_mode="off"):
     surface._require(1 <= len(pixels) <= MAX_PIXELS, "pixel-count-invalid")
     surface._require(type(pixel_selection_radius) is int
                      and 0 <= pixel_selection_radius <= surface.MAX_FOOTPRINT_RADIUS,
                      "pixel-selection-radius-invalid")
+    surface._require(type(accel_mode) is str and accel_mode in ("off", "bvh"),
+                     "composite-accel-mode-invalid")
     seen = set()
     for x, y in pixels:
         surface._require((x, y) not in seen, "duplicate-pixel")
         seen.add((x, y))
-    # Reuse the existing footprint algorithm on a joined, layer-labelled mesh.
+    # The opt-in BVH uses the same exact narrowphase and local face ordinals.
+    prepared_indices = ([mesh_accel.prepare(layer["vertices"], layer["faces"])
+                         for layer in layers] if accel_mode == "bvh" else None)
+    # Reuse the footprint algorithm on a joined, layer-labelled mesh.
     # Vertex indices are shifted only in this transient read-only representation.
     merged_vertices, merged_faces = [], []
     if pixel_selection_radius:
@@ -265,20 +276,31 @@ def analyze_pixels(frame, layers, pixels, max_distance=200.0,
         surface._require(len(merged_vertices) <= surface.MAX_VERTICES
                          and len(merged_faces) <= surface.MAX_TRIANGLES,
                          "composite-footprint-mesh-limit-exceeded")
+    merged_index = (mesh_accel.prepare(merged_vertices, merged_faces)
+                    if pixel_selection_radius and accel_mode == "bvh" else None)
+    footprint_intersector = None
+    if merged_index is not None:
+        def footprint_intersector(_vertices, _faces, ray, *, max_distance):
+            return mesh_accel.intersect(merged_index, ray, max_distance=max_distance)
     result = []
     for x, y in pixels:
         ray = physical_pixel_ray.pixel_ray(frame["camera"], frame["mapping"], x, y)
         record = {"pixel": [x, y],
                   "rayForwardReprojectionErrorPixels":
                       ray["forwardReprojectionErrorPixels"],
-                  "surfaceCandidates": compare_layers(ray, layers, max_distance)}
+                  "surfaceCandidates": compare_layers(
+                      ray, layers, max_distance, indices=prepared_indices)}
         if pixel_selection_radius:
-            center = surface.intersect_prepared(
+            center = (footprint_intersector(
                 merged_vertices, merged_faces, ray, max_distance=max_distance)
+                if footprint_intersector is not None else
+                surface.intersect_prepared(merged_vertices, merged_faces, ray,
+                                           max_distance=max_distance))
             record["pixelFootprint"] = surface.sample_pixel_footprint(
                 merged_vertices, merged_faces, frame["camera"], frame["mapping"],
                 x, y, pixel_selection_radius, center_ray=ray,
-                center_surface=center, max_distance=max_distance)
+                center_surface=center, max_distance=max_distance,
+                intersector=footprint_intersector)
         result.append(record)
     # Refuse to return a clean result if a source changed during offline work.
     for layer in layers:
@@ -378,6 +400,8 @@ def main(argv=None):
     parser.add_argument("--max-distance", type=float, default=200.0)
     parser.add_argument("--pixel-selection-radius", type=int, default=0,
                         help="0..3 cardinal neighbor candidates per pixel; never depth proof")
+    parser.add_argument("--accel", choices=("off", "bvh"), default="off",
+                        help="opt-in offline BVH acceleration (default: off)")
     parser.add_argument("--preview-png", type=Path,
                         help="write an annotated candidate-only PNG to a new path")
     args = parser.parse_args(argv)
@@ -390,7 +414,7 @@ def main(argv=None):
                   load_temple(args.temple_obj, args.temple_anchor,
                               args.temple_anchor_sha256, frame["identity"])]
         result = analyze_pixels(frame, layers, args.pixel, args.max_distance,
-                                args.pixel_selection_radius)
+                                args.pixel_selection_radius, accel_mode=args.accel)
         if args.preview_png is not None:
             result["preview"] = render_preview(frame, result, args.preview_png)
     except (ValueError, KeyError, OSError, TypeError, OverflowError) as error:
