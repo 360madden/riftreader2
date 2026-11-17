@@ -278,6 +278,18 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
         self.assertEqual(path, _traversed_path({"path": path, "pathTruncated": False,
                                                  "readCount": 3}, end, anchor))
 
+    def test_native_path_cannot_contain_more_points_than_successful_reads(self):
+        # The .NET native follower retains at most one pose per successful read.
+        # Impossible counts must not qualify a traversed corridor.
+        anchor = {"x": 0, "y": 5, "z": 0}
+        end = {"x": 1, "y": 5, "z": 0}
+        path = [anchor, end]
+        for read_count in (0, 1):
+            with self.subTest(read_count=read_count):
+                with self.assertRaisesRegex(ValueError, "read count"):
+                    _traversed_path({"path": path, "pathTruncated": False,
+                                     "readCount": read_count}, end, anchor)
+
     def test_truncated_arrival_cannot_advance_survival_checkpoint(self):
         events = []
         def mover(adapter, x, z, stop, emit, **options):

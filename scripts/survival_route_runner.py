@@ -53,6 +53,8 @@ def _traversed_path(receipt, final_position, anchor, *,
         raise ValueError("Native traversed path has invalid read count")
     if truncated is True or (count is not None and count > len(raw)):
         raise ValueError("Native traversed path is truncated")
+    if count is not None and count < len(raw):
+        raise ValueError("Native traversed path has inconsistent read count")
     points = [_position(item) for item in raw]
 
     def near(left, right, planar, height):
