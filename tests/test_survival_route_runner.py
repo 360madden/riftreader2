@@ -1112,6 +1112,49 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
         self.assertEqual(1, results[-1]["survival"]["state"]["checkpoint"])
 
 
+    def test_stop_during_rejoin_never_resumes_the_interrupted_pending_leg(self):
+        # A valid-looking rejoin arrival cannot defeat an operator STOP.
+        # Checkpoint one was previously reached, but the pending second leg
+        # must not be replayed after the halted auxiliary return.
+        current = [0.0, 0.0]
+        calls, events = [], []
+        stop = threading.Event()
+        injured = observed(present=True, combat=True)
+        injured["player"]["healthPct"] = 20
+        recovering = observed()
+        recovering["player"]["healthPct"] = 40
+        backend = Backend([injured, injured, recovering, recovering,
+                           observed(on=True), observed(on=True)])
+        backend.position = current
+
+        def mover(adapter, x, z, event, emit, **options):
+            calls.append((x, z, options["survival_guard"]))
+            if len(calls) == 2:
+                current[:] = [3.0, 0.0]
+                raise Interrupted(
+                    {"releaseSucceeded": True, "desktopInputsDown": [],
+                     "path": [{"x": k, "y": 5, "z": 0} for k in (1, 2, 3)]},
+                    {"x": 3, "y": 5, "z": 0})
+            result = arrived(x, z, *current)
+            current[:] = [x, z]
+            emit(result)
+            if len(calls) == 4:
+                event.set()  # STOP races with a successful rejoin receipt.
+            return result
+
+        with self.assertRaisesRegex(Exception, "Stopped"):
+            self.invoke([("checkpoint", 1, 0), ("pending", 5, 0)],
+                        backend, mover, events=events, stop=stop)
+        self.assertEqual([(1.0, 0.0, True), (5.0, 0.0, True),
+                          (0.0, 0.0, "retreat"), (3.0, 0.0, True)], calls)
+        self.assertTrue(stop.is_set())
+        self.assertEqual(["checkpoint"],
+                         [event["name"] for event in events
+                          if event.get("status") == "arrived"])
+        self.assertEqual("halt",
+                         [event["survival"]["state"] for event in events
+                          if event["status"] == "survival-state"][-1])
+
     def test_injured_retreat_recovers_rejoins_and_resumes_same_pending_leg(self):
         # End-to-end offline path: interrupt, leave combat, heal, restore the
         # interrupted frontier, then retry the original waypoint without
