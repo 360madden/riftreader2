@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from scripts.waypoint_candidate_adoption import (_compare_candidate, _adoption_digest, validate_adopted_route,
-    _full_native_route, corroborate_reverse)
+    _full_native_route, adopt_receipt_candidate, corroborate_reverse)
 from tests.test_waypoint_navigation_candidate import sample, sign
 
 CTX = {"version": 1, "zoneIdCandidate": "z1234567800000000", "rawZoneKey": 0x12345678,
@@ -121,6 +121,58 @@ class AdoptionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "snap-outside"): run(c=c)
         c = sample(); c["coordinates"]["transformToRr2Native"]["kind"] = "unknown"; sign(c)
         with self.assertRaisesRegex(ValueError, "identity-frame"): run(c=c)
+
+
+    def test_receipt_or_zone_change_after_native_read_is_not_resealed(self):
+        # A later receipt hash must never describe bytes different from the
+        # ones accepted by the native-route reader.
+        for changed_source in ("receipt", "zone"):
+            with self.subTest(changed_source=changed_source), tempfile.TemporaryDirectory() as folder:
+                receipt = Path(folder) / "receipt.json"
+                zone = Path(folder) / "zone.json"
+                receipt.write_text("original receipt")
+                zone.write_text("original zone")
+
+                def replace_after_read(receipts, zone_path):
+                    path = receipt if changed_source == "receipt" else zone
+                    path.write_text("changed after native read")
+                    return native()
+
+                with patch("scripts.waypoint_candidate_adoption._full_native_route", side_effect=replace_after_read):
+                    with self.assertRaisesRegex(ValueError, "native-evidence-changed"):
+                        adopt_receipt_candidate(sample(), [receipt], zone,
+                            candidate_start=0, candidate_end=1,
+                            native_start=0, native_end=2, direction="forward")
+
+
+    def test_reverse_evidence_change_after_native_read_is_not_resealed(self):
+        route = run()
+        route["candidateAdoption"]["integritySha256"] = _adoption_digest(route)
+        reverse = sample()
+        reverse["points"].reverse()
+        reverse["query"] = {"requestedStartXYZ": [2, 1, 2], "snappedStartXYZ": [2, 1, 2],
+                            "requestedGoalXYZ": [0, 1, 2], "snappedGoalXYZ": [0, 1, 2]}
+        sign(reverse)
+        replay = native()
+        for key in ("waypoints", "heights", "pointKinds"):
+            replay[key].reverse()
+        for changed_source in ("receipt", "zone"):
+            with self.subTest(changed_source=changed_source), tempfile.TemporaryDirectory() as folder:
+                receipt = Path(folder) / "receipt.json"
+                zone = Path(folder) / "zone.json"
+                receipt.write_text("original receipt")
+                zone.write_text("original zone")
+
+                def replace_after_read(receipts, zone_path):
+                    path = receipt if changed_source == "receipt" else zone
+                    path.write_text("changed after reverse native read")
+                    return replay
+
+                with patch("scripts.waypoint_candidate_adoption._full_native_route", side_effect=replace_after_read):
+                    with self.assertRaisesRegex(ValueError, "native-evidence-changed"):
+                        corroborate_reverse(route, reverse, [receipt], zone,
+                            candidate_start=0, candidate_end=1,
+                            native_start=0, native_end=2)
 
 
 if __name__ == "__main__": unittest.main()

@@ -183,14 +183,19 @@ def _full_native_route(receipt_paths, zone_path):
 def adopt_receipt_candidate(candidate, receipt_paths, zone_path, *, candidate_start, candidate_end,
                             native_start, native_end, direction):
     """Build a bounded route from validated native receipts; never sends input."""
+    source_hashes = [hashlib.sha256(Path(path).read_bytes()).hexdigest() for path in receipt_paths]
+    zone_hash = hashlib.sha256(Path(zone_path).read_bytes()).hexdigest()
     native = _full_native_route(receipt_paths, zone_path)
     route = _compare_candidate(candidate, native, native["routeContext"],
         candidate_start=candidate_start, candidate_end=candidate_end,
         native_start=native_start, native_end=native_end, direction=direction)
+    if (source_hashes != [hashlib.sha256(Path(path).read_bytes()).hexdigest() for path in receipt_paths]
+        or zone_hash != hashlib.sha256(Path(zone_path).read_bytes()).hexdigest()):
+        raise ValueError("native-evidence-changed-during-adoption")
     route["candidateAdoption"]["sourceReceipts"] = [
-        {"path": str(Path(path).resolve()), "sha256": hashlib.sha256(Path(path).read_bytes()).hexdigest()}
-        for path in receipt_paths]
-    route["candidateAdoption"]["zoneContextSha256"] = hashlib.sha256(Path(zone_path).read_bytes()).hexdigest()
+        {"path": str(Path(path).resolve()), "sha256": digest}
+        for path, digest in zip(receipt_paths, source_hashes)]
+    route["candidateAdoption"]["zoneContextSha256"] = zone_hash
     route["candidateAdoption"]["integritySha256"] = _adoption_digest(route)
     return route
 
@@ -200,6 +205,8 @@ def corroborate_reverse(route, reverse_candidate, receipt_paths, zone_path, *,
     """Add reverse authority only after a separately queried and witnessed return."""
     if route["candidateAdoption"].get("hasOffMesh"):
         raise ValueError("candidate-reverse-offmesh-unsupported")
+    source_hashes = [hashlib.sha256(Path(path).read_bytes()).hexdigest() for path in receipt_paths]
+    zone_hash = hashlib.sha256(Path(zone_path).read_bytes()).hexdigest()
     native = _full_native_route(receipt_paths, zone_path)
     validate_adopted_route(route, route["candidateAdoption"]["owner"], native["routeContext"], "forward")
     original = route["candidateAdoption"]
@@ -227,6 +234,9 @@ def corroborate_reverse(route, reverse_candidate, receipt_paths, zone_path, *,
         for point, fraction in zip(points, fractions):
             if not _near(point, _at(other, other_fractions, fraction)):
                 raise ValueError("candidate-reverse-route-outside-bound")
+    if (source_hashes != [hashlib.sha256(Path(path).read_bytes()).hexdigest() for path in receipt_paths]
+        or zone_hash != hashlib.sha256(Path(zone_path).read_bytes()).hexdigest()):
+        raise ValueError("native-evidence-changed-during-reverse-adoption")
     result = deepcopy(route)
     meta = result["candidateAdoption"]
     meta["supportedDirections"] = ["forward", "reverse"]
@@ -234,8 +244,8 @@ def corroborate_reverse(route, reverse_candidate, receipt_paths, zone_path, *,
         "patchId": reverse_candidate["patchId"], "buildId": reverse_candidate["planner"]["buildId"],
         "candidateIndices": [candidate_start, candidate_end], "nativeIndices": [native_start, native_end],
         "nativeEvidenceSha256": _digest(native), "sourceReceipts": [
-            {"path": str(Path(path).resolve()), "sha256": hashlib.sha256(Path(path).read_bytes()).hexdigest()}
-            for path in receipt_paths]}
+            {"path": str(Path(path).resolve()), "sha256": digest}
+            for path, digest in zip(receipt_paths, source_hashes)]}
     meta["integritySha256"] = _adoption_digest(result)
     return result
 
