@@ -48,7 +48,7 @@ public sealed class CurrentBuildVitalsCandidateReaderTests
         var observation = Read(session);
         Assert.Equal(10635, observation.Health.Current);
         Assert.Equal(10635, observation.Health.Maximum);
-        Assert.Equal("postpatch-energy-type-unqualified", observation.Energy.UnavailableReason);
+        Assert.Equal("postpatch-energy-record-unverified", observation.Energy.UnavailableReason);
         Assert.Equal("not-mana-kind-three", observation.Mana.UnavailableReason);
         Assert.Equal(4, observation.ResourceKindCandidate);
         session.Put(Module + 0x2C3A0A0, Q(Module + 0x20F8D11));
@@ -80,7 +80,7 @@ public sealed class CurrentBuildVitalsCandidateReaderTests
         Assert.Equal(10635, result.Health.Maximum);
         Assert.Null(result.ResourceKindCandidate);
         Assert.Equal("resource-kind-unavailable", result.Mana.UnavailableReason);
-        Assert.Equal("postpatch-energy-type-unqualified", result.Energy.UnavailableReason);
+        Assert.Equal("resource-kind-unavailable", result.Energy.UnavailableReason);
     }
 
     private static FakeSession UpdatedManaFixture()
@@ -112,7 +112,7 @@ public sealed class CurrentBuildVitalsCandidateReaderTests
         Assert.Equal("calculated-candidate", result.Mana.Status);
         Assert.Equal(2071, result.Mana.Current);
         Assert.Equal(3980, result.Mana.Maximum);
-        Assert.Equal("postpatch-energy-type-unqualified", result.Energy.UnavailableReason);
+        Assert.Equal("not-energy-kind-four", result.Energy.UnavailableReason);
         Assert.Equal(2, s.Requests.Count(r => r == (Module + 0x34EB3E0, 8)));
         Assert.DoesNotContain(s.Requests, r => r.Address == Module + 0x34D8990);
         Assert.True(s.Requests.LastIndexOf((KindOwner + 0x168, 4)) >
@@ -154,6 +154,77 @@ public sealed class CurrentBuildVitalsCandidateReaderTests
         if (defect == "other-kind")
         {
             Assert.Equal(1, result.ResourceKindCandidate);
+            Assert.DoesNotContain(s.Requests, r => r.Address == Component + 0x38);
+        }
+    }
+
+    private static FakeSession UpdatedEnergyFixture()
+    {
+        var s = UpdatedManaFixture();
+        s.Put(KindOwner + 0x168, D(4));
+        var raw = EnergyRaw(); Q(Module + 0x2D235D0).CopyTo(raw, 0);
+        D(73).CopyTo(raw, 0x20); s.Put(Energy, raw);
+        s.Put(Wrapper + 0x10, Join(Q(Reference), Cache(59, 61827.53515625f)));
+        s.Put(Module + 0x2D23610, Q(Module + 0x23214C0));
+        s.Put(Module + 0x35C1E10, Q(Module + 0x2D30970));
+        s.Put(Module + 0x2D30978, Q(Module + 0x234C020));
+        return s;
+    }
+
+    [Fact]
+    public void UpdatedKindFourReturnsOnlyGuardedEnergyCandidate()
+    {
+        var s = UpdatedEnergyFixture();
+        var obs = Read(s);
+        Assert.Equal(4, obs.ResourceKindCandidate);
+        Assert.Equal("not-mana-kind-three", obs.Mana.UnavailableReason);
+        Assert.Equal(10635, obs.Health.Current);
+        Assert.Equal("calculated-candidate", obs.Energy.Status);
+        Assert.Equal(73, obs.Energy.Current);
+        Assert.Equal(100, obs.Energy.Maximum);
+        Assert.Equal(2, s.Requests.Count(r => r == (Module + 0x35C1E10, 8)));
+        Assert.DoesNotContain(s.Requests, r => r.Address == Module + 0x35AEB80 || r.Address == Module + 0x34EB3E0);
+        Assert.True(s.Requests.LastIndexOf((KindOwner + 0x168, 4)) >
+            s.Requests.LastIndexOf((Module + 0x2D30978, 8)));
+    }
+
+    [Theory]
+    [InlineData("kind-one")]
+    [InlineData("kind-changed")]
+    [InlineData("old-type")]
+    [InlineData("mana-type")]
+    [InlineData("old-getter")]
+    [InlineData("global-outside-module")]
+    [InlineData("type-getter-changed")]
+    [InlineData("record-changed")]
+    [InlineData("alias")]
+    [InlineData("revision")]
+    public void UpdatedRejectsInvalidEnergyButPreservesHp(string defect)
+    {
+        var s = UpdatedEnergyFixture();
+        switch (defect)
+        {
+            case "kind-one": s.Put(KindOwner + 0x168, D(1)); break;
+            case "kind-changed": s.ChangeAfterFirst(KindOwner + 0x168, D(3)); break;
+            case "old-type": s.Put(Energy, EnergyRaw()); break;
+            case "mana-type":
+                var r = s.Get(Energy); Q(Module + 0x2A867D0).CopyTo(r, 0); s.Put(Energy, r); break;
+            case "old-getter": s.Put(Module + 0x2D23610, Q(Module + 0x231BEB0)); break;
+            case "global-outside-module": s.Identity = s.Identity with { ModuleSize = 0x35C1E14 }; break;
+            case "type-getter-changed": s.ChangeAfterFirst(Module + 0x2D30978, Q(Module + 0x1D00140)); break;
+            case "record-changed": s.ChangeAfterFirst(Energy, EnergyRaw()); break;
+            case "alias": s.Put(Reference, Q(Hp)); break;
+            case "revision": s.Put(Wrapper + 0x10, Join(Q(Reference), Cache(58, 61827.53515625f))); break;
+        }
+        var obs = Read(s);
+        Assert.Equal(10635, obs.Health.Current);
+        Assert.Null(obs.Mana.Current);
+        Assert.Equal("unavailable", obs.Energy.Status);
+        Assert.Null(obs.Energy.Current);
+        if (defect == "kind-changed") Assert.Null(obs.ResourceKindCandidate);
+        if (defect == "kind-one")
+        {
+            Assert.Equal(1, obs.ResourceKindCandidate);
             Assert.DoesNotContain(s.Requests, r => r.Address == Component + 0x38);
         }
     }

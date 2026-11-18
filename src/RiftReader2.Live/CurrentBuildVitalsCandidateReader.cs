@@ -50,14 +50,15 @@ internal static class CurrentBuildVitalsCandidateReader
         ArgumentNullException.ThrowIfNull(owner.VerifyUnchanged);
         if (owner.UnitKey == 0) throw new InvalidDataException("Missing current-player owner.");
         var anchors = new List<(ulong Address, byte[] Bytes)>();
-        byte[] Take(ulong address, int length, bool bracket = true)
+        byte[] Take(ulong address, int length, bool bracket = true,
+            List<(ulong Address, byte[] Bytes)>? group = null)
         {
             if (address < 0x10000 || length is < 1 or > 4096 || address > 0x7FFF_FFFF_FFFFUL - (ulong)length)
                 throw new InvalidDataException("Vitals range is outside bounded user memory.");
             var result = session.Read(address, length);
             if (result.Status != "success" || result.Bytes.Length != length)
                 throw new InvalidDataException("Vitals memory is unavailable or incomplete.");
-            if (bracket) anchors.Add((address, result.Bytes.ToArray()));
+            if (bracket) (group ?? anchors).Add((address, result.Bytes.ToArray()));
             return result.Bytes;
         }
         ulong Ptr(ulong address) => Pointer(U64(Take(address, 8)));
@@ -86,6 +87,7 @@ internal static class CurrentBuildVitalsCandidateReader
             // the full field acquisition, then validate the original HP/player/epoch below.
             int? resourceKind = null;
             CurrentBuildVitalCandidate updatedMana = new("unavailable", "resource-kind-unavailable");
+            CurrentBuildVitalCandidate updatedEnergy = new("unavailable", "resource-kind-unavailable");
             try
             {
                 var kindOwnerAddress = checked(component + 0x40);
@@ -97,6 +99,7 @@ internal static class CurrentBuildVitalsCandidateReader
                 if (candidate is >= 0 and <= 16)
                 {
                     CurrentBuildVitalCandidate field = new("unavailable", "not-mana-kind-three");
+                    CurrentBuildVitalCandidate energyField = new("unavailable", "not-energy-kind-four");
                     if (candidate == 3)
                     {
                         try
@@ -110,25 +113,40 @@ internal static class CurrentBuildVitalsCandidateReader
                             field = new("unavailable", "postpatch-mana-record-unverified");
                         }
                     }
+                    else if (candidate == 4)
+                    {
+                        try
+                        {
+                            var energyAnchors = new List<(ulong Address, byte[] Bytes)>();
+                            energyField = ReadEnergy(true, energyAnchors);
+                            foreach (var anchor in energyAnchors)
+                                if (!Take(anchor.Address, anchor.Bytes.Length, false).AsSpan().SequenceEqual(anchor.Bytes))
+                                    throw new InvalidDataException("Energy inputs changed during capture.");
+                        }
+                        catch (Exception ex) when (ex is InvalidDataException or OverflowException)
+                        {
+                            energyField = new("unavailable", "postpatch-energy-record-unverified");
+                        }
+                    }
                     if (Take(kindOwnerAddress, 8, false).AsSpan().SequenceEqual(kindOwnerRaw) &&
                         Take(kindAddress, 4, false).AsSpan().SequenceEqual(kindRaw))
                     {
                         resourceKind = candidate;
                         updatedMana = field;
+                        updatedEnergy = energyField;
                     }
                 }
             }
             catch (InvalidDataException) { /* Optional resource path unavailable. */ }
             catch (OverflowException) { /* Unusable optional resource pointer. */ }
-            // Energy's record type is still unqualified on 1179.
+            // A failing optional branch must not suppress independently bracketed HP.
             foreach (var anchor in anchors)
                 if (!Take(anchor.Address, anchor.Bytes.Length, false).AsSpan().SequenceEqual(anchor.Bytes))
                     throw new InvalidDataException("HP ownership, type or mutable inputs changed during capture.");
             owner.VerifyUnchanged();
             if (session.Identity != identity)
                 throw new InvalidDataException("HP owner or process epoch changed during capture.");
-            return new(identity, started, DateTimeOffset.UtcNow, owner.UnitKey, health,
-                new("unavailable", "postpatch-energy-type-unqualified"))
+            return new(identity, started, DateTimeOffset.UtcNow, owner.UnitKey, health, updatedEnergy)
             {
                 Mana = updatedMana,
                 ResourceKindCandidate = resourceKind
@@ -147,16 +165,7 @@ internal static class CurrentBuildVitalsCandidateReader
         else if (kind == 4)
         {
             mana = new("unavailable", "not-mana-kind-three");
-            var wrapper = Ptr(checked(component + 0x38));
-            // Energy reference and revision/clock cache are also contiguous.
-            var referenceAndCache = Take(checked(wrapper + 0x10), 16);
-            var reference = Pointer(U64(referenceAndCache));
-            var record = Ptr(reference);
-            if (record == healthRecord) throw new InvalidDataException("Health/resource record alias.");
-            var raw = Take(record, 64);
-            var cache = referenceAndCache[8..16];
-            CheckType(raw, 0x2D19498, 0x231BEB0, 0x35AEB80, 0x2D1D420, 0x233E9B0);
-            energy = CalculateEnergy(raw, cache, clock);
+            energy = ReadEnergy(false, anchors);
         }
         else
         {
@@ -175,13 +184,33 @@ internal static class CurrentBuildVitalsCandidateReader
             ResourceKindCandidate = kind
         };
 
+        CurrentBuildVitalCandidate ReadEnergy(bool updated, List<(ulong Address, byte[] Bytes)> group)
+        {
+            // 1179: getter 0x133F290 -> 0x232D9A0 checks 0x072B. Descriptor initializer
+            // 0x233D230 sets the singleton; type helper 0x2342950 yields 0x10C4 ^ 0x17EF.
+            var (vtable, getter, singleton, descriptor, typeGetter) = updated
+                ? (0x2D235D0UL, 0x23214C0UL, 0x35C1E10UL, 0x2D30970UL, 0x234C020UL)
+                : (0x2D19498UL, 0x231BEB0UL, 0x35AEB80UL, 0x2D1D420UL, 0x233E9B0UL);
+            if (identity.ModuleSize < singleton + 8)
+                throw new InvalidDataException("Energy descriptor falls outside the pinned module.");
+            byte[] Field(ulong address, int length) => Take(address, length, true, group);
+            var wrapper = Pointer(U64(Field(checked(component + 0x38), 8)));
+            var referenceAndCache = Field(checked(wrapper + 0x10), 16);
+            var reference = Pointer(U64(referenceAndCache));
+            var record = Pointer(U64(Field(reference, 8)));
+            if (record == healthRecord) throw new InvalidDataException("Health/resource record alias.");
+            var raw = Field(record, 64);
+            CheckType(raw, vtable, getter, singleton, descriptor, typeGetter, group);
+            return CalculateEnergy(raw, referenceAndCache[8..16], clock);
+        }
+
         void CheckType(byte[] raw, ulong vtable, ulong getter, ulong descriptor,
-            ulong descriptorVtable, ulong typeGetter)
+            ulong descriptorVtable, ulong typeGetter, List<(ulong Address, byte[] Bytes)>? group = null)
         {
             if (U64(raw) != checked(module + vtable) ||
-                U64(Take(checked(module + vtable + 0x40), 8)) != checked(module + getter) ||
-                U64(Take(checked(module + descriptor), 8)) != checked(module + descriptorVtable) ||
-                U64(Take(checked(module + descriptorVtable + 8), 8)) != checked(module + typeGetter))
+                U64(Take(checked(module + vtable + 0x40), 8, true, group)) != checked(module + getter) ||
+                U64(Take(checked(module + descriptor), 8, true, group)) != checked(module + descriptorVtable) ||
+                U64(Take(checked(module + descriptorVtable + 8), 8, true, group)) != checked(module + typeGetter))
                 throw new InvalidDataException("Vitals exact-build type fingerprint mismatch.");
         }
     }
