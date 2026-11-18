@@ -498,6 +498,11 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
                 or not isinstance(identity.get("executableSha256"), str)
                 or re.fullmatch(r"[0-9A-Fa-f]{64}", identity["executableSha256"]) is None):
             invalid()
+        postpatch = identity["executableSha256"].casefold() == "df954b798331e18359be62a31cc74b49fc3f50b87385ebb080a5448256322c01"
+        dictionary_status = row.get("dictionaryStatus")
+        if (postpatch and dictionary_status != "not-acquired-raw-only"
+                or not postpatch and dictionary_status is not None):
+            invalid()
         start, end = (_utc_tick_order_key(row.get(n)) for n in ("startedAtUtc", "completedAtUtc"))
         if (start > end or any(not integer(row.get(n), 1, 2**64 - 1) for n in ("selfKey", "targetKey"))
                 or not pointer(row.get("targetEntity")) or not pointer(row.get("collection"))
@@ -518,7 +523,9 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
         elif status == "raw-candidate":
             if (not pointer(record) or not integer(key, 0, 2**32 - 1) or not isinstance(text, str)
                     or len(text.encode("utf-16-le")) > 254
-                    or (key == 0 and dictionary is not None) or (key != 0 and not isinstance(dictionary, dict))):
+                    or (key == 0 and dictionary is not None)
+                    or (key != 0 and not postpatch and not isinstance(dictionary, dict))
+                    or (postpatch and dictionary is not None)):
                 invalid()
             if dictionary is not None:
                 if (dictionary.get("identity") != identity
@@ -1479,7 +1486,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
     # Other older-build native readers must not silently inherit admission.
     updated_sha = "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"
     if str(target.get("executableSha256", "")).casefold() == updated_sha.casefold():
-        if kind not in ("position", "facing", "actor-pose", "orientation", "unit-positions", "selected-position", "vitals", "player-context", "stats"):
+        if kind not in ("position", "facing", "actor-pose", "orientation", "unit-positions", "selected-position", "vitals", "player-context", "stats", "target-name", "unit-names"):
             return dict(selection, status="blocked", reason="postpatch-native-read-unqualified")
         command.extend(("--sha256", updated_sha))
     if samples is not None:

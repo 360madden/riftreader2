@@ -48,7 +48,6 @@ class PostpatchNativeAdmissionTests(unittest.TestCase):
         for kind in (
             "smoothed-scalar",
             "selected-target", "zone-context",
-            "target-name", "unit-names",
         ):
             with self.subTest(kind=kind), patch.object(physical_rift.subprocess, "run") as run:
                 result = physical_rift.read_native(
@@ -72,13 +71,14 @@ class PostpatchNativeAdmissionTests(unittest.TestCase):
 
     def test_admitted_kinds_pass_the_exact_sha_to_native_reader(self):
         # A synthetic nonzero native exit proves command assembly, not live semantics.
-        for kind in ("position", "facing", "actor-pose", "orientation", "unit-positions", "selected-position", "vitals", "player-context", "stats"):
+        for kind in ("position", "facing", "actor-pose", "orientation", "unit-positions", "selected-position", "vitals", "player-context", "stats", "target-name", "unit-names"):
             with self.subTest(kind=kind), patch.object(
                 physical_rift.subprocess, "run",
                 return_value=subprocess.CompletedProcess([], 3, "", "offline-refusal"),
             ) as run:
                 result = physical_rift.read_native(
                     selection(BUILD_1179.lower()), kind, self.folder / (kind + ".json"),
+                    unit_keys=["1"] if kind == "unit-names" else None,
                 )
                 self.assertEqual(result["reason"], "native-reader-failed")
                 args = run.call_args.args[0]
@@ -88,6 +88,46 @@ class PostpatchNativeAdmissionTests(unittest.TestCase):
                 ])
                 self.assertEqual(args.count("--sha256"), 1)
                 self.assertEqual(args[args.index("--sha256") + 1], BUILD_1179)
+
+    def test_postpatch_target_name_accepts_only_explicit_raw_only_dictionary_refusal(self):
+        identity = {
+            "processId": 12345,
+            "processStartUtcTicks": 638000000000000001,
+            "executableSha256": BUILD_1179,
+        }
+        row = {
+            "identity": identity,
+            "startedAtUtc": "2026-11-18T13:00:00+00:00",
+            "completedAtUtc": "2026-11-18T13:00:01+00:00",
+            "selfKey": 1, "targetKey": 2,
+            "targetEntity": 65536, "collection": 65544,
+            "templateKey": 7, "selector": 1, "tlsIndex": 0,
+            "localizationMode": 1, "formattingFlag": 0,
+            "status": "raw-candidate", "recordAddress": 65552,
+            "localizationKey": 42, "fallbackText": "Acolyte",
+            "dictionary": None, "dictionaryStatus": "not-acquired-raw-only",
+            "qualification": "cache-only raw candidate; name publication, freshness and restart unverified",
+        }
+        report = {
+            "schemaVersion": 1,
+            "contractVersion": "native-target-template-name-candidate/1",
+            "status": "complete", "observation": row,
+        }
+        values = physical_rift._native_values("target-name", report)
+        self.assertEqual(values["status"], "available-candidate")
+        self.assertEqual(values["rawFallbackNameCandidate"], "Acolyte")
+        self.assertEqual(values["selectedBaseNameCandidate"], "Acolyte")
+        self.assertEqual(values["localizationKey"], 42)
+        self.assertIn("cache-only", values["qualification"])
+        for wrong_marker in (None, "dictionary-loaded"):
+            with self.subTest(marker=wrong_marker):
+                row["dictionaryStatus"] = wrong_marker
+                with self.assertRaises(ValueError):
+                    physical_rift._native_values("target-name", report)
+        row["dictionaryStatus"] = "not-acquired-raw-only"
+        row["dictionary"] = {}
+        with self.assertRaises(ValueError):
+            physical_rift._native_values("target-name", report)
 
     def test_historical_build_does_not_inherit_new_build_admission(self):
         # Historical invocation may still be attempted, but is independently
