@@ -82,3 +82,9 @@ C:\Python314\python.exe -B scripts\physical_rift.py --expected-host AMD-DESKTOP
 Then select a **fresh, explicit** physical PID and use `--read-native <kind>` or the exact `.NET 10` native CLI as appropriate. For the current physical session the observed PID was `77980`, **but never use it as a permanent default**.
 
 **Handoff result:** Build-1179 native position/context/stats/HP/Power/facing-target and guarded Mana/Energy/raw-name paths substantially recovered; remaining work is individually pinned zone/legacy readers and independent changed-state/full-restart qualification.
+
+## 2026-11-18 post-handoff addendum — zone recovery through `0509ac0`
+
+The P0 implementation item above is complete for build 1179. Commits `a8637aa`, `99f5fff`, and `0509ac0` restored the raw zone cache, verified the outer type, and restored the guarded zone-ID candidate. Two no-input physical reads in the same process epoch returned `z0000000CB7B53FD7` (raw zone key `12`, child key `1830661357`). This shows repeatability in one state, not agreement with the public zone ID. World-instance identity remains unavailable.
+
+**Next P1:** Compare the candidate with a fresh, independent Lua/UI zone ID for the same player in the same state. Changed-zone behavior, freshness after a user-performed target change, positive kind-3 Mana and kind-4 Energy samples, and durability after a separately authorized full-game restart remain unverified.

@@ -308,6 +308,15 @@ def _target_screen_point(row):
     if stable != expected_stable:
         raise ValueError("invalid-native-facing-target-camera-bracket")
     target = pair.get("target")
+    if str(row["identity"].get("executableSha256", "")).upper() == "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01":
+        # On 1179 the native producer emits coordinates only for a guarded fallback key.
+        guard_for_status = {"candidate": "fallback-key-candidate", "position-unavailable": "fallback-key-candidate",
+                            "no-target": "raw-getter-zero-candidate", "selection-override-unresolved": "override-unavailable"}
+        status = pair["targetStatus"]
+        if (status not in guard_for_status or pair.get("afterGuardStatus") != guard_for_status[status]
+                or (status == "candidate" and (not isinstance(target, dict) or target.get("status") != "candidate"))
+                or (status != "candidate" and target is not None)):
+            raise ValueError("invalid-native-facing-target-selection")
     if target is None or target.get("status") != "candidate":
         return {"status": "unavailable", "reason": "target-position-unavailable",
                 "targetStatus": pair["targetStatus"]}
@@ -640,13 +649,16 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
                 if supports_id:
                     child_ref = row.get("rawNameRef")
                     if ((child_status == "null" and (type(child_ref) is not int or child_ref != 0))
-                            or (child_status != "null" and not user_span(child_ref, 0x1C))):
+                            or (child_status != "null" and
+                                (not user_span(child_ref, 0x1C) or child_ref == row["recordAddress"]))):
                         raise ValueError("invalid-native-zone-1179-child-geometry")
-            if supports_id and zone_id != _zone_id_candidate(zone_key, child_key):
+        if supports_id:
+            expected_id = _zone_id_candidate(zone_key, child_key)
+            # Historical reports admitted lowercase hex; 1179 emits canonical uppercase hex.
+            if (not isinstance(zone_id, str) or re.fullmatch(r"z[0-9A-Fa-f]{16}", zone_id) is None
+                    or (zone_id if postpatch_zone else "z" + zone_id[1:].upper()) != expected_id):
                 raise ValueError("invalid-native-zone-context-id")
-        if ((supports_id and (not isinstance(zone_id, str) or re.fullmatch(r"z[0-9A-Fa-f]{16}", zone_id) is None
-                             or int(zone_id[1:9], 16) != zone_key))
-                or (not supports_id and zone_id is not None)):
+        elif zone_id is not None:
             raise ValueError("invalid-native-zone-context-id")
         elapsed = row.get("acquisitionElapsedMilliseconds")
         if (elapsed is not None and (type(elapsed) not in (int, float) or not math.isfinite(elapsed) or elapsed < 0

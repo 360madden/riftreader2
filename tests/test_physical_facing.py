@@ -153,6 +153,42 @@ class PhysicalFacingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'target-owner'):
             physical._native_values('facing', source)
 
+    def test_1179_projection_agrees_with_native_selection_state(self):
+        source = deepcopy(report_with_target())
+        identity = dict(source['identity'], executableSha256='DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01')
+        source['identity'] = identity
+        for row in source['observations']:
+            row['identity'] = row['positionOrientationCandidate']['identity'] = row['targetPositionPairCandidate']['identity'] = identity
+            for camera in ('opticalCameraCandidate', 'opticalCameraAfterTargetCandidate'):
+                row[camera].update(sourceRootRva='0x3374008', selectedModeCameraGetterRva='0xF88550')
+        def project(report):
+            return physical._native_values('facing', report)['selectedTargetProjectionCandidate']
+
+        self.assertEqual('99', project(source)['targetKey'])
+        for status, guard in [('no-target', 'raw-getter-zero-candidate'),
+                              ('position-unavailable', 'fallback-key-candidate'),
+                              ('selection-override-unresolved', 'override-unavailable')]:
+            with self.subTest(status=status):
+                copy = deepcopy(source)
+                pair = copy['observation']['targetPositionPairCandidate']
+                pair.update(targetStatus=status, beforeGuardStatus=guard, afterGuardStatus=guard)
+                with self.assertRaisesRegex(ValueError, 'target-selection'):
+                    project(copy)  # coordinates left over from a previous target
+                pair['target'] = None
+                self.assertEqual('unavailable', project(copy)['status'])
+        for mode in ('missing-guards', 'empty-candidate', 'wrong-candidate-guard'):
+            with self.subTest(mode=mode):
+                copy = deepcopy(source)
+                pair = copy['observation']['targetPositionPairCandidate']
+                if mode == 'missing-guards':
+                    del pair['beforeGuardStatus'], pair['afterGuardStatus']
+                elif mode == 'empty-candidate':
+                    pair['target'] = None
+                else:
+                    pair.update(beforeGuardStatus='raw-getter-zero-candidate', afterGuardStatus='raw-getter-zero-candidate')
+                with self.assertRaisesRegex(ValueError, 'target-selection'):
+                    project(copy)
+
     def test_world_projection_subtracts_origin_and_flips_screen_y(self):
         camera = optical_camera()
         center = physical._project_world_point(camera, {'x': 7427, 'y': 871, 'z': 2946})

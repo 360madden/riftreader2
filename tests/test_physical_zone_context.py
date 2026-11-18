@@ -59,7 +59,7 @@ class ZoneContextTests(unittest.TestCase):
     def test_optional_matching_top_identity_and_uint32_max_key(self):
         source = report()
         source["identity"] = deepcopy(source["observation"]["identity"])
-        source["observation"].update(rawZoneKey=2**32 - 1, zoneIdCandidate="zFFFFFFFF00000000")
+        source["observation"].update(rawZoneKey=2**32 - 1, zoneIdCandidate="zFFFFFFFFD2EA79BE")
         self.assertEqual(p._native_values("zone-context", source)["rawZoneKey"], 4294967295)
 
     def test_unresolved_statuses_keep_raw_key_and_explicit_reason(self):
@@ -78,8 +78,17 @@ class ZoneContextTests(unittest.TestCase):
 
     def test_null_child_can_support_typed_zone_id(self):
         source = report()
-        source["observation"].update(childStatus="null", childKey=None)
+        source["observation"].update(childStatus="null", childKey=None, zoneIdCandidate="z487C9102A1DBBCFC")
         self.assertEqual(p._native_values("zone-context", source)["status"], "available-candidate")
+
+    def test_1177_full_zone_id_must_match_child_even_with_correct_zone_key(self):
+        source = report()
+        row = source["observation"]
+        row["zoneIdCandidate"] = "z487c9102d2ea79be"
+        self.assertEqual(p._native_values("zone-context", source)["status"], "available-candidate")
+        row["zoneIdCandidate"] = "z487C9102DEADBEEF"
+        with self.assertRaisesRegex(ValueError, "invalid-native-zone-context-id"):
+            p._native_values("zone-context", source)
 
     def test_forged_or_missing_zone_id_and_status_rejected(self):
         for change in (dict(zoneIdCandidate="zBAD"), dict(zoneIdCandidate="z00000000D2EA79BE"),
@@ -241,6 +250,13 @@ class ZoneContextTests(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 p._native_values("zone-context", dict(source, observation=dict(row, **change)))
 
+    def test_1179_typed_child_cannot_be_the_outer_record(self):
+        source = typed_report_1179()
+        row = source["observation"]
+        row["rawNameRef"] = row["recordAddress"]
+        with self.assertRaisesRegex(ValueError, "invalid-native-zone-1179-child-geometry"):
+            p._native_values("zone-context", source)
+
     def test_1179_rejects_forged_raw_geometry_even_with_true_outer_flag(self):
         source = typed_report_1179()
         row = source["observation"]
@@ -266,6 +282,27 @@ class ZoneContextTests(unittest.TestCase):
         for child_ref in (row["rawNameRef"], False, None):
             with self.subTest(null_child_ref=child_ref), self.assertRaises(ValueError):
                 p._native_values("zone-context", dict(source, observation=dict(row, rawNameRef=child_ref)))
+
+    def test_1179_genuine_zone_hash_does_not_attest_to_a_relocated_module(self):
+        # Fixed zone/child-only vector from the accepted 1179 capture; addresses below are synthetic.
+        source = typed_report_1179()
+        row = source["observation"]
+        row.update(rawZoneKey=12, childKey=1830661357, zoneIdCandidate="z0000000CB7B53FD7")
+        self.assertEqual(p._native_values("zone-context", source)["status"], "available-candidate")
+
+        # The saved vtable still falls INSIDE this relocated module, but at the wrong RVA.
+        shift = 0x10000
+        row["identity"]["moduleBaseAddress"] += shift
+        with self.assertRaisesRegex(ValueError, "invalid-native-zone-1179-outer-geometry"):
+            p._native_values("zone-context", source)
+        row["recordVtable"] += shift
+        self.assertEqual(p._native_values("zone-context", source)["zoneIdCandidate"], "z0000000CB7B53FD7")
+
+        for required in ("recordVtable", "recordGetterRva"):
+            with self.subTest(missing=required), self.assertRaisesRegex(ValueError, "invalid-native-zone-1179-outer-geometry"):
+                forged = deepcopy(source)
+                del forged["observation"][required]
+                p._native_values("zone-context", forged)
 
     def test_1179_fresh_candidate_requires_selected_process_epoch(self):
         result = self.run_native(updated=True)

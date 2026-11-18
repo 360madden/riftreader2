@@ -24,6 +24,14 @@ public sealed class CurrentBuildLocationContextSampleCommandTests
         Assert.Equal("unavailable", observation.GetProperty("worldInstanceStatus").GetString());
         Assert.Equal("null-provider", observation.GetProperty("zone").GetProperty("status").GetString());
         Assert.Equal(JsonValueKind.Null, observation.GetProperty("zone").GetProperty("zoneIdCandidate").ValueKind);
+        // Different fixture intervals make accidental use of an outer or sibling timestamp observable.
+        var zone = observation.GetProperty("zone");
+        Assert.Equal(Fixture.Begin, observation.GetProperty("startedAtUtc").GetDateTimeOffset());
+        Assert.Equal(Fixture.Begin.AddMilliseconds(1), observation.GetProperty("positionStartedAtUtc").GetDateTimeOffset());
+        Assert.Equal(Fixture.Begin.AddMilliseconds(2), observation.GetProperty("positionCompletedAtUtc").GetDateTimeOffset());
+        Assert.Equal(Fixture.Begin.AddMilliseconds(3), zone.GetProperty("startedAtUtc").GetDateTimeOffset());
+        Assert.Equal(Fixture.Begin.AddMilliseconds(4), zone.GetProperty("completedAtUtc").GetDateTimeOffset());
+        Assert.Equal(Fixture.Begin.AddMilliseconds(5), observation.GetProperty("completedAtUtc").GetDateTimeOffset());
         Assert.Contains("unverified", observation.GetProperty("qualification").GetString());
         Assert.Contains("native-current-location-context-summary/1", output.ToString());
     }
@@ -206,6 +214,7 @@ public sealed class CurrentBuildLocationContextSampleCommandTests
     {
         private readonly string directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
             "rr2-location-command-test-" + Guid.NewGuid().ToString("N"));
+        public static readonly DateTimeOffset Begin = DateTimeOffset.UnixEpoch.AddDays(1);
         public string Path => System.IO.Path.Combine(directory, "candidate.json");
         public Fake Session { get; } = new();
         public bool Opened { get; private set; }
@@ -229,11 +238,12 @@ public sealed class CurrentBuildLocationContextSampleCommandTests
                 },
                 (session, _) =>
                 {
-                    Captured = true; OnRead?.Invoke(); var now = DateTimeOffset.UtcNow;
-                    var zone = new ZoneSeedObservation(session.Identity, now, now,
+                    Captured = true; OnRead?.Invoke();
+                    var zone = new ZoneSeedObservation(session.Identity, Begin.AddMilliseconds(3), Begin.AddMilliseconds(4),
                         ulong.MaxValue, 0x20000000, 0x20010000, 0x20020000, 1234, "null-provider");
-                    var result = new CurrentBuildLocationContextObservation(session.Identity, now, now,
-                        "18446744073709551615", "uFFFFFFFFFFFFFFFF", now, now, new(1.5f, -2f, 3f), zone);
+                    var result = new CurrentBuildLocationContextObservation(session.Identity, Begin, Begin.AddMilliseconds(5),
+                        "18446744073709551615", "uFFFFFFFFFFFFFFFF", Begin.AddMilliseconds(1), Begin.AddMilliseconds(2),
+                        new(1.5f, -2f, 3f), zone);
                     result = Change switch
                     {
                         "observation-epoch" => result with { Identity = session.Identity with { ProcessStartUtcTicks = 999 } },
