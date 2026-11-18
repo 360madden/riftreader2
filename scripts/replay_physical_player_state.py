@@ -107,7 +107,23 @@ def verified_state(filename):
             health_samples = [_health_candidate(_native_values(
                 "vitals", {"observation": sample})["health"]) for sample in rows]
         projected = _native_values(kind, report)
-        require(projected == saved.get("candidateValues"),
+        recorded = saved.get("candidateValues")
+        if kind == "vitals" and "unavailableReasonProvenance" in projected and isinstance(recorded, dict):
+            # Acquisition context is not part of the native values. A saved receipt
+            # may predate this metadata, but can never attest to current acquisition.
+            field = "unavailableReasonProvenance"
+            if field not in recorded or recorded[field] in (
+                    "current-reader-contract-checked", projected[field]):
+                recorded = {**recorded, field: projected[field]}
+        if kind == "vitals":
+            # Ordinary dict equality treats 1, 1.0 and True as interchangeable.
+            # Compare typed JSON values regardless of object key order.
+            def canonical(value):
+                return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+            matches = canonical(projected) == canonical(recorded)
+        else:
+            matches = projected == recorded
+        require(matches,
                 kind + "-candidate-projection-mismatch")
         if kind == "vitals" and "burstSummary" in saved:
             burst = saved["burstSummary"]

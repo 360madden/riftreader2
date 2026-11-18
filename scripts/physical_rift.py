@@ -496,7 +496,8 @@ def _zone_id_candidate(zone_key, child_key):
 
 
 
-def _native_values(kind, report, *, expect_position=False, expect_translation_sources=False):
+def _native_values(kind, report, *, expect_position=False, expect_translation_sources=False,
+                   current_acquisition=False):
     """Project immediate useful values; preserve exact large unit keys as text."""
     if kind == "stats":
         return _stats_values(report)
@@ -1397,12 +1398,22 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
                                 ("status", "current", "maximum", "unavailableReason")}
         # Expose the newly probed raw kind on 1179; historical projection contracts
         # remain unchanged for SHA-pinned replay of earlier player-state receipts.
-        if str(observation.get("identity", {}).get("executableSha256", "")).upper() == \
-                "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01":
-            kinds = [row.get("resourceKindCandidate") for row in (observations or [observation])]
+        observation_identity = observation.get("identity", {})
+        reported_identity = report.get("identity", observation_identity)
+        updated_sha = summarize_native_vitals_burst.UPDATED_GAME_SHA
+        if any(isinstance(identity, dict) and str(identity.get("executableSha256", "")).upper() == updated_sha
+               for identity in (observation_identity, reported_identity)):
+            if reported_identity != observation_identity:
+                raise ValueError("invalid-native-vitals-report-identity")
+            rows = observations or [observation]
+            kinds = [row.get("resourceKindCandidate") for row in rows]
             if any(kind is not None and (type(kind) is not int or not 0 <= kind <= 16)
                    for kind in kinds):
                 raise ValueError("invalid-native-vitals-resource-kind")
+            for row in rows:
+                summarize_native_vitals_burst.typed_resources(row, updated=True, current_acquisition=current_acquisition)
+            result["unavailableReasonProvenance"] = (
+                "current-reader-contract-checked" if current_acquisition else "reported-only; historical reader generation unknown")
             result["resourceKindCandidate"] = kinds[-1]
             if observations is not None:
                 result["resourceKindSamplesCandidate"] = kinds
@@ -1684,7 +1695,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
                      not isinstance(report.get("observations"), list))):
             raise ValueError("incomplete-native-orientation-burst")
         values = _native_values(kind, report, expect_position=include_position,
-                                expect_translation_sources=include_transform_sources)
+                                expect_translation_sources=include_transform_sources, current_acquisition=True)
         if timed_read:
             if (kind != "unit-names" and summary.get("status") != observation["status"]
                     or not _utc_tick_order_key(invocation_started.isoformat()) <= _utc_tick_order_key(observation["startedAtUtc"])
@@ -1700,7 +1711,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
             raise ValueError("missing-native-facing-target")
         # Reuse the strict offline reducer for candidate HP/resource deltas.
         burst_summary = (summarize_native_vitals_burst.summarize(
-            report, hashlib.sha256(report_bytes).hexdigest())
+            report, hashlib.sha256(report_bytes).hexdigest(), current_acquisition=True)
             if kind == "vitals" and samples is not None and samples > 1 else None)
     except (OSError, ValueError, TypeError, AttributeError, KeyError):
         return dict(selection, status="blocked", reason="invalid-native-reader-report")

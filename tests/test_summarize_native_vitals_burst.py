@@ -115,6 +115,160 @@ class VitalsBurstTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             tool.summarize(report, "d" * 64)
 
+    def test_1179_single_vitals_rejects_impossible_typed_resources(self):
+        row = burst()["observation"]
+        row["identity"]["executableSha256"] = tool.UPDATED_GAME_SHA
+        row["resourceKindCandidate"] = 4
+        report = {"schemaVersion": 1, "status": "complete",
+                  "contractVersion": "native-current-vitals-candidate-sample/2",
+                  "source": tool.SOURCE, "qualification": tool.QUALIFICATION,
+                  "sourceBuildSha256": tool.UPDATED_GAME_SHA, "observation": row}
+        projected = physical._native_values("vitals", report)
+        self.assertEqual("calculated-candidate", projected["energy"]["status"])
+        for defect in ("both-calculated", "wrong-type", "wrong-kind", "null-kind",
+                       "wrong-exclusion", "maximum-overflow", "split-identity"):
+            with self.subTest(defect=defect), self.assertRaises(ValueError):
+                bad = copy.deepcopy(report)
+                observed = bad["observation"]
+                if defect == "both-calculated":
+                    observed["mana"] = field(40, 50, kind="0x072A")
+                elif defect == "wrong-type":
+                    observed["energy"]["inputs"]["verifiedTypeCode"] = "0x072A"
+                elif defect == "wrong-kind":
+                    observed["resourceKindCandidate"] = 3
+                elif defect == "null-kind":
+                    observed["resourceKindCandidate"] = None
+                elif defect == "wrong-exclusion":
+                    observed["mana"] = unavailable("unrelated")
+                elif defect == "maximum-overflow":
+                    observed["energy"]["maximum"] = 2**31
+                else:
+                    bad["identity"] = copy.deepcopy(observed["identity"])
+                    observed["identity"]["executableSha256"] = tool.GAME_SHA
+                physical._native_values("vitals", bad)
+
+    def test_1179_burst_requires_observed_kind_for_each_calculated_resource(self):
+        for name, kind, code, other, excluded in (
+                ("energy", 4, "0x072B", "mana", "not-mana-kind-three"),
+                ("mana", 3, "0x072A", "energy", "not-energy-kind-four")):
+            report = burst()
+            report["sourceBuildSha256"] = tool.UPDATED_GAME_SHA
+            report["identity"]["executableSha256"] = tool.UPDATED_GAME_SHA
+            for row in report["observations"]:
+                row["identity"]["executableSha256"] = tool.UPDATED_GAME_SHA
+                row["resourceKindCandidate"] = kind
+                row[name] = field(40, 50, kind=code)
+                row[other] = unavailable(excluded)
+            report["observation"] = copy.deepcopy(report["observations"][-1])
+            self.assertEqual(3, tool.summarize(report, "b"*64)["resources"][name]["availableSamples"])
+            for absent in (True, False):
+                with self.subTest(resource=name, absent=absent), self.assertRaises(ValueError):
+                    bad = copy.deepcopy(report)
+                    first = bad["observations"][0]
+                    if absent:
+                        del first["resourceKindCandidate"]
+                    else:
+                        first["resourceKindCandidate"] = None
+                    tool.summarize(bad, "c"*64)
+
+    def test_1179_burst_allows_kind_change_and_typed_unavailable_inputs(self):
+        report = burst()
+        report["sourceBuildSha256"] = tool.UPDATED_GAME_SHA
+        report["identity"]["executableSha256"] = tool.UPDATED_GAME_SHA
+        energy, mana, unknown = report["observations"]
+        for row in (energy, mana, unknown):
+            row["identity"]["executableSha256"] = tool.UPDATED_GAME_SHA
+        energy["resourceKindCandidate"] = 4
+        mana.update(resourceKindCandidate=3, energy=unavailable("not-energy-kind-four"),
+                    mana=unavailable("revision-mismatch-needs-native-cache-write"))
+        mana["mana"]["inputs"] = {"verifiedTypeCode": "0x072A"}
+        unknown.update(resourceKindCandidate=None, mana=unavailable("resource-kind-unavailable"),
+                       energy=unavailable("resource-kind-unavailable"))
+        report["observation"] = copy.deepcopy(unknown)
+        projected = tool.summarize(report, "d"*64)["resources"]
+        self.assertEqual(1, projected["energy"]["availableSamples"])
+        self.assertEqual(0, projected["mana"]["availableSamples"])
+        self.assertEqual(1, projected["mana"]["unavailableReasons"]["revision-mismatch-needs-native-cache-write"])
+
+    def test_1179_unavailable_reason_and_inputs_match_the_observed_kind(self):
+        revision = "revision-mismatch-needs-native-cache-write"
+        common = (revision, "outside-normal-integer-domain", "clock-delta-outside-normal-domain",
+                  "int32-conversion-overflow-or-sentinel", "signed32-subtraction-overflow")
+
+        def typed_failure(reason, code):
+            return {**unavailable(reason), "inputs": {"verifiedTypeCode": code}}
+
+        def check(kind, mana, energy):
+            row = {"resourceKindCandidate": kind, "mana": mana, "energy": energy}
+            return tool.typed_resources(row, updated=True, current_acquisition=True)
+
+        no_mana = unavailable("not-mana-kind-three")
+        no_energy = unavailable("not-energy-kind-four")
+        unknown = unavailable("resource-kind-unavailable")
+        unverified_mana = unavailable("postpatch-mana-record-unverified")
+        unverified_energy = unavailable("postpatch-energy-record-unverified")
+        for case in ((None, unknown, unknown), (0, no_mana, no_energy),
+                     (3, unverified_mana, no_energy), (4, no_mana, unverified_energy)):
+            self.assertEqual({"mana": None, "energy": None}, check(*case))
+        for reason in common + ("invalid-float-input",):
+            check(3, typed_failure(reason, "0x072A"), no_energy)
+        for reason in common:
+            check(4, no_mana, typed_failure(reason, "0x072B"))
+
+        for case in ((None, no_mana, no_energy),
+                     (None, typed_failure("resource-kind-unavailable", "0x072A"), unknown),
+                     (0, typed_failure(revision, "0x072A"), no_energy),
+                     (3, typed_failure(revision, "0x072B"), no_energy),
+                     (3, unavailable(revision), no_energy),
+                     (3, typed_failure("postpatch-mana-record-unverified", "0x072A"), no_energy),
+                     (3, typed_failure("unknown-arithmetic-error", "0x072A"), no_energy),
+                     (4, no_mana, typed_failure("invalid-float-input", "0x072B")),
+                     (4, typed_failure("not-mana-kind-three", "0x072A"), unverified_energy)):
+            with self.subTest(case=case), self.assertRaisesRegex(ValueError, "resource-unavailable-provenance"):
+                check(*case)
+
+    def test_current_cli_rejects_retained_1179_diagnostics_without_inferring_generation(self):
+        identity = dict(IDENTITY, executableSha256=tool.UPDATED_GAME_SHA)
+        selection = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": {
+            "hostName": "AMD-DESKTOP", "processId": identity["processId"],
+            "processStartUtcTicks": str(identity["processStartUtcTicks"]), "executableSha256": tool.UPDATED_GAME_SHA}}
+        with TemporaryDirectory() as folder:
+            executable = Path(folder) / "RiftReader2.Live.exe"
+            executable.write_bytes(b"MZ")
+            for i, (mana_reason, energy_reason, expected) in enumerate((
+                    ("postpatch-mana-type-unqualified", "postpatch-energy-type-unqualified", "blocked"),
+                    ("not-mana-kind-three", "postpatch-energy-type-unqualified", "blocked"),
+                    ("not-mana-kind-three", "not-energy-kind-four", "complete"))):
+                report = burst()
+                report.update(identity=identity, sourceBuildSha256=tool.UPDATED_GAME_SHA)
+                for row in report["observations"]:
+                    row.update(identity=identity, resourceKindCandidate=1,
+                               mana=unavailable(mana_reason), energy=unavailable(energy_reason))
+                report["observation"] = copy.deepcopy(report["observations"][-1])
+                replay = tool.summarize(report, "a"*64)
+                self.assertEqual("reported-only; historical reader generation unknown", replay["unavailableReasonProvenance"])
+                self.assertEqual(0, replay["resources"]["mana"]["availableSamples"])
+                self.assertEqual(0, replay["resources"]["energy"]["availableSamples"])
+                destination = Path(folder) / f"synthetic-{i}.json"
+
+                def fake_run(command, **_):
+                    destination.write_text(json.dumps(report), encoding="utf-8")
+                    return subprocess.CompletedProcess(command, 0, json.dumps({
+                        "recordType": physical.NATIVE_RECEIPTS["vitals"],
+                        "status": "complete", "output": str(destination)}), "")
+
+                with patch.object(physical, "NATIVE_EXE", executable), \
+                     patch.object(physical.socket, "gethostname", return_value="AMD-DESKTOP"), \
+                     patch.object(physical.subprocess, "run", side_effect=fake_run):
+                    result = physical.read_native(selection, "vitals", destination, samples=3, interval_ms=0)
+                with self.subTest(mana=mana_reason, energy=energy_reason):
+                    self.assertEqual(expected, result["status"])
+                    if expected == "complete":
+                        self.assertEqual("current-reader-contract-checked",
+                                         result["nativeValues"]["unavailableReasonProvenance"])
+                    else:
+                        self.assertEqual("invalid-native-reader-report", result["reason"])
+
     def test_valid_health_and_energy_candidates_remain_unqualified(self):
         report = burst()
         original = copy.deepcopy(report)

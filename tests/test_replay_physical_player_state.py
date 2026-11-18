@@ -151,6 +151,35 @@ class StateReplayTests(unittest.TestCase):
         self.assertEqual(replayed["target"]["executableSha256"], updated_sha)
         self.assertEqual(set(replayed["sources"]), set(replay.state.KINDS))
 
+    def test_updated_vitals_current_and_pre_provenance_receipts_replay_as_reported_only(self):
+        self.synthetic_updated_build()
+        def qualify(report):
+            for row in [*report["observations"], report["observation"]]:
+                row["resourceKindCandidate"] = 1
+
+        source = self.edit_source("vitals", qualify)
+        live = replay._native_values("vitals", source, current_acquisition=True)
+        field = "unavailableReasonProvenance"
+        self.assertEqual(live[field], "current-reader-contract-checked")
+        self.edit_summary(lambda s: s["sources"]["vitals"]["burstSummary"].update(
+            sourceReportSha256=s["sources"]["vitals"]["sourceSha256"]))
+        reordered = dict(reversed(live.items()))
+        reordered["health"] = dict(reversed(live["health"].items()))
+        self.assertEqual(18208, live["health"]["current"])
+        for recorded in (live, reordered, {k: v for k, v in live.items() if k != field}):
+            with self.subTest(provenance=recorded.get(field)):
+                self.edit_summary(lambda s: s["sources"]["vitals"].update(candidateValues=recorded))
+                values = replay.verified_state(self.summary)["candidateValues"]["vitals"]
+                self.assertEqual(values, dict(live, unavailableReasonProvenance=
+                                              "reported-only; historical reader generation unknown"))
+        for change in ({field: "independently verified"}, {"extraCandidate": 1},
+                       {"mana": dict(live["mana"], unavailableReason="invented")},
+                       {"health": dict(live["health"], current=18208.0)},
+                       {"resourceKindCandidate": True}):
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, "vitals-candidate-projection-mismatch"):
+                self.edit_summary(lambda s: s["sources"]["vitals"].update(candidateValues={**live, **change}))
+                replay.verified_state(self.summary)
+
     def test_updated_build_rejects_mixed_source_identity(self):
         self.synthetic_updated_build()
         self.edit_source("position", lambda r: r["identity"].update(

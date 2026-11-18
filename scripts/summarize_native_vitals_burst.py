@@ -71,7 +71,48 @@ def _field(value, name):
     return None
 
 
-def summarize(report, source_sha):
+_TYPED_ARITHMETIC_FAILURES = frozenset((
+    "revision-mismatch-needs-native-cache-write", "outside-normal-integer-domain",
+    "clock-delta-outside-normal-domain", "int32-conversion-overflow-or-sentinel",
+    "signed32-subtraction-overflow",
+))
+
+
+def _updated_unavailable(field, name, kind, required, wrong_kind, code):
+    reason, inputs = field["unavailableReason"], field.get("inputs")
+    if kind != required:
+        expected = "resource-kind-unavailable" if kind is None else wrong_kind
+        need(reason == expected and inputs is None, "resource-unavailable-provenance")
+    elif reason == f"postpatch-{name}-record-unverified":
+        need(inputs is None, "resource-unavailable-provenance")
+    else:
+        need((reason in _TYPED_ARITHMETIC_FAILURES or (name == "mana" and reason == "invalid-float-input"))
+             and type(inputs) is dict and inputs.get("verifiedTypeCode") == code,
+             "resource-unavailable-provenance")
+
+
+def typed_resources(row, *, updated, current_acquisition=False):
+    """Return strictly decoded Mana/Energy candidates, never infer a 1179 kind."""
+    values = {name: _field(row.get(name), name) for name in ("mana", "energy")}
+    kind = row.get("resourceKindCandidate")
+    need(kind is None or (type(kind) is int and (not updated or 0 <= kind <= 16)),
+         "resource-kind-invalid")
+    for name, required, other, excluded, wrong_kind, code in (
+            ("mana", 3, "energy", "not-energy-kind-four", "not-mana-kind-three", "0x072A"),
+            ("energy", 4, "mana", "not-mana-kind-three", "not-energy-kind-four", "0x072B")):
+        if values[name] is not None:
+            need((kind == required or (not updated and kind is None))
+                 and values[other] is None and row[other].get("unavailableReason") == excluded,
+                 "resource-kind-conflict")
+            if updated:
+                need(values[name][1] <= 0x7FFFFFFF, "field-invalid")
+        elif updated and current_acquisition:
+            # Historical native readers shared this contract but emitted other no-value reasons.
+            _updated_unavailable(row[name], name, kind, required, wrong_kind, code)
+    return values
+
+
+def summarize(report, source_sha, *, current_acquisition=False):
     build_sha = report.get("sourceBuildSha256") if isinstance(report, dict) else None
     need(build_sha in SUPPORTED_GAME_SHA, "unqualified-build")
     need(type(report) is dict and report.get("schemaVersion") == 1
@@ -118,27 +159,15 @@ def summarize(report, source_sha):
         if first_start is None:
             first_start = started
         last_end = completed
+        resources = typed_resources(row, updated=build_sha == UPDATED_GAME_SHA,
+                                    current_acquisition=current_acquisition)
         for name in FIELDS:
-            value = _field(row.get(name), name)
+            value = _field(row.get(name), name) if name == "health" else resources[name]
             per_field[name].append(value)
             if value is None:
                 reason = row[name]["unavailableReason"]
                 counts = unavailable_reasons[name]
                 counts[reason] = counts.get(reason, 0) + 1
-        kind = row.get("resourceKindCandidate")
-        need(kind is None or type(kind) is int, "resource-kind-invalid")
-        if kind is not None:
-            need((per_field["mana"][-1] is None or kind == 3)
-                 and (per_field["energy"][-1] is None or kind == 4),
-                 "resource-kind-conflict")
-        if per_field["mana"][-1] is not None:
-            need(per_field["energy"][-1] is None
-                 and row["energy"].get("unavailableReason") == "not-energy-kind-four",
-                 "resource-kind-conflict")
-        if per_field["energy"][-1] is not None:
-            need(per_field["mana"][-1] is None
-                 and row["mana"].get("unavailableReason") == "not-mana-kind-three",
-                 "resource-kind-conflict")
 
     # The producer's Stopwatch spans all reads; reject impossible UTC spans.
     # Allow one second of wall-clock vs monotonic-clock skew.
@@ -170,6 +199,8 @@ def summarize(report, source_sha):
         "unitKey": str(unit), "sampleCount": count,
         "captureElapsedMilliseconds": elapsed,
         "resources": resources,
+        **({"unavailableReasonProvenance": "current-reader-contract-checked" if current_acquisition
+            else "reported-only; historical reader generation unknown"} if build_sha == UPDATED_GAME_SHA else {}),
         "qualification": "strict same process/build/player and nonoverlapping UTC samples; "
                          "native values are calculated candidates; saved-file host provenance, "
                          "HP/resource semantics, passive freshness and gameplay causality "
