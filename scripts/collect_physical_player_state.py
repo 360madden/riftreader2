@@ -1,7 +1,8 @@
 """One no-input physical RIFT state read using existing native readers.
 
 Independent context, XYZ and vitals readings share an exact host/process/module/self
-owner. Not an atomic snapshot, live Lua reference or qualified gameplay telemetry.
+owner. Optional zone reads bracket that acquisition, refusing changed/unavailable
+native zone IDs. Not an atomic snapshot, live Lua reference or qualified gameplay telemetry.
 """
 from __future__ import annotations
 import argparse
@@ -44,10 +45,11 @@ def pin(pid):
     return selection
 
 
-def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False):
+def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False,
+            include_zone=False):
     require(type(samples) is int and 2 <= samples <= 10
             and type(interval_ms) is int and 0 <= interval_ms <= 1000
-            and type(include_stats) is bool,
+            and type(include_stats) is bool and type(include_zone) is bool,
             "invalid-sampling-bounds")
     first = pin(pid)
     owner = first["target"]
@@ -60,14 +62,18 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False)
             "new-output-directory-required")
     output_dir.mkdir()
     results, module, self_key = {}, None, None
-    for kind in KINDS + (("stats",) if include_stats else ()):
+    kinds = (("zone-before",) if include_zone else ()) + KINDS + \
+            (("stats",) if include_stats else ()) + (("zone-after",) if include_zone else ())
+    for kind in kinds:
         require(pin(pid)["target"] == owner, "epoch-changed-before-read")
         path = output_dir / (kind + ".json")
-        # Stats is a one-shot existing native reader, not a burst command.
-        options = {} if kind == "stats" else {"samples": samples, "interval_ms": interval_ms}
-        result = physical_rift.read_native(first, kind, path, **options)
+        read_kind = "zone-context" if kind.startswith("zone-") else kind
+        # Zone and stats are one-shot readers; other sources support bursts.
+        options = ({} if read_kind in ("stats", "zone-context") else
+                   {"samples": samples, "interval_ms": interval_ms})
+        result = physical_rift.read_native(first, read_kind, path, **options)
         require(result.get("status") == "complete"
-                and result.get("nativeRead") == kind
+                and result.get("nativeRead") == read_kind
                 and result.get("target") == owner
                 and Path(result.get("nativeOutput", "")) == path,
                 kind + "-read-unavailable")
@@ -78,8 +84,8 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False)
         # Never publish a receipt that a subsequent independent replay must refuse.
         report, source_sha = context.load(path)
         observation = report.get("observation")
-        identity = (observation.get("identity") if kind == "stats" and isinstance(observation, dict)
-                    else report.get("identity"))
+        identity = (observation.get("identity") if read_kind in ("stats", "zone-context")
+                    and isinstance(observation, dict) else report.get("identity"))
         require(isinstance(identity, dict)
                 and identity.get("processId") == pid
                 and str(identity.get("processStartUtcTicks")) == owner["processStartUtcTicks"]
@@ -88,22 +94,33 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False)
                 and type(identity.get("moduleSize")) is int
                 and identity["moduleBaseAddress"] > 0 and identity["moduleSize"] > 0
                 and report.get("status") == "complete"
-                and ((kind == "stats" and report.get("contractVersion") == "native-current-stats-candidate/1"
+                and ((read_kind == "stats" and report.get("contractVersion") == "native-current-stats-candidate/1"
                       and isinstance(observation, dict)
                       and result.get("nativeSourceSha256", "").upper() == source_sha)
-                     or (kind != "stats" and report.get("completedSamples") == samples)),
+                     or (read_kind == "zone-context"
+                         and report.get("contractVersion") == "native-current-zone-seed-candidate/1"
+                         and isinstance(observation, dict)
+                         and result.get("nativeSourceSha256", "").upper() == source_sha)
+                     or (read_kind not in ("stats", "zone-context")
+                         and report.get("completedSamples") == samples)),
                 kind + "-source-identity-invalid")
         current_module = (identity["moduleBaseAddress"], identity["moduleSize"])
         if module is None:
             module = current_module
         require(current_module == module, "module-owner-changed")
         values = result.get("nativeValues")
-        require(isinstance(values, dict) and isinstance(values.get("unitKey"), str)
-                and values["unitKey"].isdecimal() and int(values["unitKey"]) > 0,
+        unit_key = (values.get("selfKey") if read_kind == "zone-context" else values.get("unitKey")) \
+            if isinstance(values, dict) else None
+        require(isinstance(unit_key, str) and unit_key.isdecimal() and int(unit_key) > 0,
                 kind + "-self-key-unavailable")
         if self_key is None:
-            self_key = values["unitKey"]
-        require(values["unitKey"] == self_key, "self-key-changed")
+            self_key = unit_key
+        require(unit_key == self_key, "self-key-changed")
+        if read_kind == "zone-context":
+            require(observation.get("selfKey") == int(unit_key)
+                    and observation.get("rawZoneKey") == values.get("rawZoneKey")
+                    and observation.get("zoneIdCandidate") == values.get("zoneIdCandidate"),
+                    kind + "-native-zone-values-mismatch")
         if kind == "vitals" and "nativeBurstSummary" in result:
             burst = result["nativeBurstSummary"]
             require(isinstance(burst, dict)
@@ -117,15 +134,37 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False)
         require(pin(pid)["target"] == owner, "epoch-changed-after-read")
         results[kind] = {
             "path": str(path), "sourceSha256": source_sha,
-            "samples": 1 if kind == "stats" else samples, "candidateValues": values,
+            "samples": 1 if read_kind in ("stats", "zone-context") else samples,
+            "candidateValues": values,
             **({"burstSummary": result["nativeBurstSummary"]}
                if "nativeBurstSummary" in result else {}),
         }
+    zone_bracket = None
+    if include_zone:
+        before = results["zone-before"]["candidateValues"]
+        after = results["zone-after"]["candidateValues"]
+        require(before.get("status") == after.get("status") == "available-candidate"
+                and isinstance(before.get("zoneIdCandidate"), str)
+                and before["zoneIdCandidate"], "zone-candidate-unavailable")
+        require(all(before.get(field) == after.get(field)
+                    for field in ("selfKey", "rawZoneKey", "childStatus", "childKey", "zoneIdCandidate")),
+                "zone-changed-during-collection")
+        require(physical_rift._utc_tick_order_key(before["sampledAtUtc"])
+                <= physical_rift._utc_tick_order_key(after["startedAtUtc"]),
+                "zone-bracket-time-invalid")
+        zone_bracket = {"status": "matching-candidates", "rawZoneKey": before["rawZoneKey"],
+                        "zoneIdCandidate": before["zoneIdCandidate"],
+                        "beforeSourceSha256": results["zone-before"]["sourceSha256"],
+                        "afterSourceSha256": results["zone-after"]["sourceSha256"],
+                        "worldInstanceStatus": "unavailable",
+                        "qualification": "Matching zone endpoints only; a transient change between samples, "
+                                         "independent API agreement and world-instance identity remain unverified."}
     summary = {
         "schemaVersion": 1, "evidenceKind": "amd-physical-player-state-candidate/1",
         "status": "complete-candidate", "ownerHost": HOST, "target": owner,
         "moduleBaseAddress": module[0], "moduleSize": module[1],
         "selfKeyCandidate": self_key, "sources": results,
+        **({"zoneBracketCandidate": zone_bracket} if zone_bracket is not None else {}),
         "qualification": ("Sequential read-only exact-PID/epoch/build/module/self-key "
                           "candidate correlation; NOT atomic, passive-fresh, independently "
                           "Lua-qualified, changed-state or restart-qualified."),
@@ -143,13 +182,15 @@ def main(argv=None):
     parser.add_argument("--interval-ms", type=int, default=200)
     parser.add_argument("--include-stats", action="store_true",
                         help="also acquire one source-pinned 20-stat native candidate snapshot")
+    parser.add_argument("--include-zone", action="store_true",
+                        help="bracket all other reads with two guarded native zone candidates")
     parser.add_argument("--output-dir", type=Path,
                         default=ROOT / "artifacts" / ("physical-state-" + uuid.uuid4().hex))
     args = parser.parse_args(argv)
     try:
         path, report = collect(args.physical_pid, args.output_dir,
                                samples=args.samples, interval_ms=args.interval_ms,
-                               include_stats=args.include_stats)
+                               include_stats=args.include_stats, include_zone=args.include_zone)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:240]}))
         return 2
@@ -173,6 +214,8 @@ def main(argv=None):
                if k in vitals},
         },
         **({"statsCandidate": values["stats"]} if "stats" in values else {}),
+        **({"zoneBracketCandidate": report["zoneBracketCandidate"]}
+           if "zoneBracketCandidate" in report else {}),
         "sources": {k: v["sourceSha256"] for k, v in report["sources"].items()},
         "qualification": report["qualification"],
     }, allow_nan=False))
