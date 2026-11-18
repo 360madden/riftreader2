@@ -6,18 +6,19 @@ namespace RiftReader2.Live;
 
 /// <summary>
 /// Exact-build, read-only kind-3 Mana field acquisition. This field reader
-/// verifies the retained live descriptor fingerprint, brackets stable pointer
+/// verifies the build-pinned descriptor fingerprint, brackets stable pointer
 /// and record inputs, samples the mutable game clock from the pinned session,
 /// and rechecks the caller's player-owner snapshot. It never invokes a game
 /// getter or updates the game's resource cache.
 /// </summary>
 internal static class CurrentBuildManaCandidateField
 {
-    private const ulong RecordVtableRva = 0x2A6ACD8;
-    private const ulong DescriptorGetterRva = 0x1CCB460;
-    private const ulong DescriptorGlobalRva = 0x34D8990;
-    private const ulong DescriptorVtableRva = 0x2A7C418;
-    private const ulong TypeGetterRva = 0x1CF9F10;
+    private readonly record struct Fingerprint(ulong Record, ulong Getter, ulong Global, ulong Descriptor, ulong TypeGetter);
+    private static readonly Fingerprint Historical = new(0x2A6ACD8, 0x1CCB460, 0x34D8990, 0x2A7C418, 0x1CF9F10);
+    // 1179: 0x133DCE0 calls resolver 0x1CE2DC0 (requires 0x072A).
+    // 0x1CDC630 -> 0x1CF10A0 installs Descriptor at Global; TypeGetter -> 0x1CF6A50
+    // returns low16 0x2F46 for seed 0x00746E3B, XOR 0x286C = 0x072A.
+    private static readonly Fingerprint Updated = new(0x2A867D0, 0x1CDC630, 0x34EB3E0, 0x2A8DBA8, 0x1D00140);
 
     internal static CurrentBuildVitalCandidate Read(IReadOnlyNativeMemorySession session,
         NativeProcessIdentity expectedIdentity, ulong componentAddress, ulong disallowedRecordAddress,
@@ -38,11 +39,14 @@ internal static class CurrentBuildManaCandidateField
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(verifyOwnerUnchanged);
+        // Only the enclosing HP/vitals path has the source-pinned 1179 owner and shared clock.
+        bool updated = sharedVitals.HasValue && CurrentBuildPlayerLookup.IsUpdatedBuild(expectedIdentity.ExecutableSha256);
+        var type = updated ? Updated : Historical;
         if (session.Identity != expectedIdentity || expectedIdentity.ProcessId <= 0 ||
             expectedIdentity.ProcessStartUtcTicks <= 0 ||
-            !string.Equals(expectedIdentity.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256,
-                StringComparison.OrdinalIgnoreCase) ||
-            expectedIdentity.ModuleSize < DescriptorGlobalRva + 8)
+            (!updated && !string.Equals(expectedIdentity.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256,
+                StringComparison.OrdinalIgnoreCase)) ||
+            expectedIdentity.ModuleSize < type.Global + 8)
             throw new InvalidDataException("Mana requires the exact current-build process epoch.");
 
         var component = Pointer(componentAddress);
@@ -80,13 +84,10 @@ internal static class CurrentBuildManaCandidateField
             throw new InvalidDataException("Health/resource record alias.");
         var recordRaw = Take(record, 64);
 
-        if (U64(recordRaw) != checked(module + RecordVtableRva) ||
-            U64(Take(checked(module + RecordVtableRva + 0x40), 8)) !=
-                checked(module + DescriptorGetterRva) ||
-            U64(Take(checked(module + DescriptorGlobalRva), 8)) !=
-                checked(module + DescriptorVtableRva) ||
-            U64(Take(checked(module + DescriptorVtableRva + 8), 8)) !=
-                checked(module + TypeGetterRva))
+        if (U64(recordRaw) != checked(module + type.Record) ||
+            U64(Take(checked(module + type.Record + 0x40), 8)) != checked(module + type.Getter) ||
+            U64(Take(checked(module + type.Global), 8)) != checked(module + type.Descriptor) ||
+            U64(Take(checked(module + type.Descriptor + 8), 8)) != checked(module + type.TypeGetter))
             throw new InvalidDataException("Mana exact-build type fingerprint mismatch.");
 
         var candidate = Calculate(recordRaw, wrapperRaw, gameClock);

@@ -49,7 +49,7 @@ public sealed class CurrentBuildVitalsCandidateReaderTests
         Assert.Equal(10635, observation.Health.Current);
         Assert.Equal(10635, observation.Health.Maximum);
         Assert.Equal("postpatch-energy-type-unqualified", observation.Energy.UnavailableReason);
-        Assert.Equal("postpatch-mana-type-unqualified", observation.Mana.UnavailableReason);
+        Assert.Equal("not-mana-kind-three", observation.Mana.UnavailableReason);
         Assert.Equal(4, observation.ResourceKindCandidate);
         session.Put(Module + 0x2C3A0A0, Q(Module + 0x20F8D11));
         Assert.Throws<InvalidDataException>(() => Read(session));
@@ -79,8 +79,83 @@ public sealed class CurrentBuildVitalsCandidateReaderTests
         Assert.Equal(10635, result.Health.Current);
         Assert.Equal(10635, result.Health.Maximum);
         Assert.Null(result.ResourceKindCandidate);
-        Assert.Equal("postpatch-mana-type-unqualified", result.Mana.UnavailableReason);
+        Assert.Equal("resource-kind-unavailable", result.Mana.UnavailableReason);
         Assert.Equal("postpatch-energy-type-unqualified", result.Energy.UnavailableReason);
+    }
+
+    private static FakeSession UpdatedManaFixture()
+    {
+        var s = Fixture();
+        ConfigureMana(s);
+        s.Identity = s.Identity with { ExecutableSha256 = CurrentBuildPlayerLookup.UpdatedGameSha256 };
+        s.Put(Module + 0x33EDA70, Q(Clock));
+        var hp = HealthRaw(); Q(Module + 0x2C2B330).CopyTo(hp, 0); s.Put(Hp, hp);
+        s.Put(Module + 0x2C2B370, Q(Module + 0x20C7AC0));
+        s.Put(Module + 0x3572B30, Q(Module + 0x2C3A098));
+        s.Put(Module + 0x2C3A0A0, Q(Module + 0x20F8D10));
+        var mana = s.Get(Energy);
+        Q(Module + 0x2A867D0).CopyTo(mana, 0);
+        D(2071).CopyTo(mana, 0x1C); s.Put(Energy, mana);
+        s.Put(Module + 0x2A86810, Q(Module + 0x1CDC630));
+        s.Put(Module + 0x34EB3E0, Q(Module + 0x2A8DBA8));
+        s.Put(Module + 0x2A8DBB0, Q(Module + 0x1D00140));
+        return s;
+    }
+
+    [Fact]
+    public void UpdatedKindThreeReturnsOnlyGuardedManaCandidate()
+    {
+        var s = UpdatedManaFixture();
+        var result = Read(s);
+        Assert.Equal(3, result.ResourceKindCandidate);
+        Assert.Equal(10635, result.Health.Current);
+        Assert.Equal("calculated-candidate", result.Mana.Status);
+        Assert.Equal(2071, result.Mana.Current);
+        Assert.Equal(3980, result.Mana.Maximum);
+        Assert.Equal("postpatch-energy-type-unqualified", result.Energy.UnavailableReason);
+        Assert.Equal(2, s.Requests.Count(r => r == (Module + 0x34EB3E0, 8)));
+        Assert.DoesNotContain(s.Requests, r => r.Address == Module + 0x34D8990);
+        Assert.True(s.Requests.LastIndexOf((KindOwner + 0x168, 4)) >
+            s.Requests.LastIndexOf((Module + 0x2A8DBB0, 8)));
+    }
+
+    [Theory]
+    [InlineData("other-kind")]
+    [InlineData("kind-change")]
+    [InlineData("legacy-record")]
+    [InlineData("getter")]
+    [InlineData("descriptor")]
+    [InlineData("type-getter")]
+    [InlineData("alias")]
+    [InlineData("record-change")]
+    [InlineData("revision")]
+    public void UpdatedBuildWithholdsInvalidManaWithoutLosingHp(string defect)
+    {
+        var s = UpdatedManaFixture();
+        switch (defect)
+        {
+            case "other-kind": s.Put(KindOwner + 0x168, D(1)); break;
+            case "kind-change": s.ChangeAfterFirst(KindOwner + 0x168, D(1)); break;
+            case "legacy-record": ConfigureMana(s); break;
+            case "getter": s.Put(Module + 0x2A86810, Q(Module + 0x1CCB460)); break;
+            case "descriptor": s.Put(Module + 0x34EB3E0, Q(Module + 0x2A7C418)); break;
+            case "type-getter": s.Put(Module + 0x2A8DBB0, Q(Module + 0x1CF9F10)); break;
+            case "alias": s.Put(Reference, Q(Hp)); break;
+            case "record-change": s.ChangeAfterFirst(Energy, EnergyRaw()); break;
+            case "revision":
+                var record = s.Get(Energy); D(9).CopyTo(record, 0x20); s.Put(Energy, record); break;
+        }
+        var result = Read(s);
+        Assert.Equal(10635, result.Health.Current);
+        Assert.Equal("unavailable", result.Mana.Status);
+        Assert.Null(result.Mana.Current);
+        Assert.Null(result.Energy.Current);
+        if (defect == "kind-change") Assert.Null(result.ResourceKindCandidate);
+        if (defect == "other-kind")
+        {
+            Assert.Equal(1, result.ResourceKindCandidate);
+            Assert.DoesNotContain(s.Requests, r => r.Address == Component + 0x38);
+        }
     }
 
     [Fact]

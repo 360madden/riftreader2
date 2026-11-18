@@ -82,9 +82,10 @@ internal static class CurrentBuildVitalsCandidateReader
         var health = CalculateHealth(healthRaw, hpCache, clock);
         if (CurrentBuildPlayerLookup.IsUpdatedBuild(identity.ExecutableSha256))
         {
-            // Read a bounded discriminator without admitting unqualified resource record types.
-            // It is optional: a broken/changed resource branch must not discard proven HP.
+            // Optional resource reads cannot invalidate independent HP. Bracket kind across
+            // the full field acquisition, then validate the original HP/player/epoch below.
             int? resourceKind = null;
+            CurrentBuildVitalCandidate updatedMana = new("unavailable", "resource-kind-unavailable");
             try
             {
                 var kindOwnerAddress = checked(component + 0x40);
@@ -93,14 +94,33 @@ internal static class CurrentBuildVitalsCandidateReader
                 var kindAddress = checked(resourceOwner + 0x168);
                 var kindRaw = Take(kindAddress, 4, false);
                 var candidate = I32(kindRaw);
-                if (candidate is >= 0 and <= 16 &&
-                    Take(kindOwnerAddress, 8, false).AsSpan().SequenceEqual(kindOwnerRaw) &&
-                    Take(kindAddress, 4, false).AsSpan().SequenceEqual(kindRaw))
-                    resourceKind = candidate;
+                if (candidate is >= 0 and <= 16)
+                {
+                    CurrentBuildVitalCandidate field = new("unavailable", "not-mana-kind-three");
+                    if (candidate == 3)
+                    {
+                        try
+                        {
+                            // The shared outer owner/epoch check runs after this optional bracket.
+                            field = CurrentBuildManaCandidateField.ReadWithSharedVitalsInputs(
+                                session, identity, component, healthRecord, static () => { }, clock, candidate);
+                        }
+                        catch (Exception ex) when (ex is InvalidDataException or OverflowException)
+                        {
+                            field = new("unavailable", "postpatch-mana-record-unverified");
+                        }
+                    }
+                    if (Take(kindOwnerAddress, 8, false).AsSpan().SequenceEqual(kindOwnerRaw) &&
+                        Take(kindAddress, 4, false).AsSpan().SequenceEqual(kindRaw))
+                    {
+                        resourceKind = candidate;
+                        updatedMana = field;
+                    }
+                }
             }
             catch (InvalidDataException) { /* Optional resource path unavailable. */ }
             catch (OverflowException) { /* Unusable optional resource pointer. */ }
-            // Energy and Mana have independent record types, still unqualified on 1179.
+            // Energy's record type is still unqualified on 1179.
             foreach (var anchor in anchors)
                 if (!Take(anchor.Address, anchor.Bytes.Length, false).AsSpan().SequenceEqual(anchor.Bytes))
                     throw new InvalidDataException("HP ownership, type or mutable inputs changed during capture.");
@@ -110,7 +130,7 @@ internal static class CurrentBuildVitalsCandidateReader
             return new(identity, started, DateTimeOffset.UtcNow, owner.UnitKey, health,
                 new("unavailable", "postpatch-energy-type-unqualified"))
             {
-                Mana = new("unavailable", "postpatch-mana-type-unqualified"),
+                Mana = updatedMana,
                 ResourceKindCandidate = resourceKind
             };
         }
