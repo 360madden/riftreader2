@@ -15,6 +15,7 @@ from tests.test_physical_only_selection import IDENTITY as BASE_IDENTITY, REPORT
 SHA_1177 = "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8"
 SHA_1179 = "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"
 QUALIFICATION_1179 = "1179 raw zone/cache candidates only; outer descriptor, child, zone ID and API agreement unverified"
+QUALIFICATION_ID_1179 = "1179 zone ID candidate only; API correspondence, world instance, freshness and restart unverified"
 IDENTITY = dict(BASE_IDENTITY, executableSha256=SHA_1177)
 REPORT_IDENTITY = dict(BASE_REPORT_IDENTITY, executableSha256=SHA_1177)
 
@@ -31,6 +32,17 @@ def report():
             "qualification": "zone ID candidate only; API correspondence, name, freshness and restart unverified",
             "acquisitionElapsedMilliseconds": 58.0929, "acquisitionElapsedClock": "monotonic-stopwatch",
             "acquisitionElapsedKind": "zone-read-including-final-validation"}}
+
+
+def typed_report_1179():
+    source = report()
+    row = source["observation"]
+    base = 0x140000000
+    row["identity"].update(executableSha256=SHA_1179, moduleBaseAddress=base, moduleSize=0x3C51000)
+    row.update(qualification=QUALIFICATION_ID_1179, outerVtableCandidate=True, recordAddress=0x10002000,
+               recordVtable=base + 0x2B37EA8, recordGetterRva=0x1E7F180, rawNameRef=0x20003000)
+    return source
+
 
 
 class ZoneContextTests(unittest.TestCase):
@@ -111,15 +123,21 @@ class ZoneContextTests(unittest.TestCase):
                 source["observation"].update(change)
                 p._native_values("zone-context", source)
 
-    def run_native(self, *, stale=False, wrong_summary=False, unavailable=False):
+    def run_native(self, *, stale=False, wrong_summary=False, unavailable=False, updated=False, wrong_epoch=False):
         with TemporaryDirectory() as directory:
             exe, path = Path(directory) / "reader.exe", Path(directory) / "zone.json"
             exe.write_bytes(b"MZ")
             selection = dict(status="ready", ownerHost="AMD-DESKTOP", target=deepcopy(IDENTITY))
+            if updated:
+                selection["target"]["executableSha256"] = SHA_1179
+
             def run(command, **kwargs):
-                self.assertEqual(command, [str(exe), "sample-current-zone-seed", "--pid", "123",
-                    "--start-ticks", IDENTITY["processStartUtcTicks"], "--output", str(path)])
-                source = report()
+                expected = [str(exe), "sample-current-zone-seed", "--pid", "123",
+                            "--start-ticks", IDENTITY["processStartUtcTicks"], "--output", str(path)]
+                self.assertEqual(command, expected + (["--sha256", SHA_1179] if updated else []))
+                source = typed_report_1179() if updated else report()
+                if wrong_epoch:
+                    source["observation"]["identity"]["processStartUtcTicks"] += 1
                 if not stale:
                     now = datetime.now(timezone.utc).isoformat()
                     source["observation"].update(startedAtUtc=now, completedAtUtc=now)
@@ -171,12 +189,11 @@ class ZoneContextTests(unittest.TestCase):
             p._native_values("zone-context", source)
 
     def test_1179_typed_outer_does_not_qualify_child_or_id(self):
-        source = report()
+        source = typed_report_1179()
         row = source["observation"]
-        row["identity"]["executableSha256"] = SHA_1179
         row.update(qualification="1179 outer type candidate only; child, zone ID, API agreement and restart unverified",
                    rawZoneKey=12, childStatus="unverified-type",
-                   childKey=None, zoneIdCandidate=None, outerVtableCandidate=True)
+                   childKey=None, zoneIdCandidate=None, rawNameRef=None)
         value = p._native_values("zone-context", source)
         self.assertEqual(value["status"], "unavailable")
         self.assertIsNone(value["zoneIdCandidate"])
@@ -189,8 +206,73 @@ class ZoneContextTests(unittest.TestCase):
                        dict(zoneIdCandidate="z0000000CD2EA79BE"), dict(childStatus="null"),
                        dict(childStatus="type-1e17-raw-candidate", childKey=123),
                        dict(status="unqualified-cache-record", childStatus="null")):
-            with self.subTest(change=change), self.assertRaisesRegex(ValueError, "unsupported-native-zone-1179-claim"):
+            with self.subTest(change=change), self.assertRaises(ValueError):
                 p._native_values("zone-context", dict(source, observation=dict(row, **change)))
+
+    def test_1179_typed_id_fixed_native_vectors(self):
+        for child, key, expected in (
+                ("null", None, "z487C9102A1DBBCFC"),
+                ("type-1e17-raw-candidate", 650763347, "z487C9102D2EA79BE"),
+                ("type-1e17-raw-candidate", 0, "z487C9102A1DBBCFC"),
+                ("type-1e17-raw-candidate", 0xFFFFFFFF, "z487C91021104BD15")):
+            with self.subTest(child=child, key=key):
+                source = typed_report_1179()
+                row = source["observation"]
+                row.update(childStatus=child, childKey=key, zoneIdCandidate=expected)
+                if child == "null":
+                    row["rawNameRef"] = 0
+                value = p._native_values("zone-context", source)
+                self.assertEqual(value["status"], "available-candidate")
+                self.assertEqual(value["zoneIdCandidate"], expected)
+                self.assertEqual(value["qualification"], QUALIFICATION_ID_1179)
+                self.assertEqual(value["worldInstanceStatus"], "unavailable")
+
+    def test_1179_cannot_forge_derivation_outer_child_qualification_or_build(self):
+        source = typed_report_1179()
+        row = source["observation"]
+        for change in (dict(zoneIdCandidate="z487C9102D2EA79BF"), dict(zoneIdCandidate="z00000000D2EA79BE"),
+                       dict(zoneIdCandidate=None), dict(childKey=650763348), dict(childKey=True),
+                       dict(childStatus="null", childKey=None), dict(childStatus="unverified-type", childKey=None),
+                       dict(status="unqualified-cache-record"), dict(status="cache-miss"),
+                       dict(outerVtableCandidate=False), dict(outerVtableCandidate=None), dict(outerVtableCandidate=1),
+                       dict(qualification=None), dict(qualification=QUALIFICATION_1179),
+                       dict(identity=dict(row["identity"], executableSha256=SHA_1177)),
+                       dict(identity=dict(row["identity"], executableSha256="a" * 64))):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                p._native_values("zone-context", dict(source, observation=dict(row, **change)))
+
+    def test_1179_rejects_forged_raw_geometry_even_with_true_outer_flag(self):
+        source = typed_report_1179()
+        row = source["observation"]
+        for field, faults in (
+                ("recordAddress", (0, 0xFFFF, 0x100001, 0x7FFFFFFFFFF8, None)),
+                ("recordVtable", (0, row["recordVtable"] + 8, float(row["recordVtable"]))),
+                ("recordGetterRva", (0, row["recordGetterRva"] + 8, float(row["recordGetterRva"]))),
+                ("rawNameRef", (0, True, 0x100001, 0x7FFFFFFFFFF8, None)),
+                ("moduleBaseAddress", (0, True, 0x140000008, 0x7FFFFFFFF000, None)),
+                ("moduleSize", (0, True, 0x2B37EA8, 2**32, None))):
+            for value in faults:
+                with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                    forged = deepcopy(source)
+                    target = forged["observation"]
+                    if field.startswith("module"):
+                        target = target["identity"]
+                    if value is None:
+                        del target[field]
+                    else:
+                        target[field] = value
+                    p._native_values("zone-context", forged)
+        row.update(childStatus="null", childKey=None, zoneIdCandidate="z487C9102A1DBBCFC")
+        for child_ref in (row["rawNameRef"], False, None):
+            with self.subTest(null_child_ref=child_ref), self.assertRaises(ValueError):
+                p._native_values("zone-context", dict(source, observation=dict(row, rawNameRef=child_ref)))
+
+    def test_1179_fresh_candidate_requires_selected_process_epoch(self):
+        result = self.run_native(updated=True)
+        self.assertEqual(result["nativeValues"]["status"], "available-candidate")
+        self.assertEqual(self.run_native(updated=True, stale=True)["status"], "blocked")
+        self.assertEqual(self.run_native(updated=True, wrong_epoch=True)["status"], "blocked")
+
 
     def test_1179_zone_context_admits_explicit_sha_but_withholds_unverified_zone_id(self):
         updated_sha = SHA_1179

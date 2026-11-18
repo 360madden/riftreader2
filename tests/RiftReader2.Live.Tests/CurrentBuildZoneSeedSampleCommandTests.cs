@@ -47,7 +47,7 @@ public sealed class CurrentBuildZoneSeedSampleCommandTests
  static ZoneSeedObservation Read(Fake s)=>CurrentBuildZoneSeedSampleCommand.Read(s,_=>Context(s),()=>[Epoch]);
  static CurrentBuildPlayerContextObservation Context(Fake s)=>new(s.Identity,DateTimeOffset.UtcNow,DateTimeOffset.UtcNow,44,E,H,O,H,0,"x",null,null,0,"x",0,"x",false);
  static Fake Fixture(){var s=new Fake();s.Put(H+0x40,Q(O));s.Put(H+0x10,Q(E));s.Put(O,Q(M+0x2927448));s.Put(M+0x2927488,Q(M+0x19D21E0));s.Put(M+0x34731B0,Q(M+0x2929BD0));s.Put(M+0x2929BD8,Q(M+0x19F4D60));s.Put(M+0x33623E0,Q(S));s.Put(S+0x3F8,Q(E));s.Put(S+0x360,Q(44));s.Put(O+0x150,BitConverter.GetBytes(1234U));s.Put(M+0x336EBF8,Q(P));s.Put(P+0x40,BitConverter.GetBytes((ushort)55));s.Put(M+0x3372C18,Q(W));s.Put(W,Q(R));s.Put(R+0x274,new byte[4]);var ti=new byte[32];Q(T).CopyTo(ti,0);Q(123).CopyTo(ti,16);Q(77).CopyTo(ti,24);s.Put(T+0x30,ti);s.Put(T+0x1480,Q(0));var h=new byte[32];Q(B).CopyTo(h,0);Q(24).CopyTo(h,8);Q(1).CopyTo(h,16);Q(1).CopyTo(h,24);s.Put(R+0x220,h);var n=new byte[24];BinaryPrimitives.WriteUInt16LittleEndian(n.AsSpan(8),55);BinaryPrimitives.WriteUInt32LittleEndian(n.AsSpan(12),1234);Q(Holder).CopyTo(n,16);s.Put(B,n);s.Put(Holder+0x18,Q(Obj));s.Put(Obj,Q(M+0x1000));s.Put(M+0x1040,Q(M+0x2000));s.Put(Obj+0x1F0,Q(0));return s;}
- [Fact] public void UpdatedBuildTypedOuterRemainsZoneIdUnqualified()
+ [Fact] public void UpdatedBuildTypedOuterWithNullChildYieldsCandidate()
  {
   var s=UpdatedFixture();var r=Read(s);
   Assert.Equal("type-0073-candidate",r.Status);
@@ -55,7 +55,47 @@ public sealed class CurrentBuildZoneSeedSampleCommandTests
   Assert.Equal(M+0x2B37EA8,r.RecordVtable);
   Assert.Equal(0x1E7F180UL,r.RecordGetterRva);
   Assert.True(r.OuterVtableCandidate);
-  Assert.Equal("unverified-type",r.ChildStatus);Assert.Null(r.ZoneIdCandidate);
+  Assert.Equal("null",r.ChildStatus);Assert.Equal(0UL,r.RawNameRef);Assert.Null(r.ChildKey);
+  Assert.Equal("z000004D2A1DBBCFC",r.ZoneIdCandidate);
+  Assert.Equal("1179 zone ID candidate only; API correspondence, world instance, freshness and restart unverified",r.Qualification);
+ }
+ const ulong Child=0x200B0000;
+ static Fake UpdatedTypedChild(uint key)
+ {
+  var s=UpdatedFixture();s.Put(Obj+0x1F0,Q(Child));s.Put(Child,Q(M+0x28067F8));
+  s.Put(M+0x2806838,Q(M+0x1711C10));s.Put(M+0x3428D50,Q(M+0x2810E50));
+  s.Put(M+0x2810E58,Q(M+0x17360A0));s.Put(Child+0x18,BitConverter.GetBytes(key));return s;
+ }
+ [Theory]
+ [InlineData(42U,"z000004D2E50C2DF1")]
+ [InlineData(0x81234567U,"z000004D2C7D426FE")]
+ public void UpdatedTypedChildUsesPinnedKeyAndNativeHash(uint key,string candidate)
+ {
+  var r=Read(UpdatedTypedChild(key));
+  Assert.Equal("type-0073-candidate",r.Status);Assert.Equal("type-1e17-raw-candidate",r.ChildStatus);
+  Assert.Equal(Child,r.RawNameRef);Assert.Equal(key,r.ChildKey);Assert.Equal(candidate,r.ZoneIdCandidate);
+  Assert.Equal("1179 zone ID candidate only; API correspondence, world instance, freshness and restart unverified",r.Qualification);
+ }
+ [Theory]
+ [InlineData(Child,0x27F24F8UL)]
+ [InlineData(M+0x2806838,0x170C5D0UL)]
+ [InlineData(M+0x3428D50,0x2802E40UL)]
+ [InlineData(M+0x2810E58,0x17361E0UL)]
+ public void UpdatedChildRejectsEveryHistoricalFingerprintMember(ulong address,ulong incorrectRva)
+ {
+  var s=UpdatedTypedChild(42);s.Put(address,Q(M+incorrectRva));var r=Read(s);
+  Assert.Equal("type-0073-candidate",r.Status);Assert.Equal("unverified-type",r.ChildStatus);
+  Assert.Null(r.ChildKey);Assert.Null(r.ZoneIdCandidate);
+  Assert.Equal("1179 outer type candidate only; child, zone ID, API agreement and restart unverified",r.Qualification);
+ }
+ [Theory]
+ [InlineData(false)]
+ [InlineData(true)]
+ public void UpdatedChildChangedKeyOrReferenceRejects(bool changeReference)
+ {
+  var s=UpdatedTypedChild(42);
+  if(changeReference)s.Change(Obj+0x1F0,Q(0));else s.Change(Child+0x18,BitConverter.GetBytes(43U));
+  Assert.Throws<InvalidDataException>(()=>Read(s));
  }
  [Fact] public void UpdatedBuildWrongGetterNeverPublishesZoneId()
  {

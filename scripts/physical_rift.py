@@ -471,6 +471,22 @@ def _stats_values(report):
             "sampledAtUtc": observation["completedAtUtc"], "qualification": qualification}
 
 
+def _zone_id_candidate(zone_key, child_key):
+    """Mirror the native zone producer's signed int32 hash and unchecked uint32 sums."""
+    def native_hash(key):
+        signed = key if key < 2**31 else key - 2**32
+        # C# integer division truncates toward zero, unlike Python's // for negatives.
+        quotient = (abs(signed) // 127773) * (-1 if signed < 0 else 1)
+        remainder = signed - quotient * 127773
+        result = remainder * 16807 - quotient * 2836
+        return result if result >= 0 else result + 2147483647
+
+    term = 0 if child_key is None else native_hash(child_key)
+    seed = (term + 0x7A6F656E) & 0xFFFFFFFF
+    return f"z{zone_key:08X}{(native_hash(seed) + seed) & 0xFFFFFFFF:08X}"
+
+
+
 def _native_values(kind, report, *, expect_position=False, expect_translation_sources=False):
     """Project immediate useful values; preserve exact large unit keys as text."""
     if kind == "stats":
@@ -568,10 +584,13 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
         if not postpatch_zone and zone_sha != "1935a05c9db6d468e34e0055014a4a99c1b5afceb1695884e24600f5c20a4be8":
             raise ValueError("unsupported-native-zone-context-sha")
         if postpatch_zone:
-            qualification = "1179 outer type candidate only; child, zone ID, API agreement and restart unverified"
+            qualification = ("1179 zone ID candidate only; API correspondence, world instance, freshness and restart unverified"
+                             if row.get("zoneIdCandidate") is not None else
+                             "1179 outer type candidate only; child, zone ID, API agreement and restart unverified")
             # Older 1179 readers emitted only raw cache candidates, never a typed outer.
             raw_only = "1179 raw zone/cache candidates only; outer descriptor, child, zone ID and API agreement unverified"
-            if row.get("qualification") == raw_only and row.get("status") != "type-0073-candidate":
+            if (row.get("qualification") == raw_only and row.get("status") != "type-0073-candidate"
+                    and row.get("zoneIdCandidate") is None):
                 qualification = raw_only
         if row.get("qualification") != qualification:
             raise ValueError("invalid-native-zone-context-qualification")
@@ -600,9 +619,31 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
                     and child_status is not None)
                 or (status in ("unqualified-cache-record", "type-0073-candidate") and child_status is None)):
             raise ValueError("invalid-native-zone-context-child")
-        if postpatch_zone and (zone_id is not None or child_status not in (None, "unverified-type")):
-            raise ValueError("unsupported-native-zone-1179-claim")
         supports_id = status == "type-0073-candidate" and child_status in ("null", "type-1e17-raw-candidate")
+        if postpatch_zone:
+            if ((status == "type-0073-candidate" and outer_vtable is not True)
+                    or (status != "type-0073-candidate" and child_status not in (None, "unverified-type"))):
+                raise ValueError("unsupported-native-zone-1179-claim")
+            if status == "type-0073-candidate":
+                def user_span(address, length):
+                    return (type(address) is int and 0x10000 <= address <= 0x7FFFFFFFFFFF - length
+                            and address % 8 == 0)
+
+                base, size = identity.get("moduleBaseAddress"), identity.get("moduleSize")
+                vtable, getter = row.get("recordVtable"), row.get("recordGetterRva")
+                if (type(size) is not int or not 0x3521D98 <= size < 2**32
+                        or not user_span(base, size) or base % 0x1000
+                        or not user_span(row.get("recordAddress"), 0x1F8)
+                        or type(vtable) is not int or vtable != base + 0x2B37EA8
+                        or type(getter) is not int or getter != 0x1E7F180):
+                    raise ValueError("invalid-native-zone-1179-outer-geometry")
+                if supports_id:
+                    child_ref = row.get("rawNameRef")
+                    if ((child_status == "null" and (type(child_ref) is not int or child_ref != 0))
+                            or (child_status != "null" and not user_span(child_ref, 0x1C))):
+                        raise ValueError("invalid-native-zone-1179-child-geometry")
+            if supports_id and zone_id != _zone_id_candidate(zone_key, child_key):
+                raise ValueError("invalid-native-zone-context-id")
         if ((supports_id and (not isinstance(zone_id, str) or re.fullmatch(r"z[0-9A-Fa-f]{16}", zone_id) is None
                              or int(zone_id[1:9], 16) != zone_key))
                 or (not supports_id and zone_id is not None)):

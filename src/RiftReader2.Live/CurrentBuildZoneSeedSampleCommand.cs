@@ -8,7 +8,9 @@ using RiftReader2.Infrastructure;
 namespace RiftReader2.Live;
 internal sealed record ZoneSeedObservation(object Identity,DateTimeOffset StartedAtUtc,DateTimeOffset CompletedAtUtc,ulong SelfKey,ulong SelfEntity,ulong Health,ulong Owner,uint RawZoneKey,string Status,ushort? Selector=null,uint? TlsIndex=null,ulong? Collection=null,ulong? RecordAddress=null,ulong? RecordVtable=null,ulong? RecordGetterRva=null,ulong? RawNameRef=null,string? ChildStatus=null,uint? ChildKey=null,string? ZoneIdCandidate=null)
 {
- public string Qualification=>Identity is RiftReader2.Domain.NativeProcessIdentity id&&CurrentBuildPlayerLookup.IsUpdatedBuild(id.ExecutableSha256)?"1179 outer type candidate only; child, zone ID, API agreement and restart unverified":"zone ID candidate only; API correspondence, name, freshness and restart unverified";
+ public string Qualification=>Identity is RiftReader2.Domain.NativeProcessIdentity id&&CurrentBuildPlayerLookup.IsUpdatedBuild(id.ExecutableSha256)
+  ? ZoneIdCandidate is not null ? "1179 zone ID candidate only; API correspondence, world instance, freshness and restart unverified" : "1179 outer type candidate only; child, zone ID, API agreement and restart unverified"
+  : "zone ID candidate only; API correspondence, name, freshness and restart unverified";
  public bool? OuterVtableCandidate=>Identity is RiftReader2.Domain.NativeProcessIdentity id&&CurrentBuildPlayerLookup.IsUpdatedBuild(id.ExecutableSha256)&&RecordVtable.HasValue&&RecordGetterRva.HasValue?RecordVtable.Value==id.ModuleBaseAddress+0x2B37EA8&&RecordGetterRva.Value==0x1E7F180:null;
  // Diagnostic duration only; excludes lease/session acquisition and command-level revalidation.
  // Null preserves honest absence for offline/legacy observations constructed without measurement.
@@ -97,12 +99,32 @@ internal static class CurrentBuildZoneSeedSampleCommand
       ? vt==id.ModuleBaseAddress+0x2B37EA8&&getter==0x1E7F180&&Q(id.ModuleBaseAddress+0x3521D90)==id.ModuleBaseAddress+0x2B3FD98&&Q(id.ModuleBaseAddress+0x2B3FDA0)==id.ModuleBaseAddress+0x1EA56A0
       : vt==id.ModuleBaseAddress+0x2B254A8&&Q(id.ModuleBaseAddress+0x2B254E8)==id.ModuleBaseAddress+0x1E772C0&&Q(id.ModuleBaseAddress+0x35109E0)==id.ModuleBaseAddress+0x2B2FEE0&&Q(id.ModuleBaseAddress+0x2B2FEE8)==id.ModuleBaseAddress+0x1E9FD50;
     if(outerVerified)status="type-0073-candidate";
-     if(updated){childStatus="unverified-type";}else{
-    nameRef=Q(obj+0x1F0);if(nameRef==0)childStatus="null";else{var child=Ptr(nameRef.Value,0x1C);if(Q(child)==id.ModuleBaseAddress+0x27F24F8&&Q(id.ModuleBaseAddress+0x27F2538)==id.ModuleBaseAddress+0x170C5D0&&Q(id.ModuleBaseAddress+0x3417970)==id.ModuleBaseAddress+0x2802E40&&Q(id.ModuleBaseAddress+0x2802E48)==id.ModuleBaseAddress+0x17361E0){childStatus="type-1e17-raw-candidate";childKey=BinaryPrimitives.ReadUInt32LittleEndian(Take(child+0x18,4));}else childStatus="unverified-type";}
+    if(updated&&!outerVerified)childStatus="unverified-type";
+    else
+    {
+     nameRef=Q(obj+0x1F0);
+     if(nameRef==0)childStatus="null";
+     else
+     {
+      // SHA-pinned 1179 producer 0x135A410 reads the +0x1F0 child, checks type 0x1E17, then reads its +0x18 key.
+      var child=Ptr(nameRef.Value,0x1C);
+      var childVt=updated?0x28067F8UL:0x27F24F8UL;
+      var childGetter=updated?0x1711C10UL:0x170C5D0UL;
+      var descriptor=updated?0x3428D50UL:0x3417970UL;
+      var descriptorVt=updated?0x2810E50UL:0x2802E40UL;
+      var descriptorMethod=updated?0x17360A0UL:0x17361E0UL;
+      if(Q(child)==id.ModuleBaseAddress+childVt&&Q(id.ModuleBaseAddress+childVt+0x40)==id.ModuleBaseAddress+childGetter&&
+         Q(id.ModuleBaseAddress+descriptor)==id.ModuleBaseAddress+descriptorVt&&Q(id.ModuleBaseAddress+descriptorVt+8)==id.ModuleBaseAddress+descriptorMethod)
+      {
+       childStatus="type-1e17-raw-candidate";
+       childKey=BinaryPrimitives.ReadUInt32LittleEndian(Take(child+0x18,4));
+      }
+      else childStatus="unverified-type";
      }
+    }
    }}
   }
-  if(!updated&&status=="type-0073-candidate"&&(childStatus=="null"||childStatus=="type-1e17-raw-candidate"))
+  if(status=="type-0073-candidate"&&(childStatus=="null"||childStatus=="type-1e17-raw-candidate"))
   {
    var term=childStatus=="null"?0U:CurrentBuildAbilityRecordsCandidateReader.Hash(childKey!.Value);
    var sum=unchecked(term+0x7A6F656EU);var low=unchecked(CurrentBuildAbilityRecordsCandidateReader.Hash(sum)+sum);
