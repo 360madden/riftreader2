@@ -59,14 +59,16 @@ class PostpatchNativeAdmissionTests(unittest.TestCase):
                 self.assertEqual(result["reason"], "postpatch-native-read-unqualified")
                 run.assert_not_called()
 
-    def test_target_projection_is_not_admitted_by_facing_requalification(self):
-        with patch.object(physical_rift.subprocess, "run") as run:
+    def test_facing_target_passes_explicit_build_and_include_flag(self):
+        with patch.object(physical_rift.subprocess, "run",
+                          return_value=subprocess.CompletedProcess([], 3, "", "offline-refusal")) as run:
             result = physical_rift.read_native(
                 selection(), "facing", self.folder / "target.json", include_target=True,
             )
-            self.assertEqual(result["status"], "blocked")
-            self.assertEqual(result["reason"], "postpatch-target-projection-unqualified")
-            run.assert_not_called()
+            self.assertEqual(result["reason"], "native-reader-failed")
+            args = run.call_args.args[0]
+            self.assertEqual(args[args.index("--sha256") + 1], BUILD_1179)
+            self.assertEqual(args[args.index("--include-target") + 1], "true")
 
     def test_admitted_kinds_pass_the_exact_sha_to_native_reader(self):
         # A synthetic nonzero native exit proves command assembly, not live semantics.

@@ -299,6 +299,43 @@ public sealed class CurrentBuildFacingTests
         finally { if (File.Exists(path)) File.Delete(path); }
     }
 
+    [Theory]
+    [InlineData("position-candidate", "none", true)]
+    [InlineData("no-target", "none", true)]
+    [InlineData("selection-override-unresolved", "none", true)]
+    [InlineData("position-unavailable", "none", true)]
+    [InlineData("position-candidate", "self", false)]
+    [InlineData("position-candidate", "epoch", false)]
+    [InlineData("position-candidate", "key", false)]
+    [InlineData("position-candidate", "guard", false)]
+    [InlineData("position-candidate", "camera", false)]
+    [InlineData("position-candidate", "inner-camera", false)]
+    [InlineData("position-candidate", "bits", false)]
+    [InlineData("no-target", "bits", false)]
+    public void UpdatedTargetLegRequiresCorroboratedGuardAndCamera(string status, string fault, bool accepted)
+    {
+        var id = new Fake().Identity with { ExecutableSha256 = CurrentBuildPlayerLookup.UpdatedGameSha256 };
+        var now = DateTimeOffset.UtcNow;
+        ulong? key = status == "no-target" ? 0UL : status == "selection-override-unresolved" ? null : 99UL;
+        var guard = key switch { null => "override-unavailable", 0 => "raw-getter-zero-candidate", _ => "fallback-key-candidate" };
+        var context = new CurrentBuildPlayerContextObservation(id, now, now, 42, Entity, 3, 4, 5, key ?? 99,
+            fault == "guard" ? "override-unavailable" : guard, key, null, 1, "", 0, "", false);
+        var camera = new CurrentBuildOpticalCameraCandidate("available-candidate", null, "300000",
+            new float[9], new float[3], new float[3], new uint[15], 0, 0, new double[3])
+            { ProjectionRowMajor = new float[16], ViewportLeftRightTopBottom = new float[4], ProjectionRawBits = new uint[20] };
+        var selected = new CurrentBuildSelectedPositionObservation(
+            fault == "epoch" ? id with { ProcessStartUtcTicks = 999 } : id, now, now, fault == "self" ? "41" : "42",
+            status, "", key == 0 ? "0" : "99", fault == "key" ? "98" : key is > 0 ? "99" : null,
+            key is > 0 ? "u0000000000000063" : null, status == "position-candidate" ? "131072" : null,
+            status == "position-candidate" ? new(0, 0, 0) : null,
+            fault == "bits" ? [1U, 0U, 0U] : status == "position-candidate" ? new uint[3] : null,
+            camera, fault == "inner-camera" ? camera with { CameraAddressDecimal = "300008" } : camera, true);
+        TargetPositionCandidate? Execute() => CurrentBuildPairedPositionCandidateReader.CheckUpdatedTarget(context,
+            selected, fault == "camera" ? null : camera);
+        if (!accepted) Assert.Throws<InvalidDataException>(() => Execute());
+        else Assert.Equal(status == "position-candidate", Execute() is not null);
+    }
+
     [Fact]
     public async Task CommandRouterAcceptsTargetFlagBeforeCheckingRequiredIdentity()
     {

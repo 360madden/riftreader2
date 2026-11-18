@@ -50,8 +50,6 @@ internal static class CurrentBuildFacingSampleCommand
             (rawTarget == "true" ? true : rawTarget == "false" ? false :
              throw new ArgumentException("--include-target must be true or false."));
         var expectedSha = ExpectedSha(options);
-        if (includeTarget && CurrentBuildPlayerLookup.IsUpdatedBuild(expectedSha))
-            throw new InvalidDataException("Post-update selected-target projection has not been requalified.");
         ct.ThrowIfCancellationRequested();
         if (File.Exists(path)) throw new IOException("Facing output already exists.");
         await using var lease = await acquireLease(pid, ticks, ct);
@@ -73,7 +71,10 @@ internal static class CurrentBuildFacingSampleCommand
             var sample = sampleReader(session);
             if (includeTarget)
             {
-                var pair = readTarget is null ? CurrentBuildPairedPositionCandidateReader.Read(session) : readTarget(session);
+                var pair = readTarget is not null ? readTarget(session) :
+                    CurrentBuildPlayerLookup.IsUpdatedBuild(expectedSha)
+                        ? CurrentBuildPairedPositionCandidateReader.ReadUpdatedFacing(session, sample.OpticalCameraCandidate)
+                        : CurrentBuildPairedPositionCandidateReader.Read(session);
                 var after = readStrict(session);
                 sample = AttachTargetBracket(sample, pair, after, identity, timer.Elapsed);
             }

@@ -34,6 +34,15 @@ internal static class CurrentBuildPairedPositionCandidateReader
 {
     internal static CurrentBuildPairedPositionObservation Read(
         IReadOnlyNativeMemorySession session, int maxPairSpanMilliseconds = 1000)
+        => ReadProduction(session, maxPairSpanMilliseconds, false, null);
+
+    internal static CurrentBuildPairedPositionObservation ReadUpdatedFacing(
+        IReadOnlyNativeMemorySession session, CurrentBuildOpticalCameraCandidate? camera)
+        => ReadProduction(session, 1000, true, camera);
+
+    private static CurrentBuildPairedPositionObservation ReadProduction(
+        IReadOnlyNativeMemorySession session, int maxPairSpanMilliseconds, bool updatedFacing,
+        CurrentBuildOpticalCameraCandidate? camera)
     {
         var timer = Stopwatch.StartNew();
         return Read(session, CurrentBuildPlayerContextCandidateReader.Read,
@@ -42,8 +51,10 @@ internal static class CurrentBuildPairedPositionCandidateReader
                 var owner = CurrentBuildPlayerLookup.Resolve(source);
                 if (owner.PlayerKey != context.UnitKey || owner.EntityAddress != context.Entity)
                     throw new InvalidDataException("Self position/context owner mismatch.");
-                return new(owner.PlayerKey, owner.EntityAddress, owner.ResolveComponent(0x2F588A0), owner.VerifyUnchanged);
-            }, maxPairSpanMilliseconds, () => (DateTimeOffset.UtcNow, timer.Elapsed.TotalMilliseconds));
+                return new(owner.PlayerKey, owner.EntityAddress, owner.ResolveComponent(
+                    CurrentBuildPlayerLookup.PositionIndexRvaFor(source.Identity.ExecutableSha256)), owner.VerifyUnchanged);
+            }, maxPairSpanMilliseconds, () => (DateTimeOffset.UtcNow, timer.Elapsed.TotalMilliseconds),
+            updatedFacing, camera);
     }
 
     // Injection is restricted to source-owner and clock acquisition for offline tests.
@@ -53,7 +64,8 @@ internal static class CurrentBuildPairedPositionCandidateReader
         Func<IReadOnlyNativeMemorySession, CurrentBuildPlayerContextObservation> context,
         Func<IReadOnlyNativeMemorySession, CurrentBuildPlayerContextObservation, CurrentBuildPositionOwnerSnapshot> resolveSelf,
         int maxPairSpanMilliseconds,
-        Func<(DateTimeOffset Utc, double Milliseconds)> clock)
+        Func<(DateTimeOffset Utc, double Milliseconds)> clock,
+        bool updatedFacing = false, CurrentBuildOpticalCameraCandidate? camera = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(context);
@@ -63,9 +75,11 @@ internal static class CurrentBuildPairedPositionCandidateReader
             throw new ArgumentOutOfRangeException(nameof(maxPairSpanMilliseconds));
         var id = session.Identity;
         if (id.ProcessId <= 0 || id.ProcessStartUtcTicks <= 0 ||
-            !string.Equals(id.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256, StringComparison.OrdinalIgnoreCase) ||
+            !(updatedFacing ? CurrentBuildPlayerLookup.IsUpdatedBuild(id.ExecutableSha256) :
+                string.Equals(id.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256, StringComparison.OrdinalIgnoreCase)) ||
             id.ModuleBaseAddress < 0x10000 || id.ModuleBaseAddress % 8 != 0 ||
-            id.ModuleSize < 0x34731B8 || id.ModuleBaseAddress > 0x7FFFFFFFFFFFUL ||
+            id.ModuleSize < (updatedFacing ? CurrentBuildPlayerLookup.ManagerRvaFor(id.ExecutableSha256) + 8 : 0x34731B8UL) ||
+            id.ModuleBaseAddress > 0x7FFFFFFFFFFFUL ||
             id.ModuleSize > 0x7FFFFFFFFFFFUL - id.ModuleBaseAddress)
             throw new InvalidDataException("Invalid paired position build/process/module identity.");
 
@@ -119,15 +133,29 @@ internal static class CurrentBuildPairedPositionCandidateReader
         CurrentBuildPlayerLookup.RequireSame(CurrentBuildPlayerLookup.Exact(session, component + 0x48, 12), selfBits);
 
         var targetStart = Stamp();
-        var target = CurrentBuildSelectedTargetCandidateReader.Read(session, GuardedContext,
-            (source, targetOwner) => CurrentBuildVitalsCandidateReader.Read(source, _ => targetOwner),
-            includePosition: true);
+        TargetPositionCandidate? position;
+        string targetStatus;
+        if (updatedFacing)
+        {
+            var selected = CurrentBuildSelectedPositionCandidateReader.Read(session);
+            var guarded = GuardedContext(session);
+            position = CheckUpdatedTarget(guarded, selected, camera);
+            targetStatus = selected.Status;
+        }
+        else
+        {
+            var target = CurrentBuildSelectedTargetCandidateReader.Read(session, GuardedContext,
+                (source, targetOwner) => CurrentBuildVitalsCandidateReader.Read(source, _ => targetOwner),
+                includePosition: true);
+            if (target.Identity != id || target.SelfKey != before.UnitKey)
+                throw new InvalidDataException("Selected position returned a different process/self identity.");
+            position = target.TargetPosition;
+            if (position is not null &&
+                (target.TargetKey != position.UnitKey || position.UnitKey != before.TargetKeyCandidate))
+                throw new InvalidDataException("Selected position key differs from guarded selection.");
+            targetStatus = target.Status;
+        }
         var targetEnd = Stamp();
-        if (target.Identity != id || target.SelfKey != before.UnitKey)
-            throw new InvalidDataException("Selected position returned a different process/self identity.");
-        if (target.TargetPosition is { } targetPosition &&
-            (target.TargetKey != targetPosition.UnitKey || targetPosition.UnitKey != before.TargetKeyCandidate))
-            throw new InvalidDataException("Selected position key differs from guarded selection.");
 
         owner.VerifyUnchanged();
         CurrentBuildPlayerLookup.RequireSame(CurrentBuildPlayerLookup.Exact(session, component + 0x10, 8), backlink);
@@ -141,13 +169,51 @@ internal static class CurrentBuildPairedPositionCandidateReader
             new(status, key.ToString(CultureInfo.InvariantCulture), $"u{key:X16}", xyz,
                 begin.Utc, end.Utc, begin.Milliseconds, end.Milliseconds);
         var selfSample = Sample("candidate", self.UnitKey, self.Position, selfStart, selfEnd);
-        var position = target.TargetPosition;
         var targetSample = position is null ? null :
             Sample(position.Status, position.UnitKey, position.Position, targetStart, targetEnd);
         return new(id, started.Utc, completed.Utc, clockDomain, selfSample, targetSample,
-            position?.Status ?? target.Status, before.TargetStatus, afterGuard,
+            position?.Status ?? targetStatus, before.TargetStatus, afterGuard,
             completed.Milliseconds - started.Milliseconds,
             position is null ? null : targetStart.Milliseconds - selfStart.Milliseconds,
             position is null ? null : targetEnd.Milliseconds - selfStart.Milliseconds);
+    }
+
+    internal static TargetPositionCandidate? CheckUpdatedTarget(CurrentBuildPlayerContextObservation context,
+        CurrentBuildSelectedPositionObservation selected, CurrentBuildOpticalCameraCandidate? facingCamera)
+    {
+        if (!CurrentBuildPlayerLookup.IsUpdatedBuild(context.Identity.ExecutableSha256) ||
+            selected.Identity != context.Identity || selected.SelfKey != context.UnitKey.ToString(CultureInfo.InvariantCulture) ||
+            selected.RawFallbackKey != context.RawFallbackKey.ToString(CultureInfo.InvariantCulture))
+            throw new InvalidDataException("Selected position does not match guarded process/self/fallback.");
+        var key = context.TargetKeyCandidate;
+        var statusMatches = selected.Status switch
+        {
+            "no-target" => context.TargetStatus == "raw-getter-zero-candidate" && key == 0 && context.RawFallbackKey == 0,
+            "selection-override-unresolved" => context.TargetStatus == "override-unavailable" && key is null,
+            "position-unavailable" or "position-candidate" => context.TargetStatus == "fallback-key-candidate" &&
+                key is > 0 && key == context.RawFallbackKey,
+            _ => false
+        };
+        if (!statusMatches || selected.TargetKey != (key is > 0 ? key.Value.ToString(CultureInfo.InvariantCulture) : null) ||
+            selected.TargetUnitIdCandidate != (key is > 0 ? $"u{key.Value:X16}" : null))
+            throw new InvalidDataException("Selected position does not match guarded selection.");
+        if (selected.Status != "position-candidate")
+        {
+            if (selected.TargetPositionCandidate is not null || selected.TargetPositionRawBits is not null)
+                throw new InvalidDataException("Unavailable selected position contains coordinates.");
+            return null;
+        }
+        if (selected.TargetPositionCandidate is not { } xyz || selected.TargetPositionRawBits is not { Length: 3 } bits ||
+            !float.IsFinite(xyz.X) || !float.IsFinite(xyz.Y) || !float.IsFinite(xyz.Z) ||
+            bits[0] != BitConverter.SingleToUInt32Bits(xyz.X) || bits[1] != BitConverter.SingleToUInt32Bits(xyz.Y) ||
+            bits[2] != BitConverter.SingleToUInt32Bits(xyz.Z))
+            throw new InvalidDataException("Selected position lacks its exact finite XYZ.");
+        // The outer ending camera is checked separately by the facing command. Refuse a
+        // positive pair if either inner camera is missing or disagrees with the initial camera.
+        if (!selected.CameraStableCandidate || !CurrentBuildOpticalCameraCandidateReader.SameProjectionSnapshot(
+                facingCamera, selected.OpticalCameraCandidate) || !CurrentBuildOpticalCameraCandidateReader.SameProjectionSnapshot(
+                selected.OpticalCameraCandidate, selected.OpticalCameraAfterCandidate))
+            throw new InvalidDataException("Selected position inner camera changed or is unavailable.");
+        return new("candidate", key!.Value, Position: xyz);
     }
 }

@@ -1481,8 +1481,6 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
     if str(target.get("executableSha256", "")).casefold() == updated_sha.casefold():
         if kind not in ("position", "facing", "actor-pose", "orientation", "unit-positions", "selected-position", "vitals", "player-context", "stats"):
             return dict(selection, status="blocked", reason="postpatch-native-read-unqualified")
-        if include_target:
-            return dict(selection, status="blocked", reason="postpatch-target-projection-unqualified")
         command.extend(("--sha256", updated_sha))
     if samples is not None:
         command.extend(("--samples", str(samples)))
