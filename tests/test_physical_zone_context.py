@@ -157,5 +157,40 @@ class ZoneContextTests(unittest.TestCase):
             run.assert_not_called()
 
 
+
+    def test_1179_zone_context_admits_explicit_sha_but_withholds_unverified_zone_id(self):
+        updated_sha = "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"
+        with TemporaryDirectory() as directory:
+            exe, path = Path(directory) / "reader.exe", Path(directory) / "zone-1179.json"
+            exe.write_bytes(b"MZ")
+            selection = dict(status="ready", ownerHost="AMD-DESKTOP", target=deepcopy(IDENTITY))
+            selection["target"]["executableSha256"] = updated_sha
+
+            def run(command, **kwargs):
+                self.assertEqual(command, [str(exe), "sample-current-zone-seed", "--pid", "123",
+                    "--start-ticks", IDENTITY["processStartUtcTicks"], "--output", str(path),
+                    "--sha256", updated_sha])
+                source = report()
+                source["observation"]["identity"]["executableSha256"] = updated_sha
+                source["observation"]["qualification"] = (
+                    "1179 raw zone/cache candidates only; outer descriptor, child, zone ID and API agreement unverified")
+                now = datetime.now(timezone.utc).isoformat()
+                source["observation"].update(startedAtUtc=now, completedAtUtc=now,
+                    status="unqualified-cache-record", childStatus="unverified-type",
+                    childKey=None, zoneIdCandidate=None)
+                path.write_text(json.dumps(source))
+                receipt = dict(recordType="native-current-zone-seed-summary/1",
+                    status="unqualified-cache-record", output=str(path))
+                return subprocess.CompletedProcess(command, 0, json.dumps(receipt), "")
+
+            with patch.object(p.socket, "gethostname", return_value="AMD-DESKTOP"), \
+                 patch.object(p, "NATIVE_EXE", exe), patch.object(p.subprocess, "run", side_effect=run):
+                result = p.read_native(selection, "zone-context", output=path)
+            self.assertEqual(result["status"], "complete")
+            self.assertEqual(result["nativeValues"]["status"], "unavailable")
+            self.assertEqual(result["nativeValues"]["reason"], "unqualified-cache-record")
+            self.assertEqual(result["nativeValues"]["rawZoneKey"], 1216123138)
+            self.assertIsNone(result["nativeValues"]["zoneIdCandidate"])
+
 if __name__ == "__main__":
     unittest.main()

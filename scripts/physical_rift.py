@@ -553,7 +553,7 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
         if (type(report.get("schemaVersion")) is not int or report["schemaVersion"] != 1
                 or report.get("status") != "complete"
                 or report.get("contractVersion") != "native-current-zone-seed-candidate/1"
-                or not isinstance(row, dict) or row.get("qualification") != qualification):
+                or not isinstance(row, dict)):
             raise ValueError("invalid-native-zone-context-contract")
         identity = row.get("identity")
         if (not isinstance(identity, dict)
@@ -563,6 +563,10 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
                 or not isinstance(identity.get("executableSha256"), str)
                 or re.fullmatch(r"[0-9A-Fa-f]{64}", identity["executableSha256"]) is None):
             raise ValueError("invalid-native-zone-context-identity")
+        if identity["executableSha256"].casefold() == "df954b798331e18359be62a31cc74b49fc3f50b87385ebb080a5448256322c01":
+            qualification = "1179 raw zone/cache candidates only; outer descriptor, child, zone ID and API agreement unverified"
+        if row.get("qualification") != qualification:
+            raise ValueError("invalid-native-zone-context-qualification")
         key, zone_key = row.get("selfKey"), row.get("rawZoneKey")
         if (type(key) is not int or not 0 < key < 2**64
                 or type(zone_key) is not int or not 0 <= zone_key < 2**32):
@@ -1486,7 +1490,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
     # Other older-build native readers must not silently inherit admission.
     updated_sha = "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"
     if str(target.get("executableSha256", "")).casefold() == updated_sha.casefold():
-        if kind not in ("position", "facing", "actor-pose", "orientation", "unit-positions", "selected-position", "vitals", "player-context", "stats", "target-name", "unit-names"):
+        if kind not in ("position", "facing", "actor-pose", "orientation", "unit-positions", "selected-position", "vitals", "player-context", "stats", "zone-context", "target-name", "unit-names"):
             return dict(selection, status="blocked", reason="postpatch-native-read-unqualified")
         command.extend(("--sha256", updated_sha))
     if samples is not None:

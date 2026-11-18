@@ -8,7 +8,8 @@ using RiftReader2.Infrastructure;
 namespace RiftReader2.Live;
 internal sealed record ZoneSeedObservation(object Identity,DateTimeOffset StartedAtUtc,DateTimeOffset CompletedAtUtc,ulong SelfKey,ulong SelfEntity,ulong Health,ulong Owner,uint RawZoneKey,string Status,ushort? Selector=null,uint? TlsIndex=null,ulong? Collection=null,ulong? RecordAddress=null,ulong? RecordVtable=null,ulong? RecordGetterRva=null,ulong? RawNameRef=null,string? ChildStatus=null,uint? ChildKey=null,string? ZoneIdCandidate=null)
 {
- public string Qualification=>"zone ID candidate only; API correspondence, name, freshness and restart unverified";
+ public string Qualification=>Identity is RiftReader2.Domain.NativeProcessIdentity id&&CurrentBuildPlayerLookup.IsUpdatedBuild(id.ExecutableSha256)?"1179 raw zone/cache candidates only; outer descriptor, child, zone ID and API agreement unverified":"zone ID candidate only; API correspondence, name, freshness and restart unverified";
+ public bool? OuterVtableCandidate=>Identity is RiftReader2.Domain.NativeProcessIdentity id&&CurrentBuildPlayerLookup.IsUpdatedBuild(id.ExecutableSha256)&&RecordVtable.HasValue&&RecordGetterRva.HasValue?RecordVtable.Value==id.ModuleBaseAddress+0x2B37EA8&&RecordGetterRva.Value==0x1E7F180:null;
  // Diagnostic duration only; excludes lease/session acquisition and command-level revalidation.
  // Null preserves honest absence for offline/legacy observations constructed without measurement.
  public double? AcquisitionElapsedMilliseconds {get;init;}
@@ -17,11 +18,20 @@ internal sealed record ZoneSeedObservation(object Identity,DateTimeOffset Starte
 }
 internal static class CurrentBuildZoneSeedSampleCommand
 {
- internal static Task<int> RunAsync(IReadOnlyDictionary<string,string> options,TextWriter output,CancellationToken ct)=>
+ internal static Task<int> RunAsync(IReadOnlyDictionary<string,string> options,TextWriter output,CancellationToken ct)
+  {
+   var sha=ExpectedSha(options);
+   return
   RunAsync(options,output,ct,
-   static async (pid,ticks,token)=>await NativeReadFileLease.AcquireAsync(pid,ticks,CurrentBuildPlayerLookup.GameSha256,TimeSpan.FromSeconds(1),token),
-   static async (pid,ticks,token)=>await WindowsNativeMemorySession.OpenAsync(pid,ticks,CurrentBuildPlayerLookup.GameSha256,token),
+   async (pid,ticks,token)=>await NativeReadFileLease.AcquireAsync(pid,ticks,sha,TimeSpan.FromSeconds(1),token),
+   async (pid,ticks,token)=>await WindowsNativeMemorySession.OpenAsync(pid,ticks,sha,token),
    static (session,pid)=>Read(session,CurrentBuildPlayerContextCandidateReader.Read,()=>WindowsThreadTlsSnapshot.Capture(pid)));
+  }
+  internal static string ExpectedSha(IReadOnlyDictionary<string,string> options)
+  {
+   var sha=options.TryGetValue("--sha256",out var requested)?requested:CurrentBuildPlayerLookup.GameSha256;
+   return CurrentBuildPlayerLookup.IsCoreBuild(sha)?sha:throw new ArgumentException("Unsupported zone-seed build SHA256.");
+  }
  // Explicit offline-only seam; production entry supplies the real lease.
  internal static async Task<int> RunAsync(IReadOnlyDictionary<string,string> options,TextWriter output,CancellationToken ct,
   Func<int,long,CancellationToken,Task<IAsyncDisposable>> acquireLease,
@@ -30,13 +40,15 @@ internal static class CurrentBuildZoneSeedSampleCommand
  {
   ArgumentNullException.ThrowIfNull(acquireLease);ArgumentNullException.ThrowIfNull(open);ArgumentNullException.ThrowIfNull(read);
   if(!options.TryGetValue("--pid",out var p)||!int.TryParse(p,NumberStyles.None,CultureInfo.InvariantCulture,out var pid)||pid<=0||!options.TryGetValue("--start-ticks",out var t)||!long.TryParse(t,NumberStyles.None,CultureInfo.InvariantCulture,out var ticks)||ticks<=0||!options.TryGetValue("--output",out var path)||string.IsNullOrWhiteSpace(path))throw new ArgumentException("--pid, --start-ticks, --output required.");
-  if(File.Exists(path))throw new IOException("Output exists.");
+  var expectedSha=ExpectedSha(options);
+   if(File.Exists(path))throw new IOException("Output exists.");
   ZoneSeedObservation observation;
   await using (var lease=await acquireLease(pid,ticks,ct))
   {
    ct.ThrowIfCancellationRequested();
    await using var session=await open(pid,ticks,ct);ct.ThrowIfCancellationRequested();
-   observation=read(session,pid);
+   if(session.Identity.ProcessId!=pid||session.Identity.ProcessStartUtcTicks!=ticks||!string.Equals(session.Identity.ExecutableSha256,expectedSha,StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Zone-seed process/build identity mismatch.");
+    observation=read(session,pid);
    if(await session.RevalidateAsync(ct) is not null)throw new InvalidDataException("Process identity invalidated.");
    ct.ThrowIfCancellationRequested();
   }
@@ -47,14 +59,16 @@ internal static class CurrentBuildZoneSeedSampleCommand
  }
  internal static ZoneSeedObservation Read(IReadOnlyNativeMemorySession session,Func<IReadOnlyNativeMemorySession,CurrentBuildPlayerContextObservation> context,Func<IReadOnlyList<NativeThreadEpoch>> threads)
  {
-  var startedTimestamp=Stopwatch.GetTimestamp();var start=DateTimeOffset.UtcNow;var id=session.Identity;
-  if(id.ProcessId<=0||id.ProcessStartUtcTicks<=0||id.ModuleSize<0x34731B8||!string.Equals(id.ExecutableSha256,CurrentBuildPlayerLookup.GameSha256,StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Unsupported build or process.");
+  var startedTimestamp=Stopwatch.GetTimestamp();var start=DateTimeOffset.UtcNow;var id=session.Identity;var updated=CurrentBuildPlayerLookup.IsUpdatedBuild(id.ExecutableSha256);
+  if(id.ProcessId<=0||id.ProcessStartUtcTicks<=0||id.ModuleSize<(updated?0x33843E0UL:0x34731B8UL)||!CurrentBuildPlayerLookup.IsCoreBuild(id.ExecutableSha256))throw new InvalidDataException("Unsupported build or process.");
   var before=context(session);if(before.Identity!=id)throw new InvalidDataException("Self context identity mismatch.");
   var anchors=new Dictionary<(ulong,int),byte[]>();int budget=0;byte[] Take(ulong a,int n,bool save=true){budget=checked(budget+n);if(budget>2*1024*1024)throw new InvalidDataException("Zone budget exceeded.");var b=CurrentBuildPlayerLookup.Exact(session,a,n);if(save){if(anchors.TryGetValue((a,n),out var old)&&!old.AsSpan().SequenceEqual(b))throw new InvalidDataException("Zone bytes changed.");anchors[(a,n)]=b.ToArray();}return b;}
   ulong Ptr(ulong a,int n=8)=>CurrentBuildPlayerLookup.Pointer(a,n);ulong Q(ulong a)=>U64(Take(a,8));
   var health=Ptr(before.HealthComponent,0x48);var entity=Ptr(before.Entity,128);var selfOwner=Ptr(Q(health+0x40),0x154);
-  if(Q(health+0x10)!=entity||selfOwner!=before.Owner||Q(selfOwner)!=id.ModuleBaseAddress+0x2927448||Q(id.ModuleBaseAddress+0x2927488)!=id.ModuleBaseAddress+0x19D21E0||Q(id.ModuleBaseAddress+0x34731B0)!=id.ModuleBaseAddress+0x2929BD0||Q(id.ModuleBaseAddress+0x2929BD8)!=id.ModuleBaseAddress+0x19F4D60)throw new InvalidDataException("Self owner binding/type mismatch.");
-  var system=Ptr(Q(id.ModuleBaseAddress+0x33623E0),0x400);if(Q(system+0x3F8)!=entity||Q(system+0x360)!=before.UnitKey)throw new InvalidDataException("Self cache mismatch.");
+  var ownerVptr=updated?0x2933218UL:0x2927448UL;
+   var ownerGetter=updated?0x19D2020UL:0x19D21E0UL;
+   if(Q(health+0x10)!=entity||selfOwner!=before.Owner||Q(selfOwner)!=id.ModuleBaseAddress+ownerVptr||Q(id.ModuleBaseAddress+ownerVptr+0x40)!=id.ModuleBaseAddress+ownerGetter||(!updated&&(Q(id.ModuleBaseAddress+0x34731B0)!=id.ModuleBaseAddress+0x2929BD0||Q(id.ModuleBaseAddress+0x2929BD8)!=id.ModuleBaseAddress+0x19F4D60)))throw new InvalidDataException("Self owner binding/type mismatch.");
+  var system=Ptr(Q(id.ModuleBaseAddress+(updated?0x3373BA0UL:0x33623E0UL)),0x400);if(Q(system+0x3F8)!=entity||Q(system+0x360)!=before.UnitKey)throw new InvalidDataException("Self cache mismatch.");
   var zoneKey=BinaryPrimitives.ReadUInt32LittleEndian(Take(selfOwner+0x150,4));
   IReadOnlyList<NativeThreadEpoch>? epochs=null;
   ZoneSeedObservation Finish(string status,ushort? selector=null,uint? index=null,ulong? collection=null,ulong? record=null,ulong? vt=null,ulong? getter=null,ulong? nameRef=null,string? childStatus=null,uint? childKey=null,string? zoneId=null)
@@ -65,8 +79,8 @@ internal static class CurrentBuildZoneSeedSampleCommand
    if(session.Identity!=id)throw new InvalidDataException("Process identity changed.");
    return new(id,start,DateTimeOffset.UtcNow,before.UnitKey,entity,health,selfOwner,zoneKey,status,selector,index,collection,record,vt,getter,nameRef,childStatus,childKey,zoneId){AcquisitionElapsedMilliseconds=Stopwatch.GetElapsedTime(startedTimestamp).TotalMilliseconds};
   }
-  var provider=Q(id.ModuleBaseAddress+0x336EBF8);if(provider==0)return Finish("null-provider");Ptr(provider,0x42);
-  var selector=BinaryPrimitives.ReadUInt16LittleEndian(Take(provider+0x40,2));var wrapperRaw=Q(id.ModuleBaseAddress+0x3372C18);if(wrapperRaw==0)return Finish("null-registry",selector);var wrapper=Ptr(wrapperRaw);var registryRaw=Q(wrapper);if(registryRaw==0)return Finish("null-registry",selector);var owner=Ptr(registryRaw,0x278);var index=BinaryPrimitives.ReadUInt32LittleEndian(Take(owner+0x274,4));if(index>1087)throw new InvalidDataException("Invalid TLS index.");
+  var provider=Q(id.ModuleBaseAddress+(updated?0x33803B8UL:0x336EBF8UL));if(provider==0)return Finish("null-provider");Ptr(provider,0x42);
+  var selector=BinaryPrimitives.ReadUInt16LittleEndian(Take(provider+0x40,2));var wrapperRaw=Q(id.ModuleBaseAddress+(updated?0x33843D8UL:0x3372C18UL));if(wrapperRaw==0)return Finish("null-registry",selector);var wrapper=Ptr(wrapperRaw);var registryRaw=Q(wrapper);if(registryRaw==0)return Finish("null-registry",selector);var owner=Ptr(registryRaw,0x278);var index=BinaryPrimitives.ReadUInt32LittleEndian(Take(owner+0x274,4));if(index>1087)throw new InvalidDataException("Invalid TLS index.");
   epochs=threads();if(epochs.Count is <1 or >256||epochs.Select(x=>x.Id).Distinct().Count()!=epochs.Count||epochs.Select(x=>x.Teb).Distinct().Count()!=epochs.Count)throw new InvalidDataException("Invalid thread set.");ulong? collection=null;
   foreach(var t in epochs){Ptr(t.Teb,0x1788);var ti=Take(t.Teb+0x30,32);if(t.Id<=0||t.Created<=0||U64(ti)!=t.Teb||U64(ti.AsSpan(16))!=(ulong)id.ProcessId||U64(ti.AsSpan(24))!=(ulong)t.Id)throw new InvalidDataException("Invalid TEB identity.");ulong v;if(index<64)v=Q(t.Teb+0x1480+index*8UL);else{var expansion=Q(t.Teb+0x1780);v=expansion==0?0:Q(checked(Ptr(expansion)+(index-64)*8UL));}var c=v==0?checked(owner+0x200):Ptr(v);if(collection.HasValue&&collection!=c)throw new InvalidDataException("Thread collections disagree.");collection=c;}
   var ch=Take(collection!.Value+0x20,32);var cb=Ptr(U64(ch));var cs=U64(ch.AsSpan(8));var cc=U64(ch.AsSpan(16));if(cs!=24||cc is <1 or >4096)throw new InvalidDataException("Invalid cache header.");Ptr(cb,checked((int)(cc*24)));
@@ -79,12 +93,14 @@ internal static class CurrentBuildZoneSeedSampleCommand
    {
     record=Ptr(obj,0x1F8);status="unqualified-cache-record";vt=Q(obj);
     if(vt>=id.ModuleBaseAddress&&vt<=id.ModuleBaseAddress+id.ModuleSize-0x48){var target=Q(vt.Value+0x40);if(target>=id.ModuleBaseAddress&&target<id.ModuleBaseAddress+id.ModuleSize)getter=target-id.ModuleBaseAddress;}
-    var outerVerified=vt==id.ModuleBaseAddress+0x2B254A8&&Q(id.ModuleBaseAddress+0x2B254E8)==id.ModuleBaseAddress+0x1E772C0&&Q(id.ModuleBaseAddress+0x35109E0)==id.ModuleBaseAddress+0x2B2FEE0&&Q(id.ModuleBaseAddress+0x2B2FEE8)==id.ModuleBaseAddress+0x1E9FD50;
+    var outerVerified=!updated&&vt==id.ModuleBaseAddress+0x2B254A8&&Q(id.ModuleBaseAddress+0x2B254E8)==id.ModuleBaseAddress+0x1E772C0&&Q(id.ModuleBaseAddress+0x35109E0)==id.ModuleBaseAddress+0x2B2FEE0&&Q(id.ModuleBaseAddress+0x2B2FEE8)==id.ModuleBaseAddress+0x1E9FD50;
     if(outerVerified)status="type-0073-candidate";
+     if(updated){childStatus="unverified-type";}else{
     nameRef=Q(obj+0x1F0);if(nameRef==0)childStatus="null";else{var child=Ptr(nameRef.Value,0x1C);if(Q(child)==id.ModuleBaseAddress+0x27F24F8&&Q(id.ModuleBaseAddress+0x27F2538)==id.ModuleBaseAddress+0x170C5D0&&Q(id.ModuleBaseAddress+0x3417970)==id.ModuleBaseAddress+0x2802E40&&Q(id.ModuleBaseAddress+0x2802E48)==id.ModuleBaseAddress+0x17361E0){childStatus="type-1e17-raw-candidate";childKey=BinaryPrimitives.ReadUInt32LittleEndian(Take(child+0x18,4));}else childStatus="unverified-type";}
+     }
    }}
   }
-  if(status=="type-0073-candidate"&&(childStatus=="null"||childStatus=="type-1e17-raw-candidate"))
+  if(!updated&&status=="type-0073-candidate"&&(childStatus=="null"||childStatus=="type-1e17-raw-candidate"))
   {
    var term=childStatus=="null"?0U:CurrentBuildAbilityRecordsCandidateReader.Hash(childKey!.Value);
    var sum=unchecked(term+0x7A6F656EU);var low=unchecked(CurrentBuildAbilityRecordsCandidateReader.Hash(sum)+sum);
