@@ -36,10 +36,13 @@ internal static class CurrentBuildUnitTemplateNamesSampleCommand
             !options.TryGetValue("--keys", out var rawKeys))
             throw new ArgumentException("--pid, --start-ticks, --keys and --output required.");
         var keys = ParseKeys(rawKeys);
+        var sha = CurrentBuildTargetTemplateNameSampleCommand.ExpectedSha(options);
         if (File.Exists(path)) throw new IOException("Output exists.");
         await using var lease = await NativeReadFileLease.AcquireAsync(pid, ticks,
-            CurrentBuildPlayerLookup.GameSha256, TimeSpan.FromSeconds(1), ct);
-        await using var source = await WindowsNativeMemorySession.OpenAsync(pid, ticks, CurrentBuildPlayerLookup.GameSha256, ct);
+            sha, TimeSpan.FromSeconds(1), ct);
+        await using var source = await WindowsNativeMemorySession.OpenAsync(pid, ticks, sha, ct);
+        if (source.Identity.ProcessId != pid || source.Identity.ProcessStartUtcTicks != ticks || !string.Equals(source.Identity.ExecutableSha256, sha, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Process/build identity mismatch.");
         var observation = Read(source, keys, () => WindowsThreadTlsSnapshot.Capture(pid), ct);
         if (await source.RevalidateAsync(ct) is not null) throw new InvalidDataException("Process identity invalidated.");
         ct.ThrowIfCancellationRequested();
