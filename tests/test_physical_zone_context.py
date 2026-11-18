@@ -10,7 +10,13 @@ import unittest
 from unittest.mock import patch
 
 from scripts import physical_rift as p
-from tests.test_physical_only_selection import IDENTITY, REPORT_IDENTITY
+from tests.test_physical_only_selection import IDENTITY as BASE_IDENTITY, REPORT_IDENTITY as BASE_REPORT_IDENTITY
+
+SHA_1177 = "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8"
+SHA_1179 = "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"
+QUALIFICATION_1179 = "1179 raw zone/cache candidates only; outer descriptor, child, zone ID and API agreement unverified"
+IDENTITY = dict(BASE_IDENTITY, executableSha256=SHA_1177)
+REPORT_IDENTITY = dict(BASE_REPORT_IDENTITY, executableSha256=SHA_1177)
 
 
 def report():
@@ -158,8 +164,36 @@ class ZoneContextTests(unittest.TestCase):
 
 
 
+    def test_unknown_zone_reader_sha_is_rejected(self):
+        source = report()
+        source["observation"]["identity"]["executableSha256"] = "a" * 64
+        with self.assertRaisesRegex(ValueError, "unsupported-native-zone-context-sha"):
+            p._native_values("zone-context", source)
+
+    def test_1179_typed_outer_does_not_qualify_child_or_id(self):
+        source = report()
+        row = source["observation"]
+        row["identity"]["executableSha256"] = SHA_1179
+        row.update(qualification="1179 outer type candidate only; child, zone ID, API agreement and restart unverified",
+                   rawZoneKey=12, childStatus="unverified-type",
+                   childKey=None, zoneIdCandidate=None, outerVtableCandidate=True)
+        value = p._native_values("zone-context", source)
+        self.assertEqual(value["status"], "unavailable")
+        self.assertIsNone(value["zoneIdCandidate"])
+        self.assertEqual(value["rawZoneKey"], 12)
+        self.assertEqual(value["reason"], "zone-child-type-unverified")
+        self.assertIs(value["outerVtableCandidate"], True)
+        with self.assertRaisesRegex(ValueError, "invalid-native-zone-context-qualification"):
+            p._native_values("zone-context", dict(source, observation=dict(row, qualification=QUALIFICATION_1179)))
+        for change in (dict(childStatus="null", zoneIdCandidate="z0000000CD2EA79BE"),
+                       dict(zoneIdCandidate="z0000000CD2EA79BE"), dict(childStatus="null"),
+                       dict(childStatus="type-1e17-raw-candidate", childKey=123),
+                       dict(status="unqualified-cache-record", childStatus="null")):
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, "unsupported-native-zone-1179-claim"):
+                p._native_values("zone-context", dict(source, observation=dict(row, **change)))
+
     def test_1179_zone_context_admits_explicit_sha_but_withholds_unverified_zone_id(self):
-        updated_sha = "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"
+        updated_sha = SHA_1179
         with TemporaryDirectory() as directory:
             exe, path = Path(directory) / "reader.exe", Path(directory) / "zone-1179.json"
             exe.write_bytes(b"MZ")
@@ -172,12 +206,11 @@ class ZoneContextTests(unittest.TestCase):
                     "--sha256", updated_sha])
                 source = report()
                 source["observation"]["identity"]["executableSha256"] = updated_sha
-                source["observation"]["qualification"] = (
-                    "1179 raw zone/cache candidates only; outer descriptor, child, zone ID and API agreement unverified")
+                source["observation"]["qualification"] = QUALIFICATION_1179
                 now = datetime.now(timezone.utc).isoformat()
                 source["observation"].update(startedAtUtc=now, completedAtUtc=now,
                     status="unqualified-cache-record", childStatus="unverified-type",
-                    childKey=None, zoneIdCandidate=None)
+                    childKey=None, zoneIdCandidate=None, outerVtableCandidate=True)
                 path.write_text(json.dumps(source))
                 receipt = dict(recordType="native-current-zone-seed-summary/1",
                     status="unqualified-cache-record", output=str(path))
@@ -191,6 +224,13 @@ class ZoneContextTests(unittest.TestCase):
             self.assertEqual(result["nativeValues"]["reason"], "unqualified-cache-record")
             self.assertEqual(result["nativeValues"]["rawZoneKey"], 1216123138)
             self.assertIsNone(result["nativeValues"]["zoneIdCandidate"])
+            self.assertIs(result["nativeValues"]["outerVtableCandidate"], True)
+
+            forged = json.loads(path.read_text())
+            for invalid in (1, "true"):
+                with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, "invalid-native-zone-outer-diagnostic"):
+                    forged["observation"]["outerVtableCandidate"] = invalid
+                    p._native_values("zone-context", forged)
 
 if __name__ == "__main__":
     unittest.main()

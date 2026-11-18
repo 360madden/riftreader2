@@ -563,10 +563,22 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
                 or not isinstance(identity.get("executableSha256"), str)
                 or re.fullmatch(r"[0-9A-Fa-f]{64}", identity["executableSha256"]) is None):
             raise ValueError("invalid-native-zone-context-identity")
-        if identity["executableSha256"].casefold() == "df954b798331e18359be62a31cc74b49fc3f50b87385ebb080a5448256322c01":
-            qualification = "1179 raw zone/cache candidates only; outer descriptor, child, zone ID and API agreement unverified"
+        zone_sha = identity["executableSha256"].casefold()
+        postpatch_zone = zone_sha == "df954b798331e18359be62a31cc74b49fc3f50b87385ebb080a5448256322c01"
+        if not postpatch_zone and zone_sha != "1935a05c9db6d468e34e0055014a4a99c1b5afceb1695884e24600f5c20a4be8":
+            raise ValueError("unsupported-native-zone-context-sha")
+        if postpatch_zone:
+            qualification = "1179 outer type candidate only; child, zone ID, API agreement and restart unverified"
+            # Older 1179 readers emitted only raw cache candidates, never a typed outer.
+            raw_only = "1179 raw zone/cache candidates only; outer descriptor, child, zone ID and API agreement unverified"
+            if row.get("qualification") == raw_only and row.get("status") != "type-0073-candidate":
+                qualification = raw_only
         if row.get("qualification") != qualification:
             raise ValueError("invalid-native-zone-context-qualification")
+        outer_vtable = row.get("outerVtableCandidate")
+        if ((outer_vtable is not None and type(outer_vtable) is not bool)
+                or (not postpatch_zone and outer_vtable is not None)):
+            raise ValueError("invalid-native-zone-outer-diagnostic")
         key, zone_key = row.get("selfKey"), row.get("rawZoneKey")
         if (type(key) is not int or not 0 < key < 2**64
                 or type(zone_key) is not int or not 0 <= zone_key < 2**32):
@@ -588,6 +600,8 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
                     and child_status is not None)
                 or (status in ("unqualified-cache-record", "type-0073-candidate") and child_status is None)):
             raise ValueError("invalid-native-zone-context-child")
+        if postpatch_zone and (zone_id is not None or child_status not in (None, "unverified-type")):
+            raise ValueError("unsupported-native-zone-1179-claim")
         supports_id = status == "type-0073-candidate" and child_status in ("null", "type-1e17-raw-candidate")
         if ((supports_id and (not isinstance(zone_id, str) or re.fullmatch(r"z[0-9A-Fa-f]{16}", zone_id) is None
                              or int(zone_id[1:9], 16) != zone_key))
@@ -601,6 +615,7 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
         return {"status": "available-candidate" if supports_id else "unavailable",
                 "reason": None if supports_id else ("zone-child-type-unverified" if status == "type-0073-candidate" else status),
                 "nativeStatus": status, "selfKey": str(key), "rawZoneKey": zone_key,
+                **({"outerVtableCandidate": outer_vtable} if postpatch_zone else {}),
                 "zoneIdCandidate": zone_id, "childStatus": child_status, "childKey": child_key,
                 "startedAtUtc": row["startedAtUtc"], "sampledAtUtc": row["completedAtUtc"],
                 "acquisitionElapsedMilliseconds": elapsed, "qualification": qualification,

@@ -8,7 +8,7 @@ using RiftReader2.Infrastructure;
 namespace RiftReader2.Live;
 internal sealed record ZoneSeedObservation(object Identity,DateTimeOffset StartedAtUtc,DateTimeOffset CompletedAtUtc,ulong SelfKey,ulong SelfEntity,ulong Health,ulong Owner,uint RawZoneKey,string Status,ushort? Selector=null,uint? TlsIndex=null,ulong? Collection=null,ulong? RecordAddress=null,ulong? RecordVtable=null,ulong? RecordGetterRva=null,ulong? RawNameRef=null,string? ChildStatus=null,uint? ChildKey=null,string? ZoneIdCandidate=null)
 {
- public string Qualification=>Identity is RiftReader2.Domain.NativeProcessIdentity id&&CurrentBuildPlayerLookup.IsUpdatedBuild(id.ExecutableSha256)?"1179 raw zone/cache candidates only; outer descriptor, child, zone ID and API agreement unverified":"zone ID candidate only; API correspondence, name, freshness and restart unverified";
+ public string Qualification=>Identity is RiftReader2.Domain.NativeProcessIdentity id&&CurrentBuildPlayerLookup.IsUpdatedBuild(id.ExecutableSha256)?"1179 outer type candidate only; child, zone ID, API agreement and restart unverified":"zone ID candidate only; API correspondence, name, freshness and restart unverified";
  public bool? OuterVtableCandidate=>Identity is RiftReader2.Domain.NativeProcessIdentity id&&CurrentBuildPlayerLookup.IsUpdatedBuild(id.ExecutableSha256)&&RecordVtable.HasValue&&RecordGetterRva.HasValue?RecordVtable.Value==id.ModuleBaseAddress+0x2B37EA8&&RecordGetterRva.Value==0x1E7F180:null;
  // Diagnostic duration only; excludes lease/session acquisition and command-level revalidation.
  // Null preserves honest absence for offline/legacy observations constructed without measurement.
@@ -60,7 +60,7 @@ internal static class CurrentBuildZoneSeedSampleCommand
  internal static ZoneSeedObservation Read(IReadOnlyNativeMemorySession session,Func<IReadOnlyNativeMemorySession,CurrentBuildPlayerContextObservation> context,Func<IReadOnlyList<NativeThreadEpoch>> threads)
  {
   var startedTimestamp=Stopwatch.GetTimestamp();var start=DateTimeOffset.UtcNow;var id=session.Identity;var updated=CurrentBuildPlayerLookup.IsUpdatedBuild(id.ExecutableSha256);
-  if(id.ProcessId<=0||id.ProcessStartUtcTicks<=0||id.ModuleSize<(updated?0x33843E0UL:0x34731B8UL)||!CurrentBuildPlayerLookup.IsCoreBuild(id.ExecutableSha256))throw new InvalidDataException("Unsupported build or process.");
+  if(id.ProcessId<=0||id.ProcessStartUtcTicks<=0||id.ModuleSize<(updated?0x3521D98UL:0x34731B8UL)||!CurrentBuildPlayerLookup.IsCoreBuild(id.ExecutableSha256))throw new InvalidDataException("Unsupported build or process.");
   var before=context(session);if(before.Identity!=id)throw new InvalidDataException("Self context identity mismatch.");
   var anchors=new Dictionary<(ulong,int),byte[]>();int budget=0;byte[] Take(ulong a,int n,bool save=true){budget=checked(budget+n);if(budget>2*1024*1024)throw new InvalidDataException("Zone budget exceeded.");var b=CurrentBuildPlayerLookup.Exact(session,a,n);if(save){if(anchors.TryGetValue((a,n),out var old)&&!old.AsSpan().SequenceEqual(b))throw new InvalidDataException("Zone bytes changed.");anchors[(a,n)]=b.ToArray();}return b;}
   ulong Ptr(ulong a,int n=8)=>CurrentBuildPlayerLookup.Pointer(a,n);ulong Q(ulong a)=>U64(Take(a,8));
@@ -93,7 +93,9 @@ internal static class CurrentBuildZoneSeedSampleCommand
    {
     record=Ptr(obj,0x1F8);status="unqualified-cache-record";vt=Q(obj);
     if(vt>=id.ModuleBaseAddress&&vt<=id.ModuleBaseAddress+id.ModuleSize-0x48){var target=Q(vt.Value+0x40);if(target>=id.ModuleBaseAddress&&target<id.ModuleBaseAddress+id.ModuleSize)getter=target-id.ModuleBaseAddress;}
-    var outerVerified=!updated&&vt==id.ModuleBaseAddress+0x2B254A8&&Q(id.ModuleBaseAddress+0x2B254E8)==id.ModuleBaseAddress+0x1E772C0&&Q(id.ModuleBaseAddress+0x35109E0)==id.ModuleBaseAddress+0x2B2FEE0&&Q(id.ModuleBaseAddress+0x2B2FEE8)==id.ModuleBaseAddress+0x1E9FD50;
+    var outerVerified=updated
+      ? vt==id.ModuleBaseAddress+0x2B37EA8&&getter==0x1E7F180&&Q(id.ModuleBaseAddress+0x3521D90)==id.ModuleBaseAddress+0x2B3FD98&&Q(id.ModuleBaseAddress+0x2B3FDA0)==id.ModuleBaseAddress+0x1EA56A0
+      : vt==id.ModuleBaseAddress+0x2B254A8&&Q(id.ModuleBaseAddress+0x2B254E8)==id.ModuleBaseAddress+0x1E772C0&&Q(id.ModuleBaseAddress+0x35109E0)==id.ModuleBaseAddress+0x2B2FEE0&&Q(id.ModuleBaseAddress+0x2B2FEE8)==id.ModuleBaseAddress+0x1E9FD50;
     if(outerVerified)status="type-0073-candidate";
      if(updated){childStatus="unverified-type";}else{
     nameRef=Q(obj+0x1F0);if(nameRef==0)childStatus="null";else{var child=Ptr(nameRef.Value,0x1C);if(Q(child)==id.ModuleBaseAddress+0x27F24F8&&Q(id.ModuleBaseAddress+0x27F2538)==id.ModuleBaseAddress+0x170C5D0&&Q(id.ModuleBaseAddress+0x3417970)==id.ModuleBaseAddress+0x2802E40&&Q(id.ModuleBaseAddress+0x2802E48)==id.ModuleBaseAddress+0x17361E0){childStatus="type-1e17-raw-candidate";childKey=BinaryPrimitives.ReadUInt32LittleEndian(Take(child+0x18,4));}else childStatus="unverified-type";}

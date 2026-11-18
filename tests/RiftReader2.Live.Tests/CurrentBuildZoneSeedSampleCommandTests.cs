@@ -47,10 +47,10 @@ public sealed class CurrentBuildZoneSeedSampleCommandTests
  static ZoneSeedObservation Read(Fake s)=>CurrentBuildZoneSeedSampleCommand.Read(s,_=>Context(s),()=>[Epoch]);
  static CurrentBuildPlayerContextObservation Context(Fake s)=>new(s.Identity,DateTimeOffset.UtcNow,DateTimeOffset.UtcNow,44,E,H,O,H,0,"x",null,null,0,"x",0,"x",false);
  static Fake Fixture(){var s=new Fake();s.Put(H+0x40,Q(O));s.Put(H+0x10,Q(E));s.Put(O,Q(M+0x2927448));s.Put(M+0x2927488,Q(M+0x19D21E0));s.Put(M+0x34731B0,Q(M+0x2929BD0));s.Put(M+0x2929BD8,Q(M+0x19F4D60));s.Put(M+0x33623E0,Q(S));s.Put(S+0x3F8,Q(E));s.Put(S+0x360,Q(44));s.Put(O+0x150,BitConverter.GetBytes(1234U));s.Put(M+0x336EBF8,Q(P));s.Put(P+0x40,BitConverter.GetBytes((ushort)55));s.Put(M+0x3372C18,Q(W));s.Put(W,Q(R));s.Put(R+0x274,new byte[4]);var ti=new byte[32];Q(T).CopyTo(ti,0);Q(123).CopyTo(ti,16);Q(77).CopyTo(ti,24);s.Put(T+0x30,ti);s.Put(T+0x1480,Q(0));var h=new byte[32];Q(B).CopyTo(h,0);Q(24).CopyTo(h,8);Q(1).CopyTo(h,16);Q(1).CopyTo(h,24);s.Put(R+0x220,h);var n=new byte[24];BinaryPrimitives.WriteUInt16LittleEndian(n.AsSpan(8),55);BinaryPrimitives.WriteUInt32LittleEndian(n.AsSpan(12),1234);Q(Holder).CopyTo(n,16);s.Put(B,n);s.Put(Holder+0x18,Q(Obj));s.Put(Obj,Q(M+0x1000));s.Put(M+0x1040,Q(M+0x2000));s.Put(Obj+0x1F0,Q(0));return s;}
- [Fact] public void UpdatedBuildCacheHitRemainsUnqualified()
+ [Fact] public void UpdatedBuildTypedOuterRemainsZoneIdUnqualified()
  {
   var s=UpdatedFixture();var r=Read(s);
-  Assert.Equal("unqualified-cache-record",r.Status);
+  Assert.Equal("type-0073-candidate",r.Status);
   Assert.Equal(1234U,r.RawZoneKey);Assert.Equal(Obj,r.RecordAddress);
   Assert.Equal(M+0x2B37EA8,r.RecordVtable);
   Assert.Equal(0x1E7F180UL,r.RecordGetterRva);
@@ -65,12 +65,32 @@ public sealed class CurrentBuildZoneSeedSampleCommandTests
   Assert.False(r.OuterVtableCandidate);
   Assert.Equal("unverified-type",r.ChildStatus);Assert.Null(r.ZoneIdCandidate);
  }
- [Fact] public void UpdatedBuildProviderMissingPreservesRawZoneKey()
+ [Fact] public void UpdatedBuildWrongDescriptorIsNotTyped()
+  {
+   var s=UpdatedFixture();s.Put(M+0x3521D90,Q(M+0x1000));
+   var r=Read(s);Assert.Equal("unqualified-cache-record",r.Status);
+   Assert.True(r.OuterVtableCandidate);
+   Assert.Equal("unverified-type",r.ChildStatus);Assert.Null(r.ZoneIdCandidate);
+  }
+  [Fact] public void UpdatedBuildChangedDescriptorRejects()
+  {
+   var s=UpdatedFixture();s.Change(M+0x3521D90,Q(0));
+   Assert.Throws<InvalidDataException>(()=>Read(s));
+  }
+  [Fact] public void UpdatedBuildProviderMissingPreservesRawZoneKey()
  {
   var s=UpdatedFixture();s.Put(M+0x33803B8,Q(0));var r=Read(s);
   Assert.Equal("null-provider",r.Status);Assert.Equal(1234U,r.RawZoneKey);Assert.Null(r.ZoneIdCandidate);
  }
- [Fact] public void UpdatedBuildWrongOwnerGetterFailsClosed()
+ [Theory]
+  [InlineData(0x3500000UL)]
+  [InlineData(0x3521D97UL)]
+  public void UpdatedBuildRejectsDescriptorOutsideDeclaredModule(ulong moduleSize)
+  {
+   var s=UpdatedFixture();s.Identity=s.Identity with{ModuleSize=moduleSize};
+   Assert.Throws<InvalidDataException>(()=>Read(s));
+  }
+  [Fact] public void UpdatedBuildWrongOwnerGetterFailsClosed()
  {
   var s=UpdatedFixture();s.Put(M+0x2933258,Q(0));Assert.Throws<InvalidDataException>(()=>Read(s));
  }
@@ -88,6 +108,7 @@ public sealed class CurrentBuildZoneSeedSampleCommandTests
   s.Put(O,Q(M+0x2933218));s.Put(M+0x2933258,Q(M+0x19D2020));
   s.Put(M+0x3373BA0,Q(S));s.Put(M+0x33803B8,Q(P));s.Put(M+0x33843D8,Q(W));
   s.Put(Obj,Q(M+0x2B37EA8));s.Put(M+0x2B37EE8,Q(M+0x1E7F180));
+   s.Put(M+0x3521D90,Q(M+0x2B3FD98));s.Put(M+0x2B3FDA0,Q(M+0x1EA56A0));
   return s;
  }
  static byte[] Q(ulong v){var b=new byte[8];BinaryPrimitives.WriteUInt64LittleEndian(b,v);return b;}
