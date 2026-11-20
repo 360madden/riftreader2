@@ -24,6 +24,7 @@ if str(ROOT) not in sys.path:
 
 from scripts import physical_rift
 from scripts import replay_physical_telemetry_zone as verify
+from scripts import replay_physical_telemetry_target as target_audit
 
 HOST = "AMD-DESKTOP"
 BUILD_SHA = verify.SHA_1179
@@ -268,9 +269,47 @@ def native_zone(selection, directory, which):
             "completedAtUtc": values["sampledAtUtc"]}
 
 
+def native_target(selection, directory, which):
+    """One exact-owner native target snapshot; raw zero stays unqualified."""
+    path = directory / f"native-target-{which}.json"
+    result = physical_rift.read_native(selection, "player-context", output=path)
+    require(result.get("status") == "complete"
+            and result.get("target") == selection["target"]
+            and result.get("nativeRead") == "player-context"
+            and result.get("nativeOutput") == str(path)
+            and path.is_file() and not path.is_symlink(),
+            "native-target-read-unavailable")
+    source_sha = result.get("nativeSourceSha256")
+    require(type(source_sha) is str and len(source_sha) == 64,
+            "native-target-source-hash-unavailable")
+    native, digest = verify.load(path, source_sha)
+    values = physical_rift._native_values("player-context", native)
+    require(values == result.get("nativeValues"),
+            "native-target-source-projection-mismatch")
+    record = native["observation"]
+    identity = record.get("identity")
+    target = selection["target"]
+    require(isinstance(identity, dict)
+            and ("identity" not in native or identity == native["identity"])
+            and identity.get("processId") == target["processId"]
+            and str(identity.get("processStartUtcTicks")) == str(target["processStartUtcTicks"])
+            and str(identity.get("executableSha256", "")).upper() ==
+                str(target["executableSha256"]).upper()
+            and identity.get("executablePath") == target["executablePath"]
+            and record.get("completedAtUtc") == values["sampledAtUtc"],
+            "native-target-owner-or-time-invalid")
+    return {"source": str(path), "sha256": digest,
+            "unitKeyCandidate": values["unitKey"],
+            "targetStatus": values["target"]["status"],
+            "targetUnitIdCandidate": values["target"]["unitIdCandidate"],
+            "startedAtUtc": record["startedAtUtc"],
+            "completedAtUtc": record["completedAtUtc"]}
+
+
 def collect(pid, output_dir, *, start_address="0x13000000",
             scan_bytes=64*1024*1024, gap_ms=600, reader_factory=ReadOnlyWindowsProcess,
-            auto_scope=False, scope_count=4):
+            auto_scope=False, scope_count=4, include_native_target=False):
+    require(type(include_native_target) is bool, "invalid-native-target-option")
     require(type(auto_scope) is bool and type(scope_count) is int
             and 1 <= scope_count <= 8, "invalid-auto-scope-options")
     selection, start = admission(pid, start_address, scan_bytes, gap_ms)
@@ -311,6 +350,11 @@ def collect(pid, output_dir, *, start_address="0x13000000",
     player = f"u{int(native_data['observation']['selfKey']):016X}"
     require(preflight_player is None or preflight_player == player,
             "survey-versus-bracket-player-changed")
+    target_before = (native_target(selection, root, "before")
+                     if include_native_target else None)
+    require(target_before is None or
+            target_before["unitKeyCandidate"] == str(int(player[1:], 16)),
+            "native-target-player-changed-before")
     require(physical_rift.select_physical(HOST, pid).get("target") == target,
             "changed-process-before-scan")
     with reader_factory(pid) as reader:
@@ -324,6 +368,11 @@ def collect(pid, output_dir, *, start_address="0x13000000",
                       expected_player=player)
     require(physical_rift.select_physical(HOST, pid).get("target") == target,
             "changed-process-after-second-scan")
+    target_after = (native_target(selection, root, "after")
+                    if include_native_target else None)
+    require(target_after is None or
+            target_after["unitKeyCandidate"] == str(int(player[1:], 16)),
+            "native-target-player-changed-after")
     after = native_zone(selection, root, "after")
     same_epoch = physical_rift.select_physical(HOST, pid).get("target") == target
     report = {
@@ -334,6 +383,8 @@ def collect(pid, output_dir, *, start_address="0x13000000",
         "sameProcessEpoch":same_epoch,
         **({"scopeSurvey": survey} if survey is not None else {}),
         "nativeBefore":before, "nativeAfter":after,
+        **({"nativeTargetBefore": target_before,
+            "nativeTargetAfter": target_after} if include_native_target else {}),
         "passes":[first, second],
         "sourceClockProgression":"unqualified",
         "newSourceSequenceCount":None,
@@ -370,6 +421,10 @@ def collect(pid, output_dir, *, start_address="0x13000000",
         accepted = verify.replay(path)
         require(accepted["status"]=="matching-candidates",
                 "independent-source-replay-refused")
+        if include_native_target:
+            target_result = target_audit.replay(path)
+            require(isinstance(target_result.get("nativeTargetComparison"), dict),
+                    "native-target-source-replay-refused")
     return path, report
 
 
@@ -383,6 +438,8 @@ def main(argv=None):
                         help="bounded read-only survey selects a current player/zone candidate region before the capture bracket")
     parser.add_argument("--scope-count",type=int,default=4,
                         help="1–8 adjacent regions of --scan-bytes each; only used by --auto-scope")
+    parser.add_argument("--include-native-target", action="store_true",
+                        help="pin additional read-only native selected-target snapshots around both Lua passes")
     parser.add_argument("--output-dir",type=Path,
                         default=ROOT/"artifacts"/("physical-telemetry-zone-"+uuid.uuid4().hex))
     args=parser.parse_args(argv)
@@ -390,7 +447,8 @@ def main(argv=None):
         path, report=collect(args.physical_pid,args.output_dir,
                              start_address=args.start_address,scan_bytes=args.scan_bytes,
                              gap_ms=args.gap_ms, auto_scope=args.auto_scope,
-                              scope_count=args.scope_count)
+                              scope_count=args.scope_count,
+                              include_native_target=args.include_native_target)
     except (OSError,ValueError,KeyError,TypeError,AttributeError,OverflowError) as exc:
         print(json.dumps({"status":"blocked","reason":str(exc)[:220]}))
         return 2
