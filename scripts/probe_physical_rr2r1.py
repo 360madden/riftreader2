@@ -25,6 +25,11 @@ from scripts import assess_typed_wire_runs, physical_rift
 from scripts.inspect_typed_resource import require_session_id
 from scripts.compare_physical_player_context_pair import BUILD_SHA
 
+# The native prefix scout uses no build-specific RVAs. Both exact executable
+# builds are already qualified for process/epoch pinning; unknown hashes refuse.
+UPDATED_SHA = "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"
+SUPPORTED_SHAS = frozenset((BUILD_SHA, UPDATED_SHA))
+
 HOST = "AMD-DESKTOP"
 MARKER = "RR2R1|"
 SCAN_BYTES = 256 * 1024 * 1024
@@ -56,7 +61,7 @@ def pinned_selection(pid):
             "physical-selection-unavailable")
     identity = selection.get("target")
     require(isinstance(identity, dict) and identity.get("processId") == pid
-            and str(identity.get("executableSha256", "")).upper() == BUILD_SHA
+            and str(identity.get("executableSha256", "")).upper() in SUPPORTED_SHAS
             and str(identity.get("processStartUtcTicks", "")).isdecimal(),
             "physical-build-or-epoch-invalid")
     return selection
@@ -75,7 +80,8 @@ def check_index(path, request, request_sha, selection):
             and isinstance(observed, dict)
             and observed.get("processId") == target["processId"]
             and str(observed.get("processStartUtcTicks")) == str(target["processStartUtcTicks"])
-            and str(observed.get("executableSha256", "")).upper() == BUILD_SHA,
+            and str(observed.get("executableSha256", "")).upper()
+                == str(target["executableSha256"]).upper(),
             "scan-evidence-identity-mismatch")
     require(index.get("status") in ("complete", "partial")
             and type(index.get("publishedSnapshots")) is int
@@ -120,7 +126,7 @@ def check_index(path, request, request_sha, selection):
                 expected_target = {
                     "processId": target["processId"],
                     "processStartUtcTicks": int(target["processStartUtcTicks"]),
-                    "executableSha256": BUILD_SHA,
+                    "executableSha256": str(target["executableSha256"]).upper(),
                 }
                 require(parsed.get("schemaVersion") == 1
                         and parsed.get("evidenceKind") == "native-memory-snapshot-request/1"
@@ -176,7 +182,7 @@ def resume_cursor(path, selection, reader_sha):
     target = selection["target"]
     expected = {"processId": target["processId"],
                 "processStartUtcTicks": int(target["processStartUtcTicks"]),
-                "executableSha256": BUILD_SHA}
+                "executableSha256": str(target["executableSha256"]).upper()}
     require(summary.get("schemaVersion") == 1 and
             summary.get("evidenceKind") == "amd-physical-rr2r1-prefix-scan/1" and
             summary.get("ownerHost") == HOST and summary.get("target") == expected and
@@ -235,7 +241,7 @@ def assess_saved(summary_path, output_dir, session_id=None):
             and type(target.get("processId")) is int and target["processId"] > 0
             and type(target.get("processStartUtcTicks")) is int
             and target["processStartUtcTicks"] > 0
-            and str(target.get("executableSha256", "")).upper() == BUILD_SHA,
+            and str(target.get("executableSha256", "")).upper() in SUPPORTED_SHAS,
             "saved-target-invalid")
     rows = summary.get("runs")
     require(isinstance(rows, list) and 1 <= len(rows) <= 16,
@@ -351,7 +357,7 @@ def collect(pid, output_dir, *, scan_bytes=SCAN_BYTES, scan_ms=SCAN_MS,
         "target": {
             "processId": pid,
             "processStartUtcTicks": int(target["processStartUtcTicks"]),
-            "executableSha256": BUILD_SHA,
+            "executableSha256": str(target["executableSha256"]).upper(),
         },
         "startAddress": "0x10000",
         "maxScanBytes": scan_bytes,

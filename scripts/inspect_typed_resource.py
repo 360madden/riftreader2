@@ -1,4 +1,4 @@
-"""Extract one player resource from a retained typed API memory snapshot.
+"""Extract one player resource or zone from a retained typed API memory snapshot.
 
 This is an offline evidence helper. It verifies every successful native-memory
 chunk hash, joins only contiguous chunks, and selects the newest complete frame.
@@ -21,7 +21,7 @@ import sys
 PREFIX = b"RRAPIVAL2|"
 SUFFIX = b"|RRAPIVALEND"
 MAX_WIRE_BYTES = 8192
-RESOURCE_FIELDS = {"mana": "manaMax", "power": None}
+RESOURCE_FIELDS = {"mana": "manaMax", "power": None, "zone": None}
 FIELD_NAMES = {
     "coordX", "coordY", "coordZ", "health", "healthMax", "mana", "manaMax",
     "combat", "dead", "mounted", "zone", "power", "combo", "planar", "planarMax",
@@ -200,6 +200,10 @@ def inspect(snapshot_path: Path, resource: str, session_id: str | None = None) -
     prefix, suffix = (REFERENCE_PREFIX, REFERENCE_SUFFIX) if session_id is not None else (PREFIX, SUFFIX)
     if resource not in RESOURCE_FIELDS:
         raise ResourceInspectionError("unsupported-resource")
+    # RR2R1 is the only admitted source for the statused string zone field.
+    # The historical RRAPIVAL2 numeric resource route is intentionally refused.
+    if resource == "zone" and session_id is None:
+        raise ResourceInspectionError("zone-requires-rr2r1-session-id")
     raw_file = snapshot_path.read_bytes()
     try:
         snapshot = json.loads(raw_file.decode("utf-8-sig"), object_pairs_hook=_unique)
@@ -312,7 +316,7 @@ def inspect(snapshot_path: Path, resource: str, session_id: str | None = None) -
         "candidateCount": len(candidates),
         "limitations": [
             "This is an offline extraction from bounded retained snapshot bytes.",
-            "An API resource value is an independent reference, not native field qualification.",
+            "An API field is an independent reference, not native field qualification.",
         ],
     }
 
