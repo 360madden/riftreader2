@@ -40,6 +40,27 @@ def _hp(report):
             and type(h.get("current")) is int else None)
 
 
+def _compare_zone_candidates(before, after):
+    """Compare guarded endpoint strings only; distinct epochs are not one world."""
+    a, b = before.get("zoneBracketCandidate"), after.get("zoneBracketCandidate")
+    if a is None or b is None:
+        return {"status": "not-comparable", "reason": "one-or-both-zone-brackets-not-captured"}
+    require(isinstance(a, dict) and isinstance(b, dict)
+            and a.get("status") == b.get("status") == "matching-candidates"
+            and isinstance(a.get("zoneIdCandidate"), str)
+            and isinstance(b.get("zoneIdCandidate"), str), "invalid-zone-bracket")
+    same = (a["zoneIdCandidate"] == b["zoneIdCandidate"]
+            and a.get("rawZoneKey") == b.get("rawZoneKey"))
+    return {"status": "matching-id-candidates" if same else "different-id-candidates",
+            "beforeZoneIdCandidate": a["zoneIdCandidate"],
+            "afterZoneIdCandidate": b["zoneIdCandidate"],
+            "beforeRawZoneKey": a["rawZoneKey"],
+            "afterRawZoneKey": b["rawZoneKey"],
+            "worldInstanceStatus": "unavailable",
+            "qualification": "Different process epochs: ID strings are native candidates, not "
+                             "a continuous world identity or verified zone transition."}
+
+
 def compare(before_path, after_path):
     a, b = replay.verified_state(before_path), replay.verified_state(after_path)
     require(a["summarySha256"] != b["summarySha256"], "same-source")
@@ -68,6 +89,7 @@ def compare(before_path, after_path):
         "beforeSelfKeyCandidate": a["selfKeyCandidate"],
         "afterSelfKeyCandidate": b["selfKeyCandidate"],
         "selfKeysNumericallyEqual": a["selfKeyCandidate"] == b["selfKeyCandidate"],
+        "crossEpochZoneCandidateComparison": _compare_zone_candidates(a, b),
         "beforePositionCandidate": xyz1, "afterPositionCandidate": xyz2,
         "uncorrelatedNumericXYZDifference": diff,
         "uncorrelatedNumericPlanarDifference": math.hypot(diff["x"], diff["z"]),

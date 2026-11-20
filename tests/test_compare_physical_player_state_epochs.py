@@ -43,6 +43,39 @@ class CrossEpochTests(unittest.TestCase):
         self.assertEqual(result["afterEpoch"]["processId"], 200)
         self.assertIn("NOT verified movement", result["qualification"])
 
+    def test_no_zone_brackets_preserves_explicit_unavailability(self):
+        self.assertEqual(self.run_pair()["crossEpochZoneCandidateComparison"],
+                         {"status": "not-comparable", "reason": "one-or-both-zone-brackets-not-captured"})
+
+    def test_changed_zone_candidates_across_epochs_are_not_world_proof(self):
+        def mutate(a, b):
+            a["zoneBracketCandidate"] = {"status": "matching-candidates",
+                                          "zoneIdCandidate": "z0000000CB7B53FD7", "rawZoneKey": 12}
+            b["zoneBracketCandidate"] = {"status": "matching-candidates",
+                                          "zoneIdCandidate": "z487C9102D2EA79BE", "rawZoneKey": 1216123138}
+        value = self.run_pair(mutate)["crossEpochZoneCandidateComparison"]
+        self.assertEqual(value["status"], "different-id-candidates")
+        self.assertEqual(value["beforeRawZoneKey"], 12)
+        self.assertEqual(value["afterZoneIdCandidate"], "z487C9102D2EA79BE")
+        self.assertEqual(value["worldInstanceStatus"], "unavailable")
+        self.assertIn("not a continuous world identity", value["qualification"])
+
+    def test_matching_zone_strings_across_epochs_remain_candidate_only(self):
+        def mutate(a, b):
+            for item in (a, b):
+                item["zoneBracketCandidate"] = {"status": "matching-candidates",
+                                                "zoneIdCandidate": "z0000000CB7B53FD7", "rawZoneKey": 12}
+        result = self.run_pair(mutate)["crossEpochZoneCandidateComparison"]
+        self.assertEqual(result["status"], "matching-id-candidates")
+        self.assertEqual(result["worldInstanceStatus"], "unavailable")
+
+    def test_invalid_zone_bracket_refused(self):
+        def mutate(a, b):
+            a["zoneBracketCandidate"] = {"status": "claimed-world-proof", "zoneIdCandidate": "zBAD"}
+            b["zoneBracketCandidate"] = {"status": "matching-candidates", "zoneIdCandidate": "zOK"}
+        with self.assertRaisesRegex(ValueError, "invalid-zone-bracket"):
+            self.run_pair(mutate)
+
     def test_different_self_keys_not_mistaken_for_continuity(self):
         self.assertFalse(self.run_pair(
             lambda a,b: b.update(selfKeyCandidate="999"))["selfKeysNumericallyEqual"])
