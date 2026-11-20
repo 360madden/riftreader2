@@ -111,10 +111,8 @@ class ReadOnlyWindowsProcess:
             self.handle = None
 
 
-def scan(reader, directory, *, start, scan_bytes, expected_player):
-    """One bounded read-only region scan; never assumes prefix==complete frame."""
-    directory.mkdir()
-    started = utc()
+def find_markers(reader, *, start, scan_bytes):
+    """A bounded scope only; a miss never claims process-wide absence."""
     seen, previous, bytes_read, incomplete = [], b"", 0, 0
     for offset in range(0, scan_bytes, CHUNK):
         address = start + offset
@@ -136,6 +134,14 @@ def scan(reader, directory, *, start, scan_bytes, expected_player):
         previous = raw[-(len(MARKER) - 1):] if len(raw) == CHUNK else b""
         if len(seen) == MAX_MARKERS:
             break
+    return seen, bytes_read, incomplete
+
+
+def scan(reader, directory, *, start, scan_bytes, expected_player):
+    """One bounded read-only region scan; never assumes prefix==complete frame."""
+    directory.mkdir()
+    started = utc()
+    seen, bytes_read, incomplete = find_markers(reader, start=start, scan_bytes=scan_bytes)
 
     rows = []
     for number, addr in enumerate(seen, 1):
@@ -166,6 +172,85 @@ def scan(reader, directory, *, start, scan_bytes, expected_player):
             "hits": len(seen), "frames": rows}
 
 
+def survey_scopes(reader, *, start, scan_bytes, scope_count, expected_player, expected_zone):
+    """Find a plausible current publisher scope, not authoritative Lua evidence.
+
+    The replay-tested *acquisition* still scans two new passes and requires
+    advancing frames. Survey bytes never become trusted source observations.
+    """
+    require(type(scope_count) is int and 1 <= scope_count <= 8 and
+            type(start) is int and type(scan_bytes) is int and scan_bytes >= CHUNK and
+            start + scan_bytes * scope_count < 0x7FFF_FFFF_FFFF,
+            "invalid-scope-count-or-range")
+    started = time.monotonic()
+    ranked, inventory = [], []
+    for index in range(scope_count):
+        require(time.monotonic() - started <= 15, "survey-time-budget-exceeded")
+        address = start + index * scan_bytes
+        hits, read_bytes, missing = find_markers(reader, start=address,
+                                                 scan_bytes=scan_bytes)
+        groups = {}
+        valid = 0
+        for marker_addr in hits:
+            raw = reader.read(marker_addr, MAX_FRAME_BYTES)
+            require(type(raw) is bytes and len(raw) <= MAX_FRAME_BYTES,
+                    "invalid-survey-read")
+            end = raw.find(SUFFIX)
+            if end < 0:
+                continue
+            wire = raw[:end + len(SUFFIX)]
+            try:
+                root = verify.exact_json(wire[len(verify.PREFIX):-len(SUFFIX)])
+                detail = root.get("playerTelemetry") or {}
+                zone = detail.get("zone") or {}
+                row = {"seq": root.get("sequence"), "epoch": root.get("epoch"),
+                       "session": root.get("sessionId"), "clock": root.get("frameTime"),
+                       "zoneId": zone.get("id")}
+                source = verify._frame(wire, row, expected_player)
+                if source["zoneId"] != expected_zone:
+                    continue
+            except (ValueError, TypeError, AttributeError):
+                continue
+            valid += 1
+            key = (source["session"], source["epoch"])
+            groups.setdefault(key, []).append(source)
+        choices = []
+        for (session, epoch), rows in groups.items():
+            by_sequence = {}
+            conflicted = False
+            for row in rows:
+                existing = by_sequence.get(row["seq"])
+                if existing is not None and existing["clock"] != row["clock"]:
+                    conflicted = True
+                by_sequence[row["seq"]] = row
+            ordered = sorted(by_sequence.values(), key=lambda row: row["seq"])
+            if (conflicted or len(ordered) < 2 or any(
+                    a["clock"] >= b["clock"] for a, b in zip(ordered, ordered[1:]))):
+                continue
+            best = max(ordered, key=lambda row: row["seq"])
+            choices.append((epoch, best["clock"], best["seq"], len(ordered), session))
+        row = {"startAddress": f"0x{address:X}", "readBytes": read_bytes,
+               "missingChunks": missing, "markerHits": len(hits),
+               "validFrameCandidates": valid,
+               "candidateGenerations": len(choices)}
+        if choices:
+            top = max(choices)
+            row.update(topEpoch=top[0], topSourceClock=top[1],
+                       topSequence=top[2], topSession=top[4])
+            ranked.append((top, address))
+        inventory.append(row)
+    selected = max(ranked)[1] if ranked else None
+    return {"status": "scoped-candidate" if selected is not None else "unqualified",
+            "baseStartAddress": f"0x{start:X}",
+            "selectedStartAddress": f"0x{selected:X}" if selected is not None else None,
+            "surveyedBytes": sum(item["readBytes"] for item in inventory),
+            "expectedZoneIdCandidate": expected_zone,
+            "scopes": inventory,
+            "qualification": ("Survey-only exact-player source-clock candidate ranking; "
+                              "not a source-freshness result. Separate new scans, "
+                              "native owner brackets and replay still required.")}
+
+
 def native_zone(selection, directory, which):
     path = directory / f"native-{which}.json"
     result = physical_rift.read_native(selection, "zone-context", output=path)
@@ -184,17 +269,48 @@ def native_zone(selection, directory, which):
 
 
 def collect(pid, output_dir, *, start_address="0x13000000",
-            scan_bytes=64*1024*1024, gap_ms=600, reader_factory=ReadOnlyWindowsProcess):
+            scan_bytes=64*1024*1024, gap_ms=600, reader_factory=ReadOnlyWindowsProcess,
+            auto_scope=False, scope_count=4):
+    require(type(auto_scope) is bool and type(scope_count) is int
+            and 1 <= scope_count <= 8, "invalid-auto-scope-options")
     selection, start = admission(pid, start_address, scan_bytes, gap_ms)
+    require(not auto_scope or start + scan_bytes * scope_count < 0x7FFF_FFFF_FFFF,
+            "invalid-auto-scope-range")
     root = Path(output_dir)
     require(not root.exists() and not root.is_symlink() and root.parent.is_dir(),
             "new-output-directory-required")
     root.mkdir()
     target = selection["target"]
+    survey = None
+    preflight_player = None
+    if auto_scope:
+        # This owner read precedes the timed native->Lua->native bracket. It
+        # supplies the player and zone only for selecting candidate scan scope.
+        preflight = native_zone(selection, root, "survey-owner")
+        preflight_report, _ = verify.load(root / "native-survey-owner.json",
+                                          preflight["sha256"])
+        preflight_player = f"u{int(preflight_report['observation']['selfKey']):016X}"
+        require(physical_rift.select_physical(HOST, pid).get("target") == target,
+                "changed-process-before-survey")
+        with reader_factory(pid) as survey_reader:
+            survey = survey_scopes(survey_reader, start=start, scan_bytes=scan_bytes,
+                                   scope_count=scope_count,
+                                   expected_player=preflight_player,
+                                   expected_zone=preflight["zoneIdCandidate"])
+        survey["nativePreflightSourceSha256"] = preflight["sha256"]
+        (root / "scope-survey.json").write_text(
+            json.dumps(survey, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+        require(survey["status"] == "scoped-candidate",
+                "no-current-player-zone-scope-in-survey")
+        start = int(survey["selectedStartAddress"], 16)
+        require(physical_rift.select_physical(HOST, pid).get("target") == target,
+                "changed-process-after-survey")
     player = None
     before = native_zone(selection, root, "before")
     native_data, _ = verify.load(root / "native-before.json", before["sha256"])
     player = f"u{int(native_data['observation']['selfKey']):016X}"
+    require(preflight_player is None or preflight_player == player,
+            "survey-versus-bracket-player-changed")
     require(physical_rift.select_physical(HOST, pid).get("target") == target,
             "changed-process-before-scan")
     with reader_factory(pid) as reader:
@@ -216,6 +332,7 @@ def collect(pid, output_dir, *, start_address="0x13000000",
         "status":"unqualified",
         "target":target,
         "sameProcessEpoch":same_epoch,
+        **({"scopeSurvey": survey} if survey is not None else {}),
         "nativeBefore":before, "nativeAfter":after,
         "passes":[first, second],
         "sourceClockProgression":"unqualified",
@@ -262,13 +379,18 @@ def main(argv=None):
     parser.add_argument("--start-address",default="0x13000000")
     parser.add_argument("--scan-bytes",type=int,default=64*1024*1024)
     parser.add_argument("--gap-ms",type=int,default=600)
+    parser.add_argument("--auto-scope",action="store_true",
+                        help="bounded read-only survey selects a current player/zone candidate region before the capture bracket")
+    parser.add_argument("--scope-count",type=int,default=4,
+                        help="1–8 adjacent regions of --scan-bytes each; only used by --auto-scope")
     parser.add_argument("--output-dir",type=Path,
                         default=ROOT/"artifacts"/("physical-telemetry-zone-"+uuid.uuid4().hex))
     args=parser.parse_args(argv)
     try:
         path, report=collect(args.physical_pid,args.output_dir,
                              start_address=args.start_address,scan_bytes=args.scan_bytes,
-                             gap_ms=args.gap_ms)
+                             gap_ms=args.gap_ms, auto_scope=args.auto_scope,
+                              scope_count=args.scope_count)
     except (OSError,ValueError,KeyError,TypeError,AttributeError,OverflowError) as exc:
         print(json.dumps({"status":"blocked","reason":str(exc)[:220]}))
         return 2
@@ -278,6 +400,7 @@ def main(argv=None):
                       "zoneIdCandidate":report["nativeAfter"]["zoneIdCandidate"],
                       "frames":[sum("sha" in x for x in p["frames"]) for p in report["passes"]],
                       "sourceClockProgression":report["sourceClockProgression"],
+                      "surveySelectedStartAddress":(report.get("scopeSurvey") or {}).get("selectedStartAddress"),
                       "qualification":report["qualification"]}))
     return 0 if report["status"]=="matching-candidates" else 2
 
