@@ -51,8 +51,8 @@ def assess(before, position, after, hashes, selection):
         require(candidate == expected, "process-module-identity-mismatch")
     require(identity.get("processId") == expected["processId"] and
             str(identity.get("processStartUtcTicks")) == str(expected["processStartUtcTicks"]) and
-            str(identity.get("executableSha256", "")).upper() == context.BUILD_SHA and
-            str(expected["executableSha256"]).upper() == context.BUILD_SHA,
+            str(identity.get("executableSha256", "")).upper() in context.SUPPORTED_BUILD_SHAS and
+            str(expected["executableSha256"]).upper() == str(identity["executableSha256"]).upper(),
             "selected-process-mismatch")
 
     # Comparison uses a rounded Python datetime; here preserve full .NET 100ns
@@ -109,7 +109,7 @@ def collect(pid, output_dir, *, samples=3, interval_ms=250):
             "sampling-bounds-invalid")
     selection = physical_rift.select_physical(EXPECTED_HOST, pid)
     require(selection.get("status") == "ready", "initial-selection-" + str(selection.get("reason")))
-    require(str(selection["target"].get("executableSha256", "")).upper() == context.BUILD_SHA,
+    require(str(selection["target"].get("executableSha256", "")).upper() in context.SUPPORTED_BUILD_SHAS,
             "unexpected-build")
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=False)

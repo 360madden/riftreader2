@@ -334,10 +334,15 @@ def assess_saved(summary_path, output_dir, session_id=None):
 
 def collect(pid, output_dir, *, scan_bytes=SCAN_BYTES, scan_ms=SCAN_MS,
             max_scans=SCAN_COUNT, gap_seconds=1.0, resume_summary=None,
-            session_id=None):
+            session_id=None, start_address="0x10000"):
     if session_id is not None:
         require_session_id(session_id)
     require(type(pid) is int and 0 < pid < 2**31, "explicit-pid-required")
+    checked_cursor(start_address)
+    require(start_address == f"0x{int(start_address[2:], 16):X}",
+            "noncanonical-start-address")
+    require(resume_summary is None or start_address == "0x10000",
+            "start-address-conflicts-with-resume")
     require(type(scan_bytes) is int and 1_048_576 <= scan_bytes <= 536_870_912
             and scan_bytes % 4096 == 0
             and type(scan_ms) is int and 1000 <= scan_ms <= 30_000
@@ -370,7 +375,7 @@ def collect(pid, output_dir, *, scan_bytes=SCAN_BYTES, scan_ms=SCAN_MS,
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=False)
     results = []
-    cursor = resume[0] if resume else "0x10000"
+    cursor = resume[0] if resume else start_address
     initial_cursor = cursor
     for number in range(1, max_scans + 1):
         require(pinned_selection(pid)["target"] == target, "epoch-changed-before-scan")
@@ -488,6 +493,8 @@ def main(argv=None):
     parser.add_argument("--output-dir", type=Path,
                         default=ROOT / "artifacts" / ("physical-rr2r1-" + uuid.uuid4().hex))
     parser.add_argument("--scan-bytes", type=int, default=SCAN_BYTES)
+    parser.add_argument("--start-address", default="0x10000",
+                        help="canonical exact-process user-space scan cursor, e.g. 0x13300000; cannot combine with --resume-summary")
     parser.add_argument("--scan-ms", type=int, default=SCAN_MS)
     parser.add_argument("--max-scans", type=int, default=SCAN_COUNT)
     parser.add_argument("--resume-summary", type=Path,
@@ -498,6 +505,7 @@ def main(argv=None):
     try:
         if args.replay_summary is not None:
             require(args.resume_summary is None, "replay-cannot-resume-scanning")
+            require(args.start_address == "0x10000", "replay-cannot-select-start-address")
             path, result = assess_saved(args.replay_summary, args.output_dir,
                                         args.session_id)
         else:
@@ -505,7 +513,7 @@ def main(argv=None):
                                    scan_bytes=args.scan_bytes, scan_ms=args.scan_ms,
                                    max_scans=args.max_scans,
                                    resume_summary=args.resume_summary,
-                                   session_id=args.session_id)
+                                   session_id=args.session_id, start_address=args.start_address)
     except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:220]}))
         return 2

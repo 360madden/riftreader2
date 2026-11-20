@@ -19,6 +19,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.xyz_track_reduce import TrackIdentity, TrackSample, reduce_pair
 
 GAME_SHA = "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8"
+UPDATED_GAME_SHA = "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"
+SUPPORTED_GAME_SHAS = frozenset((GAME_SHA, UPDATED_GAME_SHA))
 QUALIFICATION = "candidate-only-not-passive-fresh-or-player-semantic-qualified"
 MAX_BYTES = 8_000_000
 
@@ -52,10 +54,11 @@ def project(report, *, max_gap_seconds, max_speed_3d):
     if not isinstance(report, dict):
         raise ValueError("invalid report")
     count = report.get("requestedSamples")
+    build_sha = str(report.get("sourceBuildSha256", "")).upper()
     if (type(report.get("schemaVersion")) is not int or report["schemaVersion"] != 1
         or report.get("contractVersion") != "native-current-position-candidate-samples/1"
         or report.get("qualification") != QUALIFICATION or report.get("status") != "complete"
-        or report.get("sourceBuildSha256") != GAME_SHA or type(count) is not int or not 1 <= count <= 30
+        or build_sha not in SUPPORTED_GAME_SHAS or type(count) is not int or not 1 <= count <= 30
         or type(report.get("completedSamples")) is not int or report["completedSamples"] != count):
         raise ValueError("invalid native sampler contract")
     identity = report.get("identity")
@@ -63,7 +66,7 @@ def project(report, *, max_gap_seconds, max_speed_3d):
         raise ValueError("missing process identity")
     pid, ticks = identity.get("processId"), identity.get("processStartUtcTicks")
     if (type(pid) is not int or not 0 < pid < 2**31 or type(ticks) is not int or not 0 < ticks < 2**63
-        or identity.get("executableSha256") != GAME_SHA):
+        or str(identity.get("executableSha256", "")).upper() != build_sha):
         raise ValueError("invalid process identity")
     rows = report.get("observations")
     if not isinstance(rows, list) or len(rows) != count:
@@ -102,7 +105,7 @@ def project(report, *, max_gap_seconds, max_speed_3d):
 
     # These tokens delimit this one calculation only: no reported or assumed
     # world, zone, session, or same-player identity is represented by them.
-    private_identity = TrackIdentity(pid, ticks, GAME_SHA, "one-report-only", "unknown")
+    private_identity = TrackIdentity(pid, ticks, build_sha, "one-report-only", "unknown")
     prior = None
     previous_start = previous_end = previous_utc_start = previous_utc_end = None
     points = []

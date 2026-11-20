@@ -101,6 +101,64 @@ class UpdatedRr2r1ProbeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "scan-evidence-identity-mismatch"):
                 probe.check_index(index_path, request, probe.digest(request_path), self.selection)
 
+    def test_explicit_current_epoch_cursor_scans_only_requested_scope(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            reader = root / "reader.exe"
+            reader.write_bytes(b"test-only-reader")
+            actual_start = "0x13000000"
+            seen = []
+            def scanner(argv, **kwargs):
+                req_path, scan_dir = Path(argv[3]), Path(argv[5])
+                request = json.loads(req_path.read_text(encoding="utf-8"))
+                self.assertEqual(request["startAddress"], actual_start)
+                self.assertEqual(request["target"]["executableSha256"], probe.UPDATED_SHA)
+                scan_dir.mkdir()
+                index = ProbeTests().index(request, req_path)
+                index["identity"]["executableSha256"] = probe.UPDATED_SHA
+                index["scan"]["nextAddress"] = "0x14000000"
+                (scan_dir / "index.json").write_text(json.dumps(index), encoding="utf-8")
+                seen.append(request)
+                return subprocess.CompletedProcess(argv, 3, "", "")
+            with (patch.object(probe.physical_rift, "NATIVE_EXE", reader),
+                  patch.object(probe, "pinned_selection", return_value=self.selection),
+                  patch.object(probe.subprocess, "run", side_effect=scanner)):
+                _, report = probe.collect(123, root / "out", scan_bytes=1_048_576,
+                                          max_scans=1, gap_seconds=0,
+                                          start_address=actual_start)
+            self.assertEqual(len(seen), 1)
+            self.assertEqual(report["initialCursor"], actual_start)
+            self.assertEqual(report["runs"][0]["startAddress"], actual_start)
+            self.assertEqual(report["scanWork"]["nextResumeCursor"], "0x14000000")
+
+    def test_invalid_or_noncanonical_start_cursor_never_probes_a_process(self):
+        with TemporaryDirectory() as tmp, patch.object(probe, "pinned_selection") as selection:
+            for idx, start in enumerate(("0x0", "0x1300000a", "0X13000000",
+                                         "0x00013000000", "0x800000000000",
+                                         "0xgarbage")):
+                with self.subTest(start=start), self.assertRaises(ValueError):
+                    probe.collect(123, Path(tmp) / f"bad-{idx}", start_address=start)
+            selection.assert_not_called()
+
+    def test_custom_start_cannot_override_an_existing_resume_chain(self):
+        with patch.object(probe, "pinned_selection") as selection:
+            with self.assertRaisesRegex(ValueError, "start-address-conflicts-with-resume"):
+                probe.collect(123, Path("unused"), start_address="0x13000000",
+                              resume_summary=Path("historical.json"))
+            selection.assert_not_called()
+
+    def test_cli_passes_explicit_cursor_to_native_scout(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        with patch.object(probe, "collect", return_value=(
+                Path("summary.json"), {"status": "no-copied-candidate-in-bounded-scopes",
+                                       "qualification": "bounded coverage only",
+                                       "runs": [], "referenceAssessment": None,
+                                       "scanWork": {}})) as called, redirect_stdout(StringIO()):
+            self.assertEqual(probe.main(["--physical-pid", "123",
+                                         "--start-address", "0x13000000"]), 0)
+        self.assertEqual(called.call_args.kwargs["start_address"], "0x13000000")
+
     def test_cross_epoch_saved_summary_cannot_resume_on_new_game(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

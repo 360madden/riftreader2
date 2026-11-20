@@ -99,9 +99,13 @@ def focused_second_pass(index_path, receipt):
 
 
 def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
-            samples=3, interval_ms=150, focus_second_pass=False):
+            samples=3, interval_ms=150, focus_second_pass=False,
+            start_address="0x10000"):
     require(socket.gethostname().upper() == HOST, "wrong-host")
     require(type(pid) is int and 0 < pid < 2**31, "explicit-pid-required")
+    probe.checked_cursor(start_address)
+    require(start_address == f"0x{int(start_address[2:], 16):X}",
+            "invalid-start-address")
     require(type(scan_bytes) is int and
             1_048_576 <= scan_bytes <= 536_870_912 and
             scan_bytes % 4096 == 0 and
@@ -125,7 +129,8 @@ def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
     same_process(pid, selection, reader_sha)
     first, first_receipt = scan_once(
         pid, selection, reader_sha, output_dir / "pass-01",
-        scan_bytes=scan_bytes, scan_ms=scan_ms)
+        scan_bytes=scan_bytes, scan_ms=scan_ms,
+        start_address=start_address)
     focus = (focused_second_pass(first, first_receipt)
              if focus_second_pass else None)
     if focus is not None and focus[1] > scan_bytes:
@@ -133,7 +138,7 @@ def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
     second, second_receipt = scan_once(
         pid, selection, reader_sha, output_dir / "pass-02",
         scan_bytes=focus[1] if focus else scan_bytes, scan_ms=scan_ms,
-        start_address=focus[0] if focus else "0x10000")
+        start_address=focus[0] if focus else start_address)
     failed_focused_index_sha = None
     if focus is not None and second_receipt["publishedSnapshots"] < 2:
         # Marker memory may move between independent reads. Keep the failed
@@ -141,7 +146,7 @@ def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
         failed_focused_index_sha = second_receipt["indexSha256"]
         second, second_receipt = scan_once(
             pid, selection, reader_sha, output_dir / "pass-02-broad",
-            scan_bytes=scan_bytes, scan_ms=scan_ms, start_address="0x10000")
+            scan_bytes=scan_bytes, scan_ms=scan_ms, start_address=start_address)
     after, _ = bracket.collect(
         pid, output_dir / "native-after", samples=samples,
         interval_ms=interval_ms)
@@ -165,7 +170,7 @@ def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
         failed_focused_index_sha = second_receipt["indexSha256"]
         second, second_receipt = scan_once(
             pid, selection, reader_sha, output_dir / "pass-02-broad",
-            scan_bytes=scan_bytes, scan_ms=scan_ms, start_address="0x10000")
+            scan_bytes=scan_bytes, scan_ms=scan_ms, start_address=start_address)
         after, _ = bracket.collect(
             pid, output_dir / "native-after-broad", samples=samples,
             interval_ms=interval_ms)
@@ -195,7 +200,7 @@ def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
                                         failed_focused_index_sha is None,
                             "fallbackUsed": failed_focused_index_sha is not None,
                             "failedFocusedIndexSha256": failed_focused_index_sha,
-                            "startAddress": focus[0] if focus else "0x10000",
+                            "startAddress": focus[0] if focus else start_address,
                             "maxScanBytes": focus[1] if focus else scan_bytes},
         "comparison": paired,
         "qualification": ("Real independent RR2A1 baseline Lua frames and native "
@@ -216,6 +221,8 @@ def main(argv=None):
     parser.add_argument("--output-dir", type=Path, default=ROOT / "artifacts" /
                         ("physical-rr2a1-bracketed-" + uuid.uuid4().hex))
     parser.add_argument("--scan-bytes", type=int, default=268_435_456)
+    parser.add_argument("--start-address", default="0x10000",
+                        help="canonical scan-start cursor for this exact physical process; candidate scope only")
     parser.add_argument("--scan-ms", type=int, default=15_000)
     parser.add_argument("--samples", type=int, default=3)
     parser.add_argument("--interval-ms", type=int, default=150)
@@ -227,7 +234,8 @@ def main(argv=None):
             args.physical_pid, args.output_dir,
             scan_bytes=args.scan_bytes, scan_ms=args.scan_ms,
             samples=args.samples, interval_ms=args.interval_ms,
-            focus_second_pass=args.focus_second_pass)
+            focus_second_pass=args.focus_second_pass,
+            start_address=args.start_address)
     except (OSError, ValueError, KeyError, TypeError, OverflowError,
             subprocess.TimeoutExpired) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:220],

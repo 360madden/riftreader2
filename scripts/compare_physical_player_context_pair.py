@@ -19,6 +19,8 @@ if str(ROOT) not in sys.path:
 from scripts.physical_rift import _native_values
 
 BUILD_SHA = "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8"
+UPDATED_BUILD_SHA = "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"
+SUPPORTED_BUILD_SHAS = frozenset((BUILD_SHA, UPDATED_BUILD_SHA))
 MAX_BYTES = 8_000_000
 QUALIFICATION = "candidate-only; same-epoch passive comparison, not live self/target qualification"
 
@@ -83,7 +85,7 @@ def _sample(report):
              and isinstance(identity.get("executablePath"), str)
              and identity["executablePath"].replace("/", "\\").lower().endswith("\\rift_x64.exe")
              and isinstance(identity.get("executableSha256"), str)
-             and identity["executableSha256"].upper() == BUILD_SHA,
+             and identity["executableSha256"].upper() in SUPPORTED_BUILD_SHAS,
              "invalid-source-identity")
     observation = report["observation"]
     # The last observation is only the burst endpoint. A later final sample
@@ -144,7 +146,7 @@ def compare(before, after, before_sha256, after_sha256):
         "identity": {
             "host": "AMD-DESKTOP", "processId": a_id["processId"],
             "processStartUtcTicks": str(a_id["processStartUtcTicks"]),
-            "executableSha256": BUILD_SHA,
+            "executableSha256": a_id["executableSha256"].upper(),
         },
         "sourceSha256": {"before": before_sha256, "after": after_sha256},
         "beforeCompletedAtUtc": before["observation"]["completedAtUtc"],
