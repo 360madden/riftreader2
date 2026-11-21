@@ -65,6 +65,55 @@ class AutoScopeTests(unittest.TestCase):
         self.assertEqual(found["scopes"][1]["validFrameCandidates"], 3)
         self.assertIn("not a source-freshness result", found["qualification"])
 
+    def test_second_probe_prefers_actively_advancing_scope(self):
+        # A cold scope's first-pass sequence is one ahead of the live scope.
+        # Only the live scope publishes a new same-session generation on probe.
+        old = wire(50, epoch=40)
+        new = wire(52, epoch=40)
+        self.assertEqual(len(old), len(new))
+        fake = reader({
+            0: [wire(50, epoch=40), wire(51, epoch=40)],
+            1: [wire(49, epoch=40), old],
+        }, scope_count=2)
+        original_read = fake.read
+        reads = 0
+
+        def advancing_read(address, size):
+            nonlocal reads
+            if address == BASE + BLOCK and size == BLOCK:
+                reads += 1
+                if reads == 2:
+                    position = BLOCK + 1024 + 2 * 4096
+                    fake.buffer[position:position + len(old)] = new
+            return original_read(address, size)
+
+        fake.read = advancing_read
+        with patch.object(capture.time, "sleep"):
+            found = capture.survey_scopes(
+                fake, start=BASE, scan_bytes=BLOCK, scope_count=2,
+                expected_player=PLAYER, expected_zone=ZONE)
+        self.assertEqual(found["selectedStartAddress"], f"0x{BASE + BLOCK:X}")
+        self.assertEqual(found["selectionBasis"], "advancing-same-session-survey-candidate")
+        self.assertEqual(found["surveyedBytes"], 2 * BLOCK)
+        self.assertEqual(found["progressProbeReadBytes"], 2 * BLOCK)
+        self.assertFalse(found["scopes"][0]["progressProbeAdvancing"])
+        self.assertTrue(found["scopes"][1]["progressProbeAdvancing"])
+        self.assertIn("not a source-freshness result", found["qualification"])
+
+    def test_static_competing_scopes_remain_unqualified_survey_candidates(self):
+        fake = reader({
+            0: [wire(50, epoch=40), wire(51, epoch=40)],
+            1: [wire(49, epoch=40), wire(50, epoch=40)],
+        }, scope_count=2)
+        with patch.object(capture.time, "sleep"):
+            found = capture.survey_scopes(
+                fake, start=BASE, scan_bytes=BLOCK, scope_count=2,
+                expected_player=PLAYER, expected_zone=ZONE)
+        self.assertEqual(found["selectedStartAddress"], f"0x{BASE:X}")
+        self.assertEqual(found["selectionBasis"], "one-shot-generation-candidate")
+        self.assertFalse(any(row["progressProbeAdvancing"]
+                             for row in found["scopes"]))
+
     def test_wrong_player_zone_and_single_frame_are_not_admitted(self):
         fake = reader({
             0: [wire(1, epoch=40, player="u0000000000000001"),

@@ -240,11 +240,43 @@ def survey_scopes(reader, *, start, scan_bytes, scope_count, expected_player, ex
                        topSequence=top[2], topSession=top[4])
             ranked.append((top, address))
         inventory.append(row)
-    selected = max(ranked)[1] if ranked else None
+    # A one-shot high sequence can come from a cold allocation, while another
+    # same-epoch scope is still publishing. Re-observe competing scopes and
+    # prefer independently newer source generations, without qualifying the
+    # survey frames as live telemetry.
+    progress = []
+    probe_bytes = 0
+    if len(ranked) > 1:
+        time.sleep(0.2)
+        for _, address in ranked:
+            require(time.monotonic() - started <= 15,
+                    "survey-time-budget-exceeded")
+            after = survey_scopes(reader, start=address, scan_bytes=scan_bytes,
+                                  scope_count=1, expected_player=expected_player,
+                                  expected_zone=expected_zone)
+            later = after["scopes"][0]
+            initial = next(row for row in inventory
+                           if row["startAddress"] == f"0x{address:X}")
+            probe_bytes += after["surveyedBytes"]
+            advanced = (later.get("candidateGenerations", 0) > 0
+                        and later.get("topEpoch") == initial.get("topEpoch")
+                        and later.get("topSession") == initial.get("topSession")
+                        and later["topSequence"] > initial["topSequence"]
+                        and later["topSourceClock"] > initial["topSourceClock"])
+            initial["progressProbeAdvancing"] = advanced
+            initial["progressProbeReadBytes"] = after["surveyedBytes"]
+            if advanced:
+                progress.append((later["topEpoch"], later["topSourceClock"],
+                                 later["topSequence"], address))
+    selected = (max(progress)[-1] if progress else
+                max(ranked)[1] if ranked else None)
     return {"status": "scoped-candidate" if selected is not None else "unqualified",
             "baseStartAddress": f"0x{start:X}",
             "selectedStartAddress": f"0x{selected:X}" if selected is not None else None,
             "surveyedBytes": sum(item["readBytes"] for item in inventory),
+            "progressProbeReadBytes": probe_bytes,
+            "selectionBasis": ("advancing-same-session-survey-candidate" if progress
+                               else "one-shot-generation-candidate"),
             "expectedZoneIdCandidate": expected_zone,
             "scopes": inventory,
             "qualification": ("Survey-only exact-player source-clock candidate ranking; "
