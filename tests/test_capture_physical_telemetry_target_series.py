@@ -112,7 +112,7 @@ class SeriesCaptureTests(unittest.TestCase):
     def test_invalid_bounds_and_existing_directory_are_rejected_before_reads(self):
         cases = [{"count": 1}, {"count": 7}, {"interval_ms": -1},
                  {"interval_ms": 3000}, {"scope_count": 9},
-                 {"recover_stale_scope": 1}]
+                 {"recover_stale_scope": 1}, {"stop_on_aba": 1}]
         for invalid in cases:
             with self.subTest(invalid=invalid):
                 with self.assertRaisesRegex(ValueError, "invalid-bounds"):
@@ -123,6 +123,110 @@ class SeriesCaptureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "output-must-be-new"):
             self.execute_capture()
         self.assertEqual(self.calls, [])
+
+    def test_bounded_watcher_stops_at_first_source_verified_aba(self):
+        calls = []
+
+        def verified_source_merge(paths):
+            calls.append(len(paths))
+            if len(paths) == 2:
+                return {"captureCount": 2,
+                        "qualificationStatus": "candidate-only",
+                        "status": "a-b-a-in-source-frames-candidate",
+                        "observedSourceABACycles": [{
+                            "firstSequence": 12, "otherSequence": 13,
+                            "returnedSequence": 14}],
+                        "aBaAcrossCaptures": []}
+            self.fail("Observer must not acquire a third window after candidate")
+
+        path, result = self.execute_capture(
+            count=6, stop_on_aba=True, combine=verified_source_merge)
+        self.assertTrue(path.is_file())
+        self.assertEqual(calls, [2])
+        self.assertEqual(len(self.calls), 2)
+        self.assertEqual(result["requestedCaptureCount"], 6)
+        self.assertEqual(result["completedCaptureCount"], 2)
+        self.assertEqual(result["earlyStopReason"],
+                         "observed-source-a-b-a-candidate")
+        self.assertEqual(result["continuity"]["observedSourceABACycles"][0]
+                         ["returnedSequence"], 14)
+        self.assertEqual(self.sleeps, [0.05])
+        self.assertFalse((self.output / "capture-03").exists())
+        self.assertFalse(result["inputSent"])
+
+    def test_no_aba_observations_run_entire_bounded_schedule(self):
+        checked = []
+        def no_cycle(paths):
+            checked.append(len(paths))
+            return {"captureCount": len(paths),
+                    "qualificationStatus": "candidate-only",
+                    "status": "no-target-continuity-candidate",
+                    "observedSourceABACycles": [],
+                    "aBaAcrossCaptures": []}
+
+        path, result = self.execute_capture(
+            count=4, stop_on_aba=True, combine=no_cycle)
+        self.assertTrue(path.is_file())
+        self.assertEqual(checked, [2, 3, 4])
+        self.assertEqual(len(self.calls), 4)
+        self.assertEqual(result["completedCaptureCount"], 4)
+        self.assertIsNone(result["earlyStopReason"])
+        self.assertEqual(self.sleeps, [0.05, 0.05, 0.05])
+        self.assertFalse(result["inputSent"])
+
+    def test_last_state_only_pattern_never_ends_watcher_early(self):
+        def last_state_only(paths):
+            return {"captureCount": len(paths),
+                    "qualificationStatus": "candidate-only",
+                    "status": "a-b-a-across-captures-candidate",
+                    "observedSourceABACycles": [],
+                    "aBaAcrossCaptures": [{"firstCapture": 1}]}
+
+        _, result = self.execute_capture(
+            count=3, stop_on_aba=True, combine=last_state_only)
+        self.assertEqual(len(self.calls), 3)
+        self.assertEqual(result["requestedCaptureCount"], 3)
+        self.assertIsNone(result["earlyStopReason"])
+
+    def test_invalid_incremental_replay_fails_closed_without_more_captures(self):
+        def fake_success(paths):
+            return {"captureCount": len(paths),
+                    "qualificationStatus": "candidate-only",
+                    "status": "a-b-a-in-source-frames-candidate",
+                    "observedSourceABACycles": None,
+                    "aBaAcrossCaptures": []}
+
+        with self.assertRaisesRegex(ValueError, "early-stop-replay-invalid"):
+            self.execute_capture(count=5, stop_on_aba=True,
+                                 combine=fake_success)
+        self.assertEqual(len(self.calls), 2)
+        self.assertTrue((self.output / "failure.json").is_file())
+        self.assertFalse((self.output / "result.json").exists())
+        self.assertFalse((self.output / "capture-03").exists())
+
+    def test_cli_opt_in_stop_on_aba_is_forwarded(self):
+        fake = {
+            "status": "a-b-a-in-source-frames-candidate",
+            "individualCaptures": [{"capture": 1}, {"capture": 2}],
+            "earlyStopReason": "observed-source-a-b-a-candidate",
+            "continuity": {
+                "observedSourceABACycles": [{"firstSequence": 12,
+                                              "otherSequence": 13,
+                                              "returnedSequence": 14}],
+                "aBaAcrossCaptures": []},
+        }
+        with patch.object(capture, "run", return_value=(
+                self.output / "result.json", fake)) as launched, \
+                redirect_stdout(StringIO()) as stdout:
+            code = capture.main(["--physical-pid", str(PID),
+                                 "--output-dir", str(self.output),
+                                 "--count", "6", "--stop-on-aba"])
+        self.assertEqual(code, 0)
+        self.assertTrue(launched.call_args.kwargs["stop_on_aba"])
+        printed = json.loads(stdout.getvalue())
+        self.assertEqual(printed["earlyStopReason"],
+                         "observed-source-a-b-a-candidate")
+        self.assertEqual(printed["aBaCandidates"], 1)
 
     def test_cli_reports_frame_level_aba_not_only_final_target_states(self):
         fake = {

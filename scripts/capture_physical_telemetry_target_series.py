@@ -41,15 +41,16 @@ def _stale_scope_candidate(report, target):
 
 
 def run(pid, output, *, count=3, interval_ms=500, scope_count=4,
-        recover_stale_scope=False, collect=capture.collect,
-        replay_target=replay.replay, combine=continuity.combine,
-        sleep=time.sleep):
+        recover_stale_scope=False, stop_on_aba=False,
+        collect=capture.collect, replay_target=replay.replay,
+        combine=continuity.combine, sleep=time.sleep):
     """Preserve all original captures; refuse cross-epoch changes and stale windows."""
     require(type(pid) is int and 0 < pid < 2 ** 31
             and type(count) is int and 2 <= count <= 6
             and type(interval_ms) is int and 0 <= interval_ms <= 2000
             and type(scope_count) is int and 1 <= scope_count <= 8
-            and type(recover_stale_scope) is bool,
+            and type(recover_stale_scope) is bool
+            and type(stop_on_aba) is bool,
             "invalid-bounds")
     output = Path(output)
     if not output.is_absolute():
@@ -59,6 +60,7 @@ def run(pid, output, *, count=3, interval_ms=500, scope_count=4,
     output.mkdir()
     paths, observations, selected = [], [], None
     pinned_target, recovery_attempts = None, []
+    merged, early_stop = None, False
     try:
         for index in range(count):
             if index:
@@ -131,8 +133,23 @@ def run(pid, output, *, count=3, interval_ms=500, scope_count=4,
             observations.append({"capture": index + 1, "status": checked["status"],
                                  "lastSequence": checked["lastSequence"],
                                  "scopeCandidate": selected})
-        merged = combine(paths)
-        require(merged.get("captureCount") == count
+            if stop_on_aba and len(paths) >= 2:
+                # Each merge independently reopens every original Lua/native
+                # source byte. Never stop on the final-target-only shortcut.
+                candidate = combine(paths)
+                require(type(candidate) is dict
+                        and candidate.get("captureCount") == len(paths)
+                        and candidate.get("qualificationStatus") == "candidate-only"
+                        and type(candidate.get("observedSourceABACycles")) is list,
+                        "early-stop-replay-invalid")
+                merged = candidate
+                if candidate["observedSourceABACycles"]:
+                    early_stop = True
+                    break
+        if merged is None:
+            merged = combine(paths)
+        require(type(merged) is dict
+                and merged.get("captureCount") == len(paths)
                 and merged.get("qualificationStatus") == "candidate-only",
                 "source-series-replay-refused")
         combined = {
@@ -140,6 +157,10 @@ def run(pid, output, *, count=3, interval_ms=500, scope_count=4,
             "qualificationStatus": merged["qualificationStatus"],
             "processId": pid, "inputSent": False,
             "individualCaptures": observations,
+            "requestedCaptureCount": count,
+            "completedCaptureCount": len(paths),
+            "earlyStopReason": ("observed-source-a-b-a-candidate"
+                                if early_stop else None),
             "scopeRediscoveryAttempts": recovery_attempts,
             "continuity": merged,
             "qualification": ("Sequential physical read-only acquisitions. Each has "
@@ -174,13 +195,17 @@ def main(argv=None):
     parser.add_argument("--recover-stale-scope", action="store_true",
                         help="on an unqualified cached Lua scope, retain original and "
                              "perform one bounded read-only map rediscovery")
+    parser.add_argument("--stop-on-aba", action="store_true",
+                        help="stop before the requested window limit only after an "
+                             "independent source-hashed A-B-A candidate is observed")
     args = parser.parse_args(argv)
     try:
         path, result = run(
             args.physical_pid, args.output_dir,
             count=args.count, interval_ms=args.interval_ms,
             scope_count=args.scope_count,
-            recover_stale_scope=args.recover_stale_scope)
+            recover_stale_scope=args.recover_stale_scope,
+            stop_on_aba=args.stop_on_aba)
     except (OSError, ValueError, TypeError, KeyError, IndexError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:220],
                           "inputSent": False}))
@@ -189,6 +214,7 @@ def main(argv=None):
                       "captureCount": len(result["individualCaptures"]),
                       "aBaCandidates": len(result["continuity"]["observedSourceABACycles"]),
                       "lastStateABACandidates": len(result["continuity"]["aBaAcrossCaptures"]),
+                      "earlyStopReason": result.get("earlyStopReason"),
                       "output": str(path), "inputSent": False}))
     return 0
 
