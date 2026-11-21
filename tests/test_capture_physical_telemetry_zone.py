@@ -166,6 +166,31 @@ class CaptureTests(unittest.TestCase):
             sleep.assert_called_once_with(0.6)
             self.assertEqual(json.loads(path.read_text()),report)
 
+    def test_relative_cli_output_matches_native_absolute_output_contract(self):
+        with TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            (project_root / "artifacts").mkdir()
+            relative = Path("artifacts") / "target-capture"
+
+            def native(selection, kind, *, output):
+                # physical_rift.read_native resolves relative outputs under ROOT.
+                actual = Path(output)
+                if not actual.is_absolute():
+                    actual = project_root / actual
+                return self._fake_native(selection, kind, actual)
+
+            with (patch.object(cap, "ROOT", project_root),
+                  patch.object(cap.socket, "gethostname", return_value=HOST),
+                  patch.object(cap.physical_rift, "select_physical", return_value=self.selection),
+                  patch.object(cap.physical_rift, "read_native", side_effect=native) as reader):
+                path, report = cap.collect(PID, relative, scan_bytes=cap.CHUNK,
+                                           gap_ms=0, reader_factory=FakeProcess)
+            self.assertEqual(path, project_root / relative / "summary.json")
+            self.assertEqual(reader.call_count, 2)
+            self.assertEqual(report["status"], "unqualified")  # No Lua frames in fake memory.
+            self.assertTrue((path.parent / "native-before.json").is_file())
+            self.assertTrue((path.parent / "native-after.json").is_file())
+
     def test_changed_process_early_refuses_second_scan(self):
         old, new = self.selection, deepcopy(self.selection)
         new["target"]["processStartUtcTicks"] = "9999"

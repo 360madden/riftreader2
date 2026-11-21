@@ -154,14 +154,23 @@ class NativeTargetSourceTests(unittest.TestCase):
                 Path(output).write_text(json.dumps(source), encoding="utf-8")
                 return {"status": "complete", "target": s["target"],
                         "nativeRead": kind, "nativeOutput": str(output),
-                        "nativeSourceSha256": zone.digest(Path(output).read_bytes()),
+                        # The real player-context reader omits nativeSourceSha256.
                         "nativeValues": zone.physical_rift._native_values(kind, source)}
             with patch.object(collect.physical_rift, "read_native", side_effect=read):
                 result = collect.native_target(sel.selection, Path(tmp), "before")
+            self.assertEqual(result["sha256"], zone.digest((Path(tmp) / "native-target-before.json").read_bytes()))
             self.assertEqual(result["targetStatus"], "raw-getter-zero-candidate")
             self.assertEqual(result["unitKeyCandidate"], str(SELF))
             self.assertEqual(result["targetUnitIdCandidate"], None)
             self.assertTrue((Path(tmp)/"native-target-before.json").is_file())
+
+            def forged_hash(s, kind, *, output):
+                receipt = read(s, kind, output=output)
+                return {**receipt, "nativeSourceSha256": "F" * 64}
+
+            with patch.object(collect.physical_rift, "read_native", side_effect=forged_hash):
+                with self.assertRaisesRegex(ValueError, "native-target-source-hash-mismatch"):
+                    collect.native_target(sel.selection, Path(tmp), "after")
 
     def test_invalid_native_target_option_blocks_before_host_or_game(self):
         with patch.object(collect, "admission") as admission:

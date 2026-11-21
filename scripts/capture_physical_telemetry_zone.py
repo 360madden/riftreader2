@@ -279,9 +279,13 @@ def native_target(selection, directory, which):
             and result.get("nativeOutput") == str(path)
             and path.is_file() and not path.is_symlink(),
             "native-target-read-unavailable")
-    source_sha = result.get("nativeSourceSha256")
-    require(type(source_sha) is str and len(source_sha) == 64,
-            "native-target-source-hash-unavailable")
+    # player-context currently returns no nativeSourceSha256, unlike zone-context.
+    # Hash the original saved report and check any optional wrapper claim against it.
+    source_sha = verify.digest(path.read_bytes())
+    claimed_sha = result.get("nativeSourceSha256")
+    require(claimed_sha is None or (type(claimed_sha) is str and
+            claimed_sha.casefold() == source_sha.casefold()),
+            "native-target-source-hash-mismatch")
     native, digest = verify.load(path, source_sha)
     values = physical_rift._native_values("player-context", native)
     require(values == result.get("nativeValues"),
@@ -316,6 +320,10 @@ def collect(pid, output_dir, *, start_address="0x13000000",
     require(not auto_scope or start + scan_bytes * scope_count < 0x7FFF_FFFF_FFFF,
             "invalid-auto-scope-range")
     root = Path(output_dir)
+    # The native reader publishes an absolute output path. Match its ROOT-relative
+    # resolution so relative CLI destinations do not fail a valid native read.
+    if not root.is_absolute():
+        root = ROOT / root
     require(not root.exists() and not root.is_symlink() and root.parent.is_dir(),
             "new-output-directory-required")
     root.mkdir()
