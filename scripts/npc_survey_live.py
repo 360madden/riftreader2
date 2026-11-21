@@ -150,6 +150,36 @@ def newest(candidates, nonce, player_id, ids, seen, previous, page=None):
     return max(decoded, key=lambda pair: pair[0]["sequence"])
 
 
+def _retain_qualified_source(candidates, source, folder, slot):
+    """Persist exact original envelope already decoded by newest, fail closed."""
+    require(type(source) is dict and type(source.get("address")) is str
+            and type(source.get("sha256")) is str and
+            re.fullmatch(r"[0-9a-f]{64}", source["sha256"]) is not None
+            and type(slot) is int and 1 <= slot <= 12,
+            "npc-survey-retained-wire-source-invalid")
+    matches = []
+    for row, data in candidates:
+        if row.get("address") != source["address"] or type(data) is not bytes:
+            continue
+        end = data.find(SUFFIX)
+        if end < 0:
+            continue
+        wire = data[:end + len(SUFFIX)]
+        if (wire.startswith(PREFIX) and
+                hashlib.sha256(wire).hexdigest() == source["sha256"]):
+            matches.append(wire)
+    require(matches and all(raw == matches[0] for raw in matches),
+            "npc-survey-original-wire-unavailable-or-conflicting")
+    path = folder / f"frame-{slot:02d}.wire"
+    require(not path.exists() and not path.is_symlink(),
+            "npc-survey-retained-wire-path-exists")
+    with path.open("xb") as out:
+        out.write(matches[0])
+    require(hashlib.sha256(path.read_bytes()).hexdigest() == source["sha256"],
+            "npc-survey-retained-wire-hash-mismatch")
+    return str(path)
+
+
 def acquire(host, pid, nonce, ids, output, seed_index=None, scan_mib=16, attempts=5, page=None):
     require(isinstance(nonce, str) and re.fullmatch(r"[0-9a-f]{32}", nonce), "invalid-survey-nonce")
     require(1 <= scan_mib <= 32 and 2 <= attempts <= 12, "invalid-survey-budget")
@@ -178,9 +208,12 @@ def acquire(host, pid, nonce, ids, output, seed_index=None, scan_mib=16, attempt
             if selected:
                 frame, source = selected
                 now = time.monotonic()
+                retained = _retain_qualified_source(
+                    candidates, source, output, len(sources) + 1)
                 sources.append(dict(source, epoch=frame["epoch"], sequence=frame["sequence"],
                                     frameTime=frame["frameTime"], attempt=index, readSeconds=elapsed,
-                                    capturedAtUtc=datetime.now(timezone.utc).isoformat()))
+                                    capturedAtUtc=datetime.now(timezone.utc).isoformat(),
+                                    retainedWire=retained))
                 if previous is not None and (ids is not None or previous["units"].keys()==frame["units"].keys()):
                     lag = max(0.0, (now-previous_at)-(frame["frameTime"]-previous["frameTime"]))
                     require(lag<=2, "survey-relative-source-lag")
