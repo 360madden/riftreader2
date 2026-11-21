@@ -238,6 +238,42 @@ class AutoScopeTests(unittest.TestCase):
             self.assertIsNone(saved["selectedStartAddress"])
             self.assertFalse((destination / "summary.json").exists())
 
+    def test_map_discovery_passes_only_discovered_nonadjacent_scopes_to_survey(self):
+        helper = CaptureTests()
+        helper.setUp()
+        selection = deepcopy(helper.selection)
+        found = [BASE + BLOCK, BASE + 4 * BLOCK]
+        result = {"status": "scope-locations-candidate",
+                  "candidateStartAddresses": [f"0x{x:X}" for x in found]}
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "record"
+            with (patch.object(capture.socket, "gethostname", return_value=capture.HOST),
+                  patch.object(capture.physical_rift, "select_physical",
+                               return_value=selection),
+                  patch.object(capture.physical_rift, "read_native",
+                               side_effect=helper._fake_native),
+                  patch.object(capture.locator, "discover", return_value=result) as locate,
+                  patch.object(capture, "survey_scopes",
+                               side_effect=ValueError("stopped-after-map")) as survey):
+                with self.assertRaisesRegex(ValueError, "stopped-after-map"):
+                    capture.collect(
+                        123, path, scan_bytes=BLOCK, gap_ms=0, auto_scope=True,
+                        discover_scope=True, scope_count=2, reader_factory=FakeProcess)
+            self.assertTrue((path / "native-survey-owner.json").is_file())
+            self.assertEqual(survey.call_args.kwargs["scope_addresses"], found)
+            self.assertEqual(survey.call_args.kwargs["start"], found[0])
+            self.assertEqual(survey.call_args.kwargs["scope_count"], 2)
+            self.assertEqual(locate.call_args.kwargs["marker"], capture.MARKER)
+            self.assertEqual(locate.call_args.kwargs["max_scopes"], 2)
+
+    def test_discover_without_auto_scope_refuses_before_any_process_access(self):
+        with patch.object(capture, "admission") as admission:
+            with self.assertRaisesRegex(ValueError, "invalid-scope-discovery-options"):
+                capture.collect(123, Path("never-created"),
+                                auto_scope=False, discover_scope=True)
+            admission.assert_not_called()
+
+
     def test_cli_explicit_auto_scope_forwards_options(self):
         summary = {"status":"unqualified","target":{"processId":123},
                    "nativeAfter":{"zoneIdCandidate":ZONE},

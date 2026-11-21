@@ -25,6 +25,7 @@ if str(ROOT) not in sys.path:
 from scripts import physical_rift
 from scripts import replay_physical_telemetry_zone as verify
 from scripts import replay_physical_telemetry_target as target_audit
+from scripts import telemetry_scope_locator as locator
 
 HOST = "AMD-DESKTOP"
 BUILD_SHA = verify.SHA_1179
@@ -72,6 +73,18 @@ def admission(pid, start_address, scan_bytes, gap_ms):
     return selection, start
 
 
+class _MemoryBasicInformation(ctypes.Structure):
+    """Windows x64 MEMORY_BASIC_INFORMATION for read-only region discovery."""
+    _fields_ = [("baseAddress", ctypes.c_void_p),
+                ("allocationBase", ctypes.c_void_p),
+                ("allocationProtect", ctypes.c_ulong),
+                ("partitionId", ctypes.c_ushort),
+                ("regionSize", ctypes.c_size_t),
+                ("state", ctypes.c_ulong),
+                ("protect", ctypes.c_ulong),
+                ("type", ctypes.c_ulong)]
+
+
 class ReadOnlyWindowsProcess:
     """Only PROCESS_VM_READ | PROCESS_QUERY_INFORMATION; no write privileges."""
 
@@ -105,6 +118,34 @@ class ReadOnlyWindowsProcess:
         ok = self.kernel.ReadProcessMemory(self.handle, ctypes.c_void_p(address),
                                            buffer, length, ctypes.byref(done))
         return bytes(buffer.raw[:done.value]) if ok or done.value > 0 else b""
+
+    def readable_private_regions(self):
+        """Enumerate committed readable private regions; acquire no new rights."""
+        query = self.kernel.VirtualQueryEx
+        query.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
+                          ctypes.POINTER(_MemoryBasicInformation), ctypes.c_size_t]
+        query.restype = ctypes.c_size_t
+        address, limit, count, regions = 0x10000, 0x7FFF_FFFF_FFFF, 0, []
+        while address < limit:
+            item = _MemoryBasicInformation()
+            size = query(self.handle, ctypes.c_void_p(address),
+                         ctypes.byref(item), ctypes.sizeof(item))
+            if size < ctypes.sizeof(item):
+                break
+            base = item.baseAddress or 0
+            end = base + item.regionSize
+            if item.regionSize <= 0 or base > address or end <= address:
+                raise ValueError("telemetry-zone-capture-invalid-memory-region")
+            if (item.state == 0x1000 and item.type == 0x20000
+                    and not item.protect & 0x100
+                    and item.protect & 0xFF in (0x02, 0x04, 0x08,
+                                                0x20, 0x40, 0x80)):
+                regions.append((base, min(end, limit - 1)))
+            count += 1
+            if count > 100000:
+                raise ValueError("telemetry-zone-capture-region-enumeration-limit")
+            address = end
+        return regions
 
     def __exit__(self, *_):
         if self.handle:
@@ -173,7 +214,8 @@ def scan(reader, directory, *, start, scan_bytes, expected_player):
             "hits": len(seen), "frames": rows}
 
 
-def survey_scopes(reader, *, start, scan_bytes, scope_count, expected_player, expected_zone):
+def survey_scopes(reader, *, start, scan_bytes, scope_count, expected_player,
+                  expected_zone, scope_addresses=None):
     """Find a plausible current publisher scope, not authoritative Lua evidence.
 
     The replay-tested *acquisition* still scans two new passes and requires
@@ -183,11 +225,21 @@ def survey_scopes(reader, *, start, scan_bytes, scope_count, expected_player, ex
             type(start) is int and type(scan_bytes) is int and scan_bytes >= CHUNK and
             start + scan_bytes * scope_count < 0x7FFF_FFFF_FFFF,
             "invalid-scope-count-or-range")
+    if scope_addresses is None:
+        addresses = [start + index * scan_bytes for index in range(scope_count)]
+    else:
+        require(type(scope_addresses) in (tuple, list)
+                and len(scope_addresses) == scope_count
+                and len(set(scope_addresses)) == scope_count
+                and all(type(addr) is int and 0x10000 <= addr
+                        and addr + scan_bytes < 0x7FFF_FFFF_FFFF
+                        for addr in scope_addresses),
+                "invalid-nonadjacent-scope-addresses")
+        addresses = scope_addresses
     started = time.monotonic()
     ranked, inventory = [], []
-    for index in range(scope_count):
+    for address in addresses:
         require(time.monotonic() - started <= 15, "survey-time-budget-exceeded")
-        address = start + index * scan_bytes
         hits, read_bytes, missing = find_markers(reader, start=address,
                                                  scan_bytes=scan_bytes)
         groups = {}
@@ -344,10 +396,13 @@ def native_target(selection, directory, which):
 
 def collect(pid, output_dir, *, start_address="0x13000000",
             scan_bytes=64*1024*1024, gap_ms=600, reader_factory=ReadOnlyWindowsProcess,
-            auto_scope=False, scope_count=4, include_native_target=False):
+            auto_scope=False, scope_count=4, include_native_target=False,
+            discover_scope=False):
     require(type(include_native_target) is bool, "invalid-native-target-option")
     require(type(auto_scope) is bool and type(scope_count) is int
             and 1 <= scope_count <= 8, "invalid-auto-scope-options")
+    require(type(discover_scope) is bool and (not discover_scope or auto_scope),
+            "invalid-scope-discovery-options")
     selection, start = admission(pid, start_address, scan_bytes, gap_ms)
     require(not auto_scope or start + scan_bytes * scope_count < 0x7FFF_FFFF_FFFF,
             "invalid-auto-scope-range")
@@ -372,10 +427,46 @@ def collect(pid, output_dir, *, start_address="0x13000000",
         require(physical_rift.select_physical(HOST, pid).get("target") == target,
                 "changed-process-before-survey")
         with reader_factory(pid) as survey_reader:
-            survey = survey_scopes(survey_reader, start=start, scan_bytes=scan_bytes,
-                                   scope_count=scope_count,
-                                   expected_player=preflight_player,
-                                   expected_zone=preflight["zoneIdCandidate"])
+            if discover_scope:
+                def valid_publisher_marker(address):
+                    raw = survey_reader.read(address, MAX_FRAME_BYTES)
+                    if type(raw) is not bytes or len(raw) <= len(MARKER):
+                        return False
+                    end = raw.find(SUFFIX)
+                    if end < 0:
+                        return False
+                    wire = raw[:end + len(SUFFIX)]
+                    try:
+                        doc = verify.exact_json(wire[len(verify.PREFIX):-len(SUFFIX)])
+                        detail = doc.get("playerTelemetry") or {}
+                        zone = detail.get("zone") or {}
+                        row = {"seq": doc.get("sequence"), "epoch": doc.get("epoch"),
+                               "session": doc.get("sessionId"),
+                               "clock": doc.get("frameTime"),
+                               "zoneId": zone.get("id")}
+                        source = verify._frame(wire, row, preflight_player)
+                        return source["zoneId"] == preflight["zoneIdCandidate"]
+                    except (ValueError, TypeError, AttributeError, KeyError):
+                        return False
+
+                located = locator.discover(
+                    survey_reader, marker=MARKER, scan_bytes=scan_bytes,
+                    validate_at=valid_publisher_marker, max_scopes=scope_count)
+                require(located["status"] == "scope-locations-candidate",
+                        "no-player-zone-markers-in-bounded-map")
+                locations = [int(value, 16)
+                             for value in located["candidateStartAddresses"]]
+                survey = survey_scopes(
+                    survey_reader, start=locations[0], scan_bytes=scan_bytes,
+                    scope_count=len(locations), expected_player=preflight_player,
+                    expected_zone=preflight["zoneIdCandidate"],
+                    scope_addresses=locations)
+                survey["mapLocator"] = located
+            else:
+                survey = survey_scopes(survey_reader, start=start, scan_bytes=scan_bytes,
+                                       scope_count=scope_count,
+                                       expected_player=preflight_player,
+                                       expected_zone=preflight["zoneIdCandidate"])
         survey["nativePreflightSourceSha256"] = preflight["sha256"]
         (root / "scope-survey.json").write_text(
             json.dumps(survey, indent=2, allow_nan=False) + "\n", encoding="utf-8")
@@ -478,6 +569,8 @@ def main(argv=None):
                         help="bounded read-only survey selects a current player/zone candidate region before the capture bracket")
     parser.add_argument("--scope-count",type=int,default=4,
                         help="1–8 adjacent regions of --scan-bytes each; only used by --auto-scope")
+    parser.add_argument("--discover-scope", action="store_true",
+                        help="locate publisher in bounded readable private memory with --auto-scope; ignores the address search origin")
     parser.add_argument("--include-native-target", action="store_true",
                         help="pin additional read-only native selected-target snapshots around both Lua passes")
     parser.add_argument("--output-dir",type=Path,
@@ -488,7 +581,8 @@ def main(argv=None):
                              start_address=args.start_address,scan_bytes=args.scan_bytes,
                              gap_ms=args.gap_ms, auto_scope=args.auto_scope,
                               scope_count=args.scope_count,
-                              include_native_target=args.include_native_target)
+                              include_native_target=args.include_native_target,
+                              discover_scope=args.discover_scope)
     except (OSError,ValueError,KeyError,TypeError,AttributeError,OverflowError) as exc:
         print(json.dumps({"status":"blocked","reason":str(exc)[:220]}))
         return 2
