@@ -19,17 +19,17 @@ C:\Python314\python.exe -B scripts\physical_rift.py --expected-host AMD-DESKTOP
 C:\Python314\python.exe -B scripts\physical_nearby_units.py --expected-host AMD-DESKTOP --physical-pid CURRENT_VERIFIED_PID --radius 35 --max-names 12 --output-dir artifacts\NEW_NATIVE_NEARBY
 ```
 
-The separate **RR2 NPC survey addon must actually be loaded and nonce-bound to the intended exact IDs** before `npc_survey_live.py` can produce an advancing survey. It has an existing `/rr2survey bind NONCE COMMA_SEPARATED_IDS` command. Use a fresh explicit nonce and up to 12 exact `u`-prefixed IDs taken from the native nearby report. The working addon installation, source publication and memory seed must be verified on the current process; the presence of source code or a historical capture is not proof it is active.
+The separate **RR2 NPC survey addon must actually be loaded and nonce-bound to the intended exact IDs** before `npc_survey_live.py` can produce an advancing survey. It has an existing `/rr2survey bind NONCE COMMA_SEPARATED_IDS` command. Use a fresh explicit nonce and up to 12 exact `u`-prefixed IDs taken from the native nearby report. The working addon installation and current nonce-bound source publication must be verified; repository source files or historical captures do not prove the addon is active in the running client.
 
 When those independently established prerequisites exist:
 
 ```powershell
-C:\Python314\python.exe -B scripts\npc_survey_live.py --expected-host AMD-DESKTOP --physical-pid CURRENT_VERIFIED_PID --session-id CURRENT_NONCE --unit-ids EXACT_COMMA_SEPARATED_IDS --output artifacts\NEW_NPC_API_SURVEY
+C:\Python314\python.exe -B scripts\npc_survey_live.py --expected-host AMD-DESKTOP --physical-pid CURRENT_VERIFIED_PID --session-id CURRENT_NONCE --unit-ids EXACT_COMMA_SEPARATED_IDS --auto-map --output artifacts\NEW_NPC_API_SURVEY
 C:\Python314\python.exe -B scripts\replay_npc_survey.py --summary artifacts\NEW_NPC_API_SURVEY\result.json
 C:\Python314\python.exe -B scripts\join_physical_nearby_npc_survey.py --nearby artifacts\NEW_NATIVE_NEARBY\nearby-report.json --npc-survey artifacts\NEW_NPC_API_SURVEY\result.json --max-gap-seconds 30 --position-tolerance 5 --output artifacts\NEW_NATIVE_API_JOIN.json
 ```
 
-The API survey may require an exact same-process native scout seed. It refuses a missing/invalid seed rather than synthesizing one. Existing commands do not automatically issue the in-game `/rr2survey` bind.
+With `--auto-map`, the API survey searches a bounded 512 MiB of readable private process memory and does not require an earlier native scout seed; the older seeded mode remains available when the flag is omitted. Neither mode issues `/rr2survey bind` or controls the desktop.
 
 A successful join is a **research/candidate** result only. The default interval must encompass the two sequential acquisitions; a stale source or changed owner refuses correlation. Source files and result destinations are never silently overwritten.
 
@@ -43,3 +43,19 @@ A successful join is a **research/candidate** result only. The default interval 
 **Current blocker:** The current physical RIFT process has **not** supplied a freshly verified, nonce-bound NPC API survey in this session. Thus **native/API level and relation live correlation remains unaccepted**. The existing `test_npc_survey_live.py` full Lua 5.1 producer test could not run under `C:\Python314\python.exe` because `lupa` is not installed; the new pure-Python source tests do run. No dependency installation, gameplay action, focus change, reload, game-memory write or other-repository edit was performed.
 
 **Next:** Establish an advancing nonce-bound NPC survey for several current exact nearby IDs, then validate name/level/relation agreement, and finally add the independent hostility/attacker, level-delta and real response checks required by `target_selection` before any automatic encounter.
+
+## November 21, ~1:35 PM EST — live map scout and bind preparation
+
+The physical RIFT client on verified **AMD-DESKTOP** remained PID **37676**, process-start ticks **639308565554559088**, exact build-1179 SHA **DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01**. The **installed** RiftReader2Casting **0.5.1** manifest includes "npc_survey.lua" in its actual RunOnStartup list, and that installed module matches the repo's original Lua by SHA-256 **045E2191FC84A63F10C5EB1F5A3AA2B15E5526AC725FD6F9FEBDC19E27E7C11F**. Installation does **not** prove the running client registered its slash command.
+
+The existing \`npc_survey_live.py\` now offers \`--auto-map\`: it reuses a bounded **read-only Windows private-memory** scanner, requires exact matching player/nonce/unit IDs, re-verifies full game process/window identity before and after reading, retains original accepted Lua wire bytes and saves per-attempt bounded-scan diagnostics. **The first physical invocation revealed a real mismatch between the legacy normalized three-field identity and the full physical Windows target.** That was fixed and covered by an exact normalized/full-owner test. The corrected two-attempt physical run reached the scanner and returned **exit 2 / no-advancing-survey-pair**, with **512 MiB surveyed per attempt**, one raw NPC frame marker each, **zero validated nonce-bound frames**, and \`inputSent=false\`. Original ignored evidence is in \`artifacts/npc-auto-map-unbound-20261121-1331-p37676/\`; attempt-1 locator source SHA **07CE8AFE40EFC1800E37C19F18507526E9F7A9213EE13637A9931AE511B6E6E3**. This is a **bounded negative observation** for a nonce never bound in-game; it is not proof the addon is absent.
+
+New \`scripts/prepare_physical_npc_survey.py\` removes the manual ID/nonce assembly. It checks the **actual** installed Casting manifest, confirms the installed Lua bytes, acquires current native nearby candidates (up to **18** name lookups), chooses at most **12 named exact IDs**, generates a fresh random 32-lowercase-hex nonce, and saves \`plan.json\` with \`inGameBindCommand\`, \`captureCommand\` and \`joinCommand\`. It sends **no** UI/game input. Example in **PowerShell 7** from \`C:\work\riftreader2\`:
+
+\`\`\`powershell
+C:\Python314\python.exe -B scripts\prepare_physical_npc_survey.py --expected-host AMD-DESKTOP --physical-pid CURRENT_VERIFIED_PID --radius 35 --max-ids 12 --installed-casting-dir 'C:\Users\mrkoo\OneDrive\Documents\RIFT\Interface\AddOns\RiftReader2Casting' --output-dir artifacts\NEW_UNUSED_NPC_BIND_PLAN
+\`\`\`
+
+Only the current in-game operator can complete the one-time \`/rr2survey bind\` from the freshly produced plan. Immediately afterward, run that plan's \`captureCommand\`, and only on successful source advancement run \`joinCommand\`. The native/API join is bounded to **120 seconds** from the sampled native source, so a delayed test requires a **new** plan and nonce. A physical prepared-but-not-activated plan first yielded 6 named IDs; after broadening the bounded native name lookup, a new one yielded **7**. Original ignored output: \`artifacts/npc-bind-prep-20261121-1335-p37676/plan.json\`. Neither was an activated in-game survey.
+
+**Validation:** **110/110** directly relevant Python tests passed across the auto-map scout, bind preparation, retained NPC source replay, native/API correlation, native unit readers and prior Telemetry locator. The Lua 5.1 producer integration suite still needs \`lupa\`, which is unavailable in Python 3.14 and three inspected project virtual environments; no environment was changed. A positive **real-game NPC source capture** is still pending the in-game bind, and no level/relation or encounter permission is claimed.

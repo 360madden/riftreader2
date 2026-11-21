@@ -15,6 +15,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts import physical_rift, survival_live
+from scripts import telemetry_scope_locator as locator
+from scripts.capture_physical_telemetry_zone import ReadOnlyWindowsProcess
 from scripts.capture_readerbridge_v3 import (
     CaptureError, _loads_json, _read_json, _run_native, _same_target, _target,
     _validate_scout, _validate_seed, _write_json,
@@ -129,6 +131,73 @@ def scout(target, base, length, attempt):
     return results
 
 
+def scout_mapped(target, nonce, player_id, ids, *, page=None,
+                 expected_host=None, owner_target=None,
+                 reader_factory=ReadOnlyWindowsProcess,
+                 selection_reader=physical_rift.select_physical,
+                 max_bytes=512 * 1024 * 1024, diagnostics=None):
+    """Bounded read-only private-memory scout, without process-specific seed."""
+    require(type(max_bytes) is int and 64 * 1024 <= max_bytes <= locator.MAX_SCAN_BYTES,
+            "npc-mapped-scout-invalid-byte-budget")
+    if diagnostics is not None:
+        diagnostics = Path(diagnostics)
+        require(diagnostics.parent.is_dir()
+                and not diagnostics.exists() and not diagnostics.is_symlink(),
+                "npc-mapped-scout-new-diagnostics-file-required")
+    host = expected_host if expected_host is not None else target.get("hostName")
+    owner = owner_target if owner_target is not None else target
+    pid = target.get("processId")
+    require(type(host) is str and host in physical_rift.SUPPORTED_HOSTS
+            and type(pid) is int and pid > 0
+            and type(owner) is dict
+            and owner.get("hostName") == host
+            and _same_target(owner, target),
+            "npc-mapped-scout-invalid-owner-contract")
+    first_owner = selection_reader(expected_host=host, physical_pid=pid)
+    require(first_owner.get("status") == "ready"
+            and first_owner.get("target") == owner,
+            "npc-mapped-scout-process-identity-unavailable")
+    candidates = []
+    with reader_factory(pid) as reader:
+        def match(address):
+            raw = reader.read(address, 8192)
+            require(type(raw) is bytes and len(raw) <= 8192,
+                    "npc-mapped-scout-invalid-read")
+            end = raw.find(SUFFIX)
+            if end < 0:
+                return False
+            wire = raw[:end + len(SUFFIX)]
+            try:
+                decode_frame(wire, nonce, player_id, ids, page)
+            except (CaptureError, ValueError, UnicodeError, KeyError, TypeError):
+                return False
+            candidates.append(({"address": f"0x{address:X}",
+                                "referenceNames": ["rr2-npc-survey"]}, wire))
+            return True
+        survey = locator.discover(
+            reader, marker=PREFIX, scan_bytes=64 * 1024 * 1024,
+            validate_at=match, max_scopes=4, max_bytes=max_bytes)
+    last_owner = selection_reader(expected_host=host, physical_pid=pid)
+    require(last_owner.get("status") == "ready"
+            and last_owner.get("target") == owner,
+            "npc-mapped-scout-process-changed")
+    if diagnostics is not None:
+        with diagnostics.open("x", encoding="utf-8", newline="\n") as stream:
+            json.dump({
+                "schema": "rr2-npc-bounded-map-diagnostics/1",
+                "status": ("matching-source-candidates" if candidates
+                           else "unqualified-bounded-search"),
+                "processId": pid,
+                "matchingFrameCandidates": len(candidates),
+                "locator": survey,
+                "inputSent": False,
+                "qualification": "Read-only bounded source-marker survey only; "
+                                 "missing candidates do not prove addon absence."
+            }, stream, indent=2, allow_nan=False)
+            stream.write("\n")
+    return candidates
+
+
 def newest(candidates, nonce, player_id, ids, seen, previous, page=None):
     decoded = []
     for row, data in candidates:
@@ -180,9 +249,13 @@ def _retain_qualified_source(candidates, source, folder, slot):
     return str(path)
 
 
-def acquire(host, pid, nonce, ids, output, seed_index=None, scan_mib=16, attempts=5, page=None):
+def acquire(host, pid, nonce, ids, output, seed_index=None, scan_mib=16,
+            attempts=5, page=None, auto_map=False):
     require(isinstance(nonce, str) and re.fullmatch(r"[0-9a-f]{32}", nonce), "invalid-survey-nonce")
-    require(1 <= scan_mib <= 32 and 2 <= attempts <= 12, "invalid-survey-budget")
+    require(type(auto_map) is bool and not (auto_map and seed_index is not None),
+            "invalid-mapped-survey-options")
+    require(type(scan_mib) is int and type(attempts) is int
+            and 1 <= scan_mib <= 32 and 2 <= attempts <= 12, "invalid-survey-budget")
     if ids is None:
         require(type(page) is int and 1<=page<=342,"invalid-visible-page")
     else:
@@ -193,17 +266,24 @@ def acquire(host, pid, nonce, ids, output, seed_index=None, scan_mib=16, attempt
     adapter = PhysicalAdapter(host, pid, DEFAULT_BASIS)
     require(_same_target(adapter.target, target), "survey-process-mismatch")
     player_id = survival_live._canonical_unit_key(adapter.unit_key)
-    seed = Path(seed_index) if seed_index else survival_live.autodiscover_seed(target)
-    base, length = _validate_seed(_read_json(seed), target, scan_mib)
+    seed = None if auto_map else (Path(seed_index) if seed_index
+                                  else survival_live.autodiscover_seed(target))
+    if not auto_map:
+        base, length = _validate_seed(_read_json(seed), target, scan_mib)
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
     seen, sources, previous = {}, [], None
     previous_at = None
     for index in range(1, attempts+1):
         start = time.monotonic()
-        candidates = scout(target, base, length, output/f"attempt-{index}.scout")
+        candidates = (scout_mapped(
+            target, nonce, player_id, ids, page=page,
+            expected_host=host, owner_target=selection["target"],
+            diagnostics=output / f"attempt-{index}.locator.json")
+                      if auto_map else
+                      scout(target, base, length, output/f"attempt-{index}.scout"))
         elapsed = time.monotonic()-start
-        if elapsed <= 5:
+        if elapsed <= (locator.MAX_SECONDS + 1 if auto_map else 5):
             selected = newest(candidates, nonce, player_id, ids, seen, previous, page)
             if selected:
                 frame, source = selected
@@ -221,7 +301,11 @@ def acquire(host, pid, nonce, ids, output, seed_index=None, scan_mib=16, attempt
                                      if row["status"]=="observed" and previous["units"][key]["status"]=="observed")
                     report = {"schemaVersion": 1, "evidenceKind": "physical-npc-api-survey/1",
                               "status": "advancing", "inputSent": False, "host":host, "target": target,
-                              "playerId": player_id, "seedIndex": str(seed), "sources": sources,
+                              "playerId": player_id, "seedIndex": str(seed) if seed is not None else None,
+                               **({"memoryLocator": "bounded-readable-private-map",
+                                   "memorySearchByteBudget": locator.MAX_SCAN_BYTES}
+                                  if auto_map else {}),
+                               "sources": sources,
                               "relativeSourceLagSeconds":lag,"confirmedUnitIds":confirmed,
                               "snapshot":frame,"observedUnits":len(confirmed),
                               "qualification":"confirmedUnitIds have exact Unit.Detail IDs in both advancing frames. For explicit IDs, list membership is diagnostic; for visible pages, listed membership is required in both lists. Missing relation is unknown; rawAttackable is undocumented. No range, line-of-sight or current-world authority."}
@@ -246,13 +330,17 @@ def main(argv=None):
     selection.add_argument("--visible-page",type=int,help="Page selected with /rr2survey bind NONCE visible and /rr2survey page N")
     parser.add_argument("--output",type=Path,required=True)
     parser.add_argument("--seed-index",type=Path)
+    parser.add_argument("--auto-map",action="store_true",
+                        help="bounded read-only private-memory discovery of exact "
+                             "nonce-bound NPC frames without a scout seed")
     parser.add_argument("--scan-mib",type=int,default=16)
     parser.add_argument("--max-attempts",type=int,default=5)
     args=parser.parse_args(argv)
     try:
         ids=requested_ids(args.unit_ids) if args.unit_ids is not None else None
         report=acquire(args.expected_host,args.physical_pid,args.session_id,ids,
-                       args.output,args.seed_index,args.scan_mib,args.max_attempts,args.visible_page)
+                       args.output,args.seed_index,args.scan_mib,args.max_attempts,
+                       args.visible_page,auto_map=args.auto_map)
     except (OSError,ValueError,CaptureError,RuntimeError,subprocess.SubprocessError) as error:
         report={"status":"blocked","inputSent":False,"reason":str(error)}
     print(json.dumps(report,ensure_ascii=True,allow_nan=False))
