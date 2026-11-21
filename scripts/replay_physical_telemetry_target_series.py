@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 from pathlib import Path
 import sys
@@ -30,16 +31,55 @@ def require(condition, reason):
         raise ValueError("target-continuity-" + reason)
 
 
+def _verified_source_frames(result, epoch):
+    """Validate complete ordered per-frame projections from the SHA-replayed source."""
+    rows = result.get("observedTargetFrames")
+    require(type(rows) is list and rows, "source-frame-projection-missing")
+    require(len(rows) == result["observedFrameCount"],
+            "source-frame-count-mismatch")
+    validated, last_seq, last_clock = [], None, None
+    for row in rows:
+        require(type(row) is dict, "source-frame-invalid")
+        seq, clock, target, digest = (
+            row.get("sequence"), row.get("sourceClockCandidate"),
+            row.get("targetUnitIdCandidate"), row.get("sourceSha256"))
+        require(type(seq) is int and seq > 0 and row.get("sourceEpoch") == epoch
+                and type(clock) in (int, float) and math.isfinite(clock)
+                and (target is None or type(target) is str
+                     and UNIT.fullmatch(target) is not None)
+                and type(digest) is str and SHA.fullmatch(digest) is not None,
+                "source-frame-invalid")
+        require(last_seq is None or seq > last_seq and clock > last_clock,
+                "source-frame-order-invalid")
+        validated.append({"sequence": seq, "sourceClockCandidate": clock,
+                          "targetUnitIdCandidate": target, "sourceSha256": digest})
+        last_seq, last_clock = seq, clock
+    require(validated[0]["sequence"] == result["firstSequence"]
+            and validated[-1]["sequence"] == result["lastSequence"],
+            "source-frame-range-mismatch")
+    # These runs are computed from the replayed original bytes, not a CLI label.
+    computed = []
+    for row in validated:
+        seq, target = row["sequence"], row["targetUnitIdCandidate"]
+        if not computed or computed[-1]["targetUnitIdCandidate"] != target:
+            computed.append({"targetUnitIdCandidate": target,
+                             "firstSequence": seq, "lastSequence": seq})
+        else:
+            computed[-1]["lastSequence"] = seq
+    require(computed == result.get("runs"), "source-frame-run-mismatch")
+    return validated
+
+
 def combine(paths, *, replay=target_replay.replay):
-    """Compare independent verified captures; do not extrapolate unseen events."""
+    """Merge source-verified frames from each window, not only final targets."""
     require(type(paths) in (tuple, list) and 2 <= len(paths) <= 16,
             "requires-2-to-16-captures")
-    observations, used, baseline = [], set(), None
+    observations, used, baseline, merged_frames = [], set(), None, {}
     for index, value in enumerate(paths, 1):
         path = Path(value)
         require(path.is_file() and not path.is_symlink(),
                 "source-file-unavailable")
-        result = replay(path)
+        result = replay(path, include_frames=True)
         require(type(result) is dict and result.get("qualificationStatus") == "candidate-only"
                 and result.get("status") in (
                     "no-target-baseline-candidate", "selected-target-observations-candidate",
@@ -71,10 +111,19 @@ def combine(paths, *, replay=target_replay.replay):
         require(isinstance(runs, list) and runs and
                 type(runs[-1]) is dict and runs[-1].get("lastSequence") == last,
                 "source-runs-invalid")
-        last_target = runs[-1].get("targetUnitIdCandidate")
-        require(last_target is None or type(last_target) is str
-                and UNIT.fullmatch(last_target) is not None,
-                "source-target-id-invalid")
+        source_frames = _verified_source_frames(result, identity["sourceEpoch"])
+        last_target = source_frames[-1]["targetUnitIdCandidate"]
+        for frame in source_frames:
+            seq = frame["sequence"]
+            previous = merged_frames.get(seq)
+            require(previous is None or previous["sourceFrame"] == frame,
+                    "overlapping-source-frame-conflict")
+            if previous is None:
+                merged_frames[seq] = {"sourceFrame": frame,
+                                      "firstCapture": index,
+                                      "observedInCaptures": [index]}
+            else:
+                previous["observedInCaptures"].append(index)
         gap = 0
         if observations:
             prior = observations[-1]
@@ -94,6 +143,38 @@ def combine(paths, *, replay=target_replay.replay):
                 (result.get("nativeTargetComparison") or {}).get("status")
             ),
         })
+    source_rows = [dict(merged_frames[seq]["sourceFrame"],
+                        firstCapture=merged_frames[seq]["firstCapture"],
+                        observedInCaptures=merged_frames[seq]["observedInCaptures"])
+                   for seq in sorted(merged_frames)]
+    require(all(a["sourceClockCandidate"] < b["sourceClockCandidate"]
+                for a, b in zip(source_rows, source_rows[1:])),
+            "source-clock-conflict-across-captures")
+    source_runs = []
+    for row in source_rows:
+        target = row["targetUnitIdCandidate"]
+        if not source_runs or source_runs[-1]["targetUnitIdCandidate"] != target:
+            source_runs.append({
+                "targetUnitIdCandidate": target,
+                "firstSequence": row["sequence"], "lastSequence": row["sequence"],
+                "firstObservedCapture": row["firstCapture"]})
+        else:
+            source_runs[-1]["lastSequence"] = row["sequence"]
+    source_cycles = [
+        {"targetACandidate": a["targetUnitIdCandidate"],
+         "targetBCandidate": b["targetUnitIdCandidate"],
+         "firstSequence": a["firstSequence"],
+         "otherSequence": b["firstSequence"],
+         "returnedSequence": c["firstSequence"]}
+        for a, b, c in zip(source_runs, source_runs[1:], source_runs[2:])
+        if a["targetUnitIdCandidate"] is not None
+        and b["targetUnitIdCandidate"] is not None
+        and a["targetUnitIdCandidate"] != b["targetUnitIdCandidate"]
+        and a["targetUnitIdCandidate"] == c["targetUnitIdCandidate"]
+    ]
+    missing_in_union = sum(
+        max(0, b["sequence"] - a["sequence"] - 1)
+        for a, b in zip(source_rows, source_rows[1:]))
     runs = []
     for sample in observations:
         ident = sample["sampledTargetUnitIdCandidate"]
@@ -116,14 +197,21 @@ def combine(paths, *, replay=target_replay.replay):
         and a["targetUnitIdCandidate"] == c["targetUnitIdCandidate"]
     ]
     status = ("a-b-a-across-captures-candidate" if cycles
+              else "a-b-a-in-source-frames-candidate" if source_cycles
               else "no-target-continuity-candidate"
-              if all(x["sampledTargetUnitIdCandidate"] is None for x in observations)
+              if all(x["targetUnitIdCandidate"] is None for x in source_rows)
               else "target-continuity-observations-candidate")
     return {
         "schema": SCHEMA, "status": status,
         "qualificationStatus": "candidate-only", "runtimeIdentity": baseline,
         "captureCount": len(observations), "captures": observations,
         "lastObservedTargetRuns": runs, "aBaAcrossCaptures": cycles,
+        "observedSourceRuns": source_runs,
+        "observedSourceABACycles": source_cycles,
+        "uniqueObservedSourceFrameCount": len(source_rows),
+        "missingSequencesInMergedSourceRange": missing_in_union,
+        "sourceSequenceRange": [source_rows[0]["sequence"],
+                                source_rows[-1]["sequence"]],
         "unobservedSequenceGapCount": sum(x["unobservedSequenceGapFromPrior"] > 0
                                           for x in observations[1:]),
         "capturesWithInternalSequenceGaps": sum(
@@ -132,10 +220,13 @@ def combine(paths, *, replay=target_replay.replay):
         "inputSent": False,
         "qualification": ("Each capture independently source-hash-replayed with advancing "
                           "publisher frames; same process, player, zone, session and epoch. "
-                          "Only last observed target of each capture is compared. "
+                          "Every distinct source-verified Lua frame is merged by sequence; "
+                          "same-sequence overlap must preserve payload hash, clock and target. "
+                          "Last-target-only runs are retained separately for compatibility. "
                           "Intermediate target changes are unknown; per-capture missing "
                           "sequence counts are lower bounds that may overlap across "
-                          "captures, not a global coverage claim. Between-capture gaps "
+                          "captures; the merged source range reports unique missing sequences. "
+                          "Between-capture gaps "
                           "are separate; "
                           "native endpoints are sequential candidates, not atomic. "
                           "No selection-action causation, full A->B->A history, world "
@@ -164,7 +255,8 @@ def main(argv=None):
         return 2
     print(json.dumps({"status": result["status"],
                       "captureCount": result["captureCount"],
-                      "aBaCandidates": len(result["aBaAcrossCaptures"]),
+                      "aBaCandidates": len(result["observedSourceABACycles"]),
+                      "lastStateABACandidates": len(result["aBaAcrossCaptures"]),
                       "qualificationStatus": result["qualificationStatus"]}))
     return 0
 

@@ -79,6 +79,21 @@ class TargetSequenceTests(unittest.TestCase):
         self.assertIn("No native selected-target", result["qualification"])
         self.assertIn("controlled input", result["qualification"])
 
+    def test_explicit_per_frame_evidence_is_source_verified_and_opt_in(self):
+        self.change({(1, 1): A, (1, 2): B, (2, 1): B, (2, 2): A})
+        normal = target.replay(self.fx.summary)
+        self.assertNotIn("observedTargetFrames", normal)
+        detailed = target.replay(self.fx.summary, include_frames=True)
+        self.assertEqual([row["sequence"] for row in detailed["observedTargetFrames"]],
+                         [1, 2, 3])
+        self.assertEqual(
+            [row["targetUnitIdCandidate"] for row in detailed["observedTargetFrames"]],
+            [A, B, A])
+        self.assertTrue(all(len(row["sourceSha256"]) == 64
+                            for row in detailed["observedTargetFrames"]))
+        with self.assertRaisesRegex(ValueError, "invalid-include-frames-option"):
+            target.replay(self.fx.summary, include_frames=1)
+
     def test_selected_frames_without_return_are_not_a_b_a(self):
         self.change({(1,1): A, (1,2): B, (2,1): B, (2,2): B})
         result = target.replay(self.fx.summary)

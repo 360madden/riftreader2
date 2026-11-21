@@ -1,10 +1,13 @@
 """No-game-input tests for bounded physical target continuity acquisition."""
 from __future__ import annotations
 
+from contextlib import redirect_stdout
+from io import StringIO
 import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from scripts import capture_physical_telemetry_target_series as capture
 
@@ -119,6 +122,31 @@ class SeriesCaptureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "output-must-be-new"):
             self.execute_capture()
         self.assertEqual(self.calls, [])
+
+    def test_cli_reports_frame_level_aba_not_only_final_target_states(self):
+        fake = {
+            "status": "a-b-a-in-source-frames-candidate",
+            "individualCaptures": [{"capture": 1}, {"capture": 2}],
+            "continuity": {
+                "observedSourceABACycles": [{"firstSequence": 7,
+                                              "otherSequence": 8,
+                                              "returnedSequence": 9}],
+                "aBaAcrossCaptures": [],
+            },
+        }
+        with patch.object(capture, "run",
+                          return_value=(self.output / "result.json", fake)) as run, \
+                redirect_stdout(StringIO()) as output:
+            code = capture.main(["--physical-pid", str(PID),
+                                 "--output-dir", str(self.output),
+                                 "--count", "2"])
+        self.assertEqual(code, 0)
+        self.assertFalse(self.output.exists())
+        printed = json.loads(output.getvalue())
+        self.assertEqual(printed["aBaCandidates"], 1)
+        self.assertEqual(printed["lastStateABACandidates"], 0)
+        self.assertEqual(printed["status"], "a-b-a-in-source-frames-candidate")
+        run.assert_called_once()
 
     def test_unavailable_scope_aborts_before_followup(self):
         def no_scope(pid, destination, **options):

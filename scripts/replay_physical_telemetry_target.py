@@ -121,8 +121,9 @@ def native_target_bracket(path, report, verified, first_lua, last_lua):
             )}
 
 
-def replay(source):
+def replay(source, *, include_frames=False):
     """Only source-hashed existing native/Lua zone bundles are admitted."""
+    require(type(include_frames) is bool, "invalid-include-frames-option")
     path = Path(source)
     verified = zone.replay(path)  # verifies hashes, player/epoch, clocks and bracket
     report, sha = load(path, verified["evidenceSummarySha256"])
@@ -228,6 +229,7 @@ def replay(source):
         "runs": runs,
         "transitions": transitions,
         "aBaCycles": cycles,
+        **({"observedTargetFrames": ordered} if include_frames else {}),
         "evidenceSummarySha256": sha,
         "nativeSourceSha256": verified["nativeSourceSha256"],
         **({"nativeTargetComparison": native_comparison}

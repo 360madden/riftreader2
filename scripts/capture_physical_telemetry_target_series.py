@@ -123,7 +123,8 @@ def main(argv=None):
         return 2
     print(json.dumps({"status": result["status"],
                       "captureCount": len(result["individualCaptures"]),
-                      "aBaCandidates": len(result["continuity"]["aBaAcrossCaptures"]),
+                      "aBaCandidates": len(result["continuity"]["observedSourceABACycles"]),
+                      "lastStateABACandidates": len(result["continuity"]["aBaAcrossCaptures"]),
                       "output": str(path), "inputSent": False}))
     return 0
 
