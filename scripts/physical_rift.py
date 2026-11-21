@@ -37,6 +37,7 @@ NATIVE_READS = {
     "zone-context": "sample-current-zone-seed",
     "target-name": "sample-current-target-template-name",
     "unit-names": "sample-current-unit-template-names",
+    "unit-levels": "sample-current-unit-levels",
 }
 NATIVE_RECEIPTS = {
     "position": "native-current-position-candidate-summary/1",
@@ -53,6 +54,7 @@ NATIVE_RECEIPTS = {
     "zone-context": "native-current-zone-seed-summary/1",
     "target-name": "native-target-template-name-summary/1",
     "unit-names": "native-unit-template-names-summary/1",
+    "unit-levels": "native-current-unit-levels-summary/1",
 }
 NATIVE_EXE = (ROOT / "src" / "RiftReader2.Live" / "bin" / "Debug" /
               "net10.0-windows" / "win-x64" / "RiftReader2.Live.exe")
@@ -501,6 +503,9 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
     """Project immediate useful values; preserve exact large unit keys as text."""
     if kind == "stats":
         return _stats_values(report)
+    if kind == "unit-levels":
+        from scripts.native_unit_level_projection import values
+        return values(report)
     if kind == "selected-target":
         # Preserve old-build wrapper behavior; qualify the current build by
         # the strict source decoder, not by blindly trusting a JSON target key.
@@ -1531,12 +1536,13 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
         return dict(selection, status="blocked", reason="host-mismatch")
     if kind not in NATIVE_READS:
         return dict(selection, status="blocked", reason="unknown-native-read")
-    if kind == "unit-names":
-        if not _valid_unit_keys(unit_keys):
-            return dict(selection, status="blocked", reason="invalid-unit-name-keys")
+    if kind in ("unit-names", "unit-levels"):
+        if not _valid_unit_keys(unit_keys) or (
+                kind == "unit-levels" and len(unit_keys) > 12):
+            return dict(selection, status="blocked", reason="invalid-unit-keys")
         unit_keys = tuple(unit_keys)
     elif unit_keys is not None:
-        return dict(selection, status="blocked", reason="unit-keys-require-unit-names")
+        return dict(selection, status="blocked", reason="unit-keys-require-unit-names-or-levels")
     if type(include_position) is not bool or (include_position and kind != "actor-pose"):
         return dict(selection, status="blocked", reason="position-bracket-requires-actor-pose")
     if type(include_transform_sources) is not bool or (include_transform_sources and kind != "actor-pose"):
@@ -1580,7 +1586,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
     # Other older-build native readers must not silently inherit admission.
     updated_sha = "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"
     if str(target.get("executableSha256", "")).casefold() == updated_sha.casefold():
-        if kind not in ("position", "facing", "actor-pose", "orientation", "unit-positions", "selected-position", "selected-target", "vitals", "player-context", "stats", "zone-context", "target-name", "unit-names"):
+        if kind not in ("position", "facing", "actor-pose", "orientation", "unit-positions", "selected-position", "selected-target", "vitals", "player-context", "stats", "zone-context", "target-name", "unit-names", "unit-levels"):
             return dict(selection, status="blocked", reason="postpatch-native-read-unqualified")
         command.extend(("--sha256", updated_sha))
         if kind == "selected-target":
@@ -1608,7 +1614,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
                * (interval_ms if interval_ms is not None else 500) / 1000
                if kind in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation", "facing", "player-context", "selected-position") else 30)
     try:
-        timed_read = kind in ("zone-context", "target-name", "unit-names")
+        timed_read = kind in ("zone-context", "target-name", "unit-names", "unit-levels")
         invocation_started = datetime.now(timezone.utc) if timed_read else None
         completed = subprocess.run(command, cwd=ROOT, capture_output=True,
                                    text=True, timeout=timeout, check=False,
@@ -1711,12 +1717,12 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
         values = _native_values(kind, report, expect_position=include_position,
                                 expect_translation_sources=include_transform_sources, current_acquisition=True)
         if timed_read:
-            if (kind != "unit-names" and summary.get("status") != observation["status"]
+            if (kind not in ("unit-names", "unit-levels") and summary.get("status") != observation["status"]
                     or not _utc_tick_order_key(invocation_started.isoformat()) <= _utc_tick_order_key(observation["startedAtUtc"])
                     <= _utc_tick_order_key(observation["completedAtUtc"]) <= _utc_tick_order_key(invocation_completed.isoformat())):
                 raise ValueError("native-receipt-or-invocation-time-mismatch")
-        if kind == "unit-names" and tuple(row["unitKey"] for row in values["rows"]) != unit_keys:
-            raise ValueError("native-unit-name-key-mismatch")
+        if kind in ("unit-names", "unit-levels") and tuple(row["unitKey"] for row in values["rows"]) != unit_keys:
+            raise ValueError("native-requested-unit-key-mismatch")
         if kind == "unit-positions" and (observation["unitLimit"] != (512 if unit_limit is None else unit_limit)
                 or observation["startBucket"] != (0 if start_bucket is None else start_bucket) % observation["bucketCount"]):
             raise ValueError("native-unit-position-options-mismatch")
@@ -1760,7 +1766,7 @@ def main(argv=None):
                         help="facing only: project selected target position with a camera stability bracket")
     parser.add_argument("--unit-limit", type=int, help="unit-positions only: bounded 1-512 examined units (default 512)")
     parser.add_argument("--start-bucket", type=int, help="unit-positions only: first unit-manager bucket (default 0)")
-    parser.add_argument("--unit-keys", help="unit-names only: 1–32 unique decimal unit keys separated by commas")
+    parser.add_argument("--unit-keys", help="unit-names (1–32) or unit-levels (1–12): unique decimal unit keys, comma-separated")
     parser.add_argument("--anchor-catalog", type=Path,
                         help="with native position: offline compare XYZ to named-anchor catalog")
     parser.add_argument("--anchor-id",
@@ -1790,10 +1796,12 @@ def main(argv=None):
     elif args.include_target and args.read_native != "facing":
         result = {"status": "blocked", "workflow": "physical",
                   "reason": "target-projection-requires-facing"}
-    elif unit_keys is not None and args.read_native != "unit-names":
-        result = {"status": "blocked", "workflow": "physical", "reason": "unit-keys-require-unit-names"}
-    elif args.read_native == "unit-names" and not _valid_unit_keys(unit_keys):
-        result = {"status": "blocked", "workflow": "physical", "reason": "invalid-unit-name-keys"}
+    elif unit_keys is not None and args.read_native not in ("unit-names", "unit-levels"):
+        result = {"status": "blocked", "workflow": "physical", "reason": "unit-keys-require-unit-names-or-levels"}
+    elif args.read_native in ("unit-names", "unit-levels") and (
+            not _valid_unit_keys(unit_keys) or
+            (args.read_native == "unit-levels" and len(unit_keys) > 12)):
+        result = {"status": "blocked", "workflow": "physical", "reason": "invalid-unit-keys"}
     elif (args.unit_limit is not None or args.start_bucket is not None) and args.read_native != "unit-positions":
         result = {"status": "blocked", "workflow": "physical",
                   "reason": "unit-scan-options-require-unit-positions"}

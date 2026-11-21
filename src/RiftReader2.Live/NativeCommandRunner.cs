@@ -102,6 +102,8 @@ public static class NativeCommandRunner
                 return await CurrentBuildSelectedTargetSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--include-name-seed", "--include-position", "--include-context", "--sha256"), output, cancellationToken);
             if (args[0] == "sample-current-unit-template-names")
                 return await CurrentBuildUnitTemplateNamesSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--keys", "--output", "--sha256"), output, cancellationToken);
+            if (args[0] == "sample-current-unit-levels")
+                return await CurrentBuildUnitLevelsSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--keys", "--output", "--sha256"), output, cancellationToken);
             if (args[0] == "sample-current-target-template-name")
                 return await CurrentBuildTargetTemplateNameSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--sha256"), output, cancellationToken);
             if (args[0] == "sample-current-variant-guards")
