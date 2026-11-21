@@ -1733,7 +1733,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
                 nativeOutput=str(path), nativeSummary=summary, nativeValues=values,
                 qualification="candidate-only; changed-state/freshness/restart-unverified",
                 **({"nativeSourceSha256": hashlib.sha256(report_bytes).hexdigest()}
-                    if timed_read or kind == "stats" else {}),
+                    if timed_read or kind in ("stats", "selected-target", "selected-position") else {}),
                 **({"nativeBurstSummary": burst_summary} if burst_summary is not None else {}),
                 **({"nativeBurstValues": selected_burst_values} if selected_burst_values is not None else {}))
 
