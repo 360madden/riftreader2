@@ -11,20 +11,22 @@ from scripts.sample_current_native_ability_catalog import validate_dictionary
 from scripts.native_localization_huffman import decode_localization_huffman
 from scripts.native_localization_record import parse_localization_record
 GAME_SHA = '1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8'
+UPDATED_GAME_SHA = 'DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01'
 READER_SHA = '6479EF0959FA6BE36B3B27D0586DE8C0E1625E0011DED53FCFECD2226674F970'
 READER = ROOT / 'artifacts/native-target-level-20261107/publish/RiftReader2.Live.exe'
 EVIDENCE = ROOT / 'artifacts/native-selected-target-20261107/runs'
 
 QUALIFICATION='candidate-only; target and vitals semantics, freshness and restart unverified'
 
-def validate_report(report, *, pid, ticks):
+def validate_report(report, *, pid, ticks, game_sha=GAME_SHA):
     def integer(v,low,high): return type(v) is int and low<=v<=high
     def invalid(): raise ValueError('invalid selected-target report')
+    if game_sha not in (GAME_SHA, UPDATED_GAME_SHA): invalid()
     if not isinstance(report,dict) or type(report.get('schemaVersion')) is not int or report['schemaVersion']!=1 or report.get('contractVersion')!='native-current-selected-target-candidate-sample/1' or report.get('status')!='complete' or report.get('qualification')!=QUALIFICATION: invalid()
     o=report.get('observation')
     if not isinstance(o,dict) or o.get('qualification')!=QUALIFICATION: invalid()
     identity=o.get('identity')
-    if not isinstance(identity,dict) or not integer(pid,1,2**31-1) or not integer(ticks,1,2**63-1) or type(identity.get('processId')) is not int or identity['processId']!=pid or type(identity.get('processStartUtcTicks')) is not int or identity['processStartUtcTicks']!=ticks or identity.get('executableSha256')!=GAME_SHA: invalid()
+    if not isinstance(identity,dict) or not integer(pid,1,2**31-1) or not integer(ticks,1,2**63-1) or type(identity.get('processId')) is not int or identity['processId']!=pid or type(identity.get('processStartUtcTicks')) is not int or identity['processStartUtcTicks']!=ticks or identity.get('executableSha256')!=game_sha: invalid()
     def interval(value):
         try: start=datetime.fromisoformat(value['startedAtUtc'].replace('Z','+00:00')); end=datetime.fromisoformat(value['completedAtUtc'].replace('Z','+00:00'))
         except (KeyError,AttributeError,TypeError,ValueError): invalid()
@@ -88,13 +90,13 @@ def validate_report(report, *, pid, ticks):
     else: invalid()
     return o
 
-def selected_target_values(report, *, pid, ticks):
+def selected_target_values(report, *, pid, ticks, game_sha=GAME_SHA):
     """Expose usable target candidates without changing the hashed native report.
 
     A missing target/owner is not zero health, level zero, or out of combat.
     Decimal unit-key strings remain lossless for JavaScript JSON consumers.
     """
-    observation = validate_report(report, pid=pid, ticks=ticks)
+    observation = validate_report(report, pid=pid, ticks=ticks, game_sha=game_sha)
     available = observation['status'] == 'candidate'
     vitals = observation.get('targetVitals')
     context = observation.get('targetContext') or {}

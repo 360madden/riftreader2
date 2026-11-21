@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts import physical_rift
+from tests.test_sample_current_native_selected_target import report as selected_fixture
 
 
 BUILD_1179 = "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"
@@ -47,7 +48,6 @@ class PostpatchNativeAdmissionTests(unittest.TestCase):
         # Old-build research is not an implicit qualification for build 1179.
         for kind in (
             "smoothed-scalar",
-            "selected-target", "zone-context",
         ):
             with self.subTest(kind=kind), patch.object(physical_rift.subprocess, "run") as run:
                 result = physical_rift.read_native(
@@ -71,7 +71,7 @@ class PostpatchNativeAdmissionTests(unittest.TestCase):
 
     def test_admitted_kinds_pass_the_exact_sha_to_native_reader(self):
         # A synthetic nonzero native exit proves command assembly, not live semantics.
-        for kind in ("position", "facing", "actor-pose", "orientation", "unit-positions", "selected-position", "vitals", "player-context", "stats", "target-name", "unit-names"):
+        for kind in ("position", "facing", "actor-pose", "orientation", "unit-positions", "selected-position", "selected-target", "vitals", "player-context", "stats", "zone-context", "target-name", "unit-names"):
             with self.subTest(kind=kind), patch.object(
                 physical_rift.subprocess, "run",
                 return_value=subprocess.CompletedProcess([], 3, "", "offline-refusal"),
@@ -88,6 +88,35 @@ class PostpatchNativeAdmissionTests(unittest.TestCase):
                 ])
                 self.assertEqual(args.count("--sha256"), 1)
                 self.assertEqual(args[args.index("--sha256") + 1], BUILD_1179)
+                if kind == "selected-target":
+                    for option in ("--include-name-seed", "--include-position",
+                                   "--include-context"):
+                        self.assertEqual(args[args.index(option) + 1], "true")
+
+    def test_postpatch_selected_target_projection_retains_exact_keys_and_candidate_levels(self):
+        source = selected_fixture()
+        owner = source["observation"]
+        owner["identity"]["executableSha256"] = BUILD_1179
+        owner["targetVitals"]["identity"]["executableSha256"] = BUILD_1179
+        owner["targetVitals"]["health"].update(
+            status="calculated-candidate", current=522, maximum=522,
+            unavailableReason=None)
+        owner["targetContext"].update(
+            status="raw-typed-candidate", owner=0x20080000,
+            rawLevel=0, rawCombat=0, combatCandidate=False,
+            levelStatus="numeric-getter-candidate",
+            levelBranch="alternate-secondary", numericLevelCandidate=10)
+        values = physical_rift._native_values("selected-target", source)
+        self.assertEqual(values["unitId"], owner["targetUnitId"])
+        self.assertEqual(values["unitKey"], str(owner["targetKey"]))
+        self.assertEqual(values["numericLevelCandidate"], 10)
+        self.assertEqual(values["health"]["current"], 522)
+        self.assertFalse(values["combatCandidate"])
+        self.assertEqual(values["status"], "candidate")
+        self.assertIsNone(physical_rift._native_values("selected-target", selected_fixture()))
+        owner["targetKey"] += 1
+        with self.assertRaisesRegex(ValueError, "invalid selected-target report"):
+            physical_rift._native_values("selected-target", source)
 
     def test_postpatch_target_name_accepts_only_explicit_raw_only_dictionary_refusal(self):
         identity = {

@@ -99,7 +99,7 @@ public static class NativeCommandRunner
             if (args[0] == "sample-current-player-context")
                 return await CurrentBuildPlayerContextSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--samples", "--interval-ms", "--sha256"), output, cancellationToken);
             if (args[0] == "sample-current-selected-target")
-                return await CurrentBuildSelectedTargetSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--include-name-seed", "--include-position", "--include-context"), output, cancellationToken);
+                return await CurrentBuildSelectedTargetSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--include-name-seed", "--include-position", "--include-context", "--sha256"), output, cancellationToken);
             if (args[0] == "sample-current-unit-template-names")
                 return await CurrentBuildUnitTemplateNamesSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--keys", "--output", "--sha256"), output, cancellationToken);
             if (args[0] == "sample-current-target-template-name")

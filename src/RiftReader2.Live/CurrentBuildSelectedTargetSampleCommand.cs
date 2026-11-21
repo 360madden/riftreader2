@@ -16,13 +16,16 @@ internal sealed record CurrentBuildSelectedTargetReport(SelectedTargetObservatio
 
 internal static class CurrentBuildSelectedTargetSampleCommand
 {
-    internal static Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken cancellationToken) =>
-        RunAsync(options, output, cancellationToken,
-            static async (pid, ticks, token) => await NativeReadFileLease.AcquireAsync(
-                pid, ticks, CurrentBuildPlayerLookup.GameSha256, TimeSpan.FromSeconds(1), token),
-            static async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(
-                pid, ticks, CurrentBuildPlayerLookup.GameSha256, token),
+    internal static Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken cancellationToken)
+    {
+        var sha = CurrentBuildTargetTemplateNameSampleCommand.ExpectedSha(options);
+        return RunAsync(options, output, cancellationToken,
+            async (pid, ticks, token) => await NativeReadFileLease.AcquireAsync(
+                pid, ticks, sha, TimeSpan.FromSeconds(1), token),
+            async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(
+                pid, ticks, sha, token),
             CurrentBuildSelectedTargetCandidateReader.Read);
+    }
 
     // Explicit offline-only seam; production entry supplies the real lease.
     internal static async Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output,
@@ -41,11 +44,15 @@ internal static class CurrentBuildSelectedTargetSampleCommand
         var includeName = options.TryGetValue("--include-name-seed", out var name) ? name == "true" ? true : throw new ArgumentException("--include-name-seed must be true.") : false;
         var includePosition = options.TryGetValue("--include-position", out var position) ? position == "true" ? true : throw new ArgumentException("--include-position must be true.") : false;
         var includeContext = options.TryGetValue("--include-context", out var context) ? context == "true" ? true : throw new ArgumentException("--include-context must be true.") : false;
+        var expectedSha = CurrentBuildTargetTemplateNameSampleCommand.ExpectedSha(options);
         if (File.Exists(path)) throw new IOException("Output exists; never overwrite an earlier observation.");
         await using var lease = await acquireLease(pid, ticks, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         await using var session = await open(pid, ticks, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
+        if (session.Identity.ProcessId != pid || session.Identity.ProcessStartUtcTicks != ticks ||
+            !string.Equals(session.Identity.ExecutableSha256, expectedSha, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Selected target process or build identity mismatch.");
         var observation = read(session, includeName, includePosition, includeContext);
         if (await session.RevalidateAsync(cancellationToken) is not null) throw new InvalidDataException("Process identity invalidated; no report published.");
         cancellationToken.ThrowIfCancellationRequested();

@@ -501,6 +501,17 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
     """Project immediate useful values; preserve exact large unit keys as text."""
     if kind == "stats":
         return _stats_values(report)
+    if kind == "selected-target":
+        # Preserve old-build wrapper behavior; qualify the current build by
+        # the strict source decoder, not by blindly trusting a JSON target key.
+        from scripts.sample_current_native_selected_target import selected_target_values, UPDATED_GAME_SHA
+        observed = report.get("observation")
+        identity = observed.get("identity") if isinstance(observed, dict) else None
+        if (isinstance(identity, dict) and
+                identity.get("executableSha256") == UPDATED_GAME_SHA):
+            return selected_target_values(report, pid=identity["processId"],
+                                          ticks=identity["processStartUtcTicks"],
+                                          game_sha=UPDATED_GAME_SHA)
     if kind == "unit-names":
         return _unit_name_values(report)
     if kind == "target-name":
@@ -1569,9 +1580,12 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
     # Other older-build native readers must not silently inherit admission.
     updated_sha = "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"
     if str(target.get("executableSha256", "")).casefold() == updated_sha.casefold():
-        if kind not in ("position", "facing", "actor-pose", "orientation", "unit-positions", "selected-position", "vitals", "player-context", "stats", "zone-context", "target-name", "unit-names"):
+        if kind not in ("position", "facing", "actor-pose", "orientation", "unit-positions", "selected-position", "selected-target", "vitals", "player-context", "stats", "zone-context", "target-name", "unit-names"):
             return dict(selection, status="blocked", reason="postpatch-native-read-unqualified")
         command.extend(("--sha256", updated_sha))
+        if kind == "selected-target":
+            command.extend(("--include-name-seed", "true",
+                            "--include-position", "true", "--include-context", "true"))
     if samples is not None:
         command.extend(("--samples", str(samples)))
     if interval_ms is not None:

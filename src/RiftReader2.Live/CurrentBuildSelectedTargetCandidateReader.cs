@@ -21,13 +21,16 @@ internal static class CurrentBuildSelectedTargetCandidateReader
  internal static SelectedTargetObservation Read(IReadOnlyNativeMemorySession session, bool includeNameSeed = false, bool includePosition = false, bool includeContext = false)=>Read(session,CurrentBuildPlayerContextCandidateReader.Read,(s,owner)=>CurrentBuildVitalsCandidateReader.Read(s,_=>owner), includeNameSeed, includePosition, includeContext);
  internal static SelectedTargetObservation Read(IReadOnlyNativeMemorySession session,Func<IReadOnlyNativeMemorySession,CurrentBuildPlayerContextObservation> context,Func<IReadOnlyNativeMemorySession,CurrentBuildVitalsOwnerSnapshot,CurrentBuildVitalsObservation> vitals, bool includeNameSeed = false, bool includePosition = false, bool includeContext = false)
  {
-  var start=DateTimeOffset.UtcNow;var id=session.Identity;var before=context(session);
+  var start=DateTimeOffset.UtcNow;var id=session.Identity;
+  if(!CurrentBuildPlayerLookup.IsCoreBuild(id.ExecutableSha256)||id.ProcessId<=0||id.ProcessStartUtcTicks<=0)throw new InvalidDataException("Target reader requires an exact qualified build and process epoch.");
+  var updated=CurrentBuildPlayerLookup.IsUpdatedBuild(id.ExecutableSha256);
+  var before=context(session);
   if(before.Identity!=id)throw new InvalidDataException("Self context identity mismatch.");
   if(!before.TargetKeyCandidate.HasValue||before.TargetKeyCandidate.Value==0)return new(id,start,DateTimeOffset.UtcNow,before.UnitKey,"unavailable",before.TargetStatus,null,null,null,null,null);
   var key=before.TargetKeyCandidate.Value;var anchors=new Dictionary<(ulong,int),byte[]>();var budget=0;
   byte[] Take(ulong a,int n,bool remember=true){budget=checked(budget+n);if(budget>2*1024*1024)throw new InvalidDataException("Target lookup budget exceeded.");var b=CurrentBuildPlayerLookup.Exact(session,a,n);if(remember){if(anchors.TryGetValue((a,n),out var old)&&!old.AsSpan().SequenceEqual(b))throw new InvalidDataException("Target lookup changed.");anchors[(a,n)]=b.ToArray();}return b;}
   ulong Ptr(ulong v,int n=8)=>CurrentBuildPlayerLookup.Pointer(v,n);ulong Q(ulong a)=>U64(Take(a,8));
-  var manager=Ptr(Q(id.ModuleBaseAddress+0x33624A8));var table=Ptr(Q(manager+0x50));var header=Take(table,24);
+  var manager=Ptr(Q(id.ModuleBaseAddress+CurrentBuildPlayerLookup.ManagerRvaFor(id.ExecutableSha256)));var table=Ptr(Q(manager+0x50));var header=Take(table,24);
   var buckets=Ptr(U64(header));var stride=U64(header.AsSpan(8));var count=U64(header.AsSpan(16));
   if(stride is <24 or >4096||stride%8!=0||count is <1 or >(1<<24))throw new InvalidDataException("Invalid target unit table.");
   var address=Ptr(checked(buckets+CurrentBuildPlayerLookup.BucketIndex(key,count)*stride),24);var seen=new HashSet<ulong>();ulong entity=0;bool head=true;
@@ -38,12 +41,12 @@ internal static class CurrentBuildSelectedTargetCandidateReader
    var next=link&~1UL;if(next==0)break;address=Ptr(next,24);head=false;
   }
   if(entity==0)throw new InvalidDataException("Target key absent or lookup bound exceeded.");
-  var selector=BinaryPrimitives.ReadInt32LittleEndian(Take(id.ModuleBaseAddress+0x2F57850,4));if(selector is <0 or >=0x60)throw new InvalidDataException("Invalid target health selector.");
+  var selector=BinaryPrimitives.ReadInt32LittleEndian(Take(id.ModuleBaseAddress+(updated?0x2F68850UL:0x2F57850UL),4));if(selector is <0 or >=0x60)throw new InvalidDataException("Invalid target health selector.");
   var slot=Take(entity+0x18+(ulong)selector,1)[0];if(slot==0xFF&&!includePosition)throw new InvalidDataException("Target health component absent.");
   var components=Ptr(Q(entity+0x78));ulong health=0;
    if(slot!=0xFF){health=Ptr(Q(checked(components+slot*8UL)),0x18);if(Q(health+0x10)!=entity)throw new InvalidDataException("Target health entity mismatch.");}
   TargetNameSeed? name=null;
-  if(includeNameSeed) {try{name=CurrentBuildNameSeedReader.Read(session,id,entity,Take,anchors);}catch(InvalidDataException){if(budget>2*1024*1024)throw;name=new("unavailable","name-read-or-type-failure");}}
+  if(includeNameSeed) {if(updated) name=new("unavailable","1179-name-seed-path-unqualified-use-target-template-name"); else {try{name=CurrentBuildNameSeedReader.Read(session,id,entity,Take,anchors);}catch(InvalidDataException){if(budget>2*1024*1024)throw;name=new("unavailable","name-read-or-type-failure");}}}
   string? afterStatus=null;
   void Verify()
   {
@@ -56,7 +59,7 @@ internal static class CurrentBuildSelectedTargetCandidateReader
   TargetPositionCandidate? position=null;
   if(includePosition)
   {
-   var posIndex=BinaryPrimitives.ReadInt32LittleEndian(Take(id.ModuleBaseAddress+0x2F588A0,4));
+   var posIndex=BinaryPrimitives.ReadInt32LittleEndian(Take(id.ModuleBaseAddress+CurrentBuildPlayerLookup.PositionIndexRvaFor(id.ExecutableSha256),4));
    if(posIndex is <0 or >=0x60)throw new InvalidDataException("Invalid target position selector.");
    var posSlot=Take(entity+0x18+(ulong)posIndex,1)[0];
    var pos=posSlot==0xFF?0:Q(checked(components+posSlot*8UL));
@@ -80,14 +83,16 @@ internal static class CurrentBuildSelectedTargetCandidateReader
     else
     {
      var owner=Ptr(rawOwner,0x19E);
-     if(Q(owner)!=id.ModuleBaseAddress+0x2927448||Q(id.ModuleBaseAddress+0x2927488)!=id.ModuleBaseAddress+0x19D21E0||Q(id.ModuleBaseAddress+0x34731B0)!=id.ModuleBaseAddress+0x2929BD0||Q(id.ModuleBaseAddress+0x2929BD8)!=id.ModuleBaseAddress+0x19F4D60) targetContext=new("unverified-type",owner);
+     var ownerVptr=updated?0x2933218UL:0x2927448UL;
+     var ownerGetter=updated?0x19D2020UL:0x19D21E0UL;
+     if(Q(owner)!=id.ModuleBaseAddress+ownerVptr||Q(id.ModuleBaseAddress+ownerVptr+0x40)!=id.ModuleBaseAddress+ownerGetter||(!updated&&(Q(id.ModuleBaseAddress+0x34731B0)!=id.ModuleBaseAddress+0x2929BD0||Q(id.ModuleBaseAddress+0x2929BD8)!=id.ModuleBaseAddress+0x19F4D60))) targetContext=new("unverified-type",owner);
      else
      {
       var level=BinaryPrimitives.ReadInt32LittleEndian(Take(owner+0x100,4));var combat=Take(owner+0x19D,1)[0];
       string levelStatus="numeric-getter-candidate", levelBranch="owner"; int? numeric=level;
       try
       {
-       var index=BinaryPrimitives.ReadInt32LittleEndian(Take(id.ModuleBaseAddress+0x2F58270,4));
+       var index=BinaryPrimitives.ReadInt32LittleEndian(Take(id.ModuleBaseAddress+(updated?0x2F69270UL:0x2F58270UL),4));
        if(index is <0 or >=0x60) throw new InvalidDataException("Invalid target level selector.");
        var levelSlot=Take(entity+0x18+(ulong)index,1)[0]; var alt=levelSlot==0xFF?0:Q(checked(components+levelSlot*8UL));
        if(alt!=0)
