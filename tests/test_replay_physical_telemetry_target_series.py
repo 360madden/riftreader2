@@ -82,6 +82,27 @@ class TargetSeriesTests(unittest.TestCase):
         self.assertEqual(result["captures"][1]["unobservedSequenceGapFromPrior"], 15)
         self.assertEqual(result["aBaAcrossCaptures"], [])
 
+    def test_overlapping_windows_do_not_imply_complete_source_sequence_coverage(self):
+        result = self.call([
+            report(10, A, 1, first=7),
+            report(30, B, 2, first=8),
+            report(50, A, 3, first=20),
+        ])
+        self.assertEqual(result["unobservedSequenceGapCount"], 0)
+        self.assertEqual(result["capturesWithInternalSequenceGaps"], 2)
+        self.assertEqual([
+            row["minimumUnobservedSequencesWithinCapture"]
+            for row in result["captures"]], [0, 19, 27])
+        self.assertEqual(result["status"], "a-b-a-across-captures-candidate")
+        self.assertEqual(result["qualificationStatus"], "candidate-only")
+        self.assertIn("not a global coverage claim", result["qualification"])
+
+    def test_impossible_observation_count_is_refused(self):
+        bad = report(20, B, 2)
+        bad["observedFrameCount"] = 100
+        with self.assertRaisesRegex(ValueError, "source-sequences-invalid"):
+            self.call([report(10, A, 1), bad])
+
     def test_source_epoch_player_build_zone_session_and_pid_mismatches(self):
         baseline = report(10, A, 1)
         for field, value in [

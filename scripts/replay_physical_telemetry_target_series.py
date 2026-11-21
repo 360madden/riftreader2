@@ -65,7 +65,8 @@ def combine(paths, *, replay=target_replay.replay):
         first, last = result.get("firstSequence"), result.get("lastSequence")
         require(type(first) is int and type(last) is int and 0 < first <= last
                 and type(result.get("observedFrameCount")) is int
-                and result["observedFrameCount"] >= 1, "source-sequences-invalid")
+                and 1 <= result["observedFrameCount"] <= last - first + 1,
+                "source-sequences-invalid")
         runs = result.get("runs")
         require(isinstance(runs, list) and runs and
                 type(runs[-1]) is dict and runs[-1].get("lastSequence") == last,
@@ -85,6 +86,8 @@ def combine(paths, *, replay=target_replay.replay):
             "firstSequence": first, "lastSequence": last,
             "sampledTargetUnitIdCandidate": last_target,
             "observedFrameCount": result["observedFrameCount"],
+            "minimumUnobservedSequencesWithinCapture": (
+                last - first + 1 - result["observedFrameCount"]),
             "sourceStatus": result["status"],
             "unobservedSequenceGapFromPrior": gap,
             "nativeTargetComparisonStatus": (
@@ -123,11 +126,17 @@ def combine(paths, *, replay=target_replay.replay):
         "lastObservedTargetRuns": runs, "aBaAcrossCaptures": cycles,
         "unobservedSequenceGapCount": sum(x["unobservedSequenceGapFromPrior"] > 0
                                           for x in observations[1:]),
+        "capturesWithInternalSequenceGaps": sum(
+            x["minimumUnobservedSequencesWithinCapture"] > 0
+            for x in observations),
         "inputSent": False,
         "qualification": ("Each capture independently source-hash-replayed with advancing "
                           "publisher frames; same process, player, zone, session and epoch. "
                           "Only last observed target of each capture is compared. "
-                          "Intermediate target changes are unknown, gaps are explicit; "
+                          "Intermediate target changes are unknown; per-capture missing "
+                          "sequence counts are lower bounds that may overlap across "
+                          "captures, not a global coverage claim. Between-capture gaps "
+                          "are separate; "
                           "native endpoints are sequential candidates, not atomic. "
                           "No selection-action causation, full A->B->A history, world "
                           "instance identity, or navigation authority is established.")

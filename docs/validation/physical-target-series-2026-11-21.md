@@ -4,7 +4,7 @@
 
 ## New working result
 
-Two small CLI tools let RR2 collect and compare target-state candidates over several nonoverlapping capture windows, rather than requiring every selected-target change to appear in one short Lua memory scan.
+Two small CLI tools let RR2 collect and compare target-state candidates over several separate acquisition windows whose retained source frames can overlap, rather than requiring every selected-target change to appear in one short Lua memory scan.
 
 - `scripts/capture_physical_telemetry_target_series.py` starts with the successful bounded map-aware Telemetry locator, then reuses its **same-process** scope for subsequent windows. Each capture still performs the native-zone, native-selected-target, independent Lua source-clock, hash and replay qualification. The command performs **no game input**, focus changes or reloads; it exits unqualified on a failed constituent capture and retains that capture's evidence.
 - `scripts/replay_physical_telemetry_target_series.py` independently replays **each saved original summary** and its underlying native/Lua source bytes, refusing process, player, zone, publisher session/epoch changes, source reuse, or non-advancing sequence endpoints. It compares only the **last actually observed target of each window**, reports unobserved source-sequence gaps, and labels any A→B→A across windows as **candidate-only**, never input-causation or complete movement evidence.
@@ -21,6 +21,8 @@ The exact current executable SHA-256 was `DF954B798331E18359BE62A31CC74B49FC3F50
 
 Each source window independently passed its native/Lua zone and target replay. All were bound to PID 37676, same player, zone `z0000000CB7B53FD7`, and source session `cb9c1a5b6910fb2f457a9c72a392d90d`. The result is `no-target-continuity-candidate` and explicitly contains **zero A→B→A candidates**. The native raw-target-zero endpoints are compatible with the Lua-none observations, not independent proof of no selection.
 
+**Coverage qualification added after a cold replay:** sequence ranges versus unique saved frame counts showed that capture 1 contained all 41 sequence numbers in its observed range, capture 2 missed **at least 38** sequence numbers within its range, and capture 3 missed **at least 6**. Source: ignored `artifacts/physical-target-series-20261121-1005-p37676/continuity-rechecked.json` (SHA-256 `5AC7AC92698CAA657E47F1948F76FA9FEC4B75FCEE7EC05EED04D4CAF8C57336`). Overlap means those per-capture minima cannot be summed into a global missing-sequence total. The combined report now distinguishes per-capture minimum missing sequences from gaps between captures, and never promotes an inferred complete A→B→A history.
+
 ## Usage
 
 In PowerShell 7 under `C:\work\riftreader2`, after obtaining a current verified PID with the physical-RIFT preflight:
@@ -36,6 +38,6 @@ To compare two or more individually successful existing captures later:
 C:\Python314\python.exe -B scripts\replay_physical_telemetry_target_series.py --summary artifacts\FIRST_CAPTURE\summary.json --summary artifacts\SECOND_CAPTURE\summary.json
 ```
 
-**Validation:** The relevant combined Telemetry Python suite passed **199/199** tests, including the new 15 focused source-bundle and collector regressions. Prior baseline, A→B→A, wrong-owner and source-hash tamper checks remain in effect.
+**Validation:** The relevant combined Telemetry Python suite passed **201/201** tests, including the new 15 focused source-bundle and collector regressions. Prior baseline, A→B→A, wrong-owner and source-hash tamper checks remain in effect.
 
 **Next acceptance:** Collect an A→B→A sequence during **actual independently observed target changes** under one exact game process, publisher epoch and source session. This run performed no target selections, movement, casting, RIFT restart, UI reload, process-memory write or external-repository changes. It does not qualify world-instance identity, causal input, or navigation.
