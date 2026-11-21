@@ -115,6 +115,83 @@ class ZoneEvidenceTests(unittest.TestCase):
                        zoneId=obj["playerTelemetry"]["zone"]["id"])
         self.save()
 
+    def install_source_hashed_excluded_generations(self):
+        self.record["selectedPublisherGeneration"] = {
+            "sessionId": SESSION, "epoch": 1}
+        self.record["scopeSurvey"] = {
+            "status": "scoped-candidate",
+            "selectedStartAddress": "0x13000000",
+            "scopes": [{"startAddress": "0x13000000",
+                        "topSession": SESSION, "topEpoch": 1}]}
+        for passn in (1, 2):
+            old = self.frame(10 + passn)
+            old["epoch"] = 57
+            raw = (replay.PREFIX +
+                   json.dumps(old, separators=(",", ":")).encode() +
+                   replay.SUFFIX)
+            path = self.folder/f"pass-{passn:02d}"/"frame-03.wire"
+            path.write_bytes(raw)
+            row = {"addr": f"0x{0x10000 + (10+passn)*0x1000:x}",
+                   "seq": old["sequence"], "epoch": old["epoch"],
+                   "session": old["sessionId"], "clock": old["frameTime"],
+                   "zoneId": ZONE, "wire": str(path),
+                   "excludedSha256": replay.digest(raw),
+                   "error": "nonselected-publisher-generation"}
+            entry = self.record["passes"][passn - 1]
+            entry["hits"] = 3
+            entry["frames"].append(row)
+            entry["excludedSourceFrameCount"] = 1
+        self.save()
+
+    def test_other_epoch_sources_are_retained_hashed_and_excluded(self):
+        self.install_source_hashed_excluded_generations()
+        result = replay.replay(self.summary)
+        self.assertEqual(result["savedFrames"], [2, 2])
+        self.assertEqual(result["excludedPublisherFrames"], [1, 1])
+        self.assertEqual(result["selectedPublisherGeneration"],
+                         {"sessionId": SESSION, "epoch": 1})
+        self.assertEqual(result["uniqueSourceSequences"], 3)
+        self.assertEqual(result["sourceEpoch"], 1)
+
+    def test_tampered_excluded_wire_is_rejected(self):
+        self.install_source_hashed_excluded_generations()
+        path = self.folder/"pass-01"/"frame-03.wire"
+        path.write_bytes(path.read_bytes() + b"tamper")
+        with self.assertRaisesRegex(ValueError, "excluded-wire-sha-mismatch"):
+            replay.replay(self.summary)
+
+    def test_selected_epoch_frame_cannot_be_disguised_as_excluded(self):
+        self.install_source_hashed_excluded_generations()
+        path = self.folder/"pass-01"/"frame-03.wire"
+        raw = path.read_bytes()
+        doc = json.loads(raw[len(replay.PREFIX):-len(replay.SUFFIX)])
+        doc["epoch"] = 1
+        changed = (replay.PREFIX +
+                   json.dumps(doc, separators=(",", ":")).encode() +
+                   replay.SUFFIX)
+        path.write_bytes(changed)
+        row = self.record["passes"][0]["frames"][2]
+        row["epoch"] = 1
+        row["excludedSha256"] = replay.digest(changed)
+        self.save()
+        with self.assertRaisesRegex(ValueError,
+                                     "selected-source-frame-illegally-excluded"):
+            replay.replay(self.summary)
+
+    def test_selected_generation_and_exclusion_count_are_pinned(self):
+        self.install_source_hashed_excluded_generations()
+        self.record["passes"][0]["excludedSourceFrameCount"] = 0
+        self.save()
+        with self.assertRaisesRegex(ValueError,
+                                     "excluded-source-frame-count-mismatch"):
+            replay.replay(self.summary)
+        self.record["passes"][0]["excludedSourceFrameCount"] = 1
+        self.record["selectedPublisherGeneration"]["epoch"] = 2
+        self.save()
+        with self.assertRaisesRegex(ValueError,
+                                     "selected-publisher-survey-mismatch"):
+            replay.replay(self.summary)
+
     def test_good_synthetic_source_bracket_without_live_process(self):
         with patch.object(replay.physical_rift,"select_physical") as selection, \
              patch.object(replay.physical_rift,"read_native") as reader:

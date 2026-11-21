@@ -30,14 +30,26 @@ def require(test, reason):
         raise ValueError("target-series-capture-" + reason)
 
 
+def _stale_scope_candidate(report, target):
+    """A failed pass permits exactly one new read-only locator survey."""
+    survey = report.get("scopeSurvey") or {}
+    return (report.get("status") == "unqualified"
+            and report.get("sameProcessEpoch") is True
+            and report.get("target") == target
+            and report.get("sourceClockProgression") == "unqualified"
+            and survey.get("status") == "scoped-candidate")
+
+
 def run(pid, output, *, count=3, interval_ms=500, scope_count=4,
-        collect=capture.collect, replay_target=replay.replay,
-        combine=continuity.combine, sleep=time.sleep):
+        recover_stale_scope=False, collect=capture.collect,
+        replay_target=replay.replay, combine=continuity.combine,
+        sleep=time.sleep):
     """Preserve all original captures; refuse cross-epoch changes and stale windows."""
     require(type(pid) is int and 0 < pid < 2 ** 31
             and type(count) is int and 2 <= count <= 6
             and type(interval_ms) is int and 0 <= interval_ms <= 2000
-            and type(scope_count) is int and 1 <= scope_count <= 8,
+            and type(scope_count) is int and 1 <= scope_count <= 8
+            and type(recover_stale_scope) is bool,
             "invalid-bounds")
     output = Path(output)
     if not output.is_absolute():
@@ -46,6 +58,7 @@ def run(pid, output, *, count=3, interval_ms=500, scope_count=4,
             and output.parent.is_dir(), "output-must-be-new-directory")
     output.mkdir()
     paths, observations, selected = [], [], None
+    pinned_target, recovery_attempts = None, []
     try:
         for index in range(count):
             if index:
@@ -58,11 +71,56 @@ def run(pid, output, *, count=3, interval_ms=500, scope_count=4,
             }
             if selected is not None:
                 options["start_address"] = selected
-            path, report = collect(pid, destination, **options)
+            recovery_reason = None
+            try:
+                path, report = collect(pid, destination, **options)
+            except ValueError as exc:
+                # A scoped candidate can disappear before survey, leaving a
+                # retained partial acquisition. Retry ONLY this exact failure.
+                if (recover_stale_scope and index > 0
+                        and str(exc) ==
+                        "telemetry-zone-capture-no-current-player-zone-scope-in-survey"):
+                    recovery_reason = "cached-scope-not-found"
+                else:
+                    raise
+            else:
+                require(type(report) is dict
+                        and type(report.get("target")) is dict
+                        and report["target"].get("processId") == pid,
+                        f"capture-{index+1:02d}-process-mismatch")
+                if pinned_target is not None:
+                    require(report["target"] == pinned_target,
+                            f"capture-{index+1:02d}-target-identity-changed")
+                if (recover_stale_scope and index > 0 and
+                        _stale_scope_candidate(report, pinned_target)):
+                    recovery_reason = "cached-scope-source-not-advancing"
+            if recovery_reason is not None:
+                # Never overwrite the original failed window or repeat a
+                # verified game action. Fresh discovery has its own artifact.
+                previous = destination
+                destination = output / f"capture-{index+1:02d}-rediscovery"
+                attempt = {
+                    "capture": index + 1, "reason": recovery_reason,
+                    "failedWindow": str(previous),
+                    "rediscoveryWindow": str(destination),
+                    "outcome": "attempted"}
+                recovery_attempts.append(attempt)
+                path, report = collect(
+                    pid, destination, auto_scope=True,
+                    include_native_target=True, scope_count=scope_count,
+                    discover_scope=True)
+                attempt["outcome"] = "completed-candidate"
+            require(type(report) is dict
+                    and type(report.get("target")) is dict
+                    and report["target"].get("processId") == pid,
+                    f"capture-{index+1:02d}-process-mismatch")
+            if pinned_target is None:
+                pinned_target = report["target"]
+            else:
+                require(report["target"] == pinned_target,
+                        f"capture-{index+1:02d}-target-identity-changed")
             require(report.get("status") == "matching-candidates",
                     f"capture-{index+1:02d}-unqualified")
-            require(report.get("target", {}).get("processId") == pid,
-                    f"capture-{index+1:02d}-process-mismatch")
             selected = (report.get("scopeSurvey") or {}).get("selectedStartAddress")
             require(type(selected) is str and ADDRESS.fullmatch(selected) is not None,
                     f"capture-{index+1:02d}-scope-unavailable")
@@ -82,6 +140,7 @@ def run(pid, output, *, count=3, interval_ms=500, scope_count=4,
             "qualificationStatus": merged["qualificationStatus"],
             "processId": pid, "inputSent": False,
             "individualCaptures": observations,
+            "scopeRediscoveryAttempts": recovery_attempts,
             "continuity": merged,
             "qualification": ("Sequential physical read-only acquisitions. Each has "
                               "native/Lua zone and target source checks, but no "
@@ -97,6 +156,7 @@ def run(pid, output, *, count=3, interval_ms=500, scope_count=4,
         error = {"schema": SCHEMA, "status": "unqualified",
                  "inputSent": False,
                  "completedCaptures": len(paths),
+                 "scopeRediscoveryAttempts": recovery_attempts,
                  "reason": str(exc)[:220]}
         with (output / "failure.json").open("x", encoding="utf-8", newline="\n") as stream:
             json.dump(error, stream, indent=2, allow_nan=False)
@@ -111,12 +171,16 @@ def main(argv=None):
     parser.add_argument("--count", type=int, default=3)
     parser.add_argument("--interval-ms", type=int, default=500)
     parser.add_argument("--scope-count", type=int, default=4)
+    parser.add_argument("--recover-stale-scope", action="store_true",
+                        help="on an unqualified cached Lua scope, retain original and "
+                             "perform one bounded read-only map rediscovery")
     args = parser.parse_args(argv)
     try:
         path, result = run(
             args.physical_pid, args.output_dir,
             count=args.count, interval_ms=args.interval_ms,
-            scope_count=args.scope_count)
+            scope_count=args.scope_count,
+            recover_stale_scope=args.recover_stale_scope)
     except (OSError, ValueError, TypeError, KeyError, IndexError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:220],
                           "inputSent": False}))

@@ -171,7 +171,8 @@ class AutoScopeTests(unittest.TestCase):
             return {"status": "scoped-candidate",
                     "selectedStartAddress": f"0x{BASE + BLOCK:X}",
                     "expectedZoneIdCandidate": ZONE, "surveyedBytes": BLOCK * 3,
-                    "scopes": [{"startAddress": f"0x{BASE:X}"}],
+                    "scopes": [{"startAddress": f"0x{BASE+BLOCK:X}",
+                                "topEpoch": 40, "topSession": "a"*32}],
                     "qualification": "survey candidate only"}
 
         calls = []

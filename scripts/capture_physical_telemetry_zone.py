@@ -179,8 +179,17 @@ def find_markers(reader, *, start, scan_bytes):
     return seen, bytes_read, incomplete
 
 
-def scan(reader, directory, *, start, scan_bytes, expected_player):
-    """One bounded read-only region scan; never assumes prefix==complete frame."""
+def scan(reader, directory, *, start, scan_bytes, expected_player,
+         selected_publisher=None):
+    """Retain each source wire; exclude other publisher epochs from correlation."""
+    require(selected_publisher is None or
+            (type(selected_publisher) is dict
+             and set(selected_publisher) == {"sessionId", "epoch"}
+             and type(selected_publisher["sessionId"]) is str
+             and verify.SESSION.fullmatch(selected_publisher["sessionId"]) is not None
+             and type(selected_publisher["epoch"]) is int
+             and selected_publisher["epoch"] > 0),
+            "invalid-selected-publisher-generation")
     directory.mkdir()
     started = utc()
     seen, bytes_read, incomplete = find_markers(reader, start=start, scan_bytes=scan_bytes)
@@ -208,10 +217,20 @@ def scan(reader, directory, *, start, scan_bytes, expected_player):
             continue
         path = directory / f"frame-{number:02d}.wire"
         path.write_bytes(wire)
+        if selected_publisher is not None and (
+                row["session"] != selected_publisher["sessionId"]
+                or row["epoch"] != selected_publisher["epoch"]):
+            rows.append({**row, "wire": str(path),
+                         "excludedSha256": verify.digest(wire),
+                         "error": "nonselected-publisher-generation"})
+            continue
         rows.append({**row, "wire": str(path), "sha": verify.digest(wire)})
     return {"startedAtUtc": started, "completedAtUtc": utc(),
             "readBytes": bytes_read, "failedChunks": incomplete,
-            "hits": len(seen), "frames": rows}
+            "hits": len(seen), "frames": rows,
+            **({"excludedSourceFrameCount": sum(
+                row.get("error") == "nonselected-publisher-generation"
+                for row in rows)} if selected_publisher is not None else {})}
 
 
 def survey_scopes(reader, *, start, scan_bytes, scope_count, expected_player,
@@ -475,6 +494,18 @@ def collect(pid, output_dir, *, start_address="0x13000000",
         start = int(survey["selectedStartAddress"], 16)
         require(physical_rift.select_physical(HOST, pid).get("target") == target,
                 "changed-process-after-survey")
+    generation = None
+    if survey is not None:
+        selected = [row for row in survey["scopes"]
+                    if row["startAddress"] == survey["selectedStartAddress"]]
+        require(len(selected) == 1
+                and type(selected[0].get("topEpoch")) is int
+                and selected[0]["topEpoch"] > 0
+                and type(selected[0].get("topSession")) is str
+                and verify.SESSION.fullmatch(selected[0]["topSession"]) is not None,
+                "selected-publisher-generation-unavailable")
+        generation = {"sessionId": selected[0]["topSession"],
+                      "epoch": selected[0]["topEpoch"]}
     player = None
     before = native_zone(selection, root, "before")
     native_data, _ = verify.load(root / "native-before.json", before["sha256"])
@@ -489,14 +520,16 @@ def collect(pid, output_dir, *, start_address="0x13000000",
     require(physical_rift.select_physical(HOST, pid).get("target") == target,
             "changed-process-before-scan")
     with reader_factory(pid) as reader:
+        generation_arg = ({"selected_publisher": generation}
+                          if generation is not None else {})
         first = scan(reader, root / "pass-01", start=start, scan_bytes=scan_bytes,
-                     expected_player=player)
+                     expected_player=player, **generation_arg)
         require(physical_rift.select_physical(HOST, pid).get("target") == target,
                 "changed-process-after-first-scan")
         if gap_ms:
             time.sleep(gap_ms / 1000)
         second = scan(reader, root / "pass-02", start=start, scan_bytes=scan_bytes,
-                      expected_player=player)
+                      expected_player=player, **generation_arg)
     require(physical_rift.select_physical(HOST, pid).get("target") == target,
             "changed-process-after-second-scan")
     target_after = (native_target(selection, root, "after")
@@ -513,6 +546,7 @@ def collect(pid, output_dir, *, start_address="0x13000000",
         "target":target,
         "sameProcessEpoch":same_epoch,
         **({"scopeSurvey": survey} if survey is not None else {}),
+        **({"selectedPublisherGeneration": generation} if generation is not None else {}),
         "nativeBefore":before, "nativeAfter":after,
         **({"nativeTargetBefore": target_before,
             "nativeTargetAfter": target_after} if include_native_target else {}),

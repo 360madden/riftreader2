@@ -153,10 +153,31 @@ def replay(summary_file, *, max_capture_seconds=15):
             left[0]["childKey"] == right[0]["childKey"] and
             left[0]["zoneIdCandidate"] == right[0]["zoneIdCandidate"],
             "native-zone-bracket-changed")
+    generation = report.get("selectedPublisherGeneration")
+    if generation is not None:
+        require(type(generation) is dict
+                and set(generation) == {"sessionId", "epoch"}
+                and type(generation["sessionId"]) is str
+                and SESSION.fullmatch(generation["sessionId"]) is not None
+                and type(generation["epoch"]) is int
+                and generation["epoch"] > 0,
+                "selected-publisher-generation-invalid")
+        survey = report.get("scopeSurvey")
+        require(type(survey) is dict
+                and survey.get("status") == "scoped-candidate"
+                and type(survey.get("scopes")) is list,
+                "selected-publisher-survey-unavailable")
+        selected = [row for row in survey["scopes"]
+                    if type(row) is dict
+                    and row.get("startAddress") == survey.get("selectedStartAddress")]
+        require(len(selected) == 1
+                and selected[0].get("topSession") == generation["sessionId"]
+                and selected[0].get("topEpoch") == generation["epoch"],
+                "selected-publisher-survey-mismatch")
     passes = report.get("passes")
     require(type(passes) is list and len(passes) == 2, "pass-count")
     frames = []
-    intervals = []
+    intervals, excluded_counts = [], []
     for i, entry in enumerate(passes, 1):
         require(isinstance(entry, dict) and
                 type(entry.get("readBytes")) is int and
@@ -170,10 +191,34 @@ def replay(summary_file, *, max_capture_seconds=15):
         started, ended = _stamp(entry.get("startedAtUtc")), _stamp(entry.get("completedAtUtc"))
         require(started <= ended, "scan-reversed-interval")
         intervals.append((started, ended))
-        rows = []
+        rows, excluded = [], 0
         for n, row in enumerate(entry["frames"], 1):
             require(type(row) is dict, "frame-index-row")
             if "sha" not in row:
+                if row.get("error") == "nonselected-publisher-generation":
+                    require(generation is not None
+                            and set(row) == {"addr", "seq", "epoch", "session",
+                                             "clock", "zoneId", "wire",
+                                             "excludedSha256", "error"}
+                            and type(row["addr"]) is str
+                            and re.fullmatch(r"0x[0-9a-f]+", row["addr"]) is not None
+                            and type(row["wire"]) is str
+                            and Path(row["wire"]).name == f"frame-{n:02d}.wire",
+                            "excluded-frame-index-invalid")
+                    excluded_path = (filename.parent / f"pass-{i:02d}" /
+                                     f"frame-{n:02d}.wire")
+                    require(excluded_path.is_file()
+                            and not excluded_path.is_symlink(),
+                            "excluded-wire-source-unavailable")
+                    raw_excluded = excluded_path.read_bytes()
+                    require(digest(raw_excluded) == row["excludedSha256"],
+                            "excluded-wire-sha-mismatch")
+                    details = _frame(raw_excluded, row, player)
+                    require((details["session"], details["epoch"]) !=
+                            (generation["sessionId"], generation["epoch"]),
+                            "selected-source-frame-illegally-excluded")
+                    excluded += 1
+                    continue
                 require(set(row) == {"addr", "error"} and
                         row.get("error") in ("incomplete", "schema-or-player-zone", "invalid-json-or-frame"),
                         "unverified-frame-rejection")
@@ -189,7 +234,16 @@ def replay(summary_file, *, max_capture_seconds=15):
             require(digest(raw) == str(row.get("sha", "")).upper(),
                     "wire-source-sha-mismatch")
             details = _frame(raw, row, player)
+            if generation is not None:
+                require((details["session"], details["epoch"]) ==
+                        (generation["sessionId"], generation["epoch"]),
+                        "source-publisher-generation-mismatch")
             rows.append(details)
+        if generation is not None:
+            require(type(entry.get("excludedSourceFrameCount")) is int
+                    and entry["excludedSourceFrameCount"] == excluded,
+                    "excluded-source-frame-count-mismatch")
+        excluded_counts.append(excluded)
         require(len(rows) >= 2, "not-enough-decoded-frames")
         frames.append(rows)
     order = [left[0]["sampledAtUtc"], passes[0]["startedAtUtc"],
@@ -235,6 +289,9 @@ def replay(summary_file, *, max_capture_seconds=15):
         "firstSourceSequence": ordered[0]["seq"],
         "lastSourceSequence": ordered[-1]["seq"],
         "savedFrames": [len(rows) for rows in frames],
+        **({"selectedPublisherGeneration": generation,
+            "excludedPublisherFrames": excluded_counts}
+           if generation is not None else {}),
         "uniqueSourceSequences": len(ordered),
         "newAdvancingSourceFrames": len(new),
         "maxLuaZoneSourceAgeSeconds": max(x["clock"] - x["sampledAt"] for x in ordered),

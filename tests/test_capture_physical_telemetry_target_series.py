@@ -34,7 +34,7 @@ class SeriesCaptureTests(unittest.TestCase):
                       "scopeSurvey": {"selectedStartAddress": ORIGIN}}
 
     def replay(self, path):
-        index = int(path.parent.name[-2:])
+        index = int(path.parent.name.split("-")[1])
         return {"qualificationStatus": "candidate-only",
                 "status": "no-target-baseline-candidate",
                 "lastSequence": 10 * index}
@@ -111,7 +111,8 @@ class SeriesCaptureTests(unittest.TestCase):
 
     def test_invalid_bounds_and_existing_directory_are_rejected_before_reads(self):
         cases = [{"count": 1}, {"count": 7}, {"interval_ms": -1},
-                 {"interval_ms": 3000}, {"scope_count": 9}]
+                 {"interval_ms": 3000}, {"scope_count": 9},
+                 {"recover_stale_scope": 1}]
         for invalid in cases:
             with self.subTest(invalid=invalid):
                 with self.assertRaisesRegex(ValueError, "invalid-bounds"):
@@ -147,6 +148,129 @@ class SeriesCaptureTests(unittest.TestCase):
         self.assertEqual(printed["lastStateABACandidates"], 0)
         self.assertEqual(printed["status"], "a-b-a-in-source-frames-candidate")
         run.assert_called_once()
+
+    def test_opt_in_relocates_one_stale_scope_and_preserves_failed_evidence(self):
+        moved = "0xC000000"
+
+        def relocation(pid, destination, **options):
+            path, report = self.collect(pid, destination, **options)
+            if len(self.calls) == 2:
+                report.update(status="unqualified", sameProcessEpoch=True,
+                              sourceClockProgression="unqualified")
+                report["scopeSurvey"]["status"] = "scoped-candidate"
+            if len(self.calls) >= 3:
+                report["scopeSurvey"]["selectedStartAddress"] = moved
+            return path, report
+
+        def merged(paths):
+            self.assertEqual([p.parent.name for p in paths],
+                             ["capture-01", "capture-02-rediscovery", "capture-03"])
+            return {"captureCount": 3, "qualificationStatus": "candidate-only",
+                    "status": "no-target-continuity-candidate",
+                    "aBaAcrossCaptures": [], "observedSourceABACycles": []}
+
+        path, result = self.execute_capture(
+            collect=relocation, combine=merged, recover_stale_scope=True)
+        self.assertTrue(path.is_file())
+        self.assertEqual(len(self.calls), 4)
+        self.assertTrue((self.output / "capture-02" / "summary.json").is_file())
+        self.assertTrue((self.output / "capture-02-rediscovery" / "summary.json").is_file())
+        self.assertEqual(self.calls[2][2]["discover_scope"], True)
+        self.assertEqual(self.calls[2][2]["scope_count"], 4)
+        self.assertNotIn("start_address", self.calls[2][2])
+        self.assertEqual(self.calls[3][2]["start_address"], moved)
+        self.assertEqual(result["scopeRediscoveryAttempts"][0]["outcome"],
+                         "completed-candidate")
+        self.assertEqual(result["scopeRediscoveryAttempts"][0]["reason"],
+                         "cached-scope-source-not-advancing")
+        self.assertFalse(result["inputSent"])
+
+    def test_opt_in_recovers_only_exact_cached_scope_not_found_error(self):
+        def missing(pid, destination, **options):
+            path, report = self.collect(pid, destination, **options)
+            if len(self.calls) == 2:
+                raise ValueError(
+                    "telemetry-zone-capture-no-current-player-zone-scope-in-survey")
+            return path, report
+
+        def merged(paths):
+            self.assertEqual(paths[1].parent.name, "capture-02-rediscovery")
+            return {"captureCount": 3, "qualificationStatus": "candidate-only",
+                    "status": "no-target-continuity-candidate",
+                    "aBaAcrossCaptures": [], "observedSourceABACycles": []}
+
+        path, result = self.execute_capture(
+            collect=missing, combine=merged, recover_stale_scope=True)
+        self.assertTrue(path.is_file())
+        self.assertEqual(len(self.calls), 4)
+        self.assertEqual(result["scopeRediscoveryAttempts"][0]["reason"],
+                         "cached-scope-not-found")
+        self.assertFalse((self.output / "failure.json").exists())
+
+    def test_recovery_failure_keeps_attempt_and_never_commits_result(self):
+        def unqualified_then_failed(pid, destination, **options):
+            path, report = self.collect(pid, destination, **options)
+            if len(self.calls) == 2:
+                report.update(status="unqualified", sameProcessEpoch=True,
+                              sourceClockProgression="unqualified")
+                report["scopeSurvey"]["status"] = "scoped-candidate"
+            if len(self.calls) == 3:
+                raise ValueError("telemetry-zone-capture-recovery-incomplete")
+            return path, report
+
+        with self.assertRaisesRegex(ValueError, "recovery-incomplete"):
+            self.execute_capture(
+                collect=unqualified_then_failed, recover_stale_scope=True)
+        self.assertEqual(len(self.calls), 3)
+        failure = json.loads((self.output / "failure.json").read_text())
+        self.assertEqual(failure["completedCaptures"], 1)
+        self.assertEqual(failure["scopeRediscoveryAttempts"][0]["outcome"],
+                         "attempted")
+        self.assertFalse((self.output / "result.json").exists())
+        self.assertTrue((self.output / "capture-02" / "summary.json").is_file())
+
+    def test_process_identity_change_blocks_rediscovery(self):
+        def changed_epoch(pid, destination, **options):
+            path, report = self.collect(pid, destination, **options)
+            if len(self.calls) == 2:
+                report.update(status="unqualified", sameProcessEpoch=True,
+                              sourceClockProgression="unqualified")
+                report["scopeSurvey"]["status"] = "scoped-candidate"
+                report["target"]["processStartUtcTicks"] = "other"
+            return path, report
+
+        with self.assertRaisesRegex(ValueError, "target-identity-changed"):
+            self.execute_capture(collect=changed_epoch,
+                                 recover_stale_scope=True)
+        self.assertEqual(len(self.calls), 2)
+        self.assertFalse((self.output / "capture-02-rediscovery").exists())
+
+    def test_recovery_never_retries_unrelated_unqualified_capture(self):
+        def stale_but_wrong_reason(pid, destination, **options):
+            path, report = self.collect(pid, destination, **options)
+            if len(self.calls) == 2:
+                report.update(status="unqualified", sameProcessEpoch=True,
+                              sourceClockProgression="advancing")
+                report["scopeSurvey"]["status"] = "scoped-candidate"
+            return path, report
+
+        with self.assertRaisesRegex(ValueError, "capture-02-unqualified"):
+            self.execute_capture(collect=stale_but_wrong_reason,
+                                 recover_stale_scope=True)
+        self.assertEqual(len(self.calls), 2)
+
+    def test_cli_recovery_is_opt_in_and_forwarded(self):
+        sample = {"status": "no-target-continuity-candidate",
+                  "individualCaptures": [{"capture": 1}, {"capture": 2}],
+                  "continuity": {"observedSourceABACycles": [],
+                                 "aBaAcrossCaptures": []}}
+        with patch.object(capture, "run",
+                          return_value=(self.output / "result.json", sample)) as run, \
+                redirect_stdout(StringIO()):
+            self.assertEqual(capture.main([
+                "--physical-pid", str(PID), "--output-dir", str(self.output),
+                "--count", "2", "--recover-stale-scope"]), 0)
+        self.assertTrue(run.call_args.kwargs["recover_stale_scope"])
 
     def test_unavailable_scope_aborts_before_followup(self):
         def no_scope(pid, destination, **options):

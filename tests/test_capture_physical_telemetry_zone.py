@@ -116,6 +116,49 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual(result["hits"],1)
             self.assertEqual(result["frames"][0]["error"],"schema-or-player-zone")
 
+    def test_scan_keeps_sha_pinned_excluded_other_publisher_epoch(self):
+        old = json.loads(lua(8)[len(verify.PREFIX):-len(verify.SUFFIX)])
+        old["epoch"] = 57
+        stale = (verify.PREFIX + json.dumps(old, separators=(",", ":")).encode()
+                 + verify.SUFFIX)
+        current = [lua(3), lua(4)]
+        data = bytearray(cap.CHUNK)
+        for offset, wire in zip((512, 8192, 16384),
+                                (stale, *current)):
+            data[offset:offset+len(wire)] = wire
+        with TemporaryDirectory() as tmp:
+            result = cap.scan(
+                FakeRead(data), Path(tmp)/"pass", start=START,
+                scan_bytes=cap.CHUNK,
+                expected_player=f"u{SELF:016X}",
+                selected_publisher={"sessionId": SESSION, "epoch": 1})
+            self.assertEqual(result["hits"], 3)
+            self.assertEqual(result["excludedSourceFrameCount"], 1)
+            excluded = result["frames"][0]
+            self.assertEqual(excluded["error"], "nonselected-publisher-generation")
+            self.assertEqual(excluded["epoch"], 57)
+            self.assertEqual(
+                verify.digest(Path(excluded["wire"]).read_bytes()),
+                excluded["excludedSha256"])
+            self.assertNotIn("sha", excluded)
+            for row in result["frames"][1:]:
+                self.assertEqual(row["epoch"], 1)
+                self.assertIn("sha", row)
+
+    def test_scan_invalid_generation_rejects_before_directory_creation(self):
+        with TemporaryDirectory() as tmp:
+            for bad in ({"sessionId": SESSION, "epoch": True},
+                        {"sessionId": "wrong", "epoch": 1},
+                        {"sessionId": SESSION},
+                        []):
+                location = Path(tmp)/"not-created"
+                with self.subTest(value=bad), self.assertRaisesRegex(
+                        ValueError, "invalid-selected-publisher-generation"):
+                    cap.scan(FakeProcess(123), location, start=START,
+                             scan_bytes=cap.CHUNK, expected_player=f"u{SELF:016X}",
+                             selected_publisher=bad)
+                self.assertFalse(location.exists())
+
     def _fake_native(self, selection, kind, output):
         self.assertEqual(kind,"zone-context")
         row=typed_report_1179()
