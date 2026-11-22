@@ -23,7 +23,7 @@ def require(ok, reason):
 
 def _epoch(report):
     t = report["target"]
-    return {k: t[k] for k in ("processId", "processStartUtcTicks", "executableSha256")}
+    return {k: t[k] for k in ("hostName", "processId", "processStartUtcTicks", "executableSha256")}
 
 
 def _xyz(report):
@@ -65,6 +65,7 @@ def compare(before_path, after_path):
     a, b = replay.verified_state(before_path), replay.verified_state(after_path)
     require(a["summarySha256"] != b["summarySha256"], "same-source")
     ea, eb = _epoch(a), _epoch(b)
+    require(ea["hostName"].casefold() == eb["hostName"].casefold(), "different-host")
     require((ea["processId"], ea["processStartUtcTicks"]) !=
             (eb["processId"], eb["processStartUtcTicks"]),
             "same-epoch-use-history")

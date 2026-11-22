@@ -17,7 +17,7 @@ if str(ROOT) not in sys.path:
 
 from scripts import collect_physical_player_state as state
 from scripts import compare_physical_player_context_pair as context
-from scripts.physical_rift import _native_values, _utc_tick_order_key
+from scripts.physical_rift import _native_values, _utc_tick_order_key, valid_host_name
 
 
 def require(ok, reason):
@@ -37,6 +37,7 @@ def verified_state(filename):
     filename = Path(filename)
     receipt, receipt_sha = context.load(filename)
     owner = receipt.get("target")
+    host = receipt.get("ownerHost")
     build_sha = str(owner.get("executableSha256", "")).upper() if isinstance(owner, dict) else ""
     sources = receipt.get("sources")
     has_zone = (isinstance(sources, dict)
@@ -48,9 +49,10 @@ def verified_state(filename):
     require(receipt.get("schemaVersion") == 1
             and receipt.get("evidenceKind") == "amd-physical-player-state-candidate/1"
             and receipt.get("status") == "complete-candidate"
-            and receipt.get("ownerHost") == state.HOST
+            and valid_host_name(host)
             and isinstance(owner, dict)
-            and owner.get("hostName") == state.HOST
+            and valid_host_name(owner.get("hostName"))
+            and owner["hostName"].casefold() == host.casefold()
             and type(owner.get("processId")) is int and owner["processId"] > 0
             and str(owner.get("processStartUtcTicks", "")).isdecimal()
             and build_sha in state.SUPPORTED_BUILDS

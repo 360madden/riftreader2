@@ -12,13 +12,15 @@ from unittest.mock import patch
 
 from scripts import collect_physical_player_state as state
 
+HOST = "RIFT-STATION"
+
 OWNER = {
-    "hostName": state.HOST, "processId": 123,
+    "hostName": HOST, "processId": 123,
     "processStartUtcTicks": "639300936028818696",
     "executableSha256": state.BUILD_SHA,
     "hwnd": 789, "executablePath": r"C:\Games\RIFT\rift_x64.exe",
 }
-SELECTION = {"status": "ready", "ownerHost": state.HOST, "target": OWNER}
+SELECTION = {"status": "ready", "ownerHost": HOST, "target": OWNER}
 
 
 class StateTests(unittest.TestCase):
@@ -46,7 +48,7 @@ class StateTests(unittest.TestCase):
 
     def test_three_existing_native_readers_produce_hashed_same_owner_receipt(self):
         with TemporaryDirectory() as temp, \
-             patch.object(state.socket, "gethostname", return_value=state.HOST), \
+             patch.object(state.socket, "gethostname", return_value=HOST), \
              patch.object(state.physical_rift, "select_physical",
                           return_value=SELECTION) as select, \
              patch.object(state.physical_rift, "read_native", side_effect=self.fake_read) as read:
@@ -71,7 +73,7 @@ class StateTests(unittest.TestCase):
             return (self.stats_read(selection, kind, path, **options) if kind == "stats"
                     else self.fake_read(selection, kind, path, **options))
         with (TemporaryDirectory() as temp,
-              patch.object(state.socket, "gethostname", return_value=state.HOST),
+              patch.object(state.socket, "gethostname", return_value=HOST),
               patch.object(state.physical_rift, "select_physical", return_value=updated),
               patch.object(state.physical_rift, "read_native", side_effect=fake) as read):
             path, report = state.collect(123, Path(temp) / "updated", samples=2)
@@ -133,7 +135,7 @@ class StateTests(unittest.TestCase):
                 return self.stats_read(selection, kind, path, **options)
             return self.fake_read(selection, kind, path, **options)
         with TemporaryDirectory() as temp, \
-             patch.object(state.socket, "gethostname", return_value=state.HOST), \
+             patch.object(state.socket, "gethostname", return_value=HOST), \
              patch.object(state.physical_rift, "select_physical", return_value=SELECTION) as select, \
              patch.object(state.physical_rift, "read_native", side_effect=fake) as read:
             path, report = state.collect(123, Path(temp) / "out", samples=2, include_stats=True)
@@ -152,7 +154,7 @@ class StateTests(unittest.TestCase):
                 return result
             return self.fake_read(selection, kind, path, **options)
         with TemporaryDirectory() as temp, \
-             patch.object(state.socket, "gethostname", return_value=state.HOST), \
+             patch.object(state.socket, "gethostname", return_value=HOST), \
              patch.object(state.physical_rift, "select_physical", return_value=SELECTION), \
              patch.object(state.physical_rift, "read_native", side_effect=fake):
             dest = Path(temp) / "out"
@@ -189,9 +191,9 @@ class StateTests(unittest.TestCase):
         with patch.object(state.socket, "gethostname", return_value="OTHER"), \
              patch.object(state.physical_rift, "select_physical") as select:
             with self.assertRaisesRegex(ValueError, "wrong-host"):
-                state.collect(123, Path("unused"))
+                state.collect(123, Path("unused"), expected_host=HOST)
             select.assert_not_called()
-        with patch.object(state.socket, "gethostname", return_value=state.HOST), \
+        with patch.object(state.socket, "gethostname", return_value=HOST), \
              patch.object(state.physical_rift, "select_physical") as select:
             with self.assertRaisesRegex(ValueError, "explicit-pid-required"):
                 state.collect(0, Path("unused"))
@@ -200,7 +202,7 @@ class StateTests(unittest.TestCase):
     def test_unavailable_or_wrong_build_never_reads(self):
         invalid = deepcopy(SELECTION)
         invalid["target"]["executableSha256"] = "0" * 64
-        with patch.object(state.socket, "gethostname", return_value=state.HOST), \
+        with patch.object(state.socket, "gethostname", return_value=HOST), \
              patch.object(state.physical_rift, "select_physical", return_value=invalid), \
              patch.object(state.physical_rift, "read_native") as read:
             with self.assertRaisesRegex(ValueError, "physical-process-identity-unavailable"):
@@ -211,7 +213,7 @@ class StateTests(unittest.TestCase):
         changed = deepcopy(SELECTION)
         changed["target"]["processStartUtcTicks"] = "11111"
         with TemporaryDirectory() as temp, \
-             patch.object(state.socket, "gethostname", return_value=state.HOST), \
+             patch.object(state.socket, "gethostname", return_value=HOST), \
              patch.object(state.physical_rift, "select_physical",
                           side_effect=[SELECTION, SELECTION, changed]), \
              patch.object(state.physical_rift, "read_native", side_effect=self.fake_read) as read:
@@ -225,7 +227,7 @@ class StateTests(unittest.TestCase):
             return self.fake_read(selection, kind, path, samples=samples,
                                   interval_ms=interval_ms, key=key)
         with TemporaryDirectory() as temp, \
-             patch.object(state.socket, "gethostname", return_value=state.HOST), \
+             patch.object(state.socket, "gethostname", return_value=HOST), \
              patch.object(state.physical_rift, "select_physical", return_value=SELECTION), \
              patch.object(state.physical_rift, "read_native", side_effect=fake) as read:
             with self.assertRaisesRegex(ValueError, "self-key-changed"):
@@ -238,7 +240,7 @@ class StateTests(unittest.TestCase):
                                   interval_ms=interval_ms,
                                   module=987 if kind == "position" else 123456)
         with TemporaryDirectory() as temp, \
-             patch.object(state.socket, "gethostname", return_value=state.HOST), \
+             patch.object(state.socket, "gethostname", return_value=HOST), \
              patch.object(state.physical_rift, "select_physical", return_value=SELECTION), \
              patch.object(state.physical_rift, "read_native", side_effect=fake):
             with self.assertRaisesRegex(ValueError, "module-owner-changed"):
@@ -255,7 +257,7 @@ class StateTests(unittest.TestCase):
             return result
 
         with TemporaryDirectory() as temp, \
-             patch.object(state.socket, "gethostname", return_value=state.HOST), \
+             patch.object(state.socket, "gethostname", return_value=HOST), \
              patch.object(state.physical_rift, "select_physical", return_value=SELECTION), \
              patch.object(state.physical_rift, "read_native", side_effect=ambiguous):
             dest = Path(temp) / "out"
@@ -274,7 +276,7 @@ class StateTests(unittest.TestCase):
             return result
 
         with TemporaryDirectory() as temp, \
-             patch.object(state.socket, "gethostname", return_value=state.HOST), \
+             patch.object(state.socket, "gethostname", return_value=HOST), \
              patch.object(state.physical_rift, "select_physical", return_value=SELECTION), \
              patch.object(state.physical_rift, "read_native", side_effect=nonfinite):
             dest = Path(temp) / "out"
@@ -291,7 +293,7 @@ class StateTests(unittest.TestCase):
             return result
 
         with TemporaryDirectory() as temp, \
-             patch.object(state.socket, "gethostname", return_value=state.HOST), \
+             patch.object(state.socket, "gethostname", return_value=HOST), \
              patch.object(state.physical_rift, "select_physical", return_value=SELECTION), \
              patch.object(state.physical_rift, "read_native", side_effect=fake):
             dest = Path(temp) / "out"
@@ -308,7 +310,7 @@ class StateTests(unittest.TestCase):
             return result
 
         with TemporaryDirectory() as temp, \
-             patch.object(state.socket, "gethostname", return_value=state.HOST), \
+             patch.object(state.socket, "gethostname", return_value=HOST), \
              patch.object(state.physical_rift, "select_physical", return_value=SELECTION), \
              patch.object(state.physical_rift, "read_native", side_effect=fake):
             dest = Path(temp) / "out"
@@ -318,7 +320,7 @@ class StateTests(unittest.TestCase):
 
     def test_reader_unavailable_does_not_publish_complete_summary(self):
         with TemporaryDirectory() as temp, \
-             patch.object(state.socket, "gethostname", return_value=state.HOST), \
+             patch.object(state.socket, "gethostname", return_value=HOST), \
              patch.object(state.physical_rift, "select_physical", return_value=SELECTION), \
              patch.object(state.physical_rift, "read_native", return_value={"status": "blocked"}):
             dest = Path(temp) / "out"
@@ -337,7 +339,7 @@ class StateTests(unittest.TestCase):
     def test_relative_output_directory_is_rooted_locally(self):
         with TemporaryDirectory() as temp, \
              patch.object(state, "ROOT", Path(temp)), \
-             patch.object(state.socket, "gethostname", return_value=state.HOST), \
+             patch.object(state.socket, "gethostname", return_value=HOST), \
              patch.object(state.physical_rift, "select_physical", return_value=SELECTION), \
              patch.object(state.physical_rift, "read_native", side_effect=self.fake_read):
             path, report = state.collect(123, Path("result"))

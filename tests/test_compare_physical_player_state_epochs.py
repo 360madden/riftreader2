@@ -14,7 +14,7 @@ from scripts import compare_physical_player_state_epochs as mod
 def sample(pid, sha, when, hp=100):
     return {
         "summarySha256": sha,
-        "target": {"processId": pid, "processStartUtcTicks": str(pid*100),
+        "target": {"hostName": "RIFT-STATION", "processId": pid, "processStartUtcTicks": str(pid*100),
                    "executableSha256": mod.replay.state.BUILD_SHA},
         "firstStartedAtUtc": f"2026-11-12T12:00:{when:02d}+00:00",
         "lastCompletedAtUtc": f"2026-11-12T12:00:{when+1:02d}+00:00",
@@ -87,6 +87,10 @@ class CrossEpochTests(unittest.TestCase):
     def test_reject_changed_build(self):
         with self.assertRaisesRegex(ValueError, "different-build"):
             self.run_pair(lambda a,b: b["target"].update(executableSha256="F"*64))
+
+    def test_reject_cross_host_restart_comparison(self):
+        with self.assertRaisesRegex(ValueError, "different-host"):
+            self.run_pair(lambda a,b: b["target"].update(hostName="OTHER-PC"))
 
     def test_reject_overlap(self):
         with self.assertRaisesRegex(ValueError, "captures-overlap-or-reversed"):

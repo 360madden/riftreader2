@@ -19,7 +19,6 @@ from scripts import physical_rift
 from scripts import compare_physical_player_context_pair as context
 from scripts.compare_physical_player_context_pair import BUILD_SHA
 
-HOST = "AMD-DESKTOP"
 SUPPORTED_BUILDS = frozenset((BUILD_SHA,
     "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"))
 KINDS = ("player-context", "position", "vitals")
@@ -30,14 +29,18 @@ def require(ok, reason):
         raise ValueError("physical-player-state-" + reason)
 
 
-def pin(pid):
-    require(socket.gethostname().upper() == HOST, "wrong-host")
+def pin(pid, *, expected_host=None):
+    host = socket.gethostname()
+    require(physical_rift.valid_host_name(host)
+            and (expected_host is None or (physical_rift.valid_host_name(expected_host)
+                 and expected_host.casefold() == host.casefold())), "wrong-host")
     require(type(pid) is int and 0 < pid < 2**31, "explicit-pid-required")
-    selection = physical_rift.select_physical(HOST, pid)
+    selection = physical_rift.select_physical(host, pid)
     target = selection.get("target")
     require(selection.get("status") == "ready"
-            and selection.get("ownerHost") == HOST and isinstance(target, dict)
-            and target.get("hostName") == HOST and target.get("processId") == pid
+            and selection.get("ownerHost") == host and isinstance(target, dict)
+            and str(target.get("hostName", "")).casefold() == host.casefold()
+            and target.get("processId") == pid
             and str(target.get("processStartUtcTicks", "")).isdecimal()
             and str(target.get("executableSha256", "")).upper() in SUPPORTED_BUILDS
             and type(target.get("hwnd")) is int and target["hwnd"] > 0,
@@ -46,13 +49,14 @@ def pin(pid):
 
 
 def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False,
-            include_zone=False):
+            include_zone=False, expected_host=None):
     require(type(samples) is int and 2 <= samples <= 10
             and type(interval_ms) is int and 0 <= interval_ms <= 1000
             and type(include_stats) is bool and type(include_zone) is bool,
             "invalid-sampling-bounds")
-    first = pin(pid)
+    first = pin(pid, expected_host=expected_host)
     owner = first["target"]
+    host = owner["hostName"]
     build_sha = str(owner["executableSha256"]).upper()
     # Standalone stats are now separately qualified for both exact builds.
     output_dir = Path(output_dir)
@@ -65,7 +69,7 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False,
     kinds = (("zone-before",) if include_zone else ()) + KINDS + \
             (("stats",) if include_stats else ()) + (("zone-after",) if include_zone else ())
     for kind in kinds:
-        require(pin(pid)["target"] == owner, "epoch-changed-before-read")
+        require(pin(pid, expected_host=host)["target"] == owner, "epoch-changed-before-read")
         path = output_dir / (kind + ".json")
         read_kind = "zone-context" if kind.startswith("zone-") else kind
         # Zone and stats are one-shot readers; other sources support bursts.
@@ -131,7 +135,7 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False,
                     and str(burst.get("unitKey")) == self_key
                     and burst.get("sampleCount") == samples,
                     "vitals-burst-source-mismatch")
-        require(pin(pid)["target"] == owner, "epoch-changed-after-read")
+        require(pin(pid, expected_host=host)["target"] == owner, "epoch-changed-after-read")
         results[kind] = {
             "path": str(path), "sourceSha256": source_sha,
             "samples": 1 if read_kind in ("stats", "zone-context") else samples,
@@ -159,9 +163,10 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False,
                         "worldInstanceStatus": "unavailable",
                         "qualification": "Matching zone endpoints only; a transient change between samples, "
                                          "independent API agreement and world-instance identity remain unverified."}
+    # Preserve the historical evidenceKind token for existing bundle consumers.
     summary = {
         "schemaVersion": 1, "evidenceKind": "amd-physical-player-state-candidate/1",
-        "status": "complete-candidate", "ownerHost": HOST, "target": owner,
+        "status": "complete-candidate", "ownerHost": host, "target": owner,
         "moduleBaseAddress": module[0], "moduleSize": module[1],
         "selfKeyCandidate": self_key, "sources": results,
         **({"zoneBracketCandidate": zone_bracket} if zone_bracket is not None else {}),
@@ -178,6 +183,7 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False,
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--physical-pid", type=int, required=True)
+    parser.add_argument("--expected-host", help="require this local Windows hostname")
     parser.add_argument("--samples", type=int, default=3)
     parser.add_argument("--interval-ms", type=int, default=200)
     parser.add_argument("--include-stats", action="store_true",
@@ -190,7 +196,8 @@ def main(argv=None):
     try:
         path, report = collect(args.physical_pid, args.output_dir,
                                samples=args.samples, interval_ms=args.interval_ms,
-                               include_stats=args.include_stats, include_zone=args.include_zone)
+                               include_stats=args.include_stats, include_zone=args.include_zone,
+                               expected_host=args.expected_host)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:240]}))
         return 2
