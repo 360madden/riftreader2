@@ -212,7 +212,7 @@ def replay(source, *, include_frames=False):
         "evidenceKind": "physical-telemetry-target-sequence-offline/1",
         "status": state,
         "qualificationStatus": "candidate-only",
-        "processId": verified["processId"],
+        "hostName": verified["hostName"], "processId": verified["processId"],
         "processStartUtcTicks": verified["processStartUtcTicks"],
         "executableSha256": verified["executableSha256"],
         "playerUnitId": expected,

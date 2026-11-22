@@ -1,5 +1,8 @@
 [CmdletBinding()]
-param([string]$LuaPython = $env:RIFTREADER2_LUA_PYTHON)
+param(
+    [string]$LuaPython = $env:RIFTREADER2_LUA_PYTHON,
+    [string]$DotNet = 'dotnet'
+)
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -35,13 +38,13 @@ try {
         }
     }
 
-    dotnet restore $solution --locked-mode
+    & $DotNet restore $solution --locked-mode
     if ($LASTEXITCODE -ne 0) { throw 'Locked restore failed.' }
-    dotnet build $solution --configuration Release --no-restore
+    & $DotNet build $solution --configuration Release --no-restore
     if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
-    dotnet test $solution --configuration Release --no-build --no-restore
+    & $DotNet test $solution --configuration Release --no-build --no-restore
     if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
-    dotnet format $solution --verify-no-changes --no-restore --verbosity minimal
+    & $DotNet format $solution --verify-no-changes --no-restore --verbosity minimal
     if ($LASTEXITCODE -ne 0) { throw 'Formatting verification failed.' }
 
     $cli = 'src/RiftReader2.Cli/bin/Release/net10.0/RiftReader2.Cli.dll'
@@ -49,15 +52,15 @@ try {
     $runDirectory = Join-Path 'artifacts/validation' $runId
     New-Item -ItemType Directory -Path $runDirectory -Force | Out-Null
     $nativePublish = Join-Path $runDirectory 'native-published'
-    dotnet publish src/RiftReader2.Live/RiftReader2.Live.csproj --configuration Release --no-restore --output $nativePublish
+    & $DotNet publish src/RiftReader2.Live/RiftReader2.Live.csproj --configuration Release --no-restore --output $nativePublish
     if ($LASTEXITCODE -ne 0) { throw 'Native executable publication failed.' }
     & (Join-Path $PSScriptRoot 'test-native-published.ps1') -Executable (Join-Path $nativePublish 'RiftReader2.Live.exe') -OutputDirectory (Join-Path $runDirectory 'native-smoke')
     $catalogArgs = @('qualify-fields', '--catalog', 'samples/catalog/catalog.json', '--build-sha256', ('A' * 64), '--session-id', 'synthetic-session-a', '--as-of', '2026-10-19T00:00:00Z')
     $catalogReport = Join-Path $runDirectory 'catalog.json'
     $catalogReplay = Join-Path $runDirectory 'catalog-replay.json'
-    & dotnet $cli @catalogArgs --output $catalogReport | Out-Null
+    & $DotNet $cli @catalogArgs --output $catalogReport | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Catalog qualification smoke failed.' }
-    & dotnet $cli @catalogArgs --output $catalogReplay | Out-Null
+    & $DotNet $cli @catalogArgs --output $catalogReplay | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Catalog replay smoke failed.' }
     if ((Get-FileHash -LiteralPath $catalogReport).Hash -ne (Get-FileHash -LiteralPath $catalogReplay).Hash) {
         throw 'Catalog replay produced different report bytes.'
@@ -67,7 +70,7 @@ try {
         $catalogFields[1].status -ne 'contradicted' -or $catalogFields[2].status -ne 'unqualified') {
         throw 'Synthetic catalog qualification differs from expected scoped outcomes.'
     }
-    & $LuaPython scripts/test-addon-contract.py --cli $cli --output-directory (Join-Path $runDirectory 'addon')
+    & $LuaPython scripts/test-addon-contract.py --dotnet $DotNet --cli $cli --output-directory (Join-Path $runDirectory 'addon')
     if ($LASTEXITCODE -ne 0) { throw 'Real Lua/C# contract validation failed.' }
     # Run scheduler mocks in isolated Windows PowerShell processes. They replace
     # Scheduler functions in memory and never register or start real tasks.
@@ -82,12 +85,12 @@ try {
     $reportPath = Join-Path $runDirectory 'analysis.json'
     $replayPath = Join-Path $runDirectory 'replay.json'
     $argsCommon = @('--manifest', 'samples/demo/capture.json', '--config', 'config/default.json')
-    $validation = & dotnet $cli validate-capture @argsCommon
+    $validation = & $DotNet $cli validate-capture @argsCommon
     if ($LASTEXITCODE -ne 0) { throw 'Capture validation smoke failed.' }
     if (-not (($validation -join "`n" | ConvertFrom-Json).valid)) { throw 'Capture did not report valid.' }
-    & dotnet $cli analyze @argsCommon --output $reportPath | Out-Null
+    & $DotNet $cli analyze @argsCommon --output $reportPath | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Analysis smoke failed.' }
-    & dotnet $cli analyze @argsCommon --output $replayPath | Out-Null
+    & $DotNet $cli analyze @argsCommon --output $replayPath | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Replay smoke failed.' }
     if ((Get-FileHash -LiteralPath $reportPath).Hash -ne (Get-FileHash -LiteralPath $replayPath).Hash) {
         throw 'Repeated analysis produced different report bytes.'

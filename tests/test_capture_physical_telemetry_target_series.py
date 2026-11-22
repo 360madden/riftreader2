@@ -274,9 +274,12 @@ class SeriesCaptureTests(unittest.TestCase):
                     "aBaAcrossCaptures": [], "observedSourceABACycles": []}
 
         path, result = self.execute_capture(
-            collect=relocation, combine=merged, recover_stale_scope=True)
+            collect=relocation, combine=merged, recover_stale_scope=True,
+            expected_host="RIFT-STATION")
         self.assertTrue(path.is_file())
         self.assertEqual(len(self.calls), 4)
+        self.assertTrue(all(options["expected_host"] == "RIFT-STATION"
+                            for _, _, options in self.calls))
         self.assertTrue((self.output / "capture-02" / "summary.json").is_file())
         self.assertTrue((self.output / "capture-02-rediscovery" / "summary.json").is_file())
         self.assertEqual(self.calls[2][2]["discover_scope"], True)

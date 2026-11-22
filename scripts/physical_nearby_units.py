@@ -76,7 +76,7 @@ def choose_nearby(positions, *, radius, limit):
 
 
 def combine(selected, total_nearby, position_raw, positions, name_raw, names,
-            pos_sha, names_sha, *, radius, limit):
+            pos_sha, names_sha, *, radius, limit, host=None):
     """Bind sequential names to exact owner/entity identity; never infer hostility."""
     p, n = position_raw["observation"], name_raw["observation"]
     require(n.get("identity") == p.get("identity")
@@ -120,6 +120,7 @@ def combine(selected, total_nearby, position_raw, positions, name_raw, names,
         samples.append(candidate)
     return {
         "schema": SCHEMA, "status": "nearby-unit-candidates",
+        **({"host": host} if host is not None else {}),
         "process": {k: p["identity"][k] for k in (
             "processId", "processStartUtcTicks", "executablePath",
             "executableSha256")},
@@ -148,8 +149,7 @@ def capture(expected_host, pid, destination, *, radius=35.0, limit=18,
             choose=physical_rift.select_physical,
             read=physical_rift.read_native):
     """Acquire two read-only native sources and save one joined candidate view."""
-    require(type(expected_host) is str and
-            expected_host in physical_rift.SUPPORTED_HOSTS
+    require(physical_rift.valid_host_name(expected_host)
             and type(pid) is int and 0 < pid < 2 ** 31,
             "invalid-explicit-host-or-pid")
     require(type(radius) in (int, float) and math.isfinite(radius)
@@ -162,8 +162,12 @@ def capture(expected_host, pid, destination, *, radius=35.0, limit=18,
             and destination.parent.is_dir(),
             "output-must-be-new-directory")
     selected_process = choose(expected_host, pid)
+    target = selected_process.get("target", {})
+    host = target.get("hostName")
     require(selected_process.get("status") == "ready"
-            and selected_process.get("target", {}).get("processId") == pid,
+            and target.get("processId") == pid
+            and physical_rift.valid_host_name(host)
+            and host.casefold() == expected_host.casefold(),
             "physical-process-unavailable")
     destination.mkdir()
     try:
@@ -180,12 +184,13 @@ def capture(expected_host, pid, destination, *, radius=35.0, limit=18,
             names_raw, names, name_hash = source_from_receipt(
                 receipt_names, names_path, selected_process, "unit-names")
             report = combine(picked, total, pos_raw, positions, names_raw, names,
-                             pos_hash, name_hash, radius=radius, limit=limit)
+                             pos_hash, name_hash, radius=radius, limit=limit, host=host)
         else:
             # A valid bounded scan may legitimately find zero nearby units.
             # Preserve the original source and do not fabricate a name lookup.
             report = {
                 "schema": SCHEMA, "status": "no-nearby-position-candidates",
+                "host": host,
                 "process": {key: pos_raw["observation"]["identity"][key]
                             for key in ("processId", "processStartUtcTicks",
                                         "executablePath", "executableSha256")},
@@ -223,7 +228,7 @@ def capture(expected_host, pid, destination, *, radius=35.0, limit=18,
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument("--expected-host", choices=physical_rift.SUPPORTED_HOSTS,
+    parser.add_argument("--expected-host",
                         required=True)
     parser.add_argument("--physical-pid", required=True, type=int)
     parser.add_argument("--radius", type=float, default=35.0)

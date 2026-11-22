@@ -134,11 +134,11 @@ class NpcSurveyTests(unittest.TestCase):
             seed.write_text(json.dumps({"evidenceKind":"native-value-scout/1","identity":target,
                 "coveredSpans":[{"baseAddress":"0x10000","byteLength":16777216}]}))
             out=Path(tmp)/"run"
-            with patch.object(survey.physical_rift,"select_physical",return_value={"status":"ready","target":target}), \
-                 patch.object(survey,"PhysicalAdapter") as adapter, patch.object(survey,"scout",side_effect=chunks), \
+            owner=dict(target, hostName="AMD-DESKTOP")
+            player={"status":"complete","target":owner,"nativeValues":{"unitKey":"1"}}
+            with patch.object(survey.physical_rift,"select_physical",return_value={"status":"ready","target":owner}), \
+                 patch.object(survey.physical_rift,"read_native",return_value=player), patch.object(survey,"scout",side_effect=chunks), \
                  patch.object(survey.time,"sleep"):
-                adapter.return_value.target=target
-                adapter.return_value.unit_key="1"
                 result=survey.acquire("AMD-DESKTOP",42,NONCE,[UNIT],out,seed)
                 self.assertEqual((result["status"],result["observedUnits"]),("advancing",1))
                 self.assertEqual(result["confirmedUnitIds"],[UNIT])

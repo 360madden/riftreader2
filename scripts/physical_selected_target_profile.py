@@ -49,6 +49,8 @@ def compare(first, second, selected, name, pos_values, pos_raw):
     require(status_one in ("candidate", "unavailable")
             and status_two == status_one, "selected-state-changed")
     if status_one == "unavailable":
+        require(one.get("beforeGuardStatus") == two.get("beforeGuardStatus")
+                == "raw-getter-zero-candidate", "no-target-unconfirmed")
         return {
             "status": "no-target-baseline-candidate",
             "selectedUnitIdCandidate": None, "baseNameCandidate": None,
@@ -133,7 +135,7 @@ def compare(first, second, selected, name, pos_values, pos_raw):
 def capture(host, pid, destination, *,
             select=physical_rift.select_physical,
             read=physical_rift.read_native):
-    require(host in physical_rift.SUPPORTED_HOSTS
+    require(physical_rift.valid_host_name(host)
             and type(pid) is int and 0 < pid < 2**31,
             "invalid-expected-host-or-pid")
     root = Path(destination)
@@ -146,7 +148,8 @@ def capture(host, pid, destination, *,
     require(selection.get("status") == "ready"
             and type(target) is dict and target.get("processId") == pid
             and str(target.get("executableSha256", "")).upper() == BUILD_1179
-            and target.get("hostName") == host,
+            and physical_rift.valid_host_name(target.get("hostName"))
+            and target["hostName"].casefold() == host.casefold(),
             "physical-1179-process-unavailable")
     root.mkdir()
     source_hashes = {}
@@ -249,7 +252,7 @@ def capture(host, pid, destination, *,
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument("--expected-host", choices=physical_rift.SUPPORTED_HOSTS,
+    parser.add_argument("--expected-host",
                         required=True)
     parser.add_argument("--physical-pid", type=int, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)

@@ -44,6 +44,8 @@ def original_native_nearby(source):
             and saved.get("status") in (
                 "nearby-unit-candidates", "no-nearby-position-candidates")
             and saved.get("inputSent") is False, "nearby-summary-invalid")
+    host = saved.get("host")
+    require("host" not in saved or physical_rift.valid_host_name(host), "nearby-host-invalid")
     pos_path = path.parent / "unit-positions-native.json"
     position_doc, pos_sha = _strict_file(pos_path, 16 * 1024 * 1024)
     source_shas = saved.get("sourceSha256")
@@ -61,7 +63,7 @@ def original_native_nearby(source):
         names = physical_rift._native_values("unit-names", names_doc)
         rebuilt = nearby.combine(
             picked, total, position_doc, positions, names_doc, names,
-            pos_sha, name_sha, radius=saved["radius"], limit=saved["nameLimit"])
+            pos_sha, name_sha, radius=saved["radius"], limit=saved["nameLimit"], host=host)
         last_native = names_doc["observation"]["completedAtUtc"]
     else:
         require(saved.get("status") == "no-nearby-position-candidates"
@@ -73,7 +75,7 @@ def original_native_nearby(source):
         rebuilt = saved
         last_native = position_doc["observation"]["completedAtUtc"]
     require(saved == rebuilt, "nearby-source-projection-mismatch")
-    return saved, digest, last_native
+    return saved, digest, (position_doc["observation"]["startedAtUtc"], last_native)
 
 
 def _seconds(before, after):
@@ -94,19 +96,23 @@ def correlate(nearby_report, survey, *, max_gap_seconds=30.0,
             and math.isfinite(position_tolerance)
             and 0 < position_tolerance <= 20,
             "invalid-comparison-bounds")
-    native, native_sha, native_at = original_native_nearby(nearby_report)
+    native, native_sha, (native_started, native_completed) = original_native_nearby(nearby_report)
     api = replay_npc_survey.replay(survey)
     owner, api_owner = native["process"], api["process"]
-    require(api["host"] == "AMD-DESKTOP"
-            and owner["processId"] == api_owner.get("processId")
+    native_host = native.get("host")
+    require((native_host is None and "hostName" not in api_owner)
+            or (native_host is not None and native_host.casefold() == api["host"].casefold()),
+            "native-api-host-missing-or-mismatch")
+    require(owner["processId"] == api_owner.get("processId")
             and str(owner["processStartUtcTicks"]) ==
                 str(api_owner.get("processStartUtcTicks"))
             and owner["executableSha256"].casefold() ==
                 str(api_owner.get("executableSha256", "")).casefold()
             and api["playerId"] == f"u{int(native['selfKey']):016X}",
             "native-api-owner-or-player-mismatch")
-    gap = _seconds(native_at, api["sampledAtUtc"])
-    require(0 <= gap <= max_gap_seconds, "native-api-source-gap")
+    gap = _seconds(native_completed, api["sampledAtUtc"])
+    source_span = _seconds(native_started, api["sampledAtUtc"])
+    require(0 <= gap <= source_span <= max_gap_seconds, "native-api-source-gap")
     approved = set(api["confirmedUnitIds"])
     source_rows = api["snapshot"]["units"]
     rows = []
@@ -168,8 +174,10 @@ def correlate(nearby_report, survey, *, max_gap_seconds=30.0,
         "nativeReportSha256": native_sha,
         "npcSurveySummarySha256": api["summarySha256"],
         "process": owner,
+        "host": api["host"],
         "playerId": api["playerId"],
         "sourceGapSeconds": gap,
+        "maximumSourceAgeSeconds": source_span,
         "maximumSourceGapSeconds": max_gap_seconds,
         "maximumPositionDeviation": position_tolerance,
         "nativeNearbyCount": len(rows),

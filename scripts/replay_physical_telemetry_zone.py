@@ -21,7 +21,6 @@ if str(ROOT) not in sys.path:
 from scripts import physical_rift
 from scripts.compare_physical_player_context_pair import load
 
-HOST = "AMD-DESKTOP"
 SHA_1179 = "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"
 PREFIX, SUFFIX = b"RIFTTLM1|", b"|ENDRIFTTLM1"
 SESSION = re.compile(r"[0-9a-f]{32}\Z")
@@ -133,7 +132,7 @@ def replay(summary_file, *, max_capture_seconds=15):
             report.get("evidenceKind") == "physical-native-telemetry-zone-bracket-candidate/1"
             and report.get("status") == "matching-candidates" and
             report.get("sameProcessEpoch") is True and
-            isinstance(target, dict) and target.get("hostName") == HOST and
+            isinstance(target, dict) and physical_rift.valid_host_name(target.get("hostName")) and
             type(target.get("processId")) is int and target["processId"] > 0 and
             str(target.get("processStartUtcTicks", "")).isdecimal() and
             str(target.get("executableSha256", "")).upper() == SHA_1179,
@@ -278,7 +277,7 @@ def replay(summary_file, *, max_capture_seconds=15):
         "schemaVersion": 1,
         "evidenceKind": "physical-native-telemetry-zone-offline-replay/1",
         "status": "matching-candidates",
-        "processId": target["processId"],
+        "hostName": target["hostName"], "processId": target["processId"],
         "processStartUtcTicks": str(target["processStartUtcTicks"]),
         "executableSha256": SHA_1179,
         "playerUnitId": player,

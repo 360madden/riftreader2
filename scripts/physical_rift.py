@@ -21,6 +21,7 @@ if str(ROOT) not in sys.path:
 
 from scripts import observe_physical, summarize_native_vitals_burst
 
+# Existing control workflows still use their configured host list.
 SUPPORTED_HOSTS = ("AMD-DESKTOP", "LEGION")
 NATIVE_READS = {
     "position": "sample-current-position",
@@ -60,15 +61,19 @@ NATIVE_EXE = (ROOT / "src" / "RiftReader2.Live" / "bin" / "Debug" /
               "net10.0-windows" / "win-x64" / "RiftReader2.Live.exe")
 
 
+def valid_host_name(value):
+    return isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,62}", value) is not None
+
+
 def select_physical(expected_host=None, physical_pid=None):
     """Return a fail-closed, PID/start/SHA-pinned physical process selection."""
     actual = socket.gethostname()
     target_id = "physical-" + actual.lower()
     try:
-        if actual.upper() not in SUPPORTED_HOSTS:
-            raise ValueError("unsupported-host")
+        if not valid_host_name(actual):
+            raise ValueError("invalid-local-host")
         if expected_host is not None:
-            if not isinstance(expected_host, str) or expected_host.upper() not in SUPPORTED_HOSTS:
+            if not valid_host_name(expected_host):
                 raise ValueError("invalid-expected-host")
             if actual.casefold() != expected_host.casefold():
                 raise ValueError("host-mismatch")
@@ -1530,8 +1535,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
     # A cached selection is never authority to read a different physical PC.
     actual_host = socket.gethostname()
     owner_host = selection.get("ownerHost")
-    if (actual_host.upper() not in SUPPORTED_HOSTS or
-            not isinstance(owner_host, str) or
+    if (not valid_host_name(actual_host) or not valid_host_name(owner_host) or
             owner_host.casefold() != actual_host.casefold()):
         return dict(selection, status="blocked", reason="host-mismatch")
     if kind not in NATIVE_READS:
@@ -1746,7 +1750,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--expected-host", choices=SUPPORTED_HOSTS,
+    parser.add_argument("--expected-host",
                         help="optional guard: refuse a different physical PC")
     parser.add_argument("--physical-pid", type=int,
                         help="pin one local rift_x64.exe PID; required if multiple exist")

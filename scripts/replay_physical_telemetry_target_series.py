@@ -17,12 +17,13 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from scripts import physical_rift
 from scripts import replay_physical_telemetry_target as target_replay
 
 SHA = re.compile(r"[0-9A-F]{64}\Z")
 UNIT = re.compile(r"u[0-9A-F]{16}\Z")
 SCHEMA = "physical-target-continuity-offline/1"
-IDENTITY = ("processId", "processStartUtcTicks", "executableSha256",
+IDENTITY = ("hostName", "processId", "processStartUtcTicks", "executableSha256",
             "playerUnitId", "zoneIdCandidate", "sourceEpoch", "sourceSessionId")
 
 
@@ -85,7 +86,8 @@ def combine(paths, *, replay=target_replay.replay):
                     "no-target-baseline-candidate", "selected-target-observations-candidate",
                     "a-b-a-target-candidate"), "source-not-qualified-for-continuity")
         identity = {name: result.get(name) for name in IDENTITY}
-        require(type(identity["processId"]) is int and identity["processId"] > 0
+        require(physical_rift.valid_host_name(identity["hostName"])
+                and type(identity["processId"]) is int and identity["processId"] > 0
                 and isinstance(identity["processStartUtcTicks"], str)
                 and identity["processStartUtcTicks"].isdecimal()
                 and isinstance(identity["executableSha256"], str)
@@ -94,6 +96,7 @@ def combine(paths, *, replay=target_replay.replay):
                 and type(identity["sourceEpoch"]) is int and identity["sourceEpoch"] > 0
                 and isinstance(identity["sourceSessionId"], str)
                 and identity["sourceSessionId"], "source-identity-invalid")
+        identity["hostName"] = identity["hostName"].upper()
         if baseline is None:
             baseline = identity
         else:

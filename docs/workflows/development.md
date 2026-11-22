@@ -54,46 +54,51 @@ GUI behavior. Choose routine command details without requiring Joey to specify
 each flag. Reuse existing commands/contracts; do not invent a new generic CLI
 framework or retrofit every historical app before delivering useful work.
 
-## Current live workflow: physical RIFT only (2026-11-10)
+## Current live workflow on physical Windows
 
-The production RR2 observation target is the actual Windows host running RIFT:
-**AMD-DESKTOP** or **LEGION**, but **only the verified host for this session**.
-Never use the other host's connector, subagent, repository, game, or installer
-unless Joey explicitly requests cross-host work. Verify the machine name first,
-then pin one local
-`rift_x64` PID and its start/build/window identity. Do not substitute a VMware
-guest, start lab controllers, or fall back to VM after a physical-host blocker.
-Start with the read-only, physical-only selector. It does **not** capture a
-screenshot, focus a game window, or send input:
+Run read-only native, Telemetry, and NPC survey workflows on the verified local
+Windows host running RIFT. Pin one local `rift_x64` PID and recheck its start
+time, executable hash and window as applicable. Work on one host per session.
+Start with the read-only selector, which reports process identity without
+interacting with the game window.
 
 ```powershell
-# Run from the RR2 checkout on AMD-DESKTOP:
-python scripts/physical_rift.py --expected-host AMD-DESKTOP
-# On LEGION, run from a separate checkout on LEGION:
-python scripts/physical_rift.py --expected-host LEGION
-# With multiple physical RIFT instances, append --physical-pid <actual-PID>.
+$rr2Host = [Environment]::MachineName
+python scripts/physical_rift.py --expected-host $rr2Host
+# With multiple physical RIFT instances, pass --physical-pid with the chosen PID.
 ```
 
 Native read-only telemetry now has a **single physical-only command** on the verified host:
 
 ```powershell
-python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native vitals
+python scripts/physical_rift.py --expected-host $rr2Host --read-native vitals
 # Also: position, orientation, actor-pose, smoothed-scalar, player-context, selected-target, stats.
 # For read-only actor/model/render matrix candidates (NOT qualified body heading):
-python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native actor-pose
+python scripts/physical_rift.py --expected-host $rr2Host --read-native actor-pose
 # Facing matrix plus direct player-system yaw and camera/aim-point candidates:
-python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native facing --samples 5 --interval-ms 60
+python scripts/physical_rift.py --expected-host $rr2Host --read-native facing --samples 5 --interval-ms 60
 # Bounded loaded-unit positions, distances from self and candidate screen points:
-python scripts/physical_rift.py --expected-host AMD-DESKTOP --physical-pid CURRENT_PID --read-native unit-positions --unit-limit 512
+python scripts/physical_rift.py --expected-host $rr2Host --physical-pid CURRENT_PID --read-native unit-positions --unit-limit 512
 # For a bounded passive actor/model/render pose time series under one native lease:
-python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native actor-pose --samples 10 --interval-ms 100
+python scripts/physical_rift.py --expected-host $rr2Host --read-native actor-pose --samples 10 --interval-ms 100
 # For four native entity-owned, unqualified smooth-state scalar candidates:
-python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native smoothed-scalar --samples 5 --interval-ms 100
+python scripts/physical_rift.py --expected-host $rr2Host --read-native smoothed-scalar --samples 5 --interval-ms 100
 # For a short read-only movement-observation burst:
-python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native position --samples 10 --interval-ms 0
+python scripts/physical_rift.py --expected-host $rr2Host --read-native position --samples 10 --interval-ms 0
 # For repeated HP/resource observations under one native session:
-python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native vitals --samples 10 --interval-ms 0
+python scripts/physical_rift.py --expected-host $rr2Host --read-native vitals --samples 10 --interval-ms 0
 # Add --physical-pid PID if more than one local RIFT instance is running.
+```
+
+With the freshly verified `CURRENT_PID`, use a new output directory for each
+command. NPC survey preparation verifies the installed addon files and prints
+the bind and capture commands. Run the capture command after the operator binds
+the nonce in RIFT.
+
+```powershell
+python -B scripts/physical_nearby_units.py --expected-host $rr2Host --physical-pid CURRENT_PID --output-dir artifacts/NEW_NEARBY
+python -B scripts/capture_physical_telemetry_target_series.py --expected-host $rr2Host --physical-pid CURRENT_PID --output-dir artifacts/NEW_TARGET_SERIES
+python -B scripts/prepare_physical_npc_survey.py --expected-host $rr2Host --physical-pid CURRENT_PID --output-dir artifacts/NEW_NPC_PLAN
 ```
 
 The facing result includes `nativeValues.opticalCamera` for the supported selected
@@ -343,11 +348,10 @@ candidate data honestly. A concise evidence note is enough for a useful finding.
 ## Prerequisites
 
 - PowerShell 7 (`pwsh`).
-- The exact .NET SDK selected by `global.json` (`10.0.302`); SDK roll-forward is
-  disabled. On verified LEGION, the 10.0.302 SDK lives at
-  `C:\work\tools\dotnet\10.0.302\dotnet.exe`; invoke it directly for RR2.
-  Unqualified `dotnet` still selects the separate 10.0.403 installation on that
-  host, which cannot satisfy the RR2 pin. Do not globally change PATH.
+- The exact .NET SDK selected by `global.json` (`10.0.302`). The SDK pin disables
+  roll-forward. Use `-DotNet` with `scripts/validate.ps1` when the pinned SDK is
+  installed outside `PATH`. On LEGION, its executable is
+  `C:\work\tools\dotnet\10.0.302\dotnet.exe`.
 - Python with `lupa==2.8` and its Lua 5.1 module for addon and cross-language
   contract tests.
 - Repository root `C:\work\riftreader2`.
@@ -360,13 +364,9 @@ email `360madden@gmail.com`; do not change global Git configuration.
 ```powershell
 Set-Location -LiteralPath 'C:\work\riftreader2'
 git status --short --branch
-if ($env:COMPUTERNAME -eq 'LEGION') {
-    & 'C:\work\tools\dotnet\10.0.302\dotnet.exe' --version
-} elseif ($env:COMPUTERNAME -eq 'AMD-DESKTOP') {
-    dotnet --version
-} else {
-    throw 'RR2 physical host must be AMD-DESKTOP or LEGION'
-}
+$rr2Host = [Environment]::MachineName
+$rr2Host
+dotnet --version  # Use the pinned SDK's executable path when it is outside PATH.
 ```
 
 Preserve unrelated changes. Generated analysis belongs under `artifacts/`.

@@ -40,7 +40,7 @@ class ZoneEvidenceTests(unittest.TestCase):
         after["observation"]["completedAtUtc"] = TIME + "13.1000000+00:00"
         self.save_native("after", after)
         identity = native["observation"]["identity"]
-        self.target = {"hostName": replay.HOST, "processId": identity["processId"],
+        self.target = {"hostName": "RIFT-STATION", "processId": identity["processId"],
                        "processStartUtcTicks": str(identity["processStartUtcTicks"]),
                        "executablePath": identity["executablePath"],
                        "executableSha256": SHA, "hwnd": 111}

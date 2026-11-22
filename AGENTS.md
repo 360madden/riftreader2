@@ -4,21 +4,19 @@
 
 At the beginning of every RR2 session, verify the **actual computer identity**
 with a machine-local command before working. The verified computer is the ONLY
-machine this session may inspect, develop on, deploy to, or control. An
-AMD-DESKTOP session must never access LEGION; a LEGION session must never
-access AMD-DESKTOP. This also applies to subagents, Workbridge connectors,
-repository sync, SDK installation, testing, and deployment. A statement that
-RR2 supports both hosts is **not** authorization to operate both hosts in one
-session. Switching or performing any cross-host work requires Joey's fresh,
+machine this session may inspect, develop on, deploy to, or control. This
+applies to subagents, Workbridge connectors, repository sync, SDK installation,
+testing, and deployment. Switching or performing any cross-host work requires Joey's fresh,
 **explicit request**. If the local target is unavailable, report the blocker or
 do host-local offline work; never hop to another machine. In all status reports,
 show the actual verified active machine.
 
 ## Active RIFT target: physical Windows hosts only (Joey, 2026-11-10)
 
-For new RR2 live discovery, observation, telemetry, and supervised input work, use
-**physical RIFT on AMD-DESKTOP or LEGION**, whichever verified host actually owns
-the selected `rift_x64` process. VMware RIFT-Lab-1/2 are **retired as active RR2
+Use physical RIFT on the **verified local Windows host** that owns the selected
+`rift_x64` process. New read-only workflows accept any such host (Joey, 2026-11-22).
+Supervised input still requires an authorized controller and local calibration.
+VMware RIFT-Lab-1/2 are **retired as active RR2
 targets**. Do not start/restart VMs, deploy to guests, use vmrun/VNC/guest login,
 or fall back to a lab on failure. Keep old lab code, test fixtures and evidence
 intact as historical reference; their workflows are opt-in archival diagnostics,

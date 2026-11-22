@@ -68,7 +68,7 @@ def prepare(host, pid, destination, *, radius=35.0, limit=12,
             select=physical_rift.select_physical,
             now=lambda: datetime.now(timezone.utc)):
     """Persist a fresh native source, exact IDs, and copyable activation commands."""
-    require(type(host) is str and host in physical_rift.SUPPORTED_HOSTS
+    require(physical_rift.valid_host_name(host)
             and type(pid) is int and 0 < pid < 2**31
             and type(limit) is int and 1 <= limit <= 12
             and type(radius) in (int, float) and not isinstance(radius, bool)
@@ -94,17 +94,23 @@ def prepare(host, pid, destination, *, radius=35.0, limit=12,
         nearby_path, native_report = capture_nearby(
             host, pid, output/"native", radius=radius,
             limit=max(18, limit))
-        checked, native_sha, native_at = join.original_native_nearby(nearby_path)
+        checked, native_sha, (native_started, native_at) = join.original_native_nearby(nearby_path)
         require(native_report == checked, "native-summary-changed")
         identity = checked["process"]
         selected = select(host, pid)
+        owner = selected.get("target", {})
+        actual_host = owner.get("hostName")
         require(selected.get("status") == "ready"
-                and selected.get("target", {}).get("processId") == pid
+                and owner.get("processId") == pid
+                and physical_rift.valid_host_name(actual_host)
+                and actual_host.casefold() == host.casefold()
+                and checked.get("host") == actual_host
                 and str(identity.get("processStartUtcTicks")) ==
-                    str(selected["target"].get("processStartUtcTicks"))
+                    str(owner.get("processStartUtcTicks"))
                 and str(identity.get("executableSha256", "")).casefold() ==
-                    str(selected["target"].get("executableSha256", "")).casefold(),
+                    str(owner.get("executableSha256", "")).casefold(),
                 "physical-process-changed")
+        host = actual_host
         active = [row["unitIdCandidate"] for row in checked["samples"]
                   if row["nameStatus"] == "available-candidate"]
         require(active, "no-named-unit-candidates")
@@ -117,7 +123,7 @@ def prepare(host, pid, destination, *, radius=35.0, limit=12,
                 and re.fullmatch(r"[0-9a-f]{32}", nonce),
                 "invalid-nonce")
         created = now()
-        observed = datetime.fromisoformat(native_at.replace("Z", "+00:00"))
+        observed = datetime.fromisoformat(native_started.replace("Z", "+00:00"))
         require(created.tzinfo is not None and observed.tzinfo is not None
                 and 0 <= (created-observed).total_seconds() <= 30,
                 "native-observation-no-longer-fresh")
@@ -125,14 +131,14 @@ def prepare(host, pid, destination, *, radius=35.0, limit=12,
         require(len(command) <= 270, "in-game-command-too-long")
         npc_path = output/"npc-api"
         joined_path = output/"joined-native-api.json"
-        capture_command = ("& " + _quote(r"C:\Python314\python.exe")
+        capture_command = ("& " + _quote(sys.executable)
             + " -B " + _quote("scripts/npc_survey_live.py")
             + " --expected-host " + _quote(host)
             + " --physical-pid " + str(pid)
             + " --session-id " + _quote(nonce)
             + " --unit-ids " + _quote(",".join(ids))
             + " --auto-map --max-attempts 5 --output " + _quote(npc_path))
-        compare_command = ("& " + _quote(r"C:\Python314\python.exe")
+        compare_command = ("& " + _quote(sys.executable)
             + " -B " + _quote("scripts/join_physical_nearby_npc_survey.py")
             + " --nearby " + _quote(nearby_path)
             + " --npc-survey " + _quote(npc_path/"result.json")
@@ -144,6 +150,7 @@ def prepare(host, pid, destination, *, radius=35.0, limit=12,
             "processStartUtcTicks": str(identity["processStartUtcTicks"]),
             "executableSha256": str(identity["executableSha256"]).upper(),
             "nativeSourceSha256": native_sha,
+            "nativePositionCaptureStartedAtUtc": native_started,
             "nativeSampledAtUtc": native_at,
             "preparedAtUtc": created.isoformat(),
             "nativeJoinDeadlineUtc": (observed + timedelta(seconds=120)).isoformat(),
@@ -178,8 +185,7 @@ def prepare(host, pid, destination, *, radius=35.0, limit=12,
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument("--expected-host", required=True,
-                        choices=physical_rift.SUPPORTED_HOSTS)
+    parser.add_argument("--expected-host", required=True)
     parser.add_argument("--physical-pid", required=True, type=int)
     parser.add_argument("--radius", type=float, default=35)
     parser.add_argument("--max-ids", type=int, default=12)

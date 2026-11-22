@@ -18,7 +18,7 @@ from scripts import replay_physical_telemetry_zone as zone
 from tests.test_physical_player_xyz_bracket import fixture
 from tests.test_replay_physical_telemetry_target import TargetSequenceTests, A, B
 from tests.test_replay_physical_telemetry_zone import ZONE
-from tests.test_capture_physical_telemetry_zone import CaptureTests, FakeProcess
+from tests.test_capture_physical_telemetry_zone import HOST, CaptureTests, FakeProcess
 
 SELF = 0x035400012FA2D207
 
@@ -218,7 +218,7 @@ class NativeTargetSourceTests(unittest.TestCase):
 
         with TemporaryDirectory() as tmp:
             dest = Path(tmp) / "bundle"
-            with (patch.object(collect.socket, "gethostname", return_value=collect.HOST),
+            with (patch.object(collect.socket, "gethostname", return_value=HOST),
                   patch.object(collect.physical_rift, "select_physical",
                                return_value=basic.selection),
                   patch.object(collect.physical_rift, "read_native", side_effect=native),
@@ -248,7 +248,7 @@ class NativeTargetSourceTests(unittest.TestCase):
         basic.setUp()
         with TemporaryDirectory() as tmp:
             dest = Path(tmp) / "bundle"
-            with (patch.object(collect.socket, "gethostname", return_value=collect.HOST),
+            with (patch.object(collect.socket, "gethostname", return_value=HOST),
                   patch.object(collect.physical_rift, "select_physical",
                                return_value=basic.selection),
                   patch.object(collect.physical_rift, "read_native",

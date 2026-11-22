@@ -39,8 +39,11 @@ def replay(source):
     target = doc.get("target")
     rows = doc.get("sources")
     confirmed = doc.get("confirmedUnitIds")
+    host = doc.get("host")
     require(type(snapshot) is dict and type(target) is dict
-            and doc.get("host") == "AMD-DESKTOP"
+            and physical_rift.valid_host_name(host)
+            and ("hostName" not in target or (physical_rift.valid_host_name(target["hostName"])
+                 and target["hostName"].casefold() == host.casefold()))
             and type(target.get("processId")) is int and target["processId"] > 0
             and str(target.get("processStartUtcTicks", "")).isdecimal()
             and type(target.get("executableSha256")) is str
@@ -79,7 +82,8 @@ def replay(source):
                 and type(receipt.get("epoch")) is int,
                 "receipt-invalid")
         expected = path.parent / f"frame-{index:02d}.wire"
-        require(receipt.get("retainedWire") == str(expected)
+        retained = receipt.get("retainedWire")
+        require(type(retained) is str and Path(retained).name == expected.name
                 and expected.is_file() and not expected.is_symlink(),
                 "source-byte-file-unavailable")
         raw = expected.read_bytes()
@@ -128,6 +132,11 @@ def replay(source):
     lag = doc.get("relativeSourceLagSeconds")
     require(type(lag) in (int, float) and math.isfinite(lag)
             and 0 <= lag <= 2, "relative-lag-invalid")
+    (host_start, start_digit), (host_end, end_digit) = (
+        physical_rift._utc_tick_order_key(row["capturedAtUtc"]) for row in rows[-2:])
+    host_elapsed = (host_end - host_start).total_seconds() + (end_digit - start_digit) / 10_000_000
+    require(host_elapsed - (after["frameTime"] - before["frameTime"]) <= 2,
+            "relative-lag-at-host-timestamps")
     return {
         "status": "advancing-source-replayed-candidate",
         "process": target, "host": doc["host"],

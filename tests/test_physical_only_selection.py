@@ -83,12 +83,21 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         self.assertEqual(result["reason"], "host-mismatch")
         reader.assert_not_called()
 
-    def test_unsupported_host_blocks_before_process_probe(self):
+    def test_other_windows_host_can_select_its_local_process(self):
+        target = dict(IDENTITY, hostName="OTHER-PC")
+        with patch.object(physical.socket, "gethostname", return_value="OTHER-PC"), \
+             patch.object(physical.observe_physical, "_identity", return_value=target) as reader:
+            result = physical.select_physical(expected_host="other-pc", physical_pid=target["processId"])
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["targetId"], "physical-other-pc")
+        reader.assert_called_once_with(target["processId"], require_window=False)
+
+    def test_invalid_host_blocks_before_process_probe(self):
         with patch.object(physical.socket, "gethostname", return_value="OTHER-PC"), \
              patch.object(physical.observe_physical, "_identity") as reader:
-            result = physical.select_physical()
+            result = physical.select_physical(expected_host="OTHER-PC/path")
         self.assertEqual(result["status"], "blocked")
-        self.assertEqual(result["reason"], "unsupported-host")
+        self.assertEqual(result["reason"], "invalid-expected-host")
         reader.assert_not_called()
 
     def test_invalid_pid_blocks_before_process_probe(self):

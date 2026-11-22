@@ -5,6 +5,7 @@ from copy import deepcopy
 import hashlib
 import json
 from pathlib import Path
+from shutil import copytree
 import unittest
 from unittest.mock import patch
 
@@ -70,6 +71,18 @@ class TargetProfileReplayTests(unittest.TestCase):
         self.mutate("selected-after.json", lambda d:
                     d["observation"].update(targetKey=43))
         with self.assertRaisesRegex(ValueError, "source-sha-mismatch"):
+            self.check(path)
+
+    def test_a_copied_bundle_replays_its_own_sources(self):
+        path, _ = self.generate()
+        moved = copytree(path.parent, path.parent.parent / "copied-profile") / path.name
+        self.assertEqual(self.check(moved)["status"], "source-replayed-candidate")
+
+    def test_another_player_name_source_is_refused(self):
+        path, _ = self.generate()
+        self.mutate("unit-name.json", lambda d: d["fakeProjection"].update(selfKey="123"),
+                    update_profile_sha=True)
+        with self.assertRaisesRegex(ValueError, "name-owner-mismatch"):
             self.check(path)
 
     def test_changed_original_name_does_not_preserve_name(self):

@@ -1,7 +1,7 @@
 """Read-only physical RR2 native/Telemetry Lua zone bracket acquisition.
 
 Captures source SHA-pinned raw Telemetry RIFTTLM1 frames between two existing
-guarded native zone reads. Explicit AMD-DESKTOP PID/start/build is revalidated.
+guarded native zone reads. The local host, PID, start and build are revalidated.
 No game input, UI automation, reload, memory writes or sibling-repo changes.
 """
 from __future__ import annotations
@@ -27,7 +27,6 @@ from scripts import replay_physical_telemetry_zone as verify
 from scripts import replay_physical_telemetry_target as target_audit
 from scripts import telemetry_scope_locator as locator
 
-HOST = "AMD-DESKTOP"
 BUILD_SHA = verify.SHA_1179
 MARKER = verify.PREFIX + b"{"
 SUFFIX = verify.SUFFIX
@@ -54,19 +53,23 @@ def canonical_address(value):
     return number
 
 
-def admission(pid, start_address, scan_bytes, gap_ms):
-    require(socket.gethostname().upper() == HOST, "wrong-host")
+def admission(pid, start_address, scan_bytes, gap_ms, *, expected_host=None):
+    host = socket.gethostname()
+    require(physical_rift.valid_host_name(host)
+            and (expected_host is None or (physical_rift.valid_host_name(expected_host)
+                 and expected_host.casefold() == host.casefold())), "wrong-host")
     require(type(pid) is int and 0 < pid < 2**31, "explicit-pid-required")
     start = canonical_address(start_address)
     require(type(scan_bytes) is int and CHUNK <= scan_bytes <= 128 * 1024 * 1024
             and scan_bytes % CHUNK == 0 and
             start + scan_bytes < 0x7FFF_FFFF_FFFF, "invalid-scan-budget")
     require(type(gap_ms) is int and 0 <= gap_ms <= 2000, "invalid-gap")
-    selection = physical_rift.select_physical(HOST, pid)
+    selection = physical_rift.select_physical(host, pid)
     t = selection.get("target")
     require(selection.get("status") == "ready"
-            and selection.get("ownerHost") == HOST and type(t) is dict
-            and t.get("hostName") == HOST and t.get("processId") == pid
+            and selection.get("ownerHost") == host and type(t) is dict
+            and str(t.get("hostName", "")).casefold() == host.casefold()
+            and t.get("processId") == pid
             and str(t.get("processStartUtcTicks", "")).isdecimal()
             and str(t.get("executableSha256", "")).upper() == BUILD_SHA,
             "physical-epoch-or-build-unavailable")
@@ -416,13 +419,14 @@ def native_target(selection, directory, which):
 def collect(pid, output_dir, *, start_address="0x13000000",
             scan_bytes=64*1024*1024, gap_ms=600, reader_factory=ReadOnlyWindowsProcess,
             auto_scope=False, scope_count=4, include_native_target=False,
-            discover_scope=False):
+            discover_scope=False, expected_host=None):
     require(type(include_native_target) is bool, "invalid-native-target-option")
     require(type(auto_scope) is bool and type(scope_count) is int
             and 1 <= scope_count <= 8, "invalid-auto-scope-options")
     require(type(discover_scope) is bool and (not discover_scope or auto_scope),
             "invalid-scope-discovery-options")
-    selection, start = admission(pid, start_address, scan_bytes, gap_ms)
+    selection, start = admission(pid, start_address, scan_bytes, gap_ms,
+                                 expected_host=expected_host)
     require(not auto_scope or start + scan_bytes * scope_count < 0x7FFF_FFFF_FFFF,
             "invalid-auto-scope-range")
     root = Path(output_dir)
@@ -434,6 +438,7 @@ def collect(pid, output_dir, *, start_address="0x13000000",
             "new-output-directory-required")
     root.mkdir()
     target = selection["target"]
+    host = target["hostName"]
     survey = None
     preflight_player = None
     if auto_scope:
@@ -443,7 +448,7 @@ def collect(pid, output_dir, *, start_address="0x13000000",
         preflight_report, _ = verify.load(root / "native-survey-owner.json",
                                           preflight["sha256"])
         preflight_player = f"u{int(preflight_report['observation']['selfKey']):016X}"
-        require(physical_rift.select_physical(HOST, pid).get("target") == target,
+        require(physical_rift.select_physical(host, pid).get("target") == target,
                 "changed-process-before-survey")
         with reader_factory(pid) as survey_reader:
             if discover_scope:
@@ -492,7 +497,7 @@ def collect(pid, output_dir, *, start_address="0x13000000",
         require(survey["status"] == "scoped-candidate",
                 "no-current-player-zone-scope-in-survey")
         start = int(survey["selectedStartAddress"], 16)
-        require(physical_rift.select_physical(HOST, pid).get("target") == target,
+        require(physical_rift.select_physical(host, pid).get("target") == target,
                 "changed-process-after-survey")
     generation = None
     if survey is not None:
@@ -517,20 +522,20 @@ def collect(pid, output_dir, *, start_address="0x13000000",
     require(target_before is None or
             target_before["unitKeyCandidate"] == str(int(player[1:], 16)),
             "native-target-player-changed-before")
-    require(physical_rift.select_physical(HOST, pid).get("target") == target,
+    require(physical_rift.select_physical(host, pid).get("target") == target,
             "changed-process-before-scan")
     with reader_factory(pid) as reader:
         generation_arg = ({"selected_publisher": generation}
                           if generation is not None else {})
         first = scan(reader, root / "pass-01", start=start, scan_bytes=scan_bytes,
                      expected_player=player, **generation_arg)
-        require(physical_rift.select_physical(HOST, pid).get("target") == target,
+        require(physical_rift.select_physical(host, pid).get("target") == target,
                 "changed-process-after-first-scan")
         if gap_ms:
             time.sleep(gap_ms / 1000)
         second = scan(reader, root / "pass-02", start=start, scan_bytes=scan_bytes,
                       expected_player=player, **generation_arg)
-    require(physical_rift.select_physical(HOST, pid).get("target") == target,
+    require(physical_rift.select_physical(host, pid).get("target") == target,
             "changed-process-after-second-scan")
     target_after = (native_target(selection, root, "after")
                     if include_native_target else None)
@@ -538,7 +543,7 @@ def collect(pid, output_dir, *, start_address="0x13000000",
             target_after["unitKeyCandidate"] == str(int(player[1:], 16)),
             "native-target-player-changed-after")
     after = native_zone(selection, root, "after")
-    same_epoch = physical_rift.select_physical(HOST, pid).get("target") == target
+    same_epoch = physical_rift.select_physical(host, pid).get("target") == target
     report = {
         "schemaVersion":1,
         "evidenceKind":"physical-native-telemetry-zone-bracket-candidate/1",
@@ -596,6 +601,7 @@ def collect(pid, output_dir, *, start_address="0x13000000",
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--physical-pid",required=True,type=int)
+    parser.add_argument("--expected-host", help="require this local Windows hostname")
     parser.add_argument("--start-address",default="0x13000000")
     parser.add_argument("--scan-bytes",type=int,default=64*1024*1024)
     parser.add_argument("--gap-ms",type=int,default=600)
@@ -616,7 +622,8 @@ def main(argv=None):
                              gap_ms=args.gap_ms, auto_scope=args.auto_scope,
                               scope_count=args.scope_count,
                               include_native_target=args.include_native_target,
-                              discover_scope=args.discover_scope)
+                              discover_scope=args.discover_scope,
+                              expected_host=args.expected_host)
     except (OSError,ValueError,KeyError,TypeError,AttributeError,OverflowError) as exc:
         print(json.dumps({"status":"blocked","reason":str(exc)[:220]}))
         return 2

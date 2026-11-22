@@ -75,7 +75,8 @@ def replay(path):
     for key in expected_keys:
         filename, kind = SOURCE_NAMES[key]
         source = path.parent / filename
-        require(paths[key] == str(source) and type(shas[key]) is str
+        require(type(paths[key]) is str and Path(paths[key]).name == filename
+                and type(shas[key]) is str
                 and SHA.fullmatch(shas[key]) is not None,
                 "source-path-or-sha-invalid")
         raw, sha = _read_json(source, max_size=8*1024*1024)
@@ -94,6 +95,8 @@ def replay(path):
     start, finish = projected["selectedBefore"], projected["selectedAfter"]
     position = original.get("selectedPosition")
     name = projected.get("unitName")
+    if name is not None:
+        require(name.get("selfKey") == start.get("selfUnitKey"), "name-owner-mismatch")
     checked_positions = None
     if position is not None:
         samples = position.get("observations")

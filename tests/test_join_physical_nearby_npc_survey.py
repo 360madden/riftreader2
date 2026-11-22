@@ -175,9 +175,42 @@ class NearbyNpcJoinTests(unittest.TestCase):
 
     def test_stale_api_capture_not_joined(self):
         document = json.loads(self.npc_summary.read_text())
+        document["sources"][0]["capturedAtUtc"] = "2026-11-12T04:00:49Z"
         document["sources"][-1]["capturedAtUtc"] = "2026-11-12T04:00:50Z"
         save(self.npc_summary, document)
         with self.assertRaisesRegex(ValueError, "native-api-source-gap"):
+            self.call()
+
+    def test_recent_name_lookup_cannot_refresh_old_positions(self):
+        late_name = "2026-11-12T04:00:40.2000000Z"
+        observation = self.name_raw["observation"]
+        for row in (observation, *observation["rows"]):
+            row.update(startedAtUtc=late_name, completedAtUtc=late_name)
+        names_sha = save(self.native_dir / "unit-names-native.json", self.name_raw)
+        old = json.loads(self.native_summary.read_text())
+        selected, total = native.choose_nearby(self.pos_values, radius=35.0, limit=18)
+        report = native.combine(selected, total, self.pos_raw, self.pos_values, self.name_raw,
+                                physical_rift._native_values("unit-names", self.name_raw),
+                                old["sourceSha256"]["unitPositions"], names_sha, radius=35.0, limit=18)
+        save(self.native_summary, report)
+        doc = json.loads(self.npc_summary.read_text())
+        for row, seconds in zip(doc["sources"], ("40.3", "40.4")):
+            row["capturedAtUtc"] = f"2026-11-12T04:00:{seconds}Z"
+        save(self.npc_summary, doc)
+        with self.assertRaisesRegex(ValueError, "native-api-source-gap"):
+            self.call()
+
+    def test_host_is_checked_even_if_the_process_identity_matches(self):
+        native_doc = json.loads(self.native_summary.read_text())
+        native_doc["host"] = "RIFT-STATION"
+        save(self.native_summary, native_doc)
+        api = json.loads(self.npc_summary.read_text())
+        api["host"] = api["target"]["hostName"] = "rift-station"
+        save(self.npc_summary, api)
+        self.assertEqual(self.call()["crossSourceCandidateCount"], 1)
+        api["host"] = api["target"]["hostName"] = "OTHER-PC"
+        save(self.npc_summary, api)
+        with self.assertRaisesRegex(ValueError, "native-api-host-missing-or-mismatch"):
             self.call()
 
     def test_max_gap_and_position_tolerance_are_bounded(self):

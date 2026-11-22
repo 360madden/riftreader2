@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 from scripts import capture_physical_telemetry_zone as capture
 from scripts import replay_physical_telemetry_zone as verify
-from tests.test_capture_physical_telemetry_zone import CaptureTests, FakeRead, FakeProcess
+from tests.test_capture_physical_telemetry_zone import HOST, CaptureTests, FakeRead, FakeProcess
 from tests.test_replay_physical_telemetry_zone import ZoneEvidenceTests, SELF, ZONE
 
 BASE = 0x13000000
@@ -192,7 +192,7 @@ class AutoScopeTests(unittest.TestCase):
 
         with TemporaryDirectory() as tmp:
             destination = Path(tmp) / "record"
-            with (patch.object(capture.socket, "gethostname", return_value=capture.HOST),
+            with (patch.object(capture.socket, "gethostname", return_value=HOST),
                   patch.object(capture.physical_rift, "select_physical", return_value=sample),
                   patch.object(capture.physical_rift, "read_native", side_effect=native),
                   patch.object(capture, "survey_scopes", side_effect=survey),
@@ -222,7 +222,7 @@ class AutoScopeTests(unittest.TestCase):
 
         with TemporaryDirectory() as tmp:
             destination = Path(tmp) / "record"
-            with (patch.object(capture.socket, "gethostname", return_value=capture.HOST),
+            with (patch.object(capture.socket, "gethostname", return_value=HOST),
                   patch.object(capture.physical_rift, "select_physical", return_value=selection),
                   patch.object(capture.physical_rift, "read_native",
                                side_effect=helper._fake_native) as native,
@@ -248,7 +248,7 @@ class AutoScopeTests(unittest.TestCase):
                   "candidateStartAddresses": [f"0x{x:X}" for x in found]}
         with TemporaryDirectory() as tmp:
             path = Path(tmp) / "record"
-            with (patch.object(capture.socket, "gethostname", return_value=capture.HOST),
+            with (patch.object(capture.socket, "gethostname", return_value=HOST),
                   patch.object(capture.physical_rift, "select_physical",
                                return_value=selection),
                   patch.object(capture.physical_rift, "read_native",

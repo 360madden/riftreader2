@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import datetime, timedelta
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -14,7 +15,7 @@ from scripts import replay_npc_survey as cold
 NONCE = "a" * 32
 PLAYER = "u0000000000000001"
 UNIT = "u0000000000000002"
-TARGET = {"processId": 37676, "processStartUtcTicks": "639308565554559088",
+TARGET = {"hostName": "AMD-DESKTOP", "processId": 37676, "processStartUtcTicks": "639308565554559088",
           "executableSha256": "D" * 64}
 
 
@@ -56,11 +57,10 @@ class NpcSourceReplayTests(unittest.TestCase):
               patch.object(survey, "_same_target", return_value=True),
               patch.object(survey, "_validate_seed",
                            return_value=(0x10000, 16 * 1024 * 1024)),
-              patch.object(survey, "PhysicalAdapter") as adapter,
+              patch.object(survey.physical_rift, "read_native", return_value={
+                  "status": "complete", "target": self.target, "nativeValues": {"unitKey": "1"}}),
               patch.object(survey, "scout", side_effect=chunks),
               patch.object(survey.time, "sleep")):
-            adapter.return_value.target = self.target
-            adapter.return_value.unit_key = "1"
             return survey.acquire("AMD-DESKTOP", TARGET["processId"],
                                   NONCE, [UNIT], self.output,
                                   seed_index=self.seed,
@@ -105,6 +105,16 @@ class NpcSourceReplayTests(unittest.TestCase):
         self.rewrite(lambda doc:
                      doc["snapshot"]["units"][UNIT].update(level=60))
         with self.assertRaisesRegex(ValueError, "snapshot-not-source-replayed"):
+            cold.replay(self.saved())
+
+    def test_timestamps_cannot_show_more_lag_than_the_receipt_allows(self):
+        self.acquire()
+        def delay(doc):
+            first, second = doc["sources"]
+            host_start = datetime.fromisoformat(first["capturedAtUtc"])
+            second["capturedAtUtc"] = (host_start + timedelta(seconds=15)).isoformat()
+        self.rewrite(delay)
+        with self.assertRaisesRegex(ValueError, "relative-lag-at-host-timestamps"):
             cold.replay(self.saved())
 
     def test_source_sequence_and_owner_mutation_fail(self):

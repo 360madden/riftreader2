@@ -5,6 +5,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import sys
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
@@ -30,9 +31,10 @@ class NPCPreparationTests(unittest.TestCase):
         (self.installed/"RiftAddon.toc").write_text(
             'Identifier = "RiftReader2Casting"\n'
             'RunOnStartup = { "npc_survey.lua" }\n')
-        self.target = {"processId": PID, "processStartUtcTicks": START,
+        self.target = {"hostName": "RIFT-STATION", "processId": PID, "processStartUtcTicks": START,
                        "executableSha256": SHA}
         self.nearby = {
+            "host": self.target["hostName"],
             "process": {"processId": PID, "processStartUtcTicks": START,
                         "executableSha256": SHA},
             "samples": [
@@ -45,7 +47,7 @@ class NPCPreparationTests(unittest.TestCase):
 
     def collect(self, host, pid, directory, *, radius, limit):
         self.native_call_count += 1
-        self.assertEqual((host,pid),("AMD-DESKTOP",PID))
+        self.assertEqual((host,pid),("RIFT-STATION",PID))
         self.assertEqual(limit, 18)
         directory.mkdir()
         path = directory/"nearby-report.json"
@@ -65,8 +67,8 @@ class NPCPreparationTests(unittest.TestCase):
         }
         kwargs.update(overrides)
         with patch.object(prep.join, "original_native_nearby",
-                          return_value=(deepcopy(self.nearby), "B"*64, AT)):
-            return prep.prepare("AMD-DESKTOP", PID, self.dir/"plan",
+                          return_value=(deepcopy(self.nearby), "B"*64, (AT, AT))):
+            return prep.prepare("RIFT-STATION", PID, self.dir/"plan",
                                 **kwargs)
 
     def test_realistic_plan_needs_one_in_game_bind_but_never_sends_input(self):
@@ -82,6 +84,8 @@ class NPCPreparationTests(unittest.TestCase):
         self.assertNotIn("u0000000000000007",result["inGameBindCommand"])
         self.assertIn("--auto-map",result["captureCommand"])
         self.assertIn("scripts/npc_survey_live.py",result["captureCommand"])
+        self.assertTrue(result["captureCommand"].startswith("& " + prep._quote(sys.executable)))
+        self.assertTrue(result["joinCommand"].startswith("& " + prep._quote(sys.executable)))
         self.assertIn("--max-gap-seconds 120",result["joinCommand"])
         self.assertEqual(result["installedAddon"]["configurationVerified"],True)
         self.assertEqual(result["installedAddon"]["runningAddonLoaded"],"unverified")
@@ -121,14 +125,14 @@ class NPCPreparationTests(unittest.TestCase):
         for timestamp in ("2026-11-21T17:55:00Z","2026-11-21T18:01:00Z"):
             with self.subTest(timestamp=timestamp):
                 with patch.object(prep.join,"original_native_nearby",
-                                  return_value=(deepcopy(self.nearby),"A"*64,timestamp)):
+                                  return_value=(deepcopy(self.nearby),"A"*64,(timestamp, AT))):
                     kwargs=dict(casting_dir=self.installed,
                                 capture_nearby=self.collect,
                                 select=self.select,
                                 nonce_factory=lambda _: "a"*32,
                                 now=lambda: CLOCK)
                     with self.assertRaisesRegex(ValueError,"no-longer-fresh"):
-                        prep.prepare("AMD-DESKTOP",PID,self.dir/"plan",**kwargs)
+                        prep.prepare("RIFT-STATION",PID,self.dir/"plan",**kwargs)
                 self.assertTrue((self.dir/"plan"/"failure.json").is_file())
                 from shutil import rmtree
                 rmtree(self.dir/"plan")
@@ -156,7 +160,7 @@ class NPCPreparationTests(unittest.TestCase):
             self.prepare()
         self.assertEqual(self.native_call_count,0)
         with self.assertRaisesRegex(ValueError,"invalid-host"):
-            prep.prepare("other-host",PID,self.dir/"plan",
+            prep.prepare("other/path",PID,self.dir/"plan",
                          casting_dir=self.installed)
         self.assertFalse((self.dir/"plan").exists())
 

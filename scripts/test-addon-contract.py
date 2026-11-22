@@ -10,7 +10,7 @@ import subprocess
 import sys
 
 
-def reference_contract_gate(repo, lua, private, cli, destination):
+def reference_contract_gate(repo, lua, private, cli, destination, dotnet):
     """Decode real bound Lua output through the strict snapshot consumers."""
     sys.path.insert(0, str(repo))
     from scripts.inspect_typed_resource import inspect
@@ -56,7 +56,7 @@ def reference_contract_gate(repo, lua, private, cli, destination):
         resource = inspect(path, "mana", session_id=fixture["nonce"])
         assert resource["selected"]["current"] == fixture[("before", "after")[index]]["fields"]["mana"]
         paths.append(path)
-    args = ["dotnet", str(cli.resolve()), "inspect-typed-wire", "--before", str(paths[0].resolve()),
+    args = [dotnet, str(cli.resolve()), "inspect-typed-wire", "--before", str(paths[0].resolve()),
             "--after", str(paths[1].resolve()), "--session-id", fixture["nonce"]]
     result = subprocess.run(args, text=True, encoding="utf-8", capture_output=True, check=False)
     if result.returncode:
@@ -80,6 +80,7 @@ from lupa.lua51 import LuaRuntime
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--dotnet", default="dotnet")
     parser.add_argument("--cli", required=True, type=Path)
     parser.add_argument("--output-directory", required=True, type=Path)
     args = parser.parse_args()
@@ -155,7 +156,7 @@ def main():
         with frame_path.open("xb") as output:
             output.write(wire)
         decoded = subprocess.run(
-            ["dotnet", str(args.cli.resolve()), "decode-addon", "--frame", str(frame_path.resolve())],
+            [args.dotnet, str(args.cli.resolve()), "decode-addon", "--frame", str(frame_path.resolve())],
             text=True, encoding="utf-8", capture_output=True, check=False,
         )
         if decoded.returncode != 0:
@@ -182,7 +183,7 @@ def main():
         with live_path.open("xb") as output:
             output.write(envelope)
         live_result = subprocess.run(
-            ["dotnet", str(args.cli.resolve()), "decode-live-addon", "--frame", str(live_path.resolve()), "--session-id", nonce],
+            [args.dotnet, str(args.cli.resolve()), "decode-live-addon", "--frame", str(live_path.resolve()), "--session-id", nonce],
             text=True, encoding="utf-8", capture_output=True, check=False,
         )
         if live_result.returncode != 0:
@@ -206,7 +207,7 @@ def main():
         frame_path = args.output_directory / ("guidance-" + lab + ".wire")
         frame_path.write_bytes(envelope.encode("ascii"))
         result = subprocess.run(
-            ["dotnet", str(args.cli.resolve()), "guide-addon", "--frame", str(frame_path.resolve()),
+            [args.dotnet, str(args.cli.resolve()), "guide-addon", "--frame", str(frame_path.resolve()),
              "--lab", lab, "--session-id", nonce, "--result-sequence", "1",
              "--destination-x", "7", "--destination-y", "6", "--destination-z", "24"],
             text=True, encoding="utf-8", capture_output=True, check=False)
@@ -233,7 +234,7 @@ def main():
                                     wrongLabRejected=True, expiryCleared=True, gameRuntimeVerified=False)
         with (args.output_directory / ("guidance-" + lab + ".json")).open("x", encoding="utf-8") as stream:
             json.dump(report, stream, indent=2)
-    reference_contract_gate(repo, lua, private, args.cli, args.output_directory)
+    reference_contract_gate(repo, lua, private, args.cli, args.output_directory, args.dotnet)
     print(f"Lua 5.1: {lua_checks} lifecycle/encoder checks; {len(cases)} addon + {len(cases)} live-envelope real Lua -> C# shared cases; 2 synthetic lab-bound Lua -> C# -> Lua guidance round trips passed.")
 
 

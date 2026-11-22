@@ -13,7 +13,7 @@ from scripts import replay_physical_telemetry_zone as verify
 from tests.test_physical_zone_context import typed_report_1179
 from tests.test_replay_physical_telemetry_zone import ZoneEvidenceTests, SELF, ZONE, SESSION
 
-HOST = cap.HOST
+HOST = "RIFT-STATION"
 PID = 123
 START = 0x13000000
 SHA = verify.SHA_1179
@@ -78,12 +78,20 @@ class CaptureTests(unittest.TestCase):
         with patch.object(cap.socket, "gethostname", return_value=HOST), \
              patch.object(cap.physical_rift,"select_physical",return_value=self.selection):
             self.assertEqual(cap.admission(PID,"0x13000000",cap.CHUNK,600)[1],START)
+
         other = deepcopy(self.selection)
         other["target"]["executableSha256"] = "F" * 64
         with patch.object(cap.socket, "gethostname", return_value=HOST), \
              patch.object(cap.physical_rift,"select_physical",return_value=other):
             with self.assertRaisesRegex(ValueError,"physical-epoch-or-build-unavailable"):
                 cap.admission(PID,"0x13000000",cap.CHUNK,0)
+
+    def test_an_explicit_nonlocal_host_refuses_before_selecting_process(self):
+        with patch.object(cap.socket, "gethostname", return_value=HOST), \
+             patch.object(cap.physical_rift, "select_physical") as select:
+            with self.assertRaisesRegex(ValueError, "wrong-host"):
+                cap.admission(PID, "0x13000000", cap.CHUNK, 0, expected_host="OTHER-PC")
+        select.assert_not_called()
 
     def test_bounded_scan_keeps_wire_hashes_and_source_metadata(self):
         data=bytearray(cap.CHUNK + 64*1024)

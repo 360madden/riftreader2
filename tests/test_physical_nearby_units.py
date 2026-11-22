@@ -166,11 +166,13 @@ class NearbyUnitTests(unittest.TestCase):
         self.assertTrue((self.dest / "failure.json").is_file())
 
     def test_explicit_wrong_process_or_missing_output_dir_blocks_before_reads(self):
-        for host, pid in (("LEGION", 0), ("other", 37676),
+        for host, pid in (("LEGION", 0), ("other/path", 37676),
                           ("AMD-DESKTOP", True)):
             with self.subTest(host=host, pid=pid):
                 with self.assertRaisesRegex(ValueError, "invalid-explicit-host-or-pid"):
                     self.invoke_wrong(host, pid)
+        with self.assertRaisesRegex(ValueError, "physical-process-unavailable"):
+            self.invoke_wrong("OTHER-PC", 37676)
         self.assertEqual(self.reads, [])
         self.assertFalse(self.dest.exists())
         self.dest.mkdir()

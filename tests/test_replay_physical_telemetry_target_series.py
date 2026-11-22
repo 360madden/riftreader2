@@ -43,7 +43,7 @@ def report(seq, target=None, number=1, *, first=None, source_status=None,
         "qualificationStatus": "candidate-only",
         "status": source_status or ("no-target-baseline-candidate" if all_none
                                     else "selected-target-observations-candidate"),
-        "processId": 37676, "processStartUtcTicks": "639308565554559088",
+        "hostName": "RIFT-STATION", "processId": 37676, "processStartUtcTicks": "639308565554559088",
         "executableSha256": BUILD, "playerUnitId": SELF,
         "zoneIdCandidate": "z0000000CB7B53FD7",
         "sourceEpoch": 52, "sourceSessionId": "a" * 32,
@@ -194,7 +194,7 @@ class TargetSeriesTests(unittest.TestCase):
     def test_source_epoch_player_build_zone_session_and_pid_mismatches(self):
         baseline = report(10, A, 1)
         for field, value in [
-            ("processId", 3), ("processStartUtcTicks", "456"),
+            ("hostName", "OTHER-PC"), ("processId", 3), ("processStartUtcTicks", "456"),
             ("executableSha256", "B" * 64),
             ("playerUnitId", B), ("zoneIdCandidate", "z" + "0"*16),
             ("sourceEpoch", 53), ("sourceSessionId", "f" * 32),

@@ -41,7 +41,7 @@ def _stale_scope_candidate(report, target):
 
 
 def run(pid, output, *, count=3, interval_ms=500, scope_count=4,
-        recover_stale_scope=False, stop_on_aba=False,
+        recover_stale_scope=False, stop_on_aba=False, expected_host=None,
         collect=capture.collect, replay_target=replay.replay,
         combine=continuity.combine, sleep=time.sleep):
     """Preserve all original captures; refuse cross-epoch changes and stale windows."""
@@ -59,6 +59,7 @@ def run(pid, output, *, count=3, interval_ms=500, scope_count=4,
             and output.parent.is_dir(), "output-must-be-new-directory")
     output.mkdir()
     paths, observations, selected = [], [], None
+    host_option = {"expected_host": expected_host} if expected_host is not None else {}
     pinned_target, recovery_attempts = None, []
     merged, early_stop = None, False
     try:
@@ -70,6 +71,7 @@ def run(pid, output, *, count=3, interval_ms=500, scope_count=4,
                 "auto_scope": True, "include_native_target": True,
                 "scope_count": scope_count if index == 0 else 1,
                 "discover_scope": index == 0,
+                **host_option,
             }
             if selected is not None:
                 options["start_address"] = selected
@@ -110,7 +112,7 @@ def run(pid, output, *, count=3, interval_ms=500, scope_count=4,
                 path, report = collect(
                     pid, destination, auto_scope=True,
                     include_native_target=True, scope_count=scope_count,
-                    discover_scope=True)
+                    discover_scope=True, **host_option)
                 attempt["outcome"] = "completed-candidate"
             require(type(report) is dict
                     and type(report.get("target")) is dict
@@ -188,6 +190,7 @@ def run(pid, output, *, count=3, interval_ms=500, scope_count=4,
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--physical-pid", type=int, required=True)
+    parser.add_argument("--expected-host", help="require this local Windows hostname")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--count", type=int, default=3)
     parser.add_argument("--interval-ms", type=int, default=500)
@@ -205,7 +208,7 @@ def main(argv=None):
             count=args.count, interval_ms=args.interval_ms,
             scope_count=args.scope_count,
             recover_stale_scope=args.recover_stale_scope,
-            stop_on_aba=args.stop_on_aba)
+            stop_on_aba=args.stop_on_aba, expected_host=args.expected_host)
     except (OSError, ValueError, TypeError, KeyError, IndexError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:220],
                           "inputSent": False}))

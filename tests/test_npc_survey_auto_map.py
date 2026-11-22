@@ -168,23 +168,23 @@ class NPCMapScoutTests(unittest.TestCase):
         frames = [wire(10), wire(11)]
         candidates = [[({"address": f"0x{ADDRESS+i*4096:X}"}, raw)]
                       for i, raw in enumerate(frames)]
-        target = dict(TARGET)
+        target = dict(TARGET, hostName="RIFT-STATION")
         with TemporaryDirectory() as temp:
             saved = Path(temp) / "run"
             with (patch.object(npc.physical_rift, "select_physical",
                                return_value={"status": "ready", "target": target}),
                   patch.object(npc, "_target", side_effect=lambda v: v),
                   patch.object(npc, "_same_target", return_value=True),
-                  patch.object(npc, "PhysicalAdapter") as adapter,
+                  patch.object(npc.physical_rift, "read_native", return_value={
+                      "status": "complete", "target": target, "nativeValues": {"unitKey": "1"}}),
                   patch.object(npc, "scout_mapped", side_effect=candidates) as scout,
                   patch.object(npc.survival_live, "autodiscover_seed") as seeded,
                   patch.object(npc.time, "sleep")):
-                adapter.return_value.target = target
-                adapter.return_value.unit_key = "1"
-                report = npc.acquire("AMD-DESKTOP", 37676, NONCE, [UNIT],
+                report = npc.acquire("rift-station", 37676, NONCE, [UNIT],
                                      saved, attempts=2, auto_map=True)
                 seeded.assert_not_called()
             self.assertEqual(report["status"], "advancing")
+            self.assertEqual(report["host"], "RIFT-STATION")
             self.assertIsNone(report["seedIndex"])
             self.assertEqual(report["memoryLocator"], "bounded-readable-private-map")
             self.assertEqual(scout.call_count, 2)
@@ -214,11 +214,10 @@ class NPCMapScoutTests(unittest.TestCase):
                                return_value={"status": "ready", "target": target}),
                   patch.object(npc, "_target", side_effect=lambda v: v),
                   patch.object(npc, "_same_target", return_value=True),
-                  patch.object(npc, "PhysicalAdapter") as adapter,
+                  patch.object(npc.physical_rift, "read_native", return_value={
+                      "status": "complete", "target": target, "nativeValues": {"unitKey": "1"}}),
                   patch.object(npc, "scout_mapped", return_value=[]),
                   patch.object(npc.time, "sleep")):
-                adapter.return_value.target = target
-                adapter.return_value.unit_key = "1"
                 result = npc.acquire("AMD-DESKTOP", 37676, NONCE, [UNIT],
                                      dest, attempts=2, auto_map=True)
             self.assertEqual(result["status"], "blocked")

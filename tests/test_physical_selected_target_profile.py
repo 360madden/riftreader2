@@ -39,6 +39,8 @@ def target_doc(start, end, *, state="candidate", key=KEY, entity=ENTITY):
         "observation": {
             "identity": deepcopy(IDENTITY), "selfKey": int(SELF),
             "startedAtUtc": time(start), "completedAtUtc": time(end),
+            "beforeGuardStatus": ("fallback-key-candidate" if has
+                                  else "raw-getter-zero-candidate"),
             "targetEntity": entity if has else None,
             "targetKey": int(key) if has else None,
             "targetUnitId": (f"u{int(key):016X}" if has else None),
@@ -173,6 +175,13 @@ class SelectedTargetProfileTests(unittest.TestCase):
         self.assertTrue((self.output/"failure.json").is_file())
         self.assertFalse((self.output/"profile.json").exists())
         self.assertEqual(len(self.calls), 4)
+
+    def test_unreadable_guard_cannot_establish_no_target(self):
+        self.docs = [target_doc(0, 1, state="unavailable"),
+                     target_doc(8, 9, state="unavailable")]
+        self.docs[1]["observation"]["beforeGuardStatus"] = "guard-unreadable-or-invalid"
+        with self.assertRaisesRegex(ValueError, "no-target-unconfirmed"):
+            self.execute()
 
     def test_name_entity_change_withholds_name(self):
         self.docs[2]["fakeProjection"]["rows"][0]["entityAddressDecimal"] = "999999999"

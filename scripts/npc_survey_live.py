@@ -21,7 +21,6 @@ from scripts.capture_readerbridge_v3 import (
     CaptureError, _loads_json, _read_json, _run_native, _same_target, _target,
     _validate_scout, _validate_seed, _write_json,
 )
-from scripts.physical_waypoints import DEFAULT_BASIS, PhysicalAdapter
 
 PREFIX = b"RR2NPC1|"
 SUFFIX = b"|ENDRR2NPC1"
@@ -147,10 +146,11 @@ def scout_mapped(target, nonce, player_id, ids, *, page=None,
     host = expected_host if expected_host is not None else target.get("hostName")
     owner = owner_target if owner_target is not None else target
     pid = target.get("processId")
-    require(type(host) is str and host in physical_rift.SUPPORTED_HOSTS
+    require(physical_rift.valid_host_name(host)
             and type(pid) is int and pid > 0
             and type(owner) is dict
-            and owner.get("hostName") == host
+            and physical_rift.valid_host_name(owner.get("hostName"))
+            and owner["hostName"].casefold() == host.casefold()
             and _same_target(owner, target),
             "npc-mapped-scout-invalid-owner-contract")
     first_owner = selection_reader(expected_host=host, physical_pid=pid)
@@ -262,45 +262,57 @@ def acquire(host, pid, nonce, ids, output, seed_index=None, scan_mib=16,
         require(page is None and ids == requested_ids(",".join(ids)), "invalid-survey-selection")
     selection = physical_rift.select_physical(expected_host=host, physical_pid=pid)
     require(selection.get("status") == "ready", "physical-selection-not-ready")
-    target = _target(selection["target"])
-    adapter = PhysicalAdapter(host, pid, DEFAULT_BASIS)
-    require(_same_target(adapter.target, target), "survey-process-mismatch")
-    player_id = survival_live._canonical_unit_key(adapter.unit_key)
+    owner = selection["target"]
+    require(physical_rift.valid_host_name(owner.get("hostName"))
+            and owner["hostName"].casefold() == host.casefold(), "survey-host-mismatch")
+    host = owner["hostName"]
+    target = _target(owner)
     seed = None if auto_map else (Path(seed_index) if seed_index
                                   else survival_live.autodiscover_seed(target))
     if not auto_map:
         base, length = _validate_seed(_read_json(seed), target, scan_mib)
-    output = Path(output)
+    output = Path(output).absolute()
     output.mkdir(parents=True, exist_ok=False)
+    player = physical_rift.read_native(selection, "player-context",
+                                       output=output / "native-player-context.json")
+    require(player.get("status") == "complete" and player.get("target") == owner,
+            "survey-player-context-unavailable")
+    player_id = survival_live._canonical_unit_key(player["nativeValues"]["unitKey"])
     seen, sources, previous = {}, [], None
-    previous_at = None
+    previous_at = previous_utc = None
     for index in range(1, attempts+1):
         start = time.monotonic()
         candidates = (scout_mapped(
             target, nonce, player_id, ids, page=page,
-            expected_host=host, owner_target=selection["target"],
+            expected_host=host, owner_target=owner,
             diagnostics=output / f"attempt-{index}.locator.json")
                       if auto_map else
                       scout(target, base, length, output/f"attempt-{index}.scout"))
+        if not auto_map:
+            require(physical_rift.select_physical(host, pid).get("target") == owner,
+                    "survey-process-changed")
         elapsed = time.monotonic()-start
         if elapsed <= (locator.MAX_SECONDS + 1 if auto_map else 5):
             selected = newest(candidates, nonce, player_id, ids, seen, previous, page)
             if selected:
                 frame, source = selected
                 now = time.monotonic()
+                captured_at = datetime.now(timezone.utc)
                 retained = _retain_qualified_source(
                     candidates, source, output, len(sources) + 1)
                 sources.append(dict(source, epoch=frame["epoch"], sequence=frame["sequence"],
                                     frameTime=frame["frameTime"], attempt=index, readSeconds=elapsed,
-                                    capturedAtUtc=datetime.now(timezone.utc).isoformat(),
+                                    capturedAtUtc=captured_at.isoformat(),
                                     retainedWire=retained))
                 if previous is not None and (ids is not None or previous["units"].keys()==frame["units"].keys()):
-                    lag = max(0.0, (now-previous_at)-(frame["frameTime"]-previous["frameTime"]))
+                    host_elapsed = max(now - previous_at, (captured_at - previous_utc).total_seconds())
+                    lag = max(0.0, host_elapsed - (frame["frameTime"] - previous["frameTime"]))
                     require(lag<=2, "survey-relative-source-lag")
                     confirmed=sorted(key for key,row in frame["units"].items()
                                      if row["status"]=="observed" and previous["units"][key]["status"]=="observed")
                     report = {"schemaVersion": 1, "evidenceKind": "physical-npc-api-survey/1",
-                              "status": "advancing", "inputSent": False, "host":host, "target": target,
+                              "status": "advancing", "inputSent": False, "host":host,
+                              "target": dict(target, hostName=host),
                               "playerId": player_id, "seedIndex": str(seed) if seed is not None else None,
                                **({"memoryLocator": "bounded-readable-private-map",
                                    "memorySearchByteBudget": locator.MAX_SCAN_BYTES}
@@ -311,7 +323,7 @@ def acquire(host, pid, nonce, ids, output, seed_index=None, scan_mib=16,
                               "qualification":"confirmedUnitIds have exact Unit.Detail IDs in both advancing frames. For explicit IDs, list membership is diagnostic; for visible pages, listed membership is required in both lists. Missing relation is unknown; rawAttackable is undocumented. No range, line-of-sight or current-world authority."}
                     _write_json(output/"result.json", report)
                     return report
-                previous, previous_at = frame, now
+                previous, previous_at, previous_utc = frame, now, captured_at
         if index < attempts:
             time.sleep(.3)
     report = {"status":"blocked", "reason":"no-advancing-survey-pair", "inputSent":False,
