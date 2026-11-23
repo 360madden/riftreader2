@@ -62,10 +62,19 @@ def launch_saved_rerun(path):
     environment = dict(os.environ)
     environment["CI"] = "1"
     environment.pop("FORCE_RERUN_ANALYTICS", None)
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        probe = subprocess.run([*viewer, "--version"], cwd=ROOT, env=environment,
+                               stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                               timeout=8, check=False, creationflags=creationflags)
+    except subprocess.TimeoutExpired as error:
+        raise ValueError("optional-rerun-viewer-startup-timed-out") from error
+    require(probe.returncode == 0 and probe.stdout.startswith("rerun-cli "),
+            "optional-rerun-viewer-startup-failed: " + (probe.stderr.strip() or str(executable))[-300:])
     return subprocess.Popen([*viewer, "--bind", "127.0.0.1", "--port", "auto", str(recording)],
                             cwd=ROOT, env=environment, stdin=subprocess.DEVNULL,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                            creationflags=creationflags)
 
 
 def _relative_fields(mapping, directory, *fields):

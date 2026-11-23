@@ -75,8 +75,12 @@ saved XYZ route and actor bearing beside its screenshot/projections. It starts
 only on that click, binds its service to loopback and uses a child-only analytics
 opt-out. Set `RR2_RERUN_PYTHON` to an absolute local Python executable with
 [requirements-visualization.txt](../../requirements-visualization.txt) installed
-to use that environment for both export and viewing. Close the viewer normally
-before opening another recording from this button. A failed capture preserves
+to use that environment for both export and viewing. Open 3D view checks that
+the selected viewer can start and reports missing packages before it opens a
+window. To check an environment from PowerShell, run
+`& $env:RR2_RERUN_PYTHON -m rerun --version` after setting the interpreter path.
+Close the viewer normally before opening another recording from this button.
+A failed capture preserves
 the previous successful view; a new capture
 without an RRD disables its 3D button rather than opening an older recording.
 The ordinary **Open view** still opens the annotated PNG. **Recent routes** /
