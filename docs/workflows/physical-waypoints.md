@@ -153,6 +153,25 @@ their baseline output is retained under
 `artifacts/destination-plan-baseline-20261115-r1/baseline-check.txt`. This is not
 a claim that the complete GUI suite is green.
 
+### Export a saved destination plan
+
+Export an offline `adoptable` plan that covers the full named destination and
+uses a saved patch and Detour build. Set `$savedPlan` to `plan.json` and
+`$archiveOut` to a fresh local directory. Run from the RR2 checkout with its
+registered RiftWorld toolchain.
+
+```powershell
+$mapTools = Get-Content -Raw .local/riftworld-toolchain.json | ConvertFrom-Json
+& $mapTools.python -B scripts/archive_waypoint_destination.py --plan $savedPlan --out-dir $archiveOut
+```
+
+For older plans, pass `--native-context PATH` to supply the original context
+file. Its hash must match the one recorded during adoption. Before publishing
+`waypoints-destination.zip` and `handoff.json`, the exporter restores the archive
+and compares the new Detour candidate, route owner, coordinates, heights and
+stops with the saved result. Keep the ZIP and handoff together when copying it.
+[Verified Watch export](../../artifacts/watch-waypoints-exported-legion-20261123/verification.json)
+
 ### Replay the verified Watch route from a copied archive
 
 Keep the [Watch archive](../../artifacts/watch-waypoints-archive-legion-20261123/watch-waypoints.zip)

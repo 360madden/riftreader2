@@ -1143,6 +1143,9 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
         route = adopt_receipt_candidate(candidate, [Path(path).resolve() for path in native_receipts],
             Path(native_context).resolve(), candidate_start=candidate_start, candidate_end=end,
             native_start=native_start, native_end=native_end, direction="forward")
+        context_ref = _reference(native_context)
+        if context_ref["sha256"].casefold() != route["candidateAdoption"]["zoneContextSha256"].casefold():
+            raise ValueError("native-context-changed-after-adoption")
         if from_current:
             current_owner = observation["runtimeIdentity"]
             owner = route["candidateAdoption"]["owner"]
@@ -1155,7 +1158,7 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
             "qualification": deepcopy(receipt["qualification"])}
         route["candidateAdoption"]["integritySha256"] = _adoption_digest(route)
         write_json_atomic(route_path, route)
-        plan.update(status="adoptable", adoptedRoute=_reference(route_path),
+        plan.update(status="adoptable", adoptedRoute=_reference(route_path), nativeContext=context_ref,
                     destinationCovered=candidate_start == 0 and end == len(candidate["points"]) - 1)
         plan["stages"]["adoption"] = "adopted-corresponding-corridor"
         if execute:
@@ -1191,12 +1194,26 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
 
 
 def _archive_local_path(value, reason):
+    value = os.fspath(value)
+    if os.name == "nt" and value.startswith("\\\\?\\"):
+        value = value[4:]
+        if not re.match(r"^[A-Za-z]:\\", value):
+            raise ValueError(reason)
     path = _local_absolute_path(Path(value).absolute(), reason)
     # The provider's extraction directory adds a temporary prefix to deep map paths.
     if os.name == "nt":
         path = Path("\\\\?\\" + str(path))
         _plain_path(path)
     return path
+
+
+def _archived_route_result(candidate, route, *, include_geometry=False):
+    result = {"patchId": candidate["patchId"], "buildId": candidate["planner"]["buildId"],
+              "candidateId": candidate["candidateId"], "routeOwner": route["candidateAdoption"]["owner"],
+              "waypointCount": len(route["waypoints"]), "stops": route["pointKinds"].count("stop")}
+    if include_geometry:
+        result["routeGeometrySha256"] = _identity({key: route[key] for key in ("waypoints", "heights", "pointKinds")})
+    return result
 
 
 def replay_destination_archive(handoff_path, output_directory, *, riftworld_root=None,
@@ -1290,10 +1307,9 @@ def replay_destination_archive(handoff_path, output_directory, *, riftworld_root
 
     candidate, candidate_sha = _read(plan_directory / "candidate.json")
     route, route_sha = _read(plan_directory / "adopted-route.json")
-    actual = {"patchId": candidate["patchId"], "buildId": candidate["planner"]["buildId"],
-              "candidateId": candidate["candidateId"], "routeOwner": route["candidateAdoption"]["owner"],
-              "waypointCount": len(route["waypoints"]), "stops": route["pointKinds"].count("stop")}
-    if (actual != replay["expected"] or actual["patchId"] != patch_info["patchId"]
+    expected = replay["expected"]
+    actual = _archived_route_result(candidate, route, include_geometry="routeGeometrySha256" in expected)
+    if (actual != expected or actual["patchId"] != patch_info["patchId"]
             or candidate_sha != plan["candidate"]["sha256"] or route_sha != plan["adoptedRoute"]["sha256"]):
         raise ValueError("destination-archive-replay-result-mismatch")
     verify_members()
