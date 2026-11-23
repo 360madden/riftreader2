@@ -40,8 +40,10 @@ For a single local WGC capture, run the following from the repository root with 
 
 ```powershell
 $rr2Host = [Environment]::MachineName
-python scripts/physical_rift.py --expected-host $rr2Host
-python scripts/observe_target.py --target physical --expected-host $rr2Host --physical-pid CURRENT_PID --physical-capture-backend wgc
+$rr2Python = $env:RIFTREADER2_PYTHON
+if (!$rr2Python) { $rr2Python = 'python' }
+& $rr2Python scripts/physical_rift.py --expected-host $rr2Host
+& $rr2Python scripts/observe_target.py --target physical --expected-host $rr2Host --physical-pid CURRENT_PID --physical-capture-backend wgc
 ```
 
 For *read-only identity inspection*, supply current values for a visible, non-cloaked target from the same machine:

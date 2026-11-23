@@ -8,13 +8,16 @@ open, pass the chosen PID to both commands.
 
 ```powershell
 $rr2Host = [Environment]::MachineName
-python scripts/physical_rift.py --expected-host $rr2Host
-python scripts/observe_target.py --target physical --expected-host $rr2Host --physical-pid CURRENT_PID --physical-capture-backend wgc
+$rr2Python = $env:RIFTREADER2_PYTHON
+if (!$rr2Python) { $rr2Python = 'python' }
+& $rr2Python scripts/physical_rift.py --expected-host $rr2Host
+& $rr2Python scripts/observe_target.py --target physical --expected-host $rr2Host --physical-pid CURRENT_PID --physical-capture-backend wgc
 ```
 
 The second command is for a reviewed, focus-neutral WGC capture. It requires the
 local WGC probe build, Pillow in the selected Python environment, and the
-Workbridge desktop-evidence directory. The observer
+Workbridge desktop-evidence directory. Set `RIFTREADER2_PYTHON` to an absolute
+interpreter path if the Python on PATH lacks Pillow. The observer
 returns a receipt named for the verified host. You can also select it explicitly
 with `--target physical-HOST`, using the local hostname in place of `HOST`.
 The existing `physical-amd-desktop` and `physical-legion` arguments remain valid.
@@ -40,9 +43,9 @@ report includes the executable and version it checked.
 
 ```powershell
 $rr2Host = [Environment]::MachineName
-python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies
-python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies --physical-capture-backend wgc
-python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies --physical-capture-backend workbridge
+& $rr2Python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies
+& $rr2Python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies --physical-capture-backend wgc
+& $rr2Python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies --physical-capture-backend workbridge
 ```
 
 The check covers both backends by default. Choose a backend to check its
@@ -71,7 +74,7 @@ reader. Pass the same option on the capture command to use that executable
 for both reads around the frame.
 
 ```powershell
-python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies --physical-capture-backend wgc --native-facing --native-reader $rr2PublishedReader
+& $rr2Python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies --physical-capture-backend wgc --native-facing --native-reader $rr2PublishedReader
 ```
 
 Use the [native reader publish steps](development.md#publish-the-local-native-reader)
@@ -216,11 +219,11 @@ shared-desktop ownership and authority; omit it while Joey is using the PC
 unless that foreground change has been authorized.
 
 ```powershell
-& 'C:\work\riftreader2\.venv\Scripts\python.exe' scripts/observe_target.py --target physical-amd-desktop --expected-host AMD-DESKTOP --allow-foreground-change --preview
+& $rr2Python scripts/observe_target.py --target physical --expected-host $rr2Host --physical-pid CURRENT_PID --physical-capture-backend workbridge --allow-foreground-change --preview
 ```
 
-The default without `--allow-foreground-change` is a blocked result. The
-registered Workbridge backend retains its shared desktop turn and quarantine
+The Workbridge backend requires `--allow-foreground-change` and retains its
+shared desktop turn and quarantine
 checks; the flag does not override those checks or authorize game input.
 Fresh PID/start/build/HWND checks bracket the capture; absent RIFT reports
 `not-running`, not another target's image. With multiple `rift_x64` processes,

@@ -59,12 +59,20 @@ framework or retrofit every historical app before delivering useful work.
 Run read-only native, Telemetry, and NPC survey workflows on the verified local
 Windows host running RIFT. Pin one local `rift_x64` PID and recheck its start
 time, executable hash and window as applicable. Work on one host per session.
-Start with the read-only selector, which reports process identity without
-interacting with the game window.
+Use PowerShell 7 for these examples. Set the local hostname and choose the
+interpreter for the rest of the examples in this section.
 
 ```powershell
 $rr2Host = [Environment]::MachineName
-python scripts/physical_rift.py --expected-host $rr2Host
+$rr2Python = $env:RIFTREADER2_PYTHON
+if (!$rr2Python) { $rr2Python = 'python' }
+```
+
+The read-only selector reports process identity without interacting with the
+game window.
+
+```powershell
+& $rr2Python scripts/physical_rift.py --expected-host $rr2Host
 # With multiple physical RIFT instances, pass --physical-pid with the chosen PID.
 ```
 
@@ -74,7 +82,7 @@ to the checkout's Debug build. Use `--native-reader` with an absolute local path
 to select a published build for a dependency check or a `--read-native` command.
 
 ```powershell
-python -B scripts/physical_rift.py --expected-host $rr2Host --check-native-reader
+& $rr2Python -B scripts/physical_rift.py --expected-host $rr2Host --check-native-reader
 ```
 
 ### Publish the local native reader
@@ -95,7 +103,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Native reader restore failed.' }
 & $rr2DotNet publish $rr2LiveProject -c Release --no-restore -o $rr2Publish
 if ($LASTEXITCODE -ne 0) { throw 'Native reader publish failed.' }
 $rr2PublishedReader = Join-Path $rr2Publish 'RiftReader2.Live.exe'
-python -B scripts/physical_rift.py --expected-host $rr2Host --check-native-reader --native-reader $rr2PublishedReader
+& $rr2Python -B scripts/physical_rift.py --expected-host $rr2Host --check-native-reader --native-reader $rr2PublishedReader
 ```
 
 Add `--native-reader $rr2PublishedReader` to use that build in the following
@@ -112,7 +120,7 @@ movement calibration measured on the Windows host that will run Waypoints.
 | Workflow | Setting | Local prerequisite |
 | --- | --- | --- |
 | Full development validation | `RIFTREADER2_DOTNET`, `RIFTREADER2_LUA_PYTHON` or `RIFTREADER2_PYTHON` | [Pinned SDK and prepared Python](#restore-build-and-test) |
-| Waypoints launcher and CLI | `RIFTREADER2_PYTHON` | Python with Tcl/Tk |
+| Physical workflows and Waypoints | `RIFTREADER2_PYTHON` | Python with Tcl/Tk for Waypoints and Pillow for WGC |
 | Waypoints prepared maps | `RR2_RIFTWORLD_ROOT`, `RR2_RIFTWORLD_PYTHON` | [Local RiftWorld checkout and its Python](physical-waypoints.md#prepared-map-destinations) |
 | Native physical reads and Waypoints | `RR2_NATIVE_READER` | [Published Live reader](#publish-the-local-native-reader) |
 | Waypoints calibration | `RR2_WAYPOINTS_BASIS` | [Verified calibration folder](physical-waypoints.md#local-calibration-and-dependency-checks) |
@@ -122,8 +130,10 @@ movement calibration measured on the Windows host that will run Waypoints.
 | Rerun export and viewer | `RR2_RERUN_PYTHON` | Python with [visualization requirements](../../requirements-visualization.txt) |
 | Shared desktop evidence and Workbridge capture | `RR2_WORKBRIDGE_ROOT`, `RR2_WORKBRIDGE_CLI_ROOT`, `RR2_WORKBRIDGE_NODE` | [Active local deployment, matching CLI, and Node.js 24+](target-observation.md#active-workflow-on-the-local-windows-host) |
 
-Run these dependency checks from the checkout. The WGC check also starts the
-native facing reader in help mode. Workbridge checks its own capture setup.
+Run the checks for the workflows you will use. The WGC check uses the selected
+Python for image verification and starts the native facing reader in help mode.
+The addon checks report installed or startup dependencies. Active publishers
+and a current process are verified during acquisition.
 
 ```powershell
 $rr2Host = [Environment]::MachineName
@@ -132,28 +142,31 @@ if (!$rr2Python) { $rr2Python = 'python' }
 .\rr2-waypoints.cmd doctor --local --dependencies-only
 & $rr2Python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies --physical-capture-backend wgc --native-facing
 & $rr2Python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies --physical-capture-backend workbridge
+& $rr2Python -B scripts/capture_readerbridge_v3.py --expected-host $rr2Host --check-dependencies
+& $rr2Python -B scripts/prepare_physical_npc_survey.py --expected-host $rr2Host --check-dependencies --include-levels
+& $rr2Python -B scripts/capture_physical_telemetry_target_series.py --expected-host $rr2Host --check-dependencies
 .\scripts\validate.ps1 -CheckPrerequisites
 ```
 
 ### Read native telemetry
 
 ```powershell
-python scripts/physical_rift.py --expected-host $rr2Host --read-native vitals
+& $rr2Python scripts/physical_rift.py --expected-host $rr2Host --read-native vitals
 # Also: position, orientation, actor-pose, smoothed-scalar, player-context, selected-target, stats.
 # For read-only actor/model/render matrix candidates (NOT qualified body heading):
-python scripts/physical_rift.py --expected-host $rr2Host --read-native actor-pose
+& $rr2Python scripts/physical_rift.py --expected-host $rr2Host --read-native actor-pose
 # Facing matrix plus direct player-system yaw and camera/aim-point candidates:
-python scripts/physical_rift.py --expected-host $rr2Host --read-native facing --samples 5 --interval-ms 60
+& $rr2Python scripts/physical_rift.py --expected-host $rr2Host --read-native facing --samples 5 --interval-ms 60
 # Bounded loaded-unit positions, distances from self and candidate screen points:
-python scripts/physical_rift.py --expected-host $rr2Host --physical-pid CURRENT_PID --read-native unit-positions --unit-limit 512
+& $rr2Python scripts/physical_rift.py --expected-host $rr2Host --physical-pid CURRENT_PID --read-native unit-positions --unit-limit 512
 # For a bounded passive actor/model/render pose time series under one native lease:
-python scripts/physical_rift.py --expected-host $rr2Host --read-native actor-pose --samples 10 --interval-ms 100
+& $rr2Python scripts/physical_rift.py --expected-host $rr2Host --read-native actor-pose --samples 10 --interval-ms 100
 # For four native entity-owned, unqualified smooth-state scalar candidates:
-python scripts/physical_rift.py --expected-host $rr2Host --read-native smoothed-scalar --samples 5 --interval-ms 100
+& $rr2Python scripts/physical_rift.py --expected-host $rr2Host --read-native smoothed-scalar --samples 5 --interval-ms 100
 # For a short read-only movement-observation burst:
-python scripts/physical_rift.py --expected-host $rr2Host --read-native position --samples 10 --interval-ms 0
+& $rr2Python scripts/physical_rift.py --expected-host $rr2Host --read-native position --samples 10 --interval-ms 0
 # For repeated HP/resource observations under one native session:
-python scripts/physical_rift.py --expected-host $rr2Host --read-native vitals --samples 10 --interval-ms 0
+& $rr2Python scripts/physical_rift.py --expected-host $rr2Host --read-native vitals --samples 10 --interval-ms 0
 # Add --physical-pid PID if more than one local RIFT instance is running.
 ```
 
@@ -163,8 +176,8 @@ identity and sampled player key consistent. Use a fresh output directory to
 retain both raw reports and replay the candidate displacement offline.
 
 ```powershell
-python -B scripts/physical_manual_motion_probe.py --host $rr2Host --pid CURRENT_PID --seconds 2 --native-reader $rr2PublishedReader --output artifacts/NEW_MANUAL_MOTION
-python -B scripts/physical_manual_motion_probe.py --replay artifacts/NEW_MANUAL_MOTION/manual-motion.json
+& $rr2Python -B scripts/physical_manual_motion_probe.py --host $rr2Host --pid CURRENT_PID --seconds 2 --native-reader $rr2PublishedReader --output artifacts/NEW_MANUAL_MOTION
+& $rr2Python -B scripts/physical_manual_motion_probe.py --replay artifacts/NEW_MANUAL_MOTION/manual-motion.json
 ```
 
 The report records both sample times and the XYZ delta. The observer sends no
@@ -175,7 +188,7 @@ Before selecting RIFT for a Telemetry target series, check the local 64-bit
 Windows Python and both native reader commands.
 
 ```powershell
-python -B scripts/capture_physical_telemetry_target_series.py --check-dependencies --expected-host $rr2Host --native-reader $rr2PublishedReader
+& $rr2Python -B scripts/capture_physical_telemetry_target_series.py --check-dependencies --expected-host $rr2Host --native-reader $rr2PublishedReader
 ```
 
 The dependency check requires no PID and writes no capture files. To confirm the
@@ -190,11 +203,11 @@ Documents folder. Pass `--installed-casting-dir` for a custom installation.
 Run the capture command after the operator binds the nonce in RIFT.
 
 ```powershell
-python -B scripts/physical_nearby_units.py --expected-host $rr2Host --physical-pid CURRENT_PID --include-levels --output-dir artifacts/NEW_NEARBY
-python -B scripts/collect_physical_player_state.py --expected-host $rr2Host --physical-pid CURRENT_PID --include-stats --include-zone --output-dir artifacts/NEW_PLAYER_STATE
-python -B scripts/capture_physical_telemetry_target_series.py --expected-host $rr2Host --physical-pid CURRENT_PID --native-reader $rr2PublishedReader --output-dir artifacts/NEW_TARGET_SERIES
-python -B scripts/prepare_physical_npc_survey.py --check-dependencies --expected-host $rr2Host --include-levels
-python -B scripts/prepare_physical_npc_survey.py --expected-host $rr2Host --physical-pid CURRENT_PID --include-levels --output-dir artifacts/NEW_NPC_PLAN
+& $rr2Python -B scripts/physical_nearby_units.py --expected-host $rr2Host --physical-pid CURRENT_PID --include-levels --output-dir artifacts/NEW_NEARBY
+& $rr2Python -B scripts/collect_physical_player_state.py --expected-host $rr2Host --physical-pid CURRENT_PID --include-stats --include-zone --output-dir artifacts/NEW_PLAYER_STATE
+& $rr2Python -B scripts/capture_physical_telemetry_target_series.py --expected-host $rr2Host --physical-pid CURRENT_PID --native-reader $rr2PublishedReader --output-dir artifacts/NEW_TARGET_SERIES
+& $rr2Python -B scripts/prepare_physical_npc_survey.py --check-dependencies --expected-host $rr2Host --include-levels
+& $rr2Python -B scripts/prepare_physical_npc_survey.py --expected-host $rr2Host --physical-pid CURRENT_PID --include-levels --output-dir artifacts/NEW_NPC_PLAN
 ```
 
 For a published build, pass `--native-reader $rr2PublishedReader` to
@@ -214,8 +227,8 @@ and history reports retain the capture host, process identity and sample times.
 `--after` compares two ordered captures from the same process on the same host.
 
 ```powershell
-python -B scripts/replay_physical_player_state.py --summary artifacts/NEW_PLAYER_STATE/summary.json
-python -B scripts/replay_physical_player_state.py --summary artifacts/EARLIER_PLAYER_STATE/summary.json --after artifacts/NEW_PLAYER_STATE/summary.json
+& $rr2Python -B scripts/replay_physical_player_state.py --summary artifacts/NEW_PLAYER_STATE/summary.json
+& $rr2Python -B scripts/replay_physical_player_state.py --summary artifacts/EARLIER_PLAYER_STATE/summary.json --after artifacts/NEW_PLAYER_STATE/summary.json
 ```
 
 For captures from distinct RIFT processes on the same host and executable
@@ -226,7 +239,7 @@ layouts agree. The report describes numeric agreement across separate epochs.
 Player continuity, action causation and independent Lua agreement remain unverified.
 
 ```powershell
-python -B scripts/compare_physical_player_state_epochs.py --before artifacts/BEFORE_RESTART/summary.json --after artifacts/AFTER_RESTART/summary.json
+& $rr2Python -B scripts/compare_physical_player_state_epochs.py --before artifacts/BEFORE_RESTART/summary.json --after artifacts/AFTER_RESTART/summary.json
 ```
 
 The RR2A1 collector compares advancing unbound addon coordinates with native
@@ -249,9 +262,9 @@ $rr2DecoderCli = Join-Path $rr2DecoderFolder 'RiftReader2.Cli.dll'
 ```
 
 ```powershell
-python -B scripts/collect_physical_rr2a1_pair.py --expected-host $rr2Host --physical-pid CURRENT_PID --native-reader $rr2PublishedReader --output-dir artifacts/NEW_RR2A1_PAIR
-python -B scripts/probe_physical_rr2r1.py --expected-host $rr2Host --physical-pid CURRENT_PID --native-reader $rr2PublishedReader --max-scans 1 --output-dir artifacts/NEW_RR2R1_SCAN
-python -B scripts/probe_physical_rr2r1.py --replay-summary artifacts/NEW_RR2R1_SCAN/summary.json --output-dir artifacts/NEW_RR2R1_REPLAY
+& $rr2Python -B scripts/collect_physical_rr2a1_pair.py --expected-host $rr2Host --physical-pid CURRENT_PID --native-reader $rr2PublishedReader --output-dir artifacts/NEW_RR2A1_PAIR
+& $rr2Python -B scripts/probe_physical_rr2r1.py --expected-host $rr2Host --physical-pid CURRENT_PID --native-reader $rr2PublishedReader --max-scans 1 --output-dir artifacts/NEW_RR2R1_SCAN
+& $rr2Python -B scripts/probe_physical_rr2r1.py --replay-summary artifacts/NEW_RR2R1_SCAN/summary.json --output-dir artifacts/NEW_RR2R1_REPLAY
 # For nonce-bound replay, also pass --session-id ACTIVE_NONCE --cli $rr2DecoderCli --dotnet $rr2DotNet.
 ```
 
@@ -262,7 +275,7 @@ receipts, the recorded host and process identity, the reader hash, and the
 resume cursor. These are offline checks and can run from a different checkout.
 
 ```powershell
-python -B scripts/probe_physical_rr2r1.py --replay-summary artifacts/RESUMED_RR2R1_SCAN/summary.json --resume-source-summary artifacts/PREVIOUS_RR2R1_SCAN/summary.json --output-dir artifacts/NEW_RESUME_REPLAY
+& $rr2Python -B scripts/probe_physical_rr2r1.py --replay-summary artifacts/RESUMED_RR2R1_SCAN/summary.json --resume-source-summary artifacts/PREVIOUS_RR2R1_SCAN/summary.json --output-dir artifacts/NEW_RESUME_REPLAY
 ```
 
 The facing result includes `nativeValues.opticalCamera` for the supported selected
@@ -309,7 +322,7 @@ For one reviewed screenshot with a matching native position, facing and target
 snapshot, use the observation entry point on the verified local host.
 
 ```powershell
-python scripts/observe_target.py --target physical --expected-host $rr2Host --physical-pid CURRENT_PID --native-facing
+& $rr2Python scripts/observe_target.py --target physical --expected-host $rr2Host --physical-pid CURRENT_PID --native-facing
 ```
 
 This selects the WGC probe and brackets the image with native reads. It never
@@ -333,7 +346,7 @@ For a **single-command, read-only** distance/progress preview against an existin
 named anchor (replace the example catalog and ID with actual saved values):
 
 ```powershell
-python scripts/physical_rift.py --expected-host $rr2Host --physical-pid CURRENT_PID --read-native position --samples 10 --interval-ms 100 --anchor-catalog config/my-anchors.json --anchor-id North_Gate
+& $rr2Python scripts/physical_rift.py --expected-host $rr2Host --physical-pid CURRENT_PID --read-native position --samples 10 --interval-ms 100 --anchor-catalog config/my-anchors.json --anchor-id North_Gate
 ```
 
 The `offlineAnchorPreview` is candidate X/Z arithmetic only. It never authorizes
@@ -467,7 +480,7 @@ before checking reservation availability or preparing paired configs:
 $rrHost = [Environment]::MachineName
 Get-Process -Name rift_x64 | Select-Object Id, MainWindowHandle
 $rrPid = <verified RIFT PID>
-python scripts/physical_reservation_preflight.py --host $rrHost --pid $rrPid
+& $rr2Python scripts/physical_reservation_preflight.py --host $rrHost --pid $rrPid
 ```
 
 The preflight samples the exact host, PID, start ticks and executable SHA. It
