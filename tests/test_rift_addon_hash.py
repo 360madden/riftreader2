@@ -27,9 +27,30 @@ class HashTests(unittest.TestCase):
                 run.return_value.returncode = 0
                 run.return_value.stdout = "123abc\n"
                 manifest = module.source_manifest(folder)
+                commands = [call.args[0] for call in run.call_args_list]
+            self.assertEqual(commands, [
+                ["git", "-C", str(folder), "ls-files", "--error-unmatch", "--", *module.FILES],
+                ["git", "-C", str(folder), "rev-parse", "--verify", "HEAD"],
+            ])
+            self.assertEqual(manifest["sourceGitHead"], "123abc")
             self.assertEqual(list(manifest["files"]), list(module.FILES))
             self.assertEqual(manifest["files"]["UI.lua"]["sha256"],
                              hashlib.sha256(b"UI.lua").hexdigest().upper())
+
+    def test_source_copy_can_be_hashed_without_git_or_tracking(self):
+        with tempfile.TemporaryDirectory() as root:
+            folder = Path(root)
+            for name in module.FILES:
+                (folder / name).write_bytes(name.encode())
+            with patch.object(module.subprocess, "run", side_effect=FileNotFoundError):
+                no_git = module.source_manifest(folder)
+            with patch.object(module.subprocess, "run") as run:
+                run.return_value.returncode = 1
+                untracked = module.source_manifest(folder)
+                run.assert_called_once()
+            self.assertIsNone(no_git["sourceGitHead"])
+            self.assertEqual(len(no_git["files"]), 9)
+            self.assertEqual(untracked, no_git)
 
     def test_source_rejects_oversized_file(self):
         with tempfile.TemporaryDirectory() as root:
@@ -63,18 +84,31 @@ class HashTests(unittest.TestCase):
         installed = {"complete": True, "machine": "RIFT-STATION", "files": [
             {"name": name, "status": "hashed", "sha256": "A" * 64} for name in module.FILES]}
         with (tempfile.TemporaryDirectory() as root,
-              patch.object(module, "ROOT", Path(root)),
+              patch.object(module, "ROOT", Path(root) / "RR2 checkout"),
+              patch.dict(module.os.environ, RR2_APIATLAS_SOURCE=""),
               patch.object(module.socket, "gethostname", return_value="RIFT-STATION"),
-              patch.object(module, "source_manifest", return_value=source),
+              patch.object(module, "source_manifest", return_value=source) as manifest,
               patch.object(module, "run_pc", return_value=installed) as pc,
               patch.object(module, "run_lab") as lab,
               redirect_stdout(StringIO()) as report):
             self.assertEqual(module.main(["--expected-host", "rift-station"]), 0)
+        manifest.assert_called_once_with(Path(root) / "API Atlas/addon/ApiAtlas")
         pc.assert_called_once()
         lab.assert_not_called()
         result = json.loads(report.getvalue())
         self.assertEqual(list(result["targets"]), ["pc"])
         self.assertTrue(result["comparison"]["allCheckedTargetsMatchSource"])
+
+    def test_configured_source_is_used_until_explicitly_overridden(self):
+        with tempfile.TemporaryDirectory() as root:
+            configured = Path(root) / "source folder"
+            explicit = Path(root) / "explicit source"
+            with patch.dict(module.os.environ, RR2_APIATLAS_SOURCE=str(configured)), \
+                 patch.object(module, "source_manifest", side_effect=module.HashError("fixture")) as manifest, \
+                 redirect_stdout(StringIO()):
+                self.assertEqual(module.main([]), 2)
+                self.assertEqual(module.main(["--source", str(explicit)]), 2)
+            self.assertEqual([call.args for call in manifest.call_args_list], [(configured,), (explicit,)])
 
     def test_local_helper_uses_registered_folder_and_checks_report_identity(self):
         with tempfile.TemporaryDirectory() as root:

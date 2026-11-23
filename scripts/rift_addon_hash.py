@@ -9,6 +9,7 @@ import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import socket
@@ -19,7 +20,6 @@ import uuid
 from rift_addon_inventory import GUEST_ADDONS, HOST_PS, observe_physical
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = Path(r"C:\work\API Atlas\addon\ApiAtlas")
 GUEST_SCRIPT = ROOT / "scripts" / "rift_addon_hash_guest.ps1"
 GUEST_LOCAL = r"C:\Users\mrkoo\AppData\Local\RiftReader2\addon-hash"
 FILES = (
@@ -34,7 +34,30 @@ class HashError(RuntimeError):
     pass
 
 
-def source_manifest(source: Path = SOURCE) -> dict:
+def _source_path(override: Path | None = None) -> Path:
+    if override is not None:
+        return override
+    configured = os.environ.get("RR2_APIATLAS_SOURCE")
+    return Path(configured) if configured else ROOT.parent / "API Atlas/addon/ApiAtlas"
+
+
+def _source_git_head(source: Path) -> str | None:
+    """Report a checkout revision only when Git tracks the compared files."""
+    git = ["git", "-C", str(source)]
+    try:
+        tracked = subprocess.run([*git, "ls-files", "--error-unmatch", "--", *FILES],
+                                 capture_output=True, encoding="utf-8", errors="replace", timeout=15, check=False)
+        if tracked.returncode != 0:
+            return None
+        head = subprocess.run([*git, "rev-parse", "--verify", "HEAD"],
+                              capture_output=True, encoding="utf-8", errors="replace", timeout=15, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return head.stdout.strip() if head.returncode == 0 else None
+
+
+def source_manifest(source: Path | None = None) -> dict:
+    source = _source_path(source)
     files, total = {}, 0
     for name in FILES:
         path = source / name
@@ -46,11 +69,7 @@ def source_manifest(source: Path = SOURCE) -> dict:
             raise HashError("source-size-limit:" + name)
         files[name] = {"bytes": size,
                        "sha256": hashlib.sha256(path.read_bytes()).hexdigest().upper()}
-    git = subprocess.run(["git", "-C", str(source.parents[1]), "rev-parse", "HEAD"],
-                         capture_output=True, text=True, timeout=15, check=False)
-    return {"source": str(source),
-            "sourceGitHead": git.stdout.strip() if git.returncode == 0 else None,
-            "files": files}
+    return {"source": str(source), "sourceGitHead": _source_git_head(source), "files": files}
 
 
 def validate_report(data: dict, target: str) -> dict:
@@ -173,8 +192,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--target", choices=("pc", "lab1", "lab2", "all"), default="pc")
     parser.add_argument("--expected-host", help="Verify the requested Windows hostname for the pc target")
     parser.add_argument("--pc-folder", type=Path, help="Override the detected local ApiAtlas addon folder")
-    parser.add_argument("--source", type=Path, default=SOURCE,
-                        help="Local ApiAtlas source folder containing RiftAddon.toc")
+    parser.add_argument("--source", type=Path,
+                        help="Local ApiAtlas source folder containing RiftAddon.toc "
+                             "(default: RR2_APIATLAS_SOURCE or a sibling API Atlas checkout)")
     args = parser.parse_args(argv)
     if args.expected_host is not None:
         if args.target != "pc" or not observe_physical.valid_host_name(args.expected_host):
@@ -185,13 +205,14 @@ def main(argv: list[str] | None = None) -> int:
                                                 "machine": actual_host, "expectedHost": args.expected_host}}}))
             return 2
 
+    source_path = _source_path(args.source)
     try:
-        source_folder = args.source.absolute()
+        source_folder = source_path.absolute()
         if source_folder.drive.startswith(("\\", "/")):
             raise HashError("source-folder-must-be-local")
         source = source_manifest(source_folder)
     except (HashError, OSError, subprocess.SubprocessError) as error:
-        print(json.dumps({"source": str(args.source), "error": str(error)}))
+        print(json.dumps({"source": str(source_path), "error": str(error)}))
         return 2
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8]
     run_root = ROOT / "artifacts" / "addon-hash" / run_id

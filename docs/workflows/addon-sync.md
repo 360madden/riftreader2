@@ -49,8 +49,14 @@ installed copy in Windows' configured Documents folder.
 & $rr2Python -B scripts/rift_addon_hash.py --expected-host $rr2Host --source $rr2ApiAtlasSource
 ```
 
-For a custom installation, pass the installed `ApiAtlas` folder itself to
-`--pc-folder`. The report checks nine Lua and TOC files. Exit code 0 means all
+The source defaults to `addon/ApiAtlas` under an `API Atlas` checkout beside
+RiftReader2. Set `RR2_APIATLAS_SOURCE` to use another local folder. The `--source`
+option takes precedence. The comparison also works on an exported source folder
+without Git. It records a Git revision when Git tracks all nine compared files.
+
+For a custom installation, set `RR2_RIFT_ADDONS_ROOT` to the installed `AddOns`
+directory or pass the installed `ApiAtlas` folder itself to `--pc-folder`.
+The report checks nine Lua and TOC files. Exit code 0 means all
 nine hashes were collected. Use `comparison.allCheckedTargetsMatchSource` and
 the per-file results to check parity. Exit code 2 reports an incomplete check.
 Reading pinned cloud files may hydrate them. Use the metadata inventory when

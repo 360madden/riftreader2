@@ -7,7 +7,7 @@ RIFT guest, use the [Lab Codex jobs workflow](lab-codex.md).
 
 ## Open and orient
 
-Open `C:\work\riftreader2` as the project folder in Codex. Read root
+Open your local RiftReader2 checkout as the project folder in Codex. Read root
 `AGENTS.md`, current status, and only the topic relevant to the task. Use
 [the architecture](../architecture.md) for module boundaries and
 [the development workflow](development.md) for the authoritative validation
@@ -15,7 +15,7 @@ command.
 
 Suggested resumption prompt:
 
-> Work in C:\work\riftreader2. Read AGENTS.md and docs/status.md, then the
+> Work in this RiftReader2 checkout. Read AGENTS.md and docs/status.md, then the
 > documents relevant to my request. Preserve the modular boundaries in
 > docs/architecture.md and use scripts/validate.ps1 for the full gate. Treat V1
 > as evidence and reference material, not an architecture to copy. State what
