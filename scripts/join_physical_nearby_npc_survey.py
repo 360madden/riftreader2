@@ -93,6 +93,10 @@ def _seconds(before, after):
     return (right - left).total_seconds() + (b - a) / 10_000_000
 
 
+def _level_candidate(value):
+    return value if type(value) is int and 1 <= value <= 1000 else None
+
+
 def correlate(nearby_report, survey, *, max_gap_seconds=30.0,
               position_tolerance=5.0):
     """Conservative per-unit candidate join. Missing critical fields stay unknown."""
@@ -122,8 +126,10 @@ def correlate(nearby_report, survey, *, max_gap_seconds=30.0,
     gap = _seconds(native_completed, api["sampledAtUtc"])
     source_span = _seconds(native_started, api["sampledAtUtc"])
     require(0 <= gap <= source_span <= max_gap_seconds, "native-api-source-gap")
+    api_pair_span = _seconds(api["sourceReceipts"][-2]["capturedAtUtc"], api["sampledAtUtc"])
     approved = set(api["confirmedUnitIds"])
     source_rows = api["snapshot"]["units"]
+    previous_rows = api["previousSnapshot"]["units"]
     rows = []
     for row in native["samples"]:
         unit_id = row["unitIdCandidate"]
@@ -147,9 +153,16 @@ def correlate(nearby_report, survey, *, max_gap_seconds=30.0,
         coordinate_match = (complete_xyz and planar <= position_tolerance
                             and height <= position_tolerance)
         corroborated = confirmed and name_match and coordinate_match
-        candidate_level = detail.get("level") if corroborated else None
-        valid_level = (type(candidate_level) is int
-                       and 1 <= candidate_level <= 1000)
+        candidate_level = _level_candidate(detail.get("level")) if corroborated else None
+        previous_level = _level_candidate(previous_rows[unit_id].get("level")) if corroborated else None
+        level_evidence = "unavailable"
+        if previous_level is not None and candidate_level is not None:
+            if api_pair_span > max_gap_seconds:
+                level_evidence = "outside-time-window"
+            elif previous_level != candidate_level:
+                level_evidence = "changed-between-samples"
+            else:
+                level_evidence = "stable-candidate"
         candidate_relation = detail.get("relation") if corroborated else None
         native_level = row.get("numericLevelCandidate")
         rows.append({
@@ -166,9 +179,11 @@ def correlate(nearby_report, survey, *, max_gap_seconds=30.0,
             "verticalPositionDeltaCandidate": height,
             "positionAgreement": ("within-tolerance" if coordinate_match
                                   else "outside-tolerance" if complete_xyz else "unavailable"),
-            "apiLevelCandidate": candidate_level if valid_level else None,
+            "apiLevelCandidate": candidate_level,
+            "apiPreviousLevelCandidate": previous_level,
+            "apiLevelEvidenceStatus": level_evidence,
             **({"nativeNumericLevelCandidate": native_level,
-                "levelAgreement": ("unavailable" if native_level is None or not valid_level
+                "levelAgreement": ("unavailable" if native_level is None or level_evidence != "stable-candidate"
                                    else "matching-candidates" if native_level == candidate_level
                                    else "different-candidates")}
                if "numericLevelCandidate" in row else {}),
@@ -193,6 +208,7 @@ def correlate(nearby_report, survey, *, max_gap_seconds=30.0,
         "playerId": api["playerId"],
         "sourceGapSeconds": gap,
         "maximumSourceAgeSeconds": source_span,
+        "apiPairSpanSeconds": api_pair_span,
         "maximumSourceGapSeconds": max_gap_seconds,
         "maximumPositionDeviation": position_tolerance,
         "nativeNearbyCount": len(rows),

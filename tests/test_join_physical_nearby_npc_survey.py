@@ -77,8 +77,8 @@ class NearbyNpcJoinTests(unittest.TestCase):
         self.make_npc()
 
     def make_npc(self, *, name="Unit 1", x=7430, level=13,
-                 relation="hostile", player=False):
-        first = npc_frame(1, name=name, x=x, level=level,
+                 previous_level=None, relation="hostile", player=False):
+        first = npc_frame(1, name=name, x=x, level=level if previous_level is None else previous_level,
                           relation=relation, player=player)
         after = npc_frame(2, name=name, x=x, level=level,
                           relation=relation, player=player)
@@ -123,6 +123,8 @@ class NearbyNpcJoinTests(unittest.TestCase):
         self.assertEqual(row["nameAgreement"], "matches")
         self.assertEqual(row["positionAgreement"], "within-tolerance")
         self.assertEqual(row["apiLevelCandidate"], 13)
+        self.assertEqual(row["apiPreviousLevelCandidate"], 13)
+        self.assertEqual(row["apiLevelEvidenceStatus"], "stable-candidate")
         self.assertEqual(row["apiRelationCandidate"], "hostile")
         self.assertEqual(row["apiPlayerFlagCandidate"], False)
         self.assertEqual(row["combatSuitabilityStatus"], "unqualified")
@@ -154,6 +156,25 @@ class NearbyNpcJoinTests(unittest.TestCase):
         self.assertEqual(result["samples"][0]["apiLevelCandidate"], 14)
         self.assertEqual(result["samples"][0]["levelAgreement"], "different-candidates")
         self.assertFalse(result["combatAuthorized"])
+
+        for previous, expected in ((12, "changed-between-samples"), (0, "unavailable")):
+            with self.subTest(previous=previous):
+                self.make_npc(previous_level=previous)
+                row = self.call()["samples"][0]
+                self.assertEqual(row["apiLevelCandidate"], 13)
+                self.assertEqual(row["apiPreviousLevelCandidate"], previous or None)
+                self.assertEqual(row["apiLevelEvidenceStatus"], expected)
+                self.assertEqual(row["levelAgreement"], "unavailable")
+
+        self.make_npc()
+        summary = json.loads(self.npc_summary.read_text())
+        summary["sources"][0]["capturedAtUtc"] = "2026-11-12T03:59:59Z"
+        save(self.npc_summary, summary)
+        result = self.call(max_gap_seconds=1)
+        self.assertAlmostEqual(result["apiPairSpanSeconds"], 1.4)
+        self.assertEqual(result["samples"][0]["apiLevelEvidenceStatus"], "outside-time-window")
+        self.assertEqual(result["samples"][0]["apiLevelCandidate"], 13)
+        self.assertEqual(result["samples"][0]["levelAgreement"], "unavailable")
 
     def test_native_summary_tamper_is_refused(self):
         document = json.loads(self.native_summary.read_text())

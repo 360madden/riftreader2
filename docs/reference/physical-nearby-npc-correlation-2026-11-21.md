@@ -10,6 +10,12 @@
 
 The join reports `apiLevelCandidate`, `apiRelationCandidate`, native distance and height difference, name and position agreement, and a refusal reason for unqualified rows. **All rows retain `combatSuitabilityStatus=unqualified`, `castAuthorized=false`, `moveAuthorized=false`**. Even when the Lua API reports `relation=hostile`, the comparison does not establish action permission, world-instance equality, path clearance, line of sight, attackability or a verified combat outcome.
 
+Native/Lua level agreement uses the two latest replayed Lua frames for the same
+unit ID. Both frames must carry the same valid level and fall within the
+configured comparison window. The report keeps the previous and latest API
+level candidates alongside `apiLevelEvidenceStatus`, which identifies changed,
+missing or out-of-window evidence.
+
 ## CLI use
 
 From the repository root in **PowerShell 7**, verify the local host and current RIFT process. Then use that exact PID in the native nearby inventory command.
@@ -73,7 +79,11 @@ The replay describes the saved capture. A live API survey still requires a fresh
 3. **Offline native/API join tests:** **9/9 passed**, with two original validated native JSON fixtures and two saved raw NPC Lua source frames. Tests confirm matched level/relation *candidates*, name/XYZ mismatches, wrong process/player, stale capture time, source tampering and zero action authority.
 4. **Related Python regression suites:** **47/47 passed** across new replay/join, existing native context join, nearby CLI, and native unit-position/name readers.
 
-**Current blocker:** The current physical RIFT process has **not** supplied a freshly verified, nonce-bound NPC API survey in this session. Thus **native/API level and relation live correlation remains unaccepted**. The existing `test_npc_survey_live.py` full Lua 5.1 producer test could not run under `C:\Python314\python.exe` because `lupa` is not installed; the new pure-Python source tests do run. No dependency installation, gameplay action, focus change, reload, game-memory write or other-repository edit was performed.
+**November 21 blocker:** That session ended before it obtained a freshly verified,
+nonce-bound NPC API survey. Its Python 3.14 environment also lacked `lupa` for
+the Lua 5.1 producer tests. The configured [current validation environment](../workflows/development.md#restore-build-and-test)
+now runs those tests offline. Live native/API level and relation correlation
+still needs an advancing survey from the local RIFT process.
 
 **Next:** Establish an advancing nonce-bound NPC survey for several current exact nearby IDs, then validate name/level/relation agreement, and finally add the independent hostility/attacker, level-delta and real response checks required by `target_selection` before any automatic encounter.
 

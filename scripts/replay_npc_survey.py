@@ -143,7 +143,7 @@ def replay(source):
         "playerId": doc["playerId"],
         "surveySessionId": nonce, "surveyEpoch": last_epoch,
         "confirmedUnitIds": verified_ids,
-        "snapshot": snapshot, "sourceReceipts": provenance,
+        "snapshot": snapshot, "previousSnapshot": before, "sourceReceipts": provenance,
         "summarySha256": hashlib.sha256(data).hexdigest().upper(),
         "sampledAtUtc": rows[-1]["capturedAtUtc"],
         "inputSent": False,
