@@ -132,21 +132,8 @@ try {
         throw 'Synthetic analysis differs from independently calculated expectations.'
     }
 
-    $linksChecked = 0
-    $documents = @('README.md', 'AGENTS.md', 'artifacts/README.md') + @(Get-ChildItem -LiteralPath docs,samples,addon,contracts -Filter *.md -Recurse | ForEach-Object { $_.FullName })
-    foreach ($document in $documents) {
-        $fullPath = (Resolve-Path -LiteralPath $document).Path
-        foreach ($match in [regex]::Matches((Get-Content -LiteralPath $fullPath -Raw), '\]\(([^)]+)\)')) {
-            $target = $match.Groups[1].Value
-            if ($target -match '^(https?://|#|[A-Za-z]:)') { continue }
-            $target = ($target -split '#', 2)[0]
-            if (-not $target) { continue }
-            $linksChecked++
-            if (-not (Test-Path -LiteralPath (Join-Path (Split-Path -Parent $fullPath) $target))) {
-                throw "Broken link in ${document}: $target"
-            }
-        }
-    }
+    & $LuaPython scripts/check_repository_links.py
+    if ($LASTEXITCODE -ne 0) { throw 'Repository link check failed.' }
     git diff --check
     if ($LASTEXITCODE -ne 0) { throw 'Git whitespace check failed.' }
     git diff --cached --check
@@ -164,7 +151,7 @@ try {
             throw "Missing final newline: $file"
         }
     }
-    Write-Output "Validation passed: dependencies, locked restore, build, tests, format, Lua/C# contracts, deterministic demo, $linksChecked relative links. Evidence: $runDirectory"
+    Write-Output "Validation passed: dependencies, locked restore, build, tests, format, Lua/C# contracts, deterministic demo and repository links. Evidence: $runDirectory"
 }
 finally {
     Pop-Location

@@ -516,6 +516,11 @@ pwsh -NoProfile -File .\scripts\validate.ps1 -CheckPrerequisites
 
 The repository does not depend on or hardcode a V1 addon or Python path.
 
+Run `python -B scripts/check_repository_links.py` to check Markdown links
+independently. Missing links to Git-ignored evidence under `artifacts/` are
+counted separately because a fresh checkout only includes tracked files.
+Links to missing repository files, including tracked artifacts, fail the check.
+
 The authoritative repository check is:
 
 ```powershell

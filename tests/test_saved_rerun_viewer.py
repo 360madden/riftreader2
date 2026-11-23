@@ -23,7 +23,7 @@ class SavedRerunViewerTests(unittest.TestCase):
         self.process = patch.object(saved.subprocess, "Popen", return_value=Mock()).start()
 
     def test_explicit_viewer_uses_local_binding_and_child_only_analytics_opt_out(self):
-        with patch.dict(os.environ, {"CI": "prior", "FORCE_RERUN_ANALYTICS": "1"}):
+        with patch.object(os, "environ", dict(os.environ, CI="prior", FORCE_RERUN_ANALYTICS="1")):
             child = saved.launch_saved_rerun(self.recording)
             self.assertIs(child, self.process.return_value)
             args, options = self.process.call_args

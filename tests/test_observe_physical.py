@@ -22,7 +22,7 @@ class PhysicalTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
-        self.enterContext(patch.dict(physical.os.environ))
+        self.enterContext(patch.object(physical.os, "environ", dict(physical.os.environ)))
         physical.os.environ.pop("RR2_WORKBRIDGE_ROOT", None)
         self.enterContext(patch.object(physical, "BRIDGE", self.root / "default-bridge"))
         self.host = patch.object(physical.socket, "gethostname", return_value="AMD-DESKTOP")

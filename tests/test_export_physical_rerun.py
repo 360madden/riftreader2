@@ -641,7 +641,7 @@ class ExportTests(unittest.TestCase):
             self.assertNotIn("FORCE_RERUN_ANALYTICS", os.environ)
             return recording
         sdk = types.SimpleNamespace(RecordingStream=Mock(side_effect=create), is_enabled=lambda **kwargs: True)
-        with patch.dict(os.environ, {"CI": "prior", "FORCE_RERUN_ANALYTICS": "1"}), \
+        with patch.object(os, "environ", dict(os.environ, CI="prior", FORCE_RERUN_ANALYTICS="1")), \
              patch.dict("sys.modules", {"rerun": sdk}), patch.object(exporter, "version", return_value="0.43.1"):
             sink = exporter.RerunSink(self.output)
             recording.save.assert_called_once_with(self.output)
