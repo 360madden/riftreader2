@@ -26,11 +26,14 @@ class PlotTests(unittest.TestCase):
         Image.new("RGB", (320, 200), "#222222").save(self.image)
         self.receipt = self.root / "image.png.json"
         frame = make_receipt(self.receipt, self.image, 0)
-        native = report()
+        self.identity = dict(IDENTITY, executableSha256=getattr(self, "fixture_build_sha", IDENTITY["executableSha256"]))
+        native = deepcopy(report())
+        native["identity"]["executableSha256"] = self.identity["executableSha256"]
         # Use a single sample for each side of the retained image.
         native["observations"] = [native["observation"]]
         native["requestedSamples"] = native["completedSamples"] = 1
         row = native["observation"]
+        row["identity"] = row["positionOrientationCandidate"]["identity"] = native["identity"]
         row["startedAtUtc"] = "2026-11-11T18:59:59.8Z"
         row["completedAtUtc"] = "2026-11-11T18:59:59.9Z"
         row["opticalCameraCandidate"] = optical_camera()
@@ -51,8 +54,8 @@ class PlotTests(unittest.TestCase):
                    visibleFrameTop=100, visibleFrameRight=420, visibleFrameBottom=300,
                    clientScreenLeft=105, clientScreenTop=125, clientWidth=310, clientHeight=170)
         for target in (frame["targetBefore"], frame["targetAfter"]):
-            target.update(pid=IDENTITY["processId"], startTicks=int(IDENTITY["processStartUtcTicks"]),
-                          sha256=IDENTITY["executableSha256"], hwnd=IDENTITY["hwnd"],
+            target.update(pid=self.identity["processId"], startTicks=int(self.identity["processStartUtcTicks"]),
+                          sha256=self.identity["executableSha256"], hwnd=self.identity["hwnd"],
                           width=310, height=170, windowGeometry=geo)
         frame["capturedCompletedAtUtc"] = "2026-11-11T19:00:00.25Z"
         frame["clientFrameMapping"] = dict(status="available-candidate", unavailableReason=None,
@@ -60,13 +63,13 @@ class PlotTests(unittest.TestCase):
             frameWidth=320, frameHeight=200, clientLeft=5, clientTop=25, clientWidth=310, clientHeight=170)
         self.frame = frame
         self.observation = dict(status="verified-awaiting-visual-review", workflow="physical",
-            ownerHost="AMD-DESKTOP", target=IDENTITY, image=str(self.image), receipt=str(self.receipt),
+            ownerHost="AMD-DESKTOP", target=self.identity, image=str(self.image), receipt=str(self.receipt),
             imageSha256=frame["imageSha256"], nativeFacing=dict(status="stable-bracket-candidate",
                 beforeOutput=str(self.root / "before.json"), afterOutput=str(self.root / "after.json")))
         self.route = dict(waypoints=[["Center", 7427, 2946], ["Behind", 7427, 2930], ["Outside", 7500, 2946]],
             heights=[871, 871, 871], recording=dict(version=1, complete=True,
                 identity=dict(mode="reused-seed", runtimeIdentity=dict(machine="AMD-DESKTOP",
-                    gameBuildSha256=IDENTITY["executableSha256"], unitKey=row["playerKeyDecimal"], processId=999))))
+                    gameBuildSha256=self.identity["executableSha256"], unitKey=row["playerKeyDecimal"], processId=999))))
         self.output = self.root / "output"
 
     def run_render(self):
@@ -200,8 +203,8 @@ class DesktopPairPlotTests(unittest.TestCase):
                         backendEventAgeBoundsSeconds=[max(0, (begin-ticks-1)/1000), (end-ticks+1)/1000])
         self.pair = dict(status="stable-native-composite-event-candidate", diagnosticKind="dxcam-native-event-pair/1",
             machine="AMD-DESKTOP", inputSent=False, focusChanged=False, cleanupErrors=[],
-            targetBefore=dict(IDENTITY, executablePath=r"C:\Games\rift_x64.exe"),
-            targetAfter=dict(IDENTITY, executablePath=r"C:\Games\rift_x64.exe"),
+            targetBefore=dict(self.identity, executablePath=r"C:\Games\rift_x64.exe"),
+            targetAfter=dict(self.identity, executablePath=r"C:\Games\rift_x64.exe"),
             snapshotBefore=dict(clientRect=[-320, 0, 320, 200], foreground=True),
             snapshotAfter=dict(clientRect=[-320, 0, 320, 200], foreground=True),
             requestedDisplay=r"\\.\DISPLAY5", selectedOutput=dict(deviceIndex=1, outputIndex=0,

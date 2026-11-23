@@ -1,4 +1,4 @@
-# RR2 physical GPU window capture probe — AMD-DESKTOP
+# RR2 physical GPU window capture probe
 
 **Status:** Verified on physical RIFT on AMD-DESKTOP, November 11, 2026. WGC captured the game world and HUD during the Atank turn trials.
 
@@ -13,10 +13,9 @@ A standalone C#/.NET 10 one-shot window capture candidate using [WgcSharp 1.1.1]
 
 ## Commands
 
-From **PowerShell on AMD-DESKTOP**:
+From PowerShell in the local Windows checkout, using the pinned SDK:
 
 ```powershell
-cd C:\work\riftreader2
 dotnet restore tools\physical-wgc-probe\PhysicalWgcProbe.csproj --locked-mode
 dotnet build tools\physical-wgc-probe\PhysicalWgcProbe.csproj -c Debug --no-restore
 dotnet run --project tools\physical-wgc-probe\PhysicalWgcProbe.csproj -c Debug --no-build -- --self-test
@@ -25,22 +24,23 @@ dotnet run --project tools\physical-wgc-probe\PhysicalWgcProbe.csproj -c Debug -
 For a single local WGC capture, run the following from the repository root with Python and Pillow installed. Choose the current PID from the process listing. The observer writes a new artifact directory and returns the image and receipt paths.
 
 ```powershell
-Get-Process rift_x64 | Select-Object Id, MainWindowTitle
-python scripts/observe_target.py --target physical-amd-desktop --expected-host AMD-DESKTOP --physical-pid <CURRENT_PID> --physical-capture-backend wgc
+$rr2Host = [Environment]::MachineName
+python scripts/physical_rift.py --expected-host $rr2Host
+python scripts/observe_target.py --target physical --expected-host $rr2Host --physical-pid CURRENT_PID --physical-capture-backend wgc
 ```
 
 For *read-only identity inspection*, supply current values for a visible, non-cloaked target from the same machine:
 
 ```powershell
 dotnet run --project tools\physical-wgc-probe\PhysicalWgcProbe.csproj -c Debug --no-build -- `
-  --inspect --host AMD-DESKTOP --process rift_x64 `
+  --inspect --host $rr2Host --process rift_x64 `
   --pid <CURRENT_PID> --start-ticks <CURRENT_START_UTC_TICKS> `
   --sha256 <CURRENT_EXE_SHA256> --hwnd 0x<CURRENT_HWND> --backend wgc
 ```
 
 This prints target metadata only; **no pixels or input**. Values in this file are placeholders, not reusable process pins.
 
-Direct invocation requires `--capture`, all the same exact target identity fields, an explicit `--allow-one-capture` flag, `--backend wgc|dxgi`, and `--out C:\work\riftreader2\artifacts\NEW_UNIQUE.png`. The output must be a new file under RR2 `artifacts` (no overwrite). The command writes a PNG and JSON receipt with image hash, frame dimensions, capture duration, before/after pinned identity, and sampled pixel diversity. **Do not run until reviewed Workbridge GUI ownership is available.**
+Direct invocation requires `--capture`, the same identity fields, `--allow-one-capture`, `--backend wgc|dxgi`, and an absolute `--out` path to a new PNG in the checkout's `artifacts` directory. The command writes a PNG and JSON receipt with image hash, frame dimensions, capture duration, before/after pinned identity, and sampled pixel diversity. Capture requires reviewed Workbridge GUI ownership and the deployed `C:\work\workbridge-mcp\.tools\desktop-evidence` directory.
 
 ## Verified on AMD-DESKTOP
 

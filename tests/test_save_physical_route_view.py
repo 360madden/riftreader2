@@ -12,8 +12,20 @@ from PIL import Image
 
 from scripts import save_physical_route_view as saved
 from tests import test_plot_physical_waypoints as fixtures
-from tests.test_physical_zone_context import report as zone_report
+from tests.test_physical_zone_context import SHA_1177, report as zone_report
 from tests.test_physical_unit_positions import report as units_report
+
+
+def pin_native_source(source, target):
+    source["observation"]["identity"].update(
+        processId=target["processId"], processStartUtcTicks=int(target["processStartUtcTicks"]),
+        executableSha256=target["executableSha256"])
+    return source
+
+
+def change_zone(source):
+    row = source["observation"]
+    row.update(rawZoneKey=12, zoneIdCandidate=saved.physical_rift._zone_id_candidate(12, row["childKey"]))
 
 
 def zone_reader(test, *, change_after=None, events=None):
@@ -24,7 +36,7 @@ def zone_reader(test, *, change_after=None, events=None):
         after = output.name == "zone-after.json"
         if events is not None:
             events.append("zone-after" if after else "zone-before")
-        source = zone_report()
+        source = pin_native_source(zone_report(), test.target)
         row = source["observation"]
         row["selfKey"] = int(test.document["recording"]["identity"]["runtimeIdentity"]["unitKey"])
         row.update(startedAtUtc="2026-11-11T19:00:00.5Z" if after else "2026-11-11T18:59:59.7Z",
@@ -41,6 +53,7 @@ def zone_reader(test, *, change_after=None, events=None):
 class SaveViewTests(unittest.TestCase):
     def setUp(self):
         self.fixture = fixtures.PlotTests()
+        self.fixture.fixture_build_sha = SHA_1177
         self.fixture.setUp()
         self.addCleanup(self.fixture.doCleanups)
         self.root = self.fixture.root
@@ -92,6 +105,25 @@ class SaveViewTests(unittest.TestCase):
             native_facing=True, physical_capture_backend="wgc")
         self.process.assert_not_called()
 
+    def test_focus_neutral_route_view_preserves_another_local_host(self):
+        host = "RIFT-STATION"
+        self.target["hostName"] = host
+        self.selection["target"] = deepcopy(self.target)
+        self.capture.return_value.update(ownerHost=host, target=deepcopy(self.target))
+        self.document["recording"]["identity"]["runtimeIdentity"]["machine"] = host
+        receipt_path = Path(self.capture.return_value["receipt"])
+        receipt = json.loads(receipt_path.read_text())
+        receipt["machine"] = host
+        receipt_path.write_text(json.dumps(receipt))
+        with patch.object(saved.socket, "gethostname", return_value=host):
+            result = self.save(expected_host=host, export_rerun=False)
+        self.assertEqual(result["status"], "saved-route-view-candidate", result)
+        self.assertEqual(result["target"]["hostName"], host)
+        self.assertFalse(result["focusChanged"])
+        self.capture.assert_called_once_with("physical-rift-station", host,
+            output=self.output / "capture", physical_pid=self.target["processId"],
+            native_facing=True, physical_capture_backend="wgc")
+
     def test_optional_unit_sample_retained_and_passed_to_rerun(self):
         self.python.write_bytes(b"not-executed")
         calls = []
@@ -103,7 +135,7 @@ class SaveViewTests(unittest.TestCase):
                 self.assertEqual(kwargs, {"unit_keys": [str(2**64 - 1)]})
                 return {"status": "blocked", "reason": "optional-names-unavailable"}
             self.assertEqual(kwargs, {"unit_limit": 512, "start_bucket": 0})
-            report = units_report()
+            report = pin_native_source(units_report(), self.target)
             key = self.document["recording"]["identity"]["runtimeIdentity"]["unitKey"]
             report["observation"]["selfKey"] = key
             report["observation"]["rows"][0]["unitKey"] = key
@@ -139,7 +171,7 @@ class SaveViewTests(unittest.TestCase):
                 def read(selection, kind, *, output, **kwargs):
                     if kind == "zone-context" or fault == "unavailable":
                         return {"status": "blocked", "reason": "scan-unavailable"}
-                    report = units_report()
+                    report = pin_native_source(units_report(), self.target)
                     key = self.document["recording"]["identity"]["runtimeIdentity"]["unitKey"]
                     if fault != "player":
                         report["observation"]["selfKey"] = key
@@ -178,7 +210,7 @@ class SaveViewTests(unittest.TestCase):
         positions = units_report()
         values = saved.physical_rift._native_values("unit-positions", positions)
         key = str(2**64 - 1)
-        names = names_report(keys=[key])
+        names = pin_native_source(names_report(keys=[key]), self.target)
         names["observation"]["rows"][0]["entityAddressDecimal"] = positions["observation"]["rows"][1]["entityAddressDecimal"]
         def read(selection, kind, *, output, unit_keys):
             self.assertEqual(kind, "unit-names")
@@ -245,7 +277,7 @@ class SaveViewTests(unittest.TestCase):
         self.assertEqual(json.loads((self.output / "route.json").read_text()), self.document)
 
     def test_changed_zone_or_player_withholds_projection_but_keeps_acquisition(self):
-        changes = (lambda source: source["observation"].update(rawZoneKey=12, zoneIdCandidate="z0000000CB7B53FD7"),
+        changes = (change_zone,
                    lambda source: source["observation"].update(selfKey=source["observation"]["selfKey"] + 1))
         for index, change in enumerate(changes):
             with self.subTest(index=index):
@@ -411,6 +443,7 @@ class SaveViewTests(unittest.TestCase):
 class DesktopSaveViewTests(unittest.TestCase):
     def setUp(self):
         self.fixture = fixtures.DesktopPairPlotTests()
+        self.fixture.fixture_build_sha = SHA_1177
         self.fixture.setUp()
         self.addCleanup(self.fixture.doCleanups)
         self.root = self.fixture.root
@@ -559,9 +592,7 @@ class DesktopSaveViewTests(unittest.TestCase):
         self.assertEqual([call.kwargs["output"].name for call in self.context.call_args_list],
                          ["zone-before.json", "zone-after.json"])
         self.output = self.root / "desktop-context-changed"
-        def change(source):
-            source["observation"].update(rawZoneKey=12, zoneIdCandidate="z0000000CB7B53FD7")
-        self.context.side_effect = zone_reader(self, change_after=change)
+        self.context.side_effect = zone_reader(self, change_after=change_zone)
         result = self.save(export_rerun=False)
         self.assertEqual(result["status"], "blocked", result)
         self.assertEqual(result["reason"], "context-changed-candidate")

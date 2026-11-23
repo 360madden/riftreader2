@@ -46,6 +46,25 @@ class PhysicalTests(unittest.TestCase):
             identity.assert_not_called()
             call.assert_not_called()
 
+    def test_other_local_host_still_requires_foreground_authority(self):
+        with patch.object(physical.socket, "gethostname", return_value="RIFT-STATION"), \
+             patch.object(physical, "_identity") as identity, patch.object(physical, "_call") as call:
+            result = physical.capture_physical("rift-station", self.root / "run")
+        self.assertEqual(result["reason"], "desktop-ownership-required")
+        self.assertEqual(result["targetId"], "physical-rift-station")
+        identity.assert_not_called()
+        call.assert_not_called()
+
+    def test_workbridge_can_use_node_from_path(self):
+        response = json.dumps({"tool": "desktop_windows", "index": 0,
+                               "ok": True, "result": {"windows": []}})
+        with patch.object(physical, "NODE", self.root / "missing-node.exe"), \
+             patch.object(physical.shutil, "which", return_value="node-from-path.exe"), \
+             patch.object(physical, "_run", return_value=(0, response)) as runner:
+            result = physical._call("desktop_windows", {}, self.root)
+        self.assertEqual(result, {"windows": []})
+        self.assertEqual(runner.call_args.args[0][0], "node-from-path.exe")
+
     def test_invalid_pid_blocks_before_creating_output_or_capture(self):
         for pid in (True, 0, -1, 4294967296, "123"):
             with self.subTest(pid=pid), patch.object(physical, "_identity") as identity, \

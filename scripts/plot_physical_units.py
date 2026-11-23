@@ -63,8 +63,7 @@ def render(bracket_path, output, *, limit=18, max_distance=35):
     mapping = client_frame_mapping(frame)
     require(mapping.get("status") == "available-candidate", "available-client-frame-mapping-required")
     host, identity, pinned = frame["machine"], first["identity"], frame["targetBefore"]
-    require(host.casefold() == socket.gethostname().casefold()
-            and host.upper() in physical.SUPPORTED_HOSTS
+    require(physical.valid_host_name(host) and host.casefold() == socket.gethostname().casefold()
             and frame["requestedBackend"] == "wgc", "frame-host-or-backend-mismatch")
     require(last["identity"] == identity, "native-frame-identity-mismatch")
     for side in (*sides, capture):

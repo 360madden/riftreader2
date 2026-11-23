@@ -3,10 +3,12 @@ from contextlib import redirect_stdout
 import io
 import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
 from scripts import observe_target as tool
+from scripts import observe_gpu
 
 
 class TargetRoutingTests(unittest.TestCase):
@@ -33,6 +35,52 @@ class TargetRoutingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid-physical-capture-backend"):
             tool.observe("lab2", "AMD-DESKTOP", historical_vm=True,
                          physical_capture_backend="wgc")
+
+    def test_generic_and_named_physical_routes_pin_the_same_local_host(self):
+        host = "RIFT-STATION"
+        target_id = "physical-rift-station"
+        for target in ("physical", target_id):
+            with self.subTest(target=target), \
+                 patch.object(tool.socket, "gethostname", return_value=host), \
+                 patch.object(observe_gpu, "capture_gpu", return_value=self.result(target_id, "physical")) as gpu:
+                result = tool.observe(target, "rift-station", physical_pid=123,
+                                      physical_capture_backend="wgc")
+            self.assertEqual(result["ownerHost"], host)
+            self.assertEqual(result["targetId"], target_id)
+            self.assertEqual(gpu.call_args.args[0], host)
+            self.assertEqual(gpu.call_args.kwargs["physical_pid"], 123)
+
+    def test_named_physical_route_cannot_redirect_through_local_expected_host(self):
+        with patch.object(tool.socket, "gethostname", return_value="RIFT-STATION"), \
+             patch.object(observe_gpu, "capture_gpu") as gpu:
+            with self.assertRaisesRegex(ValueError, "target-host-mismatch"):
+                tool.observe("physical-legion", "RIFT-STATION", physical_capture_backend="wgc")
+            gpu.assert_not_called()
+
+    def test_wgc_backend_passes_local_identity_and_checks_receipt(self):
+        target = {"hostName": "RIFT-STATION", "processId": 123, "hwnd": 456,
+                  "processStartUtcTicks": "638000000000000001", "executableSha256": "a" * 64}
+        report = {"machine": "RIFT-STATION", "requestedBackend": "wgc",
+                  "capturedCompletedAtUtc": "2026-11-22T19:00:00Z",
+                  "targetBefore": {"pid": 123, "hwnd": 456, "startTicks": 638000000000000001,
+                                   "sha256": "A" * 64}}
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            probe = root / "probe.exe"
+            probe.touch()
+            with patch.object(observe_gpu, "PROBE", probe), \
+                 patch.object(observe_gpu.socket, "gethostname", return_value="RIFT-STATION"), \
+                 patch.object(observe_gpu, "_identity", return_value=target) as identity, \
+                 patch.object(observe_gpu, "_run", return_value=(0, "")) as runner, \
+                 patch.object(observe_gpu, "read_frame", return_value=(report, None, "B" * 64)):
+                result = observe_gpu.capture_gpu("rift-station", root / "output", physical_pid=123)
+        self.assertEqual(result["status"], "verified-awaiting-visual-review")
+        self.assertEqual(result["targetId"], "physical-rift-station")
+        self.assertFalse(result["foregroundMayChange"])
+        self.assertEqual(identity.call_count, 2)
+        command = runner.call_args.args[0]
+        self.assertEqual(command[command.index("--host") + 1], "RIFT-STATION")
+        self.assertEqual(command[command.index("--pid") + 1], 123)
 
     def test_retired_vm_targets_are_denied_by_default_without_adapter_calls(self):
         for target in ("lab1", "lab2"):

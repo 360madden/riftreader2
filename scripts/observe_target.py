@@ -13,12 +13,12 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from scripts.observe_physical import valid_host_name
+
 # Target routing only. Runtime identity, credentials and readiness stay in existing adapters.
 TARGETS = {
     "lab1": ("AMD-DESKTOP", "vmware"),
     "lab2": ("AMD-DESKTOP", "vmware"),
-    "physical-amd-desktop": ("AMD-DESKTOP", "physical"),
-    "physical-legion": ("LEGION", "physical"),
 }
 
 
@@ -130,14 +130,26 @@ def observe(target_id, expected_host, output=None, *, native_vitals=False,
             preview_detail_crop=None, host_preview=False, physical_pid=None,
             historical_vm=False, physical_capture_backend=None, native_facing=False):
     started = time.perf_counter()
-    if target_id not in TARGETS:
+    if not isinstance(target_id, str):
         raise ValueError("unknown-target")
-    owner_host, workflow = TARGETS[target_id]
-    if not isinstance(expected_host, str) or expected_host.casefold() != owner_host.casefold():
+    if target_id in TARGETS:
+        owner_host, workflow = TARGETS[target_id]
+    elif target_id == "physical" or target_id.startswith("physical-"):
+        if not valid_host_name(expected_host):
+            raise ValueError("invalid-host")
+        canonical = "physical-" + expected_host.lower()
+        if target_id != "physical" and target_id.casefold() != canonical:
+            raise ValueError("target-host-mismatch")
+        target_id, owner_host, workflow = canonical, expected_host, "physical"
+    else:
+        raise ValueError("unknown-target")
+    if not valid_host_name(expected_host) or expected_host.casefold() != owner_host.casefold():
         raise ValueError("target-host-mismatch")
     actual_host = socket.gethostname()
     if actual_host.casefold() != owner_host.casefold():
         raise ValueError("host-mismatch")
+    if workflow == "physical":
+        owner_host = actual_host
     if physical_capture_backend is not None:
         if workflow != "physical" or physical_capture_backend != "wgc":
             raise ValueError("invalid-physical-capture-backend")
@@ -216,7 +228,7 @@ def observe(target_id, expected_host, output=None, *, native_vitals=False,
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", required=True, choices=tuple(TARGETS))
+    parser.add_argument("--target", required=True, metavar="{physical,physical-HOST,lab1,lab2}")
     parser.add_argument("--expected-host", required=True)
     parser.add_argument("--output", type=Path, help="fresh absolute directory; omitted creates a unique artifact path")
     parser.add_argument("--native-vitals", action="store_true", help="historical Lab 2 only; retain existing candidate qualifications")

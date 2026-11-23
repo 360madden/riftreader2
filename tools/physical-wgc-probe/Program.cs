@@ -18,7 +18,7 @@ internal sealed record Options(
     internal static Options Parse(string[] args)
     {
         if (args.Length == 1 && args[0] == "--self-test")
-            return new("self-test", "AMD-DESKTOP", "", 0, 0, "", 0, "wgc", 2000, null, false);
+            return new("self-test", Environment.MachineName, "", 0, 0, "", 0, "wgc", 2000, null, false);
         if (args.Length == 0 || args[0] is not ("--inspect" or "--capture"))
             throw new ArgumentException("Choose --self-test, --inspect, or --capture.");
         var dict = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -54,8 +54,8 @@ internal sealed record Options(
             d.TryGetValue(k, out var value) && value.Length > 0 ? value :
                 throw new ArgumentException($"Missing {k}.");
         var host = Required(dict, "--host");
-        if (!string.Equals(host, "AMD-DESKTOP", StringComparison.OrdinalIgnoreCase))
-            throw new ArgumentException("This probe is bound to AMD-DESKTOP only.");
+        if (!System.Text.RegularExpressions.Regex.IsMatch(host, @"\A[A-Za-z0-9][A-Za-z0-9_-]{0,62}\z"))
+            throw new ArgumentException("Invalid Windows hostname.");
         var processName = Required(dict, "--process");
         if (!System.Text.RegularExpressions.Regex.IsMatch(processName,
                 @"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,79}$"))
@@ -174,8 +174,16 @@ internal static class CapturePolicy
         @"C:\work\workbridge-mcp\.tools\desktop-evidence\desktop-input-turn.lock";
     private const string AdmissionPath =
         @"C:\work\workbridge-mcp\.tools\desktop-evidence\desktop-turn-admission.lock";
-    internal const string ArtifactRoot =
-        @"C:\work\riftreader2\artifacts";
+    internal static string ArtifactRoot(string probeDirectory)
+    {
+        for (var directory = new DirectoryInfo(probeDirectory); directory is not null; directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "RiftReader2.slnx")) &&
+                File.Exists(Path.Combine(directory.FullName, "tools", "physical-wgc-probe", "PhysicalWgcProbe.csproj")))
+                return Path.Combine(directory.FullName, "artifacts");
+        }
+        throw new InvalidOperationException("rr2-artifact-root-unavailable");
+    }
 
     internal static string? BlockReason(bool hasLock, bool quarantineExists)
         => hasLock || quarantineExists ? "desktop-turn-recovery-required" : null;
@@ -251,10 +259,15 @@ internal static partial class Native
 
 internal static class Target
 {
+    internal static void RequireLocalHost(string host)
+    {
+        if (!string.Equals(Environment.MachineName, host, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("wrong-host");
+    }
+
     internal static TargetInfo Inspect(Options options)
     {
-        if (Environment.MachineName != options.Host)
-            throw new InvalidOperationException("wrong-host");
+        RequireLocalHost(options.Host);
         if (!OperatingSystem.IsWindows())
             throw new PlatformNotSupportedException("windows-only");
         using var process = Process.GetProcessById(options.Pid);
@@ -317,6 +330,7 @@ internal static class Probe
             var options = Options.Parse(args);
             if (options.Mode == "self-test")
                 return SelfTest();
+            Target.RequireLocalHost(options.Host);
             // Deny any capture while an older GUI turn is unresolved, even if
             // the requested PID/HWND has disappeared or been reused.
             if (options.Mode == "capture")
@@ -333,7 +347,7 @@ internal static class Probe
             }
 
             var output = Path.GetFullPath(options.Output!);
-            var relative = Path.GetRelativePath(CapturePolicy.ArtifactRoot, output);
+            var relative = Path.GetRelativePath(CapturePolicy.ArtifactRoot(AppContext.BaseDirectory), output);
             if (relative == "." || relative == ".."
                 || relative.StartsWith(".." + Path.DirectorySeparatorChar,
                     StringComparison.Ordinal) || Path.IsPathRooted(relative))
@@ -447,14 +461,28 @@ internal static class Probe
             catch (ArgumentException) { passed++; return; }
             throw new InvalidOperationException("self-test-missing-rejection-" + label);
         }
-        var valid = new[] { "--inspect", "--host", "AMD-DESKTOP", "--process", "notepad",
+        var valid = new[] { "--inspect", "--host", "RIFT-STATION", "--process", "notepad",
             "--pid", "123", "--start-ticks", "639299470183328173",
             "--sha256", new string('A', 64), "--hwnd", "0x100" };
         var opt = Options.Parse(valid);
         Check(opt.Mode == "inspect" && opt.Pid == 123 && opt.Hwnd == 0x100
-              && !opt.CaptureExplicitlyRequested && !opt.Diagnostics, "inspect-parse");
+              && opt.Host == "RIFT-STATION" && !opt.CaptureExplicitlyRequested && !opt.Diagnostics, "inspect-parse");
+        Target.RequireLocalHost(Environment.MachineName.ToLowerInvariant());
+        var wrongHost = Environment.MachineName + "-other";
+        try
+        {
+            Target.RequireLocalHost(wrongHost);
+            throw new InvalidOperationException("self-test-foreign-host-accepted");
+        }
+        catch (InvalidOperationException error) when (error.Message == "wrong-host")
+        {
+            passed++;
+        }
+        var invalidHost = (string[])valid.Clone();
+        invalidHost[2] = "RIFT/STATION";
+        MustReject(invalidHost, "invalid-host");
         var captureArgs = new[] { "--capture" }.Concat(valid.Skip(1))
-            .Concat(["--allow-one-capture", "--out", "C:\\work\\riftreader2\\artifacts\\diagnostic-self-test.png"]).ToArray();
+            .Concat(["--allow-one-capture", "--out", Path.Combine(Path.GetTempPath(), "diagnostic-self-test.png")]).ToArray();
         Check(Options.Parse(captureArgs).Diagnostics is false, "default-diagnostics-silent");
         Check(Options.Parse(captureArgs.Concat(["--diagnostics"]).ToArray()).Diagnostics,
             "capture-diagnostics-parse");

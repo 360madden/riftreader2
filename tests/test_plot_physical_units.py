@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from PIL import Image
 
@@ -76,6 +77,16 @@ class UnitPlotTests(unittest.TestCase):
         result = self.render()
         self.assertEqual(result["drawnCount"], 0)
         self.assertEqual(result["rows"][1]["reason"], "unit-position-changed-across-frame")
+
+    def test_wgc_unit_overlay_accepts_third_local_host(self):
+        host = "RIFT-STATION"
+        self.frame["machine"] = host
+        for section in ("before", "after", "frame"):
+            self.bracket[section]["target"]["hostName"] = host
+            self.bracket[section]["ownerHost"] = host
+        with patch.object(plot.socket, "gethostname", return_value=host):
+            result = self.render()
+        self.assertEqual(result["drawnCount"], 1)
 
     def test_reused_unit_key_with_changed_entity_owner_is_withheld(self):
         # A unit key can be reused for a different entity between the two reads.

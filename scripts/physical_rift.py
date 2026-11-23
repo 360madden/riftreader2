@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts import observe_physical, summarize_native_vitals_burst
+from scripts.observe_physical import valid_host_name
 
 # Existing control workflows still use their configured host list.
 SUPPORTED_HOSTS = ("AMD-DESKTOP", "LEGION")
@@ -59,10 +60,6 @@ NATIVE_RECEIPTS = {
 }
 NATIVE_EXE = (ROOT / "src" / "RiftReader2.Live" / "bin" / "Debug" /
               "net10.0-windows" / "win-x64" / "RiftReader2.Live.exe")
-
-
-def valid_host_name(value):
-    return isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,62}", value) is not None
 
 
 def select_physical(expected_host=None, physical_pid=None):

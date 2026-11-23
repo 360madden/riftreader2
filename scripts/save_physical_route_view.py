@@ -319,8 +319,8 @@ def save_route_view(expected_host, physical_pid, document, output, *, expected_t
         result["directory"] = str(directory)
         require(directory.is_absolute() and not directory.exists() and directory.parent.is_dir(),
                 "fresh-absolute-output-directory-required")
-        require(isinstance(expected_host, str) and expected_host.casefold() == socket.gethostname().casefold()
-                and expected_host.upper() in ("AMD-DESKTOP", "LEGION"), "host-mismatch")
+        require(physical_rift.valid_host_name(expected_host)
+                and expected_host.casefold() == socket.gethostname().casefold(), "host-mismatch")
         require(type(physical_pid) is int and 1 <= physical_pid <= 4294967295, "explicit-physical-pid-required")
         require(type(export_rerun) is bool, "invalid-export-rerun-option")
         require(type(include_units) is bool, "invalid-include-units-option")

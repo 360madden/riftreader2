@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import socket
 import subprocess
 import tempfile
@@ -24,6 +25,11 @@ MAX_IMAGE = 8 * 1024 * 1024
 def _require(condition, reason):
     if not condition:
         raise ValueError(reason)
+
+
+def valid_host_name(value):
+    return (isinstance(value, str)
+            and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,62}", value) is not None)
 
 
 def _plain_path(path):
@@ -101,10 +107,12 @@ def _identity(physical_pid=None, *, require_window=True):
 
 
 def _call(tool, arguments, output):
+    node = NODE if NODE.is_file() else shutil.which("node")
+    _require(node is not None, "desktop-node-runtime-unavailable")
     request = output / (tool + "-request.json")
     with request.open("x", encoding="utf-8") as stream:
         json.dump([{"tool": tool, "arguments": arguments}], stream)
-    code, text = _run([NODE, BRIDGE / "scripts/workbridge-cli.mjs",
+    code, text = _run([node, BRIDGE / "scripts/workbridge-cli.mjs",
                       "--service-state", BRIDGE / ".local", "--root", BRIDGE.parent,
                       "--input", request, "--timeout", "100", "--json"])
     lines = text.splitlines()
@@ -125,8 +133,7 @@ def capture_physical(expected_host, output, *, allow_foreground_change=False,
     """No fallback, guest authentication, input injection, service startup, or retry."""
     target_id = "physical-" + str(expected_host).lower()
     try:
-        _require(isinstance(expected_host, str) and
-                 expected_host.upper() in ("AMD-DESKTOP", "LEGION"), "invalid-host")
+        _require(valid_host_name(expected_host), "invalid-host")
         _require(socket.gethostname().casefold() == expected_host.casefold(), "host-mismatch")
         _require(allow_foreground_change is True, "desktop-ownership-required")
         _require(physical_pid is None or

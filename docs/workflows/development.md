@@ -153,11 +153,11 @@ Distances use native coordinate units; bearings use positive Z toward positive X
 Coincident X/Z and exactly opposite directions withhold a signed turn angle.
 This arithmetic does not establish matching world identity or movement eligibility.
 
-For one read-only screenshot plus a matching native position/facing/target snapshot
-on AMD-DESKTOP, use the existing observation entry point:
+For one reviewed screenshot with a matching native position, facing and target
+snapshot, use the observation entry point on the verified local host.
 
 ```powershell
-python scripts/observe_target.py --target physical-amd-desktop --expected-host AMD-DESKTOP --physical-pid CURRENT_PID --native-facing
+python scripts/observe_target.py --target physical --expected-host $rr2Host --physical-pid CURRENT_PID --native-facing
 ```
 
 This selects the WGC probe and brackets the image with native reads. It never
@@ -301,11 +301,10 @@ any report is published:
 dotnet run --no-build --no-restore --project src/RiftReader2.Live -- inspect-native --output artifacts/my-new-native-inspection.json --pid CURRENT_PID --start-ticks CURRENT_START_TICKS
 ```
 
-For reviewed visual observation, use `scripts/observe_target.py --target
-physical-amd-desktop --expected-host AMD-DESKTOP` (or the matching LEGION
-pair). That capture requires explicit desktop-ownership/focus authorization:
-`--allow-foreground-change`; no default focus or unattended screenshot is
-assumed.
+For the reviewed Workbridge visual backend, use `--target physical` and the
+verified local name in `--expected-host`. The explicit
+`--allow-foreground-change` flag permits focus changes after desktop ownership
+is established. [Visual observation workflow](target-observation.md#active-workflow-on-the-local-windows-host)
 
 Use local .NET 10 `RiftReader2.Live` for native reads and the host-local control
 agent only after its exact process/config prerequisites are met. For a

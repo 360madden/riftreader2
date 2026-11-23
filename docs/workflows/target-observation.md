@@ -1,19 +1,24 @@
 # Target observation
 
-## Active workflow — physical RIFT only (2026-11-10)
+## Active workflow on the local Windows host
 
-Run on the *actual* owning host, AMD-DESKTOP or LEGION, after verifying its
-Windows machine name. Start with read-only `python scripts/physical_rift.py
---expected-host AMD-DESKTOP` (or `LEGION` on LEGION); add `--physical-pid
-<actual-PID>` for multibox. This verifies the physical RIFT process without
-VMware, screenshots, window focus or input.
+Run from the checkout on the Windows host that owns the RIFT process. Verify the
+host and get the current local PID before a capture. When multiple clients are
+open, pass the chosen PID to both commands.
 
-For an explicitly reviewed physical screenshot on the owning host, use
-`python scripts/observe_target.py --target physical-amd-desktop --expected-host
-AMD-DESKTOP --allow-foreground-change` (change both host values for LEGION,
-and pin the PID if needed). The foreground-change option permits a real window
-focus operation; do not use it without desktop ownership. Physical native
-vitals remain unqualified and are blocked. There is no lab fallback.
+```powershell
+$rr2Host = [Environment]::MachineName
+python scripts/physical_rift.py --expected-host $rr2Host
+python scripts/observe_target.py --target physical --expected-host $rr2Host --physical-pid CURRENT_PID --physical-capture-backend wgc
+```
+
+The second command is for a reviewed, focus-neutral WGC capture. It requires the
+local WGC probe build and the Workbridge desktop-evidence directory. The observer
+returns a receipt named for the verified host. You can also select it explicitly
+with `--target physical-HOST`, using the local hostname in place of `HOST`.
+The existing `physical-amd-desktop` and `physical-legion` arguments remain valid.
+For the Workbridge window backend, the explicit `--allow-foreground-change`
+option requires desktop ownership. [WGC build and inspection](../../tools/physical-wgc-probe/README.md)
 
 The historical VMware material below is **archived**. The observation CLI now
 rejects `lab1`/`lab2` by default with `vmware-retired-use-physical-rift`;
