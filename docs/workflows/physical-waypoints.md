@@ -1149,10 +1149,14 @@ slowest calibrated direction needs them, targeting 600 ms of requested travel
 per segment and capping segment distance at four units. The existing translation
 controller retains its six-pulse, 900-ms and 12-second limits.
 
+For the CLI movement examples below, set `$riftPid` to the explicitly selected
+local RIFT process and verify the [local movement calibration](#local-calibration-and-dependency-checks)
+for that host and build.
+
 For a requested facing without walking:
 
 ```powershell
-python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid $riftPid --face-bearing -4.7 --execute
+python scripts/physical_waypoints.py --expected-host ([Environment]::MachineName) --physical-pid $riftPid --face-bearing -4.7 --execute
 ```
 
 Add `--face-waypoints` to a CLI `--go` or a GUI launch to enable forward walking.
@@ -1253,7 +1257,7 @@ retains exclusive native input ownership, held-input refusal and bounded release
 For the same backend without the window:
 
 ```powershell
-python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid $riftPid --go 7422.455078125 2948.04931640625 --execute
+python scripts/physical_waypoints.py --expected-host ([Environment]::MachineName) --physical-pid $riftPid --go 7422.455078125 2948.04931640625 --execute
 ```
 
 Headless `--go`, `--run-route` and `--play-route` use continuous held-forward
@@ -1271,7 +1275,7 @@ failure. Successful receipt contents retain their existing format.
 Run a saved multi-point route through the same backend:
 
 ```powershell
-python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid $riftPid --run-route my-route.json --face-waypoints --execute
+python scripts/physical_waypoints.py --expected-host ([Environment]::MachineName) --physical-pid $riftPid --run-route my-route.json --face-waypoints --execute
 ```
 
 To save observations from an explicitly commanded `--go` or `--run-route`, add
@@ -1282,10 +1286,10 @@ is not the passive window recording control. Replay and resume use
 `--play-route`:
 
 ```powershell
-python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid $riftPid --run-route my-route.json --record-to taught-route.json --face-waypoints --execute
-python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid $riftPid --play-route taught-route.json --reverse --progress taught-progress.json --face-waypoints --execute
+python scripts/physical_waypoints.py --expected-host ([Environment]::MachineName) --physical-pid $riftPid --run-route my-route.json --record-to taught-route.json --face-waypoints --execute
+python scripts/physical_waypoints.py --expected-host ([Environment]::MachineName) --physical-pid $riftPid --play-route taught-route.json --reverse --progress taught-progress.json --face-waypoints --execute
 # Use --resume only if that playback was interrupted and left the checkpoint unfinished.
-python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid $riftPid --play-route taught-route.json --reverse --progress taught-progress.json --resume --face-waypoints --execute
+python scripts/physical_waypoints.py --expected-host ([Environment]::MachineName) --physical-pid $riftPid --play-route taught-route.json --reverse --progress taught-progress.json --resume --face-waypoints --execute
 ```
 
 Omit `--reverse` for forward playback. Resume must use the saved direction and
