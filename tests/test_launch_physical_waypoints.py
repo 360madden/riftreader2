@@ -9,7 +9,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from scripts import launch_physical_waypoints as launcher
+from scripts import launch_physical_waypoints as launcher, physical_waypoints as waypoints
+from tests.test_physical_move_basis_waypoint import basis
 
 
 class LauncherTests(unittest.TestCase):
@@ -66,17 +67,56 @@ class LauncherTests(unittest.TestCase):
             self.assertIsNone(window.call_args.args[0].physical_pid)
             self.assertIsNone(window.call_args.args[0].initial_adapter)
 
-    def test_check_stays_strict_and_unsupported_host_refused(self):
+    def test_check_stays_strict_and_invalid_host_refused(self):
         with patch.object(launcher.socket, "gethostname", return_value="AMD-DESKTOP"), \
              patch.object(launcher.physical_rift, "select_physical", return_value={"status": "blocked", "reason": "absent"}), \
              patch.object(launcher, "launch_window") as window, contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(launcher.main(["--check"]), 2)
             self.assertEqual(json.loads(output.getvalue())["reason"], "absent")
             window.assert_not_called()
-        with patch.object(launcher.socket, "gethostname", return_value="UNKNOWN"), \
+        with patch.object(launcher.socket, "gethostname", return_value="invalid / host"), \
              patch.object(launcher, "launch_window") as window, contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(launcher.main(["--check"]), 2)
-            self.assertEqual(json.loads(output.getvalue())["reason"], "unsupported-host")
+            self.assertEqual(json.loads(output.getvalue())["reason"], "invalid-local-host")
+            window.assert_not_called()
+
+    def test_check_uses_only_the_local_default_basis_and_accepts_an_override(self):
+        host = "RR2_FIELD-PC"
+        config = self.root / "config"
+        config.mkdir()
+        measurement = basis()
+        other_basis = config / "physical-movement-basis.amd-desktop.json"
+        other_basis.write_text(json.dumps(measurement), encoding="utf-8")
+        identity = measurement["identity"]
+        target = {"processId": identity["processId"], "hwnd": 7,
+                  "processStartUtcTicks": identity["processStartUtcTicks"],
+                  "executableSha256": identity["gameBuildSha256"]}
+        expected_basis = config / "physical-movement-basis.rr2_field-pc.json"
+        with patch.object(waypoints, "ROOT", self.root), \
+             patch.object(launcher.socket, "gethostname", return_value=host.lower()), \
+             patch.object(launcher.physical_rift, "select_physical",
+                          return_value={"status": "ready", "target": target}), \
+             patch.object(waypoints.PhysicalAdapter, "read",
+                          return_value=SimpleNamespace(bearing=12)) as read_pose, \
+             patch.object(launcher, "launch_window") as window:
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(launcher.main(["--check"]), 2)
+            self.assertIn(str(expected_basis), json.loads(output.getvalue())["reason"])
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(launcher.main(["--check", "--basis", str(other_basis)]), 2)
+            self.assertIn("another host/build", json.loads(output.getvalue())["reason"])
+            read_pose.assert_not_called()
+
+            identity["machine"] = host
+            custom_basis = self.root / "custom-basis.json"
+            for path, args in ((custom_basis, ["--check", "--basis", str(custom_basis)]),
+                               (expected_basis, ["--check"])):
+                path.write_text(json.dumps(measurement), encoding="utf-8")
+                with contextlib.redirect_stdout(io.StringIO()) as output:
+                    self.assertEqual(launcher.main(args), 0)
+                report = json.loads(output.getvalue())
+                self.assertEqual(report["calibrationBinding"]["runtimeIdentity"]["machine"], host)
+                self.assertIs(report["inputSent"], False)
             window.assert_not_called()
 
     def test_explicit_pid_absent_stays_strict(self):

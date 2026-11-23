@@ -1179,12 +1179,12 @@ def main(argv=None):
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
-    from scripts.physical_waypoints import (DEFAULT_BASIS, PhysicalAdapter, Stopped,
+    from scripts.physical_waypoints import (PhysicalAdapter, Stopped,
                                              WaypointError, cli_stop_controls)
     stop = threading.Event()
     adapter = None
     try:
-        adapter = PhysicalAdapter(args.expected_host, args.physical_pid, DEFAULT_BASIS)
+        adapter = PhysicalAdapter(args.expected_host, args.physical_pid, None)
         if args.execute:
             # Install the SIGINT latch before F8 registration and before the
             # native child can launch. Ctrl+C/F8 set the shared STOP event; the

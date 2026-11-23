@@ -505,8 +505,8 @@ def execute(args, *, adapter_factory=None, runtime_factory=None, playback=None,
     if args.command in {"run","resume"} and not args.execute:
         raise MissionError(f"{args.command} requires --execute")
     if adapter_factory is None:
-        from scripts.physical_waypoints import DEFAULT_BASIS,PhysicalAdapter
-        adapter_factory=lambda host,pid: PhysicalAdapter(host,pid,DEFAULT_BASIS)
+        from scripts.physical_waypoints import PhysicalAdapter
+        adapter_factory=PhysicalAdapter
     if runtime_factory is None:
         from scripts.waypoint_survival_runtime import WaypointSurvivalRuntime
         runtime_factory=WaypointSurvivalRuntime

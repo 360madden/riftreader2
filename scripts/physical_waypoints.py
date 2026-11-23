@@ -19,6 +19,7 @@ from pathlib import Path
 import queue
 import re
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -46,8 +47,6 @@ from scripts.waypoint_limits import (
     MAX_ROUTE_DISTANCE, MAX_WAYPOINTS, MAX_TRIP_SECONDS,
     MAX_TRIP_PULSES, MAX_TRIP_HOLD_MS,
 )
-
-DEFAULT_BASIS = ROOT / "config/physical-movement-basis.amd-desktop.json"
 
 
 class WaypointError(ValueError):
@@ -468,7 +467,7 @@ def read_stationary(adapter, stop):
 class PhysicalAdapter:
     """Fresh epoch-pinned input, with reusable numerical calibration seeds."""
 
-    def __init__(self, host, pid, basis_path):
+    def __init__(self, host, pid, basis_path=None):
         self.host, self.pid = host, pid
         self.selection = physical_rift.select_physical(host, pid)
         if self.selection.get("status") != "ready":
@@ -479,6 +478,11 @@ class PhysicalAdapter:
         self.pid = pid = self.target["processId"]
         if type(self.target.get("hwnd")) is not int or self.target["hwnd"] <= 0:
             raise WaypointError("RIFT window is not ready; wait for the game window")
+        basis_path = (ROOT / "config" / f"physical-movement-basis.{host.lower()}.json"
+                      if basis_path is None else Path(basis_path))
+        if not basis_path.exists():
+            raise WaypointError(f"Movement calibration for {host} is missing at {basis_path}. "
+                                "Supply --basis with a measured basis for this host, build and player.")
         self.basis, self.basis_sha = read_basis(basis_path)
         ident = self.basis["identity"]
         if (ident["machine"].casefold() != host.casefold()
@@ -5181,9 +5185,9 @@ def launch_window(args):
 def main(argv=None):
     from scripts.waypoint_progress import write_json_atomic
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--expected-host", required=True, choices=physical_rift.SUPPORTED_HOSTS)
+    parser.add_argument("--expected-host", required=True, help="verified local Windows machine name")
     parser.add_argument("--physical-pid", required=True, type=int)
-    parser.add_argument("--basis", type=Path, default=DEFAULT_BASIS)
+    parser.add_argument("--basis", type=Path, help="override the local host's movement calibration file")
     parser.add_argument("--route", type=Path, help="load a waypoint JSON into the window without running it")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--go", nargs=2, type=float, metavar=("X", "Z"))
@@ -5201,6 +5205,9 @@ def main(argv=None):
     parser.add_argument("--progress", type=Path, help="recorded-route progress checkpoint")
     parser.add_argument("--resume", action="store_true", help="resume saved unfinished recorded route")
     args = parser.parse_args(argv)
+    if (not physical_rift.valid_host_name(args.expected_host)
+            or args.expected_host.casefold() != socket.gethostname().casefold()):
+        parser.error("--expected-host must match the local Windows machine name")
     cli_action = (args.go is not None or args.face_bearing is not None or
                   args.run_route is not None or args.play_route is not None)
     if args.route is not None and cli_action:

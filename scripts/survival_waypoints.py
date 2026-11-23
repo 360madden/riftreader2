@@ -56,15 +56,14 @@ def _profile_argument(parser):
 
 def _live_arguments(parser, *, route=False):
     from scripts import physical_rift
-    from scripts.physical_waypoints import DEFAULT_BASIS
     parser.add_argument("--expected-host", required=True,
                         choices=physical_rift.SUPPORTED_HOSTS,
                         help="exact current physical host")
     parser.add_argument("--physical-pid", required=True, type=int,
                         help="exact current rift_x64 PID")
     _profile_argument(parser)
-    parser.add_argument("--basis", type=_path, default=DEFAULT_BASIS,
-                        help="movement calibration basis (default: repository AMD basis)")
+    parser.add_argument("--basis", type=_path,
+                        help="override the local host's movement calibration file")
     if route:
         parser.add_argument("--route", required=True, type=_path,
                             help=f"route JSON containing 1-{MAX_WAYPOINTS} waypoints")

@@ -27,7 +27,7 @@ from scripts.capture_readerbridge_v3 import (
     CaptureError, _read_json, _run_native, _same_target, _target,
     _validate_scout, _validate_seed, _write_json,
 )
-from scripts.physical_waypoints import DEFAULT_BASIS, PhysicalAdapter
+from scripts.physical_waypoints import PhysicalAdapter
 
 MARKER = b"RR2SURV1|"
 SUFFIX = b"|ENDRR2SURV1"
@@ -667,7 +667,7 @@ class SurvivalLiveConsumer:
         seed_index = (autodiscover_seed(self.target) if seed_index is None
                       else Path(seed_index))
         base, length = _validate_seed(_read_json(seed_index), self.target, scan_mib)
-        adapter = adapter_factory(expected_host, physical_pid, DEFAULT_BASIS)
+        adapter = adapter_factory(expected_host, physical_pid, None)
         _require(_same_target(adapter.target, self.target),
                  "adapter-process-identity-mismatch")
         self.player_id = _canonical_unit_key(adapter.unit_key)

@@ -21,6 +21,7 @@ if str(ROOT) not in sys.path:
 from scripts import navigation_anchors as anchors
 from scripts import physical_route_preview as route
 from scripts import analyze_physical_turn_pair as turn
+from scripts.observe_physical import valid_host_name
 from scripts.movement_controller import (
     Calibration, MovementError, MovementHalted, Position,
     WaypointController, planar_distance, validate_noncollinear,
@@ -86,7 +87,7 @@ def read_basis(path):
             and len(set(sources.values())) == len(sample), "waypoint-basis-source-hashes-invalid")
     ident = b.get("identity")
     require(isinstance(ident, dict)
-            and ident.get("machine") in ("AMD-DESKTOP", "LEGION")
+            and valid_host_name(ident.get("machine"))
             and type(ident.get("processId")) is int and ident["processId"] > 0
             and isinstance(ident.get("processStartUtcTicks"), str)
             and ident["processStartUtcTicks"].isdecimal()

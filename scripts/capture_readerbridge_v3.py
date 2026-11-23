@@ -22,7 +22,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts import physical_rift
-from scripts.physical_waypoints import DEFAULT_BASIS, PhysicalAdapter
+from scripts.physical_waypoints import PhysicalAdapter
 from scripts.readerbridge_v3 import CONTROL, MAGIC, PACKET_SIZE, decode_packet
 
 MIB = 1024 * 1024
@@ -274,7 +274,7 @@ def acquire(expected_host: str, physical_pid: int, seed_index: Path, output: Pat
     target = _target(selection.get("target", {}))
     seed = _read_json(seed_index)
     base, scan_bytes = _validate_seed(seed, target, scan_mib)
-    adapter = adapter_factory(expected_host, physical_pid, DEFAULT_BASIS)
+    adapter = adapter_factory(expected_host, physical_pid, None)
     if not _same_target(adapter.target, target):
         raise CaptureError("adapter-process-identity-mismatch")
     self_id = _canonical_unit_key(adapter.unit_key)

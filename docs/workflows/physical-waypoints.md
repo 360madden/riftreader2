@@ -871,8 +871,13 @@ changed builds or players and ambiguous processes are refused. Reconnection
 does not resume an interrupted trip or start movement.
 The launcher defaults to **Face, then walk**. `--route PATH` opens a saved route.
 For a read-only readiness check, run `python scripts/launch_physical_waypoints.py --check`.
-The bundled default basis is from AMD-DESKTOP. On LEGION, supply `--basis PATH`
-with measured calibration for that host, executable build and player.
+Waypoints looks for `config/physical-movement-basis.<lowercase-host>.json` by
+default. The checkout includes the AMD-DESKTOP basis. On other Windows hosts,
+save the local movement basis under the matching name or supply `--basis PATH`.
+Use a basis measured for the current host, executable build and player. The
+offline `scripts/physical_move_basis.py` builder can consume saved move-key
+receipts from any Windows hostname and requires all samples from one host,
+process epoch, build and player.
 
 Cold-start behavior passed a live AMD-DESKTOP case on November 12: the same app
 opened with RIFT absent, waited through character selection, then bound the new
@@ -884,8 +889,9 @@ check. An old PID remains deliberately pinned and is refused after it exits.
 Use the default `Waypoints.cmd` launcher for automatic idle reconnection.
 
 ```powershell
+$rrHost = [Environment]::MachineName
 $riftPid = (python scripts/launch_physical_waypoints.py --check | ConvertFrom-Json).pid
-pythonw scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid $riftPid
+pythonw scripts/physical_waypoints.py --expected-host $rrHost --physical-pid $riftPid
 ```
 
 The window reads the current position and facing. **Save Current** adds a point;

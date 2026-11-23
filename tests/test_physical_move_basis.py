@@ -12,6 +12,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from scripts import physical_move_basis as basis
+from scripts.physical_move_basis_waypoint import read_basis
 from tests.test_physical_move_key_calibration import receipt
 
 
@@ -64,6 +65,19 @@ class PhysicalMoveBasisTests(unittest.TestCase):
                                ["unsignedAngleDegreesCandidate"], 180)
         self.assertAlmostEqual(result["geometry"]["forwardVsBackward"]
                                ["firstSpeedOverSecondCandidate"], 2)
+
+    def test_basis_from_a_third_host_can_be_reopened_and_rejects_mixed_hosts(self):
+        host = "RR2_FIELD-PC"
+        for path in self.paths.values():
+            source = json.loads(path.read_text(encoding="utf-8"))
+            source["machine"] = host
+            path.write_text(json.dumps(source), encoding="utf-8")
+        output = self.root / "basis.json"
+        output.write_text(json.dumps(self.analyze()), encoding="utf-8")
+        self.assertEqual(read_basis(output)[0]["identity"]["machine"], host)
+        self.paths["e"] = self.save("e", 3, 0, -1)
+        with self.assertRaisesRegex(ValueError, "basis-player-process-build-mismatch"):
+            self.analyze()
 
     def test_later_forward_reports_direction_change_but_not_heading(self):
         later = self.save("w", 4, -.5, 1)

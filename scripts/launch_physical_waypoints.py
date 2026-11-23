@@ -14,13 +14,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts import physical_rift
-from scripts.physical_waypoints import DEFAULT_BASIS, PhysicalAdapter, launch_window
+from scripts.physical_waypoints import PhysicalAdapter, launch_window
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--physical-pid", type=int, help="required when several RIFT clients are running")
-    parser.add_argument("--basis", type=Path, default=DEFAULT_BASIS)
+    parser.add_argument("--basis", type=Path, help="override the local host's movement calibration file")
     parser.add_argument("--route", type=Path)
     parser.add_argument("--check", action="store_true", help="verify readiness without opening a window or sending input")
     parser.add_argument("--background", action="store_true", help="start with the helper window hidden")
@@ -40,8 +40,8 @@ def main(argv=None):
         if args.cli and args.route is not None:
             from scripts.physical_waypoints import validate_route_document
             validate_route_document(json.loads(args.route.read_text(encoding="utf-8-sig")))
-        if host not in physical_rift.SUPPORTED_HOSTS:
-            raise ValueError("unsupported-host")
+        if not physical_rift.valid_host_name(host):
+            raise ValueError("invalid-local-host")
         pid, adapter, pose, waiting_reason = None, None, None, None
         try:
             selected = physical_rift.select_physical(host, args.physical_pid)

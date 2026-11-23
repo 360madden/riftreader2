@@ -22,6 +22,7 @@ if str(ROOT) not in sys.path:
 
 from scripts import movement_controller as movement
 from scripts import physical_calibration as physical
+from scripts.observe_physical import valid_host_name
 
 HEX = re.compile(r"[0-9a-fA-F]{64}\Z")
 UNIT = re.compile(r"[1-9][0-9]{0,19}\Z")
@@ -139,7 +140,7 @@ def from_helper_receipt(path: Path):
         raise HelperCalibrationError("invalid-helper-json") from err
     require(isinstance(receipt, dict), "invalid-helper-receipt")
     require(receipt.get("status") == "input-inserted-game-response-unverified"
-            and receipt.get("machine") in ("AMD-DESKTOP", "LEGION")
+            and valid_host_name(receipt.get("machine"))
             and type(receipt.get("processId")) is int and receipt["processId"] > 0
             and type(receipt.get("processStartUtcTicks")) is int
             and receipt["processStartUtcTicks"] > 0
