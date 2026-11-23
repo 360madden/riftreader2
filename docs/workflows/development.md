@@ -87,10 +87,11 @@ to select a published build for a dependency check or a `--read-native` command.
 
 ### Publish the local native reader
 
-From the repository root, use the SDK pinned by `global.json`. If you already
-have a published build, set `$rr2PublishedReader` to its absolute executable path
-and run the last command below. Keep the published folder together when copying
-it to a new checkout or workstation.
+From the repository root, use the SDK pinned by `global.json`. Set
+`RIFTREADER2_DOTNET` to the local SDK's executable path if it is outside `PATH`.
+An already published build can use the last command below with its absolute
+executable path in `$rr2PublishedReader`. Keep the published folder together
+when copying it to a new checkout or workstation.
 
 ```powershell
 . .\scripts\resolve-validation-dotnet.ps1

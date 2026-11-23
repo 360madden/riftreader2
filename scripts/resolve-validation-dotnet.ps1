@@ -2,7 +2,7 @@ function Resolve-ValidationDotNet {
     param(
         [Parameter(Mandatory)][string]$RepositoryRoot,
         [Parameter(Mandatory)][string]$PinnedSdk,
-        [string]$DotNet
+        [string]$DotNet = $env:RIFTREADER2_DOTNET
     )
 
     Push-Location -LiteralPath $RepositoryRoot

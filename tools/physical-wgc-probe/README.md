@@ -14,7 +14,8 @@ A standalone C#/.NET 10 one-shot window capture candidate using [WgcSharp 1.1.1]
 ## Commands
 
 From the repository root in PowerShell 7, use the repository's SDK resolver to
-find the version pinned in `global.json`.
+find the version pinned in `global.json`. Set `RIFTREADER2_DOTNET` to the local
+SDK's executable path if it is outside `PATH`.
 
 ```powershell
 . .\scripts\resolve-validation-dotnet.ps1
