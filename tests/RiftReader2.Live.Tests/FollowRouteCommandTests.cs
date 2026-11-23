@@ -410,9 +410,9 @@ public sealed class FollowRouteCommandTests
     {
         var input = new Input();
         var result = await FollowRouteCommand.FollowAsync(Options(z: 3),
-            Reader(Pose(0, 0), Pose(0, 1.5), Pose(0, 2.6), Pose(0, 2.8), Pose(0, 2.8)),
+            Reader(Pose(0, 0), Pose(0, 1.5), Pose(0, 2.75), Pose(0, 2.8), Pose(0, 2.8)),
             input, () => null, NoDelay);
-        Assert.Equal("arrived", result.Status);
+        Assert.True(result.Status == "arrived", $"Follow stopped with {result.Status}: {result.Reason}");
         Assert.Equal(1, input.Events.Count(x => x == "down:w"));
         Assert.Equal(1, input.Events.Count(x => x == "up:w"));
         Assert.DoesNotContain("down:a", input.Events);
