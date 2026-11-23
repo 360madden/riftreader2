@@ -862,6 +862,23 @@ class DestinationPlanTests(unittest.TestCase):
         for call in query.call_args_list:
             self.assertEqual(str(java), call.kwargs["env"]["JAVA_HOME"])
 
+    def test_selected_upstream_is_passed_to_fresh_preparation(self):
+        self.preparation_inputs()
+        upstream = self.root / "registered upstream"
+        upstream.mkdir()
+        explicit = self.root / "selected override"
+        explicit.mkdir()
+        with patch.object(bridge, "_registered_riftworld", return_value={"upstream": upstream}), \
+             patch.dict(bridge.os.environ, RR2_RIFTWORLD_UPSTREAM=""):
+            first = self.automatic_plan(native=False)
+            second = self.automatic_plan(native=False, riftworld_upstream=explicit,
+                                         output_directory=self.root / "explicit preparation")
+        for result, expected, (command, _) in zip((first, second), (upstream, explicit), self.prepare_calls):
+            self.assertEqual(result["status"], "planned")
+            self.assertEqual(result["riftWorldRuntime"]["pipelineCheckout"], str(expected))
+            self.assertEqual(Path(command[2]).name, "prepare_riftworld_area.py")
+            self.assertEqual(command[command.index("--upstream") + 1], str(expected))
+
     def test_large_source_index_is_streamed_without_rr2_json_parse(self):
         self.preparation_inputs(large_index=True)
         self.assertGreater(self.index.stat().st_size, bridge.MAX_CANDIDATE_BYTES)

@@ -49,8 +49,10 @@ planner verifies the saved mesh and prepared OBJ while copying the build into
 output directory. RiftWorld verifies the build identity and dependencies when
 it opens that copy. Bring the exact WorldPatch and its referenced files as well
 as the Detour build. The plan records hashes for both build manifests.
-Fresh `--prepare-request` builds use the configured RiftWorld checkout's own
-RiftAssetDumper layout and the selected Java environment.
+Fresh `--prepare-request` builds also use the selected RiftAssetDumper checkout
+and Java environment. If a cached build records a different upstream path,
+Waypoints makes a verified copy with the selected path for that plan. Without
+an upstream setting, fresh preparation uses RiftWorld's default layout.
 
 From the RR2 checkout, reproduce the retained courtyard pilot with its saved
 inputs and a fresh output directory:

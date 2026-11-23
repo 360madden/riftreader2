@@ -860,8 +860,6 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
         raise ValueError("prepare timeout must be finite and within 0..3600 seconds")
     if prepare_profile is not None and not preparing:
         raise ValueError("prepare-profile requires preparation mode")
-    if preparing and riftworld_upstream is not None:
-        raise ValueError("riftworld-upstream requires an existing navigation build")
     if not isinstance(destination, str) or not destination.strip():
         raise ValueError("destination ID is required")
     if (execute or from_current) and (not isinstance(session, str) or not session.strip()):
@@ -933,12 +931,13 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
         prepared = None
         preparation_owner = None
         identity_hint = {}
-        upstream = _configured_riftworld_upstream(riftworld_upstream, registered) if not preparing else None
+        upstream = _configured_riftworld_upstream(riftworld_upstream, registered)
         if upstream is not None:
-            inputs["originalBuild"] = inputs["build"]
-            build = _relocate_navigation_build(inputs["originalBuild"], output / "navigation-build", upstream)
-            inputs["build"] = _reference(build)
             plan["riftWorldRuntime"]["pipelineCheckout"] = str(upstream)
+            if not preparing:
+                inputs["originalBuild"] = inputs["build"]
+                build = _relocate_navigation_build(inputs["originalBuild"], output / "navigation-build", upstream)
+                inputs["build"] = _reference(build)
         if execute or from_current:
             admission = _session_state(session, runner, allow_latched=not execute,
                                        identity_out=identity_hint if preparing else None)
@@ -972,9 +971,14 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
                         last_cancel_reason = "session-unavailable-during-preparation"
                 return last_cancel_reason
 
-            prepare_command = [str(python), "-m", "riftworld", "prepare-area", "--request", str(prepare_request),
-                               "--source-index", str(source_index), "--build-nav", "--allow-partial-navigation",
-                               "--receipt", str(preparation_receipt), "--handoff", str(handoff_path)]
+            if upstream is None:
+                prepare_command = [str(python), "-m", "riftworld", "prepare-area", "--build-nav"]
+            else:
+                prepare_command = [str(python), "-B", str(ROOT / "scripts/prepare_riftworld_area.py"),
+                                   "--upstream", str(upstream)]
+            prepare_command += ["--request", str(prepare_request), "--source-index", str(source_index),
+                                "--allow-partial-navigation", "--receipt", str(preparation_receipt),
+                                "--handoff", str(handoff_path)]
             if prepare_profile is not None:
                 prepare_command += ["--profile", str(prepare_profile)]
             if preparation_runner is None:
@@ -1191,7 +1195,7 @@ def parser():
     result.add_argument("--riftworld-python", type=Path,
                         help="RiftWorld Python (default: RR2_RIFTWORLD_PYTHON or that checkout's .venv)")
     result.add_argument("--riftworld-upstream", type=Path,
-                        help="local pinned RiftAssetDumper checkout for preflight or a saved build "
+                        help="local pinned RiftAssetDumper checkout for preflight, preparation or a saved build "
                              "(default: RR2_RIFTWORLD_UPSTREAM when set)")
     result.add_argument("--native-receipt", dest="native_receipts", type=Path, action="append", default=[])
     result.add_argument("--native-context", type=Path)
