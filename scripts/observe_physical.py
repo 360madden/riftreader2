@@ -94,7 +94,14 @@ def _run(args, timeout=120, *, env=None):
 
 
 def local_rift_addons_root():
-    """Resolve the Windows Documents known folder without selecting RIFT."""
+    """Resolve the configured AddOns root or the Windows Documents known folder."""
+    configured = os.environ.get("RR2_RIFT_ADDONS_ROOT")
+    if configured:
+        addons = Path(configured)
+        _require(addons.is_absolute() and not addons.drive.startswith(("\\", "/"))
+                 and ".." not in addons.parts, "invalid-rift-addons-root")
+        _plain_path(addons)
+        return addons
     code, text = _run([
         POWERSHELL, "-NoProfile", "-NonInteractive", "-Command",
         "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);"

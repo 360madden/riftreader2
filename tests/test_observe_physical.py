@@ -19,6 +19,31 @@ PNG = bytes.fromhex("89504e470d0a1a0a") + (13).to_bytes(4, "big") + b"IHDR" + (8
 NODE_VERSION = (0, "v24.20.0\n")
 
 
+class InstalledAddonRootTests(unittest.TestCase):
+    def test_explicit_local_root_bypasses_documents_lookup(self):
+        with tempfile.TemporaryDirectory(prefix="Custom RIFT ") as destination:
+            addons = Path(destination) / "My AddOns"
+            addons.mkdir()
+            with patch.dict(physical.os.environ, RR2_RIFT_ADDONS_ROOT=str(addons)), \
+                    patch.object(physical, "_run") as documents:
+                self.assertEqual(physical.local_rift_addons_root(), addons)
+            documents.assert_not_called()
+
+    def test_invalid_override_never_falls_back(self):
+        with patch.object(physical, "_run") as documents:
+            for value in ("relative/AddOns", r"\\another-host\rift\AddOns", str(Path.cwd() / ".." / "AddOns")):
+                with self.subTest(value=value), patch.dict(physical.os.environ, RR2_RIFT_ADDONS_ROOT=value):
+                    with self.assertRaisesRegex(ValueError, "invalid-rift-addons-root"):
+                        physical.local_rift_addons_root()
+            documents.assert_not_called()
+
+    def test_default_respects_windows_documents_redirection(self):
+        documents = Path.cwd() / "Redirected Documents"
+        with patch.dict(physical.os.environ, RR2_RIFT_ADDONS_ROOT=""), \
+                patch.object(physical, "_run", return_value=(0, str(documents) + "\r\n")):
+            self.assertEqual(physical.local_rift_addons_root(), documents / "RIFT" / "Interface" / "AddOns")
+
+
 class PhysicalTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

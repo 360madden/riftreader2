@@ -1,5 +1,7 @@
 # Current status
 
+**2026-11-23 — physical addon checks accept a shared AddOns root.** On LEGION, the NPC survey and Telemetry preflight both passed with `RR2_RIFT_ADDONS_ROOT` pointing to copies of the installed files in a different directory with spaces. Both refused a relative override. **134 focused tests and 59 subtests passed.** [Addon setup](workflows/addon-sync.md#check-the-local-windows-installation) · [Copied addon preflight](../artifacts/physical-custom-addon-root-legion-20261123.json)
+
 **2026-11-23 — physical workflow startup checks run from one host-verified command.** Running outside the checkout on LEGION passed nine of ten checks. Workbridge capture reported three missing runner files and a CLI/service version mismatch. A WGC and prepared-maps subset passed, and a different requested host was refused before any checks ran. [Portable setup](workflows/development.md#reuse-local-tools-from-a-fresh-checkout) · [LEGION preflight](../artifacts/physical-workflow-preflight-legion-20261123.json)
 
 **2026-11-23 — the Workbridge preflight now reports missing runners and catalog failures together.** On LEGION, the active deployment still lacks three capture modules. Its CLI expects **0.16.5-dev**, and the running service reports **0.16.4-dev**. The check discovered the version mismatch without invoking WinApp or selecting RIFT. **75 focused tests and 68 subtests passed.** [Current Workbridge dependency report](../artifacts/workbridge-active-blockers-legion-20261123.json)

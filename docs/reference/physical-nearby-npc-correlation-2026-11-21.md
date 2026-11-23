@@ -53,7 +53,8 @@ Check the local reader and addon before preparing a plan for a current RIFT
 process. The tool looks for the standalone `RiftReader2NpcSurvey` or the
 `RiftReader2Casting` fallback under the Windows Documents folder. It refuses
 automatic selection when both manifests load a survey module. Use
-`--installed-addon-dir` to inspect a custom installation.
+`RR2_RIFT_ADDONS_ROOT` to find addons in a custom local installation or
+`--installed-addon-dir` to check one specific addon folder.
 
 ```powershell
 & $rr2Python -B scripts\prepare_physical_npc_survey.py --expected-host $rr2Host --check-dependencies --include-levels

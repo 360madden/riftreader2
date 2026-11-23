@@ -44,7 +44,7 @@ def _local_survey_directories():
     try:
         addons = observe_physical.local_rift_addons_root()
     except ValueError as error:
-        raise ValueError("npc-survey-prepare-provide-installed-addon-directory") from error
+        raise ValueError(f"npc-survey-prepare-provide-installed-addon-directory: {error}") from error
     manifests = (addons / identifier / MANIFEST_NAME for identifier in INSTALLED_MODULES)
     return [path.parent for path in manifests if path.exists() or path.is_symlink()]
 

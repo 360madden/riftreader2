@@ -124,6 +124,7 @@ movement calibration measured on the Windows host that will run Waypoints.
 | Physical workflows and Waypoints | `RIFTREADER2_PYTHON` | Python with Tcl/Tk for Waypoints and Pillow for WGC |
 | Waypoints prepared maps | `RR2_RIFTWORLD_ROOT`, `RR2_RIFTWORLD_PYTHON`, `JAVA_HOME` | [Local RiftWorld, JPype, Java and pinned navigation dependencies](physical-waypoints.md#prepared-map-destinations) |
 | Native physical reads and Waypoints | `RR2_NATIVE_READER` | [Published Live reader](#publish-the-local-native-reader) |
+| Installed physical addons | `RR2_RIFT_ADDONS_ROOT` | Optional absolute local AddOns directory, with Windows Documents used by default |
 | Waypoints calibration | `RR2_WAYPOINTS_BASIS` | [Verified calibration folder](physical-waypoints.md#local-calibration-and-dependency-checks) |
 | WGC capture | `RR2_WGC_PROBE` | [Published WGC probe](../../tools/physical-wgc-probe/README.md), Python with Pillow, and the active deployment's desktop-evidence directory |
 | Qt waypoint markers | `RR2_OVERLAY_PYTHON` | Python with [overlay requirements](../../requirements-overlay.txt) |

@@ -16,7 +16,10 @@ if (!$rr2Python) { $rr2Python = 'python' }
 
 Run from the checkout with the configured Python. Check and verify default to
 the local PC and use Windows' Documents known folder, including OneDrive
-redirection. Pass `--pc-folder PATH` if RIFT uses another local addon directory.
+redirection. Set `RR2_RIFT_ADDONS_ROOT` to the absolute local `AddOns` root for a
+custom RIFT installation. `--pc-folder PATH` takes precedence for an individual
+command. For sync, check and verify, `--pc-folder` points to the `RiftReader2`
+addon folder itself.
 Exit code 2 identifies a failed installation or host check.
 
 The `sync` action changes installed files and requires an explicit target.
