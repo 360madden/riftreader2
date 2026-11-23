@@ -73,8 +73,11 @@ that directory's `validation.json` and saved-view bundle
 After **Save view**, **Open 3D view** opens the optional Rerun recording with the
 saved XYZ route and actor bearing beside its screenshot/projections. It starts
 only on that click, binds its service to loopback and uses a child-only analytics
-opt-out. Close the viewer normally before opening another recording from this
-button. A failed capture preserves the previous successful view; a new capture
+opt-out. Set `RR2_RERUN_PYTHON` to an absolute local Python executable with
+[requirements-visualization.txt](../../requirements-visualization.txt) installed
+to use that environment for both export and viewing. Close the viewer normally
+before opening another recording from this button. A failed capture preserves
+the previous successful view; a new capture
 without an RRD disables its 3D button rather than opening an older recording.
 The ordinary **Open view** still opens the annotated PNG. **Recent routes** /
 **Load recent** selects up to eight saved local paths through the existing load

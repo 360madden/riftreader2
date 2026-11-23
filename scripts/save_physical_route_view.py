@@ -36,18 +36,33 @@ def require(condition, reason):
         raise ValueError(reason)
 
 
+def _local_python(override, default, reason):
+    if not override:
+        return default
+    executable = Path(override)
+    require(executable.is_absolute() and not executable.anchor.startswith(("\\\\", "//")), reason)
+    observe_physical._plain_path(executable)
+    return executable
+
+
 def launch_saved_rerun(path):
     """Explicit user action: open one local saved recording in the optional viewer."""
     recording = Path(path)
     require(recording.is_absolute() and recording.suffix.casefold() == ".rrd"
             and not str(recording).startswith("\\\\"), "absolute-local-rerun-recording-required")
     require(recording.is_file() and recording.stat().st_size > 0, "saved-rerun-recording-unavailable")
-    viewer = VISUALIZATION_PYTHON.with_name("rerun.exe")
-    require(viewer.is_file(), "optional-rerun-viewer-not-installed")
+    configured = os.environ.get("RR2_RERUN_PYTHON")
+    if configured:
+        executable = _local_python(configured, VISUALIZATION_PYTHON, "invalid-rerun-python-path")
+        viewer = [str(executable), "-m", "rerun"]
+    else:
+        executable = VISUALIZATION_PYTHON.with_name("rerun.exe")
+        viewer = [str(executable)]
+    require(executable.is_file(), "optional-rerun-viewer-not-installed")
     environment = dict(os.environ)
     environment["CI"] = "1"
     environment.pop("FORCE_RERUN_ANALYTICS", None)
-    return subprocess.Popen([str(viewer), "--bind", "127.0.0.1", "--port", "auto", str(recording)],
+    return subprocess.Popen([*viewer, "--bind", "127.0.0.1", "--port", "auto", str(recording)],
                             cwd=ROOT, env=environment, stdin=subprocess.DEVNULL,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
@@ -260,13 +275,15 @@ def _unit_sample(selection, route, directory, *, native_reader=None):
 def _optional_rerun(route_path, observation_path, directory, enabled, *, desktop=False, unit_sample=None):
     if not enabled:
         return {"status": "unavailable", "reason": "not-requested"}
-    if not VISUALIZATION_PYTHON.is_file():
-        return {"status": "unavailable", "reason": "visualization-environment-unavailable"}
     output = directory / "view.rrd"
     environment = dict(os.environ, CI="1")
     environment.pop("FORCE_RERUN_ANALYTICS", None)
     try:
-        command = [str(VISUALIZATION_PYTHON), str(ROOT / "scripts/export_physical_rerun.py"),
+        python = _local_python(os.environ.get("RR2_RERUN_PYTHON"), VISUALIZATION_PYTHON,
+                               "invalid-rerun-python-path")
+        if not python.is_file():
+            return {"status": "unavailable", "reason": "visualization-environment-unavailable"}
+        command = [str(python), str(ROOT / "scripts/export_physical_rerun.py"),
             "--route", str(route_path), "--desktop-pair" if desktop else "--observation", str(observation_path),
             "--output", str(output)]
         if unit_sample is not None:
@@ -300,12 +317,8 @@ def _monitor_name(hwnd):
 
 def _desktop_capture(host, pid, pinned, directory, result, *, native_reader=None):
     observe_physical.require_clear_desktop_turn()
-    configured_python = os.environ.get("RR2_DXCAM_PYTHON")
-    capture_python = Path(configured_python) if configured_python else CAPTURE_PYTHON
-    if configured_python:
-        require(capture_python.is_absolute() and not capture_python.anchor.startswith(("\\\\", "//")),
-                "invalid-dxcam-python-path")
-        observe_physical._plain_path(capture_python)
+    capture_python = _local_python(os.environ.get("RR2_DXCAM_PYTHON"), CAPTURE_PYTHON,
+                                   "invalid-dxcam-python-path")
     require(capture_python.is_file(), "desktop-capture-environment-unavailable")
     executable = physical_rift._native_reader_path()
     result.update(focusRequested=True, focusMayChange=True, focusChanged=None)

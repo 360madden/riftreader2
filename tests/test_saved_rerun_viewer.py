@@ -18,6 +18,7 @@ class SavedRerunViewerTests(unittest.TestCase):
         self.python = self.root / "python.exe"
         self.viewer = self.root / "rerun.exe"
         self.viewer.write_bytes(b"not-executed")
+        self.enterContext(patch.object(os, "environ", dict(os.environ, RR2_RERUN_PYTHON="")))
         self.addCleanup(patch.stopall)
         patch.object(saved, "VISUALIZATION_PYTHON", self.python).start()
         self.process = patch.object(saved.subprocess, "Popen", return_value=Mock()).start()
@@ -36,6 +37,22 @@ class SavedRerunViewerTests(unittest.TestCase):
             self.assertEqual(options["stdout"], saved.subprocess.DEVNULL)
             self.assertEqual(options["stderr"], saved.subprocess.DEVNULL)
             self.assertNotIn("shell", options)
+
+    def test_configured_python_runs_its_viewer_module(self):
+        python = self.root / "another environment" / "python.exe"
+        python.parent.mkdir()
+        python.touch()
+        with patch.object(os, "environ", dict(os.environ, RR2_RERUN_PYTHON=str(python))):
+            saved.launch_saved_rerun(self.recording)
+        self.assertEqual(self.process.call_args.args[0],
+                         [str(python), "-m", "rerun", "--bind", "127.0.0.1", "--port", "auto",
+                          str(self.recording)])
+
+    def test_invalid_configured_python_refuses_before_launch(self):
+        with patch.object(os, "environ", dict(os.environ, RR2_RERUN_PYTHON="relative/python.exe")):
+            with self.assertRaisesRegex(ValueError, "invalid-rerun-python-path"):
+                saved.launch_saved_rerun(self.recording)
+        self.process.assert_not_called()
 
     def test_missing_empty_relative_and_wrong_type_recordings_never_launch(self):
         empty = self.root / "empty.rrd"
