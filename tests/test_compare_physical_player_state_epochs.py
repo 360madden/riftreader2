@@ -26,6 +26,15 @@ def sample(pid, sha, when, hp=100):
     }
 
 
+def add_armor_stats(state, *, ordinary=100, mapped_index=0):
+    state["candidateValues"]["stats"] = {
+        "status": "candidate-only", "selectorCount": 1,
+        "stats": [{"name": "armor", "selector": 37, "mappedIndex": mapped_index,
+                   "ordinary": {"status": "raw-candidate", "rawSigned64": ordinary},
+                   "unbuffed": {"status": "raw-candidate", "rawSigned64": 100}}],
+    }
+
+
 class CrossEpochTests(unittest.TestCase):
     def run_pair(self, mutate=None):
         a, b = sample(100, "A", 0), sample(200, "B", 4, 95)
@@ -79,6 +88,48 @@ class CrossEpochTests(unittest.TestCase):
     def test_different_self_keys_not_mistaken_for_continuity(self):
         self.assertFalse(self.run_pair(
             lambda a,b: b.update(selfKeyCandidate="999"))["selfKeysNumericallyEqual"])
+
+    def test_stats_compare_matching_raw_slots_as_numeric_differences(self):
+        def mutate(a, b):
+            add_armor_stats(a)
+            add_armor_stats(b, ordinary=106)
+
+        value = self.run_pair(mutate)["crossEpochNativeStatsComparison"]
+        self.assertEqual(value["status"], "comparable-candidate")
+        self.assertEqual(value["rawValuesCompared"], 2)
+        self.assertEqual(value["rawValuesDiffering"], 1)
+        self.assertEqual(value["differences"], [
+            {"name": "armor", "variant": "ordinary", "beforeRawSigned64": 100,
+             "afterRawSigned64": 106, "rawNumericDifference": 6},
+        ])
+
+    def test_stats_with_different_owner_or_layout_are_not_compared(self):
+        def different_player(a, b):
+            add_armor_stats(a)
+            add_armor_stats(b, ordinary=106)
+            b["selfKeyCandidate"] = "456"
+
+        def different_layout(a, b):
+            add_armor_stats(a)
+            add_armor_stats(b, mapped_index=5)
+
+        self.assertEqual(self.run_pair(different_player)["crossEpochNativeStatsComparison"],
+                         {"status": "not-comparable", "reason": "different-self-key-candidates"})
+        self.assertEqual(self.run_pair(different_layout)["crossEpochNativeStatsComparison"],
+                         {"status": "incompatible-selector-layout"})
+
+    def test_stats_report_missing_and_unavailable_sources(self):
+        def unavailable_slot(a, b):
+            add_armor_stats(a)
+            add_armor_stats(b)
+            b["candidateValues"]["stats"]["stats"][0]["unbuffed"] = {"status": "index-unavailable"}
+
+        self.assertEqual(self.run_pair(lambda a, b: add_armor_stats(a))["crossEpochNativeStatsComparison"],
+                         {"status": "not-captured"})
+        value = self.run_pair(unavailable_slot)["crossEpochNativeStatsComparison"]
+        self.assertEqual(value["rawValuesCompared"], 1)
+        self.assertEqual(value["rawValuesUnavailable"], 1)
+        self.assertEqual(value["rawValuesDiffering"], 0)
 
     def test_reject_same_epoch(self):
         with self.assertRaisesRegex(ValueError, "same-epoch-use-history"):

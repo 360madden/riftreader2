@@ -128,6 +128,17 @@ python -B scripts/replay_physical_player_state.py --summary artifacts/NEW_PLAYER
 python -B scripts/replay_physical_player_state.py --summary artifacts/EARLIER_PLAYER_STATE/summary.json --after artifacts/NEW_PLAYER_STATE/summary.json
 ```
 
+For captures from distinct RIFT processes on the same host and executable
+build, use the cross-epoch comparator. It compares positions, HP and optional
+zone candidates after replaying both source bundles. Raw stat slots are compared
+when both bundles include stats and their player-key candidates and selector
+layouts agree. The report describes numeric agreement across separate epochs.
+Player continuity, action causation and independent Lua agreement remain unverified.
+
+```powershell
+python -B scripts/compare_physical_player_state_epochs.py --before artifacts/BEFORE_RESTART/summary.json --after artifacts/AFTER_RESTART/summary.json
+```
+
 The RR2A1 collector compares advancing unbound addon coordinates with native
 position brackets. The RR2R1 probe can retain potential reference frames for
 offline replay. A strict RR2R1 assessment requires the exact active addon nonce.

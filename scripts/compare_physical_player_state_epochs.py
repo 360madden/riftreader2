@@ -61,6 +61,18 @@ def _compare_zone_candidates(before, after):
                              "a continuous world identity or verified zone transition."}
 
 
+def _compare_stat_candidates(before, after):
+    if before["selfKeyCandidate"] != after["selfKeyCandidate"]:
+        return {"status": "not-comparable", "reason": "different-self-key-candidates"}
+    result = replay._compare_stats(before, after)
+    if result["status"] == "comparable-candidate":
+        result["rawValuesDiffering"] = result.pop("rawValuesChanged")
+        result["differences"] = result.pop("changed")
+        result["qualification"] = ("Raw slot comparison across independent process epochs. "
+                                   "Player continuity, stat semantics and cause remain unverified.")
+    return result
+
+
 def compare(before_path, after_path):
     a, b = replay.verified_state(before_path), replay.verified_state(after_path)
     require(a["summarySha256"] != b["summarySha256"], "same-source")
@@ -91,6 +103,7 @@ def compare(before_path, after_path):
         "afterSelfKeyCandidate": b["selfKeyCandidate"],
         "selfKeysNumericallyEqual": a["selfKeyCandidate"] == b["selfKeyCandidate"],
         "crossEpochZoneCandidateComparison": _compare_zone_candidates(a, b),
+        "crossEpochNativeStatsComparison": _compare_stat_candidates(a, b),
         "beforePositionCandidate": xyz1, "afterPositionCandidate": xyz2,
         "uncorrelatedNumericXYZDifference": diff,
         "uncorrelatedNumericPlanarDifference": math.hypot(diff["x"], diff["z"]),
