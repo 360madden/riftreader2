@@ -42,6 +42,7 @@ class RestartBasisTests(unittest.TestCase):
         self.assertEqual(self.basis, original)
         self.assertTrue(adapter.basis_reused)
         self.assertEqual(adapter.binding["mode"], "reused-seed")
+        self.assertEqual(adapter.binding["basisPath"], str(self.basis_file))
         self.assertEqual(adapter.binding["basisSha256"], "basis-hash")
         self.assertEqual(adapter.binding["calibrationIdentity"], original["identity"])
         self.assertIn("runtimeIdentity", adapter.binding)

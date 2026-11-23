@@ -505,7 +505,7 @@ class PhysicalAdapter:
         self.pid = pid = self.target["processId"]
         if type(self.target.get("hwnd")) is not int or self.target["hwnd"] <= 0:
             raise WaypointError("RIFT window is not ready; wait for the game window")
-        basis_path = movement_basis_path(host, basis_path)
+        basis_path = movement_basis_path(host, basis_path).absolute()
         if not basis_path.exists():
             raise WaypointError(f"Movement calibration for {host} is missing at {basis_path}. "
                                 "Supply a measured basis for this host, build and player via --basis or RR2_WAYPOINTS_BASIS.")
@@ -524,7 +524,8 @@ class PhysicalAdapter:
         # before publishing the new binding. Every input still pins self.target.
         self.initial_pose = self.read()
         self.binding = {"mode": "reused-seed" if self.basis_reused else "measured-epoch",
-                        "basisSha256": self.basis_sha, "calibrationIdentity": dict(ident),
+                        "basisPath": str(basis_path), "basisSha256": self.basis_sha,
+                        "calibrationIdentity": dict(ident),
                         "runtimeIdentity": {"machine": host, "processId": pid,
                             "processStartUtcTicks": self.target["processStartUtcTicks"],
                             "gameBuildSha256": self.target["executableSha256"],

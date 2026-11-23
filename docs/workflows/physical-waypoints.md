@@ -930,7 +930,9 @@ and `d-after.json` beside the preflight summary and `settled-facing.json`. Build
 verify it there. Verification recomputes the basis from the retained files and
 checks their hashes against the saved basis. Pass the complete folder to
 `--basis` or set `RR2_WAYPOINTS_BASIS` to its absolute path. Waypoints and doctor
-verify the folder before using its calibration.
+verify the folder before using its calibration. Movement receipts record the
+calibration path and SHA-256 together, so the exact source can be found and
+checked later.
 
 ```powershell
 python -B scripts/physical_move_basis.py --bundle artifacts/NEW_CALIBRATION_PREFLIGHT

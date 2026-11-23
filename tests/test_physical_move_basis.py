@@ -256,6 +256,7 @@ class PhysicalMoveBasisTests(unittest.TestCase):
             select.return_value = {"status": "ready", "target": target}
             adapter = PhysicalAdapter(host, target["processId"])
             self.assertEqual(adapter.basis_sha, digest)
+            self.assertEqual(adapter.binding["basisPath"], str(moved))
 
     def test_bundle_rejects_valid_json_edits_to_sources_and_saved_rates(self):
         folder = self.calibration_folder()
