@@ -15,8 +15,12 @@ from scripts import physical_waypoints as waypoint
 from tests.test_physical_waypoints import SimulatedRift
 
 
+TEST_HOST = "RIFT-STATION"
+
+
 class WaypointCliTests(unittest.TestCase):
     def setUp(self):
+        self.enterContext(patch.object(waypoint.socket, "gethostname", return_value=TEST_HOST))
         self.stop_guard = self.enterContext(patch.object(waypoint, "ForegroundStop"))
         self.test_root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         (self.test_root / "artifacts").mkdir()
@@ -39,7 +43,7 @@ class WaypointCliTests(unittest.TestCase):
         output = io.StringIO()
         with patch.object(waypoint, "PhysicalAdapter", return_value=adapter), \
                 patch("scripts.waypoint_playback.play_route", side_effect=playback), redirect_stdout(output):
-            code = waypoint.main(["--expected-host", "AMD-DESKTOP", "--physical-pid", "123",
+            code = waypoint.main(["--expected-host", TEST_HOST, "--physical-pid", "123",
                                   "--play-route", str(source), "--reverse", "--resume",
                                   "--progress", str(checkpoint), "--execute"])
         final = json.loads(output.getvalue().splitlines()[-1])
@@ -95,7 +99,7 @@ class WaypointCliTests(unittest.TestCase):
                 patch("scripts.continuous_move.run_continuous_route", side_effect=ValueError("action failed")), \
                 patch("scripts.waypoint_progress.write_json_atomic", side_effect=OSError("disk full")), \
                 redirect_stdout(output):
-            code = waypoint.main(["--expected-host", "AMD-DESKTOP", "--physical-pid", "123",
+            code = waypoint.main(["--expected-host", TEST_HOST, "--physical-pid", "123",
                                   "--go", "1", "0", "--execute"])
         failure = json.loads(output.getvalue().splitlines()[-1])
         self.assertEqual(2, code)
@@ -107,7 +111,7 @@ class WaypointCliTests(unittest.TestCase):
         with patch.object(waypoint, "PhysicalAdapter") as adapter, \
                 patch.object(waypoint, "launch_window") as window, redirect_stderr(io.StringIO()):
             with self.assertRaises(SystemExit) as caught:
-                waypoint.main(["--expected-host", "AMD-DESKTOP", "--physical-pid", "123",
+                waypoint.main(["--expected-host", TEST_HOST, "--physical-pid", "123",
                                "--play-route", "route.json"])
         self.assertEqual(2, caught.exception.code)
         adapter.assert_not_called()
@@ -126,7 +130,7 @@ class WaypointCliTests(unittest.TestCase):
                  patch.object(waypoint, "PhysicalAdapter") as adapter, \
                  redirect_stderr(io.StringIO()) as error, \
                  self.assertRaises(SystemExit) as caught:
-                waypoint.main(["--expected-host", "AMD-DESKTOP", "--physical-pid", "123",
+                waypoint.main(["--expected-host", TEST_HOST, "--physical-pid", "123",
                                *extra])
             self.assertEqual(2, caught.exception.code)
             self.assertIn(reason, error.getvalue())
@@ -141,7 +145,7 @@ class WaypointCliTests(unittest.TestCase):
         with patch.object(waypoint, "PhysicalAdapter", return_value=adapter), \
              patch("scripts.continuous_move.move_to", return_value=result) as mover, \
              redirect_stdout(output):
-            code = waypoint.main(["--expected-host", "AMD-DESKTOP", "--physical-pid", "123",
+            code = waypoint.main(["--expected-host", TEST_HOST, "--physical-pid", "123",
                                   "--go", "1", "2", "--goal-y", "3.5", "--execute"])
         self.assertEqual(0, code)
         self.assertEqual(3.5, mover.call_args.kwargs["goal_y"])
@@ -161,7 +165,7 @@ class WaypointCliTests(unittest.TestCase):
                     patch.object(waypoint, "PhysicalAdapter") as adapter, \
                     patch.object(waypoint, "launch_window") as window, redirect_stderr(io.StringIO()):
                 with self.assertRaises(SystemExit) as caught:
-                    waypoint.main(["--expected-host", "AMD-DESKTOP", "--physical-pid", "123",
+                    waypoint.main(["--expected-host", TEST_HOST, "--physical-pid", "123",
                                    "--route", "window.json", *action, "--execute"])
             self.assertEqual(2, caught.exception.code)
             adapter.assert_not_called()
@@ -177,7 +181,7 @@ class WaypointCliTests(unittest.TestCase):
             route.write_text(json.dumps({"waypoints": [["Ahead", 0, 1], ["Home", 0, 0]]}))
             output = io.StringIO()
             with patch.object(waypoint, "ROOT", root), patch.object(waypoint, "PhysicalAdapter", return_value=adapter), redirect_stdout(output):
-                code = waypoint.main(["--expected-host", "AMD-DESKTOP", "--physical-pid", "123",
+                code = waypoint.main(["--expected-host", TEST_HOST, "--physical-pid", "123",
                                       "--run-route", str(route), "--movement-engine", "pulse", "--execute"])
             receipt = json.loads(output.getvalue().splitlines()[-1])
             result = json.loads(Path(receipt["receipt"]).read_text())
@@ -208,7 +212,7 @@ class WaypointCliTests(unittest.TestCase):
         with patch.object(waypoint, "PhysicalAdapter", return_value=adapter), \
              patch("scripts.continuous_move.run_continuous_route", return_value=legs) as runner, \
              redirect_stdout(output):
-            code = waypoint.main(["--expected-host", "AMD-DESKTOP", "--physical-pid", "123",
+            code = waypoint.main(["--expected-host", TEST_HOST, "--physical-pid", "123",
                                   "--run-route", str(route), "--execute"])
         self.assertEqual(0, code)
         self.assertEqual([877.1, None], runner.call_args.kwargs["goal_heights"])
@@ -218,7 +222,7 @@ class WaypointCliTests(unittest.TestCase):
         route.write_text(json.dumps({"waypoints": [["Camp", 3, 4]],
                                      "heights": [877.1]}), encoding="utf-8")
         adapter = SimpleNamespace(binding={"runtimeIdentity": {
-                                      "machine": "AMD-DESKTOP", "gameBuildSha256": "a" * 64,
+                                      "machine": TEST_HOST, "gameBuildSha256": "a" * 64,
                                       "unitKey": "1", "processId": 123}},
                                   input_receipt_path=self.test_root / "inputs.jsonl")
         leg = {"status": "arrived", "name": "Camp",
@@ -229,7 +233,7 @@ class WaypointCliTests(unittest.TestCase):
              patch("scripts.waypoint_playback.play_route",
                    return_value=([leg], SimpleNamespace(next_index=1))) as playback, \
              redirect_stdout(output):
-            code = waypoint.main(["--expected-host", "AMD-DESKTOP", "--physical-pid", "123",
+            code = waypoint.main(["--expected-host", TEST_HOST, "--physical-pid", "123",
                                   "--play-route", str(route), "--execute"])
         self.assertEqual(0, code)
         self.assertIs(playback.call_args.kwargs["height_aware"], True)
@@ -240,7 +244,7 @@ class WaypointCliTests(unittest.TestCase):
             route = Path(directory) / "route.json"
             route.write_text(json.dumps({"waypoints": [["Bad", float("nan"), 0]]}))
             with patch.object(waypoint, "PhysicalAdapter", return_value=adapter), redirect_stdout(io.StringIO()):
-                code = waypoint.main(["--expected-host", "AMD-DESKTOP", "--physical-pid", "123",
+                code = waypoint.main(["--expected-host", TEST_HOST, "--physical-pid", "123",
                                       "--run-route", str(route), "--execute"])
         self.assertEqual(2, code)
         self.assertFalse(adapter.calls)
@@ -278,7 +282,7 @@ class WaypointCliTests(unittest.TestCase):
         previous = signal.getsignal(signal.SIGINT)
         self.stop_guard.side_effect = waypoint.WaypointError("F8 is unavailable")
         with patch.object(waypoint, "PhysicalAdapter", return_value=adapter), redirect_stdout(io.StringIO()):
-            code = waypoint.main(["--expected-host", "AMD-DESKTOP", "--physical-pid", "123",
+            code = waypoint.main(["--expected-host", TEST_HOST, "--physical-pid", "123",
                                   "--go", "0", "1", "--execute"])
         self.assertEqual(2, code)
         self.assertFalse(adapter.calls)

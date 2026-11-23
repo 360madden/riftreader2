@@ -1,6 +1,8 @@
 """Offline restart binding and route feedback tests; no native input."""
 import copy
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import threading
 import unittest
 from unittest.mock import patch
@@ -12,7 +14,10 @@ from tests.test_physical_waypoints import SimulatedRift
 
 class RestartBasisTests(unittest.TestCase):
     def setUp(self):
-        self.basis = {"identity": {"machine": "AMD-DESKTOP", "processId": 10,
+        self.host = "RIFT-STATION"
+        self.basis_file = Path(self.enterContext(TemporaryDirectory())) / "measured-basis.json"
+        self.basis_file.touch()
+        self.basis = {"identity": {"machine": self.host, "processId": 10,
                      "processStartUtcTicks": "100", "gameBuildSha256": "a" * 64,
                      "unitKey": "123"}}
         self.selection = {"status": "ready", "target": {"processStartUtcTicks": "200",
@@ -27,7 +32,7 @@ class RestartBasisTests(unittest.TestCase):
              patch.object(waypoints.physical_rift, "read_native", return_value=self.native) as read, \
              patch.object(waypoints, "read_basis", return_value=(self.basis, "basis-hash")), \
              patch.object(waypoints.PhysicalAdapter, "pulse", side_effect=AssertionError("unexpected input")) as pulse:
-            adapter = waypoints.PhysicalAdapter("AMD-DESKTOP", 20, "mock-basis")
+            adapter = waypoints.PhysicalAdapter(self.host, 20, self.basis_file)
             pulse.assert_not_called()
             return adapter, read
 
@@ -56,14 +61,15 @@ class RestartBasisTests(unittest.TestCase):
                     self.make_adapter()
 
     def test_mismatched_machine_build_player_or_stale_pose_rejected(self):
-        for case in ("machine", "build", "player", "stale"):
+        for case, reason in (("machine", "another host/build"), ("build", "another host/build"),
+                             ("player", "player identity changed"), ("stale", "Stale pose")):
             with self.subTest(case=case):
                 self.setUp()
                 if case == "machine": self.basis["identity"]["machine"] = "OTHER"
                 elif case == "build": self.selection["target"]["executableSha256"] = "b" * 64
                 elif case == "player": self.native["nativeValues"]["playerKey"] = "999"
                 else: self.native["nativeValues"]["sampledAtUtc"] = (datetime.now(timezone.utc) - timedelta(seconds=10)).isoformat()
-                with self.assertRaises(ValueError): self.make_adapter()
+                with self.assertRaisesRegex(ValueError, reason): self.make_adapter()
 
 
 class ReusedSeedRouteTests(unittest.TestCase):

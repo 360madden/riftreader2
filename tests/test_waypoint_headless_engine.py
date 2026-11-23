@@ -29,13 +29,15 @@ def leg(name="Point", *, total_hold=...):
 
 class HeadlessMovementEngineTests(unittest.TestCase):
     def setUp(self):
+        host = "RIFT-STATION"
+        self.enterContext(patch.object(app.socket, "gethostname", return_value=host))
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
         (self.root / "artifacts").mkdir()
         self.route = self.root / "route.json"
         self.route.write_text(json.dumps({"waypoints": [["A", 1, 3], ["B", 2, 4]]}),
                               encoding="utf-8")
-        self.base = ["--expected-host", "AMD-DESKTOP", "--physical-pid", "123", "--execute"]
+        self.base = ["--expected-host", host, "--physical-pid", "123", "--execute"]
         self.adapter = SimpleNamespace(binding={"runtimeIdentity": {"unitKey": "7"}})
 
     def tearDown(self):

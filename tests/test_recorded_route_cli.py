@@ -13,11 +13,13 @@ from scripts import waypoint_playback
 
 class RecordedRouteCliTests(unittest.TestCase):
     def setUp(self):
+        host = "RIFT-STATION"
+        self.enterContext(patch.object(cli.socket, "gethostname", return_value=host))
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         (self.root / "artifacts").mkdir()
-        self.args = ["--expected-host", "AMD-DESKTOP", "--physical-pid", "123", "--execute"]
+        self.args = ["--expected-host", host, "--physical-pid", "123", "--execute"]
 
     def test_existing_record_destination_refused_before_adapter_or_input(self):
         path = self.root / "existing.json"
@@ -41,7 +43,8 @@ class RecordedRouteCliTests(unittest.TestCase):
              redirect_stdout(StringIO()):
             adapter.return_value.binding = {"runtimeIdentity": {}}
             code = cli.main(self.args + ["--play-route", str(route), "--reverse", "--resume",
-                                         "--progress", str(checkpoint), "--face-waypoints"])
+                                         "--progress", str(checkpoint), "--face-waypoints",
+                                         "--movement-engine", "pulse"])
         self.assertEqual(code, 0)
         self.assertEqual(play.call_args.args[1], document)
         self.assertIs(play.call_args.kwargs["runner"], cli.run_route)
