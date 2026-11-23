@@ -41,9 +41,18 @@ def _plain_path(path):
                      "reparse-path")
 
 
+def workbridge_root():
+    """Use the configured local deployment, or the standard installation path."""
+    root = Path(os.environ.get("RR2_WORKBRIDGE_ROOT", BRIDGE))
+    _require(root.is_absolute() and not root.drive.startswith(("\\", "/"))
+             and ".." not in root.parts, "invalid-workbridge-root")
+    _plain_path(root)
+    return root
+
+
 def require_clear_desktop_turn():
     """Check Workbridge admission without creating or releasing a lock."""
-    evidence = BRIDGE / ".tools" / "desktop-evidence"
+    evidence = workbridge_root() / ".tools" / "desktop-evidence"
     _plain_path(evidence)
     _require(evidence.is_dir(), "shared-gui-evidence-directory-missing")
     for path in evidence.iterdir():
@@ -118,14 +127,19 @@ def _identity(physical_pid=None, *, require_window=True):
     return value
 
 
-def _call(tool, arguments, output):
+def _call(tool, arguments, output, *, bridge=None):
+    bridge = workbridge_root() if bridge is None else bridge
+    cli = bridge / "scripts" / "workbridge-cli.mjs"
+    state = bridge / ".local"
+    _plain_path(cli)
+    _plain_path(state)
     node = NODE if NODE.is_file() else shutil.which("node")
     _require(node is not None, "desktop-node-runtime-unavailable")
     request = output / (tool + "-request.json")
     with request.open("x", encoding="utf-8") as stream:
         json.dump([{"tool": tool, "arguments": arguments}], stream)
-    code, text = _run([node, BRIDGE / "scripts/workbridge-cli.mjs",
-                      "--service-state", BRIDGE / ".local", "--root", BRIDGE.parent,
+    code, text = _run([node, cli,
+                      "--service-state", state, "--root", bridge.parent,
                       "--input", request, "--timeout", "100", "--json"])
     lines = text.splitlines()
     _require(len(lines) == 1, "invalid-backend-response")
@@ -161,7 +175,8 @@ def capture_physical(expected_host, output, *, allow_foreground_change=False,
         _require(physical_pid is None or before.get("processId") == physical_pid,
                  "physical-pid-mismatch")
         _require(before.get("hostName", "").casefold() == expected_host.casefold(), "host-mismatch")
-        windows = _call("desktop_windows", {"app": str(before["processId"])}, output)
+        bridge = workbridge_root()
+        windows = _call("desktop_windows", {"app": str(before["processId"])}, output, bridge=bridge)
         _require(windows.get("truncated") is False, "window-list-truncated")
         matches = [w for w in windows.get("windows", [])
                    if w.get("pid") == before["processId"] and w.get("hwnd") == before["hwnd"]
@@ -180,7 +195,7 @@ def capture_physical(expected_host, output, *, allow_foreground_change=False,
         receipt = _call("desktop_capture_window", {
             "pid": before["processId"], "hwnd": before["hwnd"], "process": "rift_x64",
             "requestId": request_id, "title": window["title"], "className": window["className"],
-        }, output)
+        }, output, bridge=bridge)
         _require(_identity(physical_pid) == before, "stale-identity")
         ended = datetime.now(timezone.utc)
         _require(receipt.get("ok") is True and receipt.get("replayed") is False and
@@ -192,7 +207,7 @@ def capture_physical(expected_host, output, *, allow_foreground_change=False,
         captured = datetime.fromisoformat(receipt["capturedUtc"].replace("Z", "+00:00"))
         _require(captured.tzinfo is not None and started <= captured <= ended, "stale-capture")
         source = Path(receipt["imagePath"])
-        _require(source == BRIDGE / ".tools/desktop-evidence" / ("capture-" + request_id + ".png"),
+        _require(source == bridge / ".tools/desktop-evidence" / ("capture-" + request_id + ".png"),
                  "unexpected-image-path")
         _plain_path(source)
         _require(source.is_file() and 45 <= source.stat().st_size <= MAX_IMAGE, "image-unavailable")

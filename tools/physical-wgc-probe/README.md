@@ -53,7 +53,9 @@ Direct invocation requires `--capture`, the same identity fields, `--allow-one-c
 
 ## Desktop gate and limitations
 
-The probe tests the presence of the Workbridge `desktop-input-turn.lock`, `desktop-turn-admission.lock`, and any `desktop-turn-quarantine-*.json` **before any capture** and again **before publishing**. It never creates, rewrites, clears, archives, or bypasses Workbridge's locks. This is an observational fail-closed check, **not an exclusive shared lease** and not a substitute for Workbridge's owner reconciliation. A present lock or quarantine blocks the capture attempt.
+The probe reads `.tools\desktop-evidence` in the active local Workbridge deployment. It uses `C:\work\workbridge-mcp` by default. Set `RR2_WORKBRIDGE_ROOT` to the active local installation's absolute path when it differs. This is the same setting used by the Python capture workflows.
+
+The probe checks for `desktop-input-turn.lock`, `desktop-turn-admission.lock` and any `desktop-turn-quarantine-*.json` **before capture** and **before publishing**. A missing evidence directory, redirected path, present lock or quarantine blocks capture. The probe only observes the shared turn. Workbridge owns the exclusive lease and its recovery.
 
 On November 11, the local observer captured a 1920 x 1032 physical RIFT frame with the same process and window identity before and after capture. The frame showed Atank and the practice dummies. The receipt recorded no input or focus change. Later trials paired screenshots with native actor-pose samples. Camera and body yaw still need independent measurements. DXGI remains unverified on this client.
 

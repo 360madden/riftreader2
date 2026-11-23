@@ -168,12 +168,16 @@ internal sealed record ClientFrameMapping(string Status, string? UnavailableReas
 
 internal static class CapturePolicy
 {
-    private const string EvidenceDirectory =
-        @"C:\work\workbridge-mcp\.tools\desktop-evidence";
-    private const string LockPath =
-        @"C:\work\workbridge-mcp\.tools\desktop-evidence\desktop-input-turn.lock";
-    private const string AdmissionPath =
-        @"C:\work\workbridge-mcp\.tools\desktop-evidence\desktop-turn-admission.lock";
+    internal static string EvidenceDirectory(string? configuredRoot)
+    {
+        var root = configuredRoot ?? @"C:\work\workbridge-mcp";
+        if (!Path.IsPathFullyQualified(root) || root.Length < 3 ||
+            !char.IsAsciiLetter(root[0]) || root[1] != ':' ||
+            root.Split('\\', '/').Contains(".."))
+            throw new InvalidOperationException("invalid-workbridge-root");
+        return Path.Combine(Path.GetFullPath(root), ".tools", "desktop-evidence");
+    }
+
     internal static string ArtifactRoot(string probeDirectory)
     {
         for (var directory = new DirectoryInfo(probeDirectory); directory is not null; directory = directory.Parent)
@@ -185,17 +189,24 @@ internal static class CapturePolicy
         throw new InvalidOperationException("rr2-artifact-root-unavailable");
     }
 
-    internal static string? BlockReason(bool hasLock, bool quarantineExists)
-        => hasLock || quarantineExists ? "desktop-turn-recovery-required" : null;
-
-    internal static void RequireUnquarantined()
+    internal static void RequireUnquarantined(string evidenceDirectory)
     {
-        if (!Directory.Exists(EvidenceDirectory))
+        if (!Directory.Exists(evidenceDirectory))
             throw new InvalidOperationException("shared-gui-evidence-directory-missing");
-        if (BlockReason(File.Exists(LockPath) || File.Exists(AdmissionPath),
-            Directory.EnumerateFiles(EvidenceDirectory, "desktop-turn-quarantine-*.json").Any())
-            is { } reason)
-            throw new InvalidOperationException(reason);
+        for (var directory = new DirectoryInfo(evidenceDirectory); directory is not null; directory = directory.Parent)
+        {
+            if ((File.GetAttributes(directory.FullName) & FileAttributes.ReparsePoint) != 0)
+                throw new InvalidOperationException("reparse-path");
+        }
+        foreach (var entry in Directory.EnumerateFileSystemEntries(evidenceDirectory))
+        {
+            var name = Path.GetFileName(entry);
+            if (name.Equals("desktop-input-turn.lock", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("desktop-turn-admission.lock", StringComparison.OrdinalIgnoreCase)
+                || (name.StartsWith("desktop-turn-quarantine-", StringComparison.OrdinalIgnoreCase)
+                    && name.EndsWith(".json", StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException("desktop-turn-recovery-required");
+        }
     }
 
     // This capture-only experiment never creates or releases the Workbridge
@@ -331,21 +342,21 @@ internal static class Probe
             if (options.Mode == "self-test")
                 return SelfTest();
             Target.RequireLocalHost(options.Host);
-            // Deny any capture while an older GUI turn is unresolved, even if
-            // the requested PID/HWND has disappeared or been reused.
-            if (options.Mode == "capture")
-                CapturePolicy.RequireUnquarantined();
-            var before = Target.Inspect(options);
             if (options.Mode == "inspect")
             {
+                var target = Target.Inspect(options);
                 Print(new {
                     status = "read-only-window-identity-pinned", machine = Environment.MachineName,
-                    backend = options.Backend, target = before, inputSent = false,
+                    backend = options.Backend, target, inputSent = false,
                     imageCaptureAttempted = false, desktopCaptureApproved = false
                 });
                 return 0;
             }
 
+            // Resolve the deployment once and keep all checks pinned to it through publication.
+            var evidenceDirectory = CapturePolicy.EvidenceDirectory(Environment.GetEnvironmentVariable("RR2_WORKBRIDGE_ROOT"));
+            CapturePolicy.RequireUnquarantined(evidenceDirectory);
+            var before = Target.Inspect(options);
             var output = Path.GetFullPath(options.Output!);
             var relative = Path.GetRelativePath(CapturePolicy.ArtifactRoot(AppContext.BaseDirectory), output);
             if (relative == "." || relative == ".."
@@ -357,7 +368,7 @@ internal static class Probe
                 || File.Exists(output) || File.Exists(receipt)
                 || (File.GetAttributes(Path.GetDirectoryName(output)!) & FileAttributes.ReparsePoint) != 0)
                 throw new InvalidOperationException("capture-output-path-invalid-or-already-used");
-            CapturePolicy.RequireUnquarantined();
+            CapturePolicy.RequireUnquarantined(evidenceDirectory);
             var exact = Target.Inspect(options);
             if (before != exact)
                 throw new InvalidOperationException("window-identity-changed-before-capture");
@@ -372,7 +383,7 @@ internal static class Probe
             if (image is null) throw new InvalidOperationException("gpu-capture-returned-no-frame");
             if (image.Width < 64 || image.Height < 64 || image.Width > 4096 || image.Height > 2160)
                 throw new InvalidOperationException("gpu-capture-frame-dimensions-invalid");
-            CapturePolicy.RequireUnquarantined();
+            CapturePolicy.RequireUnquarantined(evidenceDirectory);
             var after = Target.Inspect(options);
             if (exact != after)
                 throw new InvalidOperationException("window-identity-changed-during-capture");
@@ -505,12 +516,42 @@ internal static class Probe
         MustReject(valid.Concat(["--backend", "printwindow"]).ToArray(), "unsupported-backend");
         MustReject(valid.Concat(["--out", "C:\\temp\\hello.png"]).ToArray(), "inspect-output");
         MustReject(new[] { "--capture" }.Concat(valid.Skip(1)).ToArray(), "capture-approval-required");
-        Check(CapturePolicy.BlockReason(hasLock: false, quarantineExists: false) is null,
-            "clear-gui");
-        Check(CapturePolicy.BlockReason(hasLock: true, quarantineExists: false) is not null,
-            "locked-gui");
-        Check(CapturePolicy.BlockReason(hasLock: false, quarantineExists: true) is not null,
-            "quarantined-gui");
+        void MustBlock(Action action, string expectedReason)
+        {
+            try { action(); }
+            catch (InvalidOperationException error) when (error.Message == expectedReason)
+            {
+                passed++;
+                return;
+            }
+            throw new InvalidOperationException("self-test-missing-rejection-" + expectedReason);
+        }
+        foreach (var root in new[] { "", "relative", @"C:drive-relative", @"C:\base\..\other", @"\\server\share" })
+            MustBlock(() => CapturePolicy.EvidenceDirectory(root), "invalid-workbridge-root");
+        var bridge = Directory.CreateTempSubdirectory("rr2-wgc-admission-");
+        var evidenceDirectory = CapturePolicy.EvidenceDirectory(bridge.FullName);
+        try
+        {
+            Check(evidenceDirectory == Path.Combine(bridge.FullName, ".tools", "desktop-evidence"), "custom-workbridge-path");
+            MustBlock(() => CapturePolicy.RequireUnquarantined(evidenceDirectory), "shared-gui-evidence-directory-missing");
+            Directory.CreateDirectory(evidenceDirectory);
+            CapturePolicy.RequireUnquarantined(evidenceDirectory);
+            passed++;
+            foreach (var name in new[] { "desktop-input-turn.lock", "DESKTOP-TURN-ADMISSION.LOCK", "desktop-turn-quarantine-test.json" })
+            {
+                var path = Path.Combine(evidenceDirectory, name);
+                File.WriteAllText(path, "synthetic blocker");
+                try { MustBlock(() => CapturePolicy.RequireUnquarantined(evidenceDirectory), "desktop-turn-recovery-required"); }
+                finally { File.Delete(path); }
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(evidenceDirectory)) Directory.Delete(evidenceDirectory);
+            var toolsDirectory = Path.GetDirectoryName(evidenceDirectory)!;
+            if (Directory.Exists(toolsDirectory)) Directory.Delete(toolsDirectory);
+            bridge.Delete();
+        }
         var maximized = ClientFrameMapping.Create(new(-1920, 0, 0, 1032, -1920, 23, 1920, 1009), 1920, 1032);
         Check(maximized.Status == "available-candidate" && maximized.ClientLeft == 0 && maximized.ClientTop == 23,
             "negative-monitor-origin");

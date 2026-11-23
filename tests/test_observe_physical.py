@@ -22,6 +22,9 @@ class PhysicalTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
+        self.enterContext(patch.dict(physical.os.environ))
+        physical.os.environ.pop("RR2_WORKBRIDGE_ROOT", None)
+        self.enterContext(patch.object(physical, "BRIDGE", self.root / "default-bridge"))
         self.host = patch.object(physical.socket, "gethostname", return_value="AMD-DESKTOP")
         self.host.start()
         self.addCleanup(self.host.stop)
@@ -47,6 +50,27 @@ class PhysicalTests(unittest.TestCase):
                     blocker.unlink()
             physical.require_clear_desktop_turn()
             self.assertEqual(list(evidence.iterdir()), [])
+
+    def test_configured_root_checks_its_guard_without_falling_back(self):
+        (physical.BRIDGE / ".tools" / "desktop-evidence").mkdir(parents=True)
+        bridge = self.root / "alternate install" / "workbridge"
+        physical.os.environ["RR2_WORKBRIDGE_ROOT"] = str(bridge)
+        with self.assertRaisesRegex(ValueError, "shared-gui-evidence-directory-missing"):
+            physical.require_clear_desktop_turn()
+        evidence = bridge / ".tools" / "desktop-evidence"
+        evidence.mkdir(parents=True)
+        blocker = evidence / "DESKTOP-TURN-ADMISSION.LOCK"
+        blocker.mkdir()
+        with self.assertRaisesRegex(ValueError, "desktop-turn-recovery-required"):
+            physical.require_clear_desktop_turn()
+        blocker.rmdir()
+        physical.require_clear_desktop_turn()
+
+    def test_workbridge_root_rejects_relative_and_parent_paths(self):
+        for path in ("", "relative", str(self.root / "placeholder" / ".." / "bridge")):
+            with self.subTest(path=path), patch.dict(physical.os.environ, RR2_WORKBRIDGE_ROOT=path):
+                with self.assertRaisesRegex(ValueError, "invalid-workbridge-root"):
+                    physical.workbridge_root()
 
     def test_wrong_host_calls_nothing(self):
         with patch.object(physical.socket, "gethostname", return_value="LEGION"), \
@@ -145,11 +169,11 @@ class PhysicalTests(unittest.TestCase):
                 self.assertEqual(result["reason"], reason)
                 self.assertEqual(call.call_count, 2)
 
-    def backend(self, tool, args, output):
+    def backend(self, tool, args, output, *, bridge):
         if tool == "desktop_windows":
             return {"truncated": False, "windows": [WINDOW]}
         self.assertEqual(tool, "desktop_capture_window")
-        source = physical.BRIDGE / ".tools/desktop-evidence" / ("capture-" + args["requestId"] + ".png")
+        source = bridge / ".tools/desktop-evidence" / ("capture-" + args["requestId"] + ".png")
         source.parent.mkdir(parents=True, exist_ok=True)
         source.write_bytes(PNG)
         digest = sha256(PNG).hexdigest()
@@ -162,15 +186,25 @@ class PhysicalTests(unittest.TestCase):
                 "imageDimensionsVerified": {"width": 800, "height": 600}, "mimeType": "image/png"}
 
     def test_success(self):
-        with patch.object(physical, "BRIDGE", self.root / "bridge"), \
+        bridge = self.root / "alternate install" / "workbridge"
+        with patch.dict(physical.os.environ, RR2_WORKBRIDGE_ROOT=str(bridge)), \
              patch.object(physical, "_identity", return_value=IDENTITY), \
-             patch.object(physical, "_call", side_effect=self.backend):
+             patch.object(physical, "_call", side_effect=self.backend) as call:
             result = self.capture()
             self.assertEqual(result["status"], "verified-awaiting-visual-review")
             self.assertEqual(result["targetId"], "physical-amd-desktop")
             self.assertEqual(result["target"], IDENTITY)
             self.assertEqual(Path(result["image"]).read_bytes(), PNG)
             self.assertEqual(result["imageSha256"], sha256(PNG).hexdigest().upper())
+            self.assertEqual([entry.kwargs["bridge"] for entry in call.call_args_list], [bridge, bridge])
+
+    def test_rejects_capture_evidence_from_different_installation(self):
+        def backend(tool, args, output, *, bridge):
+            return self.backend(tool, args, output, bridge=self.root / "wrong bridge")
+
+        with patch.object(physical, "_identity", return_value=IDENTITY), \
+             patch.object(physical, "_call", side_effect=backend):
+            self.assertEqual(self.capture()["reason"], "unexpected-image-path")
 
     def test_selected_pid_is_checked_at_all_three_identity_gates(self):
         with patch.object(physical, "BRIDGE", self.root / "bridge"), \
@@ -200,8 +234,8 @@ class PhysicalTests(unittest.TestCase):
             self.assertFalse((self.root / "run/image.png").exists())
 
     def test_corrupt_hash_rejected(self):
-        def backend(*args):
-            value = self.backend(*args)
+        def backend(*args, **kwargs):
+            value = self.backend(*args, **kwargs)
             if args[0] == "desktop_capture_window":
                 value["sha256"] = "0" * 64
             return value
@@ -214,8 +248,8 @@ class PhysicalTests(unittest.TestCase):
         for field, value, reason in (
                 ("replayed", True, "capture-receipt-mismatch"),
                 ("capturedUtc", "2000-01-01T00:00:00.000Z", "stale-capture")):
-            def backend(*args):
-                receipt = self.backend(*args)
+            def backend(*args, **kwargs):
+                receipt = self.backend(*args, **kwargs)
                 if args[0] == "desktop_capture_window":
                     receipt[field] = value
                 return receipt
@@ -237,10 +271,14 @@ class PhysicalTests(unittest.TestCase):
     def test_cli_flattened_result_and_existing_service(self):
         value = {"truncated": False, "windows": [WINDOW]}
         response = {"schemaVersion": 1, "index": 0, "tool": "desktop_windows", "ok": True, "result": value}
-        with patch.object(physical, "_run", return_value=(0, json.dumps(response))) as run:
+        bridge = self.root / "alternate install" / "workbridge"
+        with patch.dict(physical.os.environ, RR2_WORKBRIDGE_ROOT=str(bridge)), \
+             patch.object(physical, "_run", return_value=(0, json.dumps(response))) as run:
             self.assertEqual(physical._call("desktop_windows", {"app": "123"}, self.root), value)
             command = run.call_args.args[0]
             self.assertIn("--service-state", command)
+            self.assertEqual(command[1:6], [bridge / "scripts" / "workbridge-cli.mjs",
+                                           "--service-state", bridge / ".local", "--root", bridge.parent])
             self.assertNotIn("--state-dir", command)
 
     def test_cli_error_code_preserved(self):

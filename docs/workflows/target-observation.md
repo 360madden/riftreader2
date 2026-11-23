@@ -20,6 +20,24 @@ The existing `physical-amd-desktop` and `physical-legion` arguments remain valid
 For the Workbridge window backend, the explicit `--allow-foreground-change`
 option requires desktop ownership. [WGC build and inspection](../../tools/physical-wgc-probe/README.md)
 
+The standard Workbridge deployment is `C:\work\workbridge-mcp`. If Workbridge
+is installed elsewhere, set `RR2_WORKBRIDGE_ROOT` to the absolute directory of
+the active local deployment in the environment that launches RiftReader. The
+Workbridge CLI, WGC, DXcam and Waypoints view checks all use that root. The guard
+directory is `.tools\desktop-evidence` within the deployment. Keep the setting
+pointed at the installation that owns the desktop turn, including when several
+Workbridge checkouts exist on the same machine.
+
+```powershell
+$env:RR2_WORKBRIDGE_ROOT = 'D:\Tools\workbridge-mcp'
+python -B -c "from scripts.observe_physical import require_clear_desktop_turn; require_clear_desktop_turn()"
+```
+
+The Python command checks the directory and guard files at that instant. The
+Workbridge window backend separately needs a reachable service whose runtime
+version matches its CLI. `RUNTIME_MISMATCH` identifies a deployment version
+problem. A WGC identity inspection can still identify the RIFT window.
+
 The historical VMware material below is **archived**. The observation CLI now
 rejects `lab1`/`lab2` by default with `vmware-retired-use-physical-rift`;
 `--allow-historical-vm` is an explicit diagnostic-only opt-in for reproducing
