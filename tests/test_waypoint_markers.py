@@ -1,11 +1,12 @@
 """Owned marker lifecycle tests using fake processes and local files only."""
 import json
+import os
 import sys
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from scripts.physical_waypoints import OwnedWaypointMarkers, WaypointError
 
@@ -22,6 +23,7 @@ class OwnedMarkerTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        self.enterContext(patch.object(os, "environ", dict(os.environ, RR2_OVERLAY_PYTHON="")))
         (self.root / "artifacts").mkdir()
         self.child = FakeChild()
         self.popen = Mock(return_value=self.child)
@@ -93,6 +95,25 @@ class OwnedMarkerTests(unittest.TestCase):
         command = self.popen.call_args.args[0]
         self.assertEqual(str(executable), command[0])
         self.assertEqual("qt", command[command.index("--presenter") + 1])
+
+    def test_configured_overlay_python_selects_qt_and_keeps_native_identity_pins(self):
+        executable = self.root / "configured Python.exe"
+        executable.touch()
+        with patch.object(os, "environ", dict(os.environ, RR2_OVERLAY_PYTHON=str(executable))):
+            self.markers.start(self.route, self.adapter)
+        command = self.popen.call_args.args[0]
+        self.assertEqual(str(executable), command[0])
+        self.assertEqual("qt", command[command.index("--presenter") + 1])
+        self.assertEqual(self.identity["unitKey"], command[command.index("--expected-unit-key") + 1])
+
+    def test_missing_or_relative_configured_python_refuses_without_starting_markers(self):
+        for path, reason in ((str(self.root / "missing.exe"), "overlay-python-unavailable"),
+                             ("relative/python.exe", "invalid-overlay-python-path")):
+            with self.subTest(path=path), patch.object(os, "environ", dict(os.environ, RR2_OVERLAY_PYTHON=path)):
+                with self.assertRaisesRegex(WaypointError, reason):
+                    self.markers.start(self.route, self.adapter)
+        self.popen.assert_not_called()
+        self.assertEqual(list((self.root / "artifacts").iterdir()), [])
 
     def test_target_beacon_opt_in_keeps_route_and_process_binding(self):
         self.markers.start(self.route, self.adapter, target_beacon=True)

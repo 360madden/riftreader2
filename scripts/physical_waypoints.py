@@ -95,6 +95,17 @@ class OwnedWaypointMarkers:
             raise WaypointError("Select one saved marker to guide to")
         if self.running():
             raise WaypointError("Markers are already open or closing")
+        configured_python = os.environ.get("RR2_OVERLAY_PYTHON")
+        if configured_python:
+            qt_executable = Path(configured_python)
+            if not qt_executable.is_absolute() or qt_executable.anchor.startswith(("\\\\", "//")):
+                raise WaypointError("invalid-overlay-python-path")
+            _plain_path(qt_executable)
+            if not qt_executable.is_file():
+                raise WaypointError("overlay-python-unavailable")
+        else:
+            qt_executable = self.root / ".local" / "overlay-venv" / "Scripts" / "pythonw.exe"
+        presenter = "qt" if configured_python or qt_executable.is_file() else "native"
         from scripts.live_physical_waypoints import load_route
         from scripts.waypoint_progress import write_json_atomic
         identity = adapter.binding["runtimeIdentity"]
@@ -110,8 +121,6 @@ class OwnedWaypointMarkers:
         write_json_atomic(self.exploration_path, {"version": 1, "owner": None,
                                                 "acquiredMonotonic": None, "guidance": None, "trail": []})
         write_json_atomic(route_path, document)
-        qt_executable = self.root / ".local" / "overlay-venv" / "Scripts" / "pythonw.exe"
-        presenter = "qt" if qt_executable.is_file() else "native"
         recorded = load_route(route_path, expected_identity=identity, allow_empty=presenter == "qt")
         if any(str(recorded["identity"].get(key, "")).casefold() != str(identity[key]).casefold()
                for key in ("machine", "gameBuildSha256", "unitKey")):

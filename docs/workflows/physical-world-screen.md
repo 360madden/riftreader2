@@ -490,6 +490,9 @@ or gameplay input occurs.
 the installed `.local/overlay-venv` and its Qt presenter automatically. Local setup
 and the GitHub tool comparison are in
 [third-party workflow tools](../reference/third-party-workflow-tools-2026-11-12.md).
+Set `RR2_OVERLAY_PYTHON` to an absolute local Python executable with
+[requirements-overlay.txt](../../requirements-overlay.txt) installed to use a
+Qt environment outside the checkout.
 The existing native presenter remains an explicit fallback. Both reuse the same
 recorded XYZ, native camera projector, identity/freshness checks and stop lifecycle.
 
