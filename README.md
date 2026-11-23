@@ -121,6 +121,11 @@ PowerShell prefixes the launcher with `.\`. The [CLI reference and examples](doc
 cover route edits, passive guide/trail, beacons and guarded movement. Use `--json`
 for automation; movement requires explicit `--execute` and retains STOP/release.
 
+Both launchers use `RIFTREADER2_PYTHON` when set to a Python executable, then a
+checkout-local `.venv`, Python on `PATH`, or the Windows `py` launcher. Run
+`.\Waypoints.cmd --check` to see the local RIFT and movement calibration
+readiness in the console without opening the helper window.
+
 See the [waypoint guide](docs/workflows/physical-waypoints.md) for setup, measured
 results and restart/obstacle limitations. Launching the window sends no game input.
 

@@ -1007,15 +1007,16 @@ def _launch(args, protocol):
             return shown
         return result("app.open", data={"session":existing, "reused":True, "applied":shown}, session=existing["sessionId"])
     before = {s["sessionId"] for s in sessions}
-    pythonw = Path(sys.executable).with_name("pythonw.exe")
-    if not pythonw.exists():
-        raise protocol.CliError("launcher-unavailable", "pythonw.exe is unavailable", exit_code=3)
+    from scripts.launch_physical_waypoints import start_window_process
     launch_token = uuid.uuid4().hex
-    command = [str(pythonw), str(ROOT / "scripts/launch_physical_waypoints.py"), "--cli", "--launch-token", launch_token]
+    command = ["--cli", "--launch-token", launch_token]
     for flag, value in (("--physical-pid", args.pid), ("--route", args.route), ("--basis", args.basis)):
         if value is not None: command.extend((flag, str(value)))
     if args.background: command.append("--background")
-    child = subprocess.Popen(command, cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        child = start_window_process(command)
+    except OSError as exc:
+        raise protocol.CliError("launcher-unavailable", f"Could not start Waypoints: {exc}", exit_code=3) from exc
     deadline = time.monotonic() + args.timeout
     while time.monotonic() < deadline:
         sessions = [s for s in protocol.discover_sessions() if s["sessionId"] not in before and s.get("launchToken") == launch_token]

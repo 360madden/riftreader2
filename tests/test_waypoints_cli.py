@@ -565,11 +565,12 @@ class CliTests(unittest.TestCase):
         token = 'unique-launch-token'
         descriptor = {'sessionId':'new', 'pid':999, 'launchToken':token}
         child = SimpleNamespace(pid=123, poll=lambda:None)
-        with patch.object(protocol,'discover_sessions',side_effect=[[],[descriptor]]), patch.object(cli.Path,'exists',return_value=True), patch.object(cli.uuid,'uuid4',return_value=SimpleNamespace(hex=token)), patch.object(cli.subprocess,'Popen',return_value=child) as spawn:
+        with patch.object(protocol,'discover_sessions',side_effect=[[],[descriptor]]), patch.object(cli.uuid,'uuid4',return_value=SimpleNamespace(hex=token)), patch.object(cli.subprocess,'Popen',return_value=child) as spawn:
             code,out,_ = self.call('app','open','--json')
             self.assertEqual(code,0)
             self.assertEqual(json.loads(out)['data']['pid'],999)
             command=spawn.call_args.args[0]
+            self.assertEqual(command[0], cli.sys.executable)
             self.assertEqual(command[command.index('--launch-token')+1],token)
 
     def test_app_open_reuses_matching_route_file_key(self):

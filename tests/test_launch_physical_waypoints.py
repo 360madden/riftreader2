@@ -41,9 +41,23 @@ class LauncherTests(unittest.TestCase):
         self.assertFalse(window.call_args.args[0].auto_reconnect)
 
     def test_check_reports_binding(self):
-        window, output = self.run_launcher(["--check"])
+        with patch.object(launcher.subprocess, "Popen") as spawn:
+            window, output = self.run_launcher(["--detach-window", "--physical-pid", "7", "--check"])
         self.assertEqual(json.loads(output)["calibrationBinding"], {"mode": "reused-seed"})
         window.assert_not_called()
+        spawn.assert_not_called()
+
+    def test_desktop_launcher_detaches_using_the_selected_interpreter(self):
+        route = self.root / "my route.json"
+        with patch.object(launcher.subprocess, "Popen") as spawn, \
+             patch.object(launcher.physical_rift, "select_physical") as select:
+            self.assertEqual(launcher.main(["--detach-window", "--route", str(route)]), 0)
+        command = spawn.call_args.args[0]
+        self.assertEqual(command[0], sys.executable)
+        self.assertEqual(command[2:], ["--route", str(route)])
+        self.assertEqual(spawn.call_args.kwargs["creationflags"],
+                         getattr(launcher.subprocess, "CREATE_NO_WINDOW", 0))
+        select.assert_not_called()
 
     def test_default_waits_when_absent_or_ambiguous(self):
         for reason in ("not found", "ambiguous"):

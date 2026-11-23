@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import subprocess
 import sys
 from types import SimpleNamespace
 
@@ -17,7 +18,18 @@ from scripts import physical_rift
 from scripts.physical_waypoints import PhysicalAdapter, launch_window
 
 
+def start_window_process(arguments):
+    command = [sys.executable, str(Path(__file__).resolve()), *arguments]
+    return subprocess.Popen(command, cwd=ROOT, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+
 def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    detach_window = argv[:1] == ["--detach-window"]
+    if detach_window:
+        argv = argv[1:]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--physical-pid", type=int, help="required when several RIFT clients are running")
     parser.add_argument("--basis", type=Path, help="override the local host's movement calibration file")
@@ -29,6 +41,13 @@ def main(argv=None):
     parser.add_argument("--movement-engine", choices=("continuous", "pulse"), default="continuous",
                         help="continuous travel (default) or the original bounded pulse controller")
     args = parser.parse_args(argv)
+    if detach_window and not args.check:
+        try:
+            start_window_process(argv)
+        except OSError as error:
+            print(f"Could not start Waypoints: {error}", file=sys.stderr)
+            return 2
+        return 0
     host = socket.gethostname().upper()
     from scripts.waypoint_diagnostics import Diagnostics
     from scripts.waypoint_brand import APP_NAME, APP_VERSION
