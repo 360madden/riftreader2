@@ -117,11 +117,11 @@ def _retain_native_sources(observation, directory, sources):
         bracket[field] = filename
 
 
-def _zone_context(selection, route, path):
+def _zone_context(selection, route, path, *, native_reader=None):
     """Optional new acquisition only; retain failures without borrowing old context."""
     entry = {"status": "unavailable", "source": str(path)}
     try:
-        receipt = physical_rift.read_native(selection, "zone-context", output=path)
+        receipt = physical_rift.read_native(selection, "zone-context", output=path, native_reader=native_reader)
         entry["receipt"] = deepcopy(receipt)
         require(receipt.get("status") == "complete", receipt.get("reason", "zone-acquisition-unavailable"))
         require(receipt.get("target") == selection["target"], "zone-target-identity-mismatch")
@@ -170,7 +170,7 @@ def _compare_zone_context(before, after):
     return result
 
 
-def _unit_names_sample(selection, values, positions, directory):
+def _unit_names_sample(selection, values, positions, directory, *, native_reader=None):
     """One optional explicit batch for only the positions already chosen for display."""
     source, wrapper = directory / "unit-names-native.json", directory / "unit-names-sample.json"
     entry = {"status": "unavailable"}
@@ -181,7 +181,8 @@ def _unit_names_sample(selection, values, positions, directory):
     if not keys:
         return dict(entry, reason="no-displayed-units")
     try:
-        receipt = physical_rift.read_native(selection, "unit-names", output=source, unit_keys=keys)
+        receipt = physical_rift.read_native(selection, "unit-names", output=source, unit_keys=keys,
+                                            native_reader=native_reader)
         retained = deepcopy(receipt)
         if retained.get("nativeOutput") == str(source):
             retained["nativeOutput"] = source.name
@@ -218,13 +219,13 @@ def _unit_names_sample(selection, values, positions, directory):
     return entry
 
 
-def _unit_sample(selection, route, directory):
+def _unit_sample(selection, route, directory, *, native_reader=None):
     """Retain one independent optional scan bound to the captured process and player."""
     source, wrapper = directory / "units-native.json", directory / "units-sample.json"
     entry = {"status": "unavailable"}
     try:
         receipt = physical_rift.read_native(selection, "unit-positions", output=source,
-                                            unit_limit=512, start_bucket=0)
+                                            unit_limit=512, start_bucket=0, native_reader=native_reader)
         require(receipt.get("status") == "complete", receipt.get("reason", "unit-acquisition-unavailable"))
         require(receipt.get("workflow") == "physical" and receipt.get("nativeRead") == "unit-positions"
                 and str(receipt.get("ownerHost", "")).casefold() == route["identity"]["machine"].casefold(),
@@ -246,7 +247,7 @@ def _unit_sample(selection, route, directory):
         retained = deepcopy(receipt)
         retained["nativeOutput"] = source.name
         retained["nativeSourceSha256"] = digest
-        names = _unit_names_sample(selection, values, report["observation"], directory)
+        names = _unit_names_sample(selection, values, report["observation"], directory, native_reader=native_reader)
         retained["nameSample"] = deepcopy(names)
         _relative_fields(retained["nameSample"], directory, "path", "source", "receiptPath")
         write_json_atomic(wrapper, retained)
@@ -360,7 +361,7 @@ def _desktop_capture(host, pid, pinned, directory, result):
 
 
 def save_route_view(expected_host, physical_pid, document, output, *, expected_target, export_rerun=True,
-                    capture_backend="wgc", include_units=False):
+                    capture_backend="wgc", include_units=False, native_reader=None):
     """Return saved-route-view-candidate or blocked, retaining acquired evidence.
 
     Output is a fresh absolute directory. Full recorded heights and exact caller
@@ -381,6 +382,9 @@ def save_route_view(expected_host, physical_pid, document, output, *, expected_t
         require(type(export_rerun) is bool, "invalid-export-rerun-option")
         require(type(include_units) is bool, "invalid-include-units-option")
         require(capture_backend in ("wgc", "desktop"), "explicit-capture-backend-required")
+        if native_reader is not None:
+            native_reader = physical_rift._native_reader_path(native_reader)
+            require(native_reader.is_file(), "native-reader-not-built")
         pinned = deepcopy(expected_target)
         require(isinstance(pinned, dict) and set(pinned) == TARGET_FIELDS
                 and isinstance(pinned["hostName"], str) and pinned["hostName"].casefold() == expected_host.casefold()
@@ -407,7 +411,7 @@ def save_route_view(expected_host, physical_pid, document, output, *, expected_t
         result["recordingIdentity"] = route["recordingIdentity"]
         result["provenanceKind"] = route["provenanceKind"]
         result["captureBackend"] = capture_backend
-        zone_before = _zone_context(selection, route, directory / "zone-before.json")
+        zone_before = _zone_context(selection, route, directory / "zone-before.json", native_reader=native_reader)
         try:
             if capture_backend == "desktop":
                 observation_path = _desktop_capture(expected_host, physical_pid, pinned, directory, result)
@@ -415,7 +419,7 @@ def save_route_view(expected_host, physical_pid, document, output, *, expected_t
             else:
                 observation = deepcopy(observe_target.observe("physical-" + expected_host.lower(), expected_host,
                     output=directory / "capture", physical_pid=physical_pid,
-                    native_facing=True, physical_capture_backend="wgc"))
+                    native_facing=True, physical_capture_backend="wgc", native_reader=native_reader))
                 result["nativeSources"] = {}
                 try:
                     _retain_native_sources(observation, directory, result["nativeSources"])
@@ -432,11 +436,11 @@ def save_route_view(expected_host, physical_pid, document, output, *, expected_t
                         observation.get("reason", "physical-observation-unavailable"))
                 require(observation.get("target") == pinned, "captured-target-identity-mismatch")
         finally:
-            zone_after = _zone_context(selection, route, directory / "zone-after.json")
+            zone_after = _zone_context(selection, route, directory / "zone-after.json", native_reader=native_reader)
             result["zoneContextCandidate"] = _compare_zone_context(zone_before, zone_after)
         require(result["zoneContextCandidate"]["status"] != "changed-candidates", "context-changed-candidate")
         if include_units:
-            result["unitSample"] = _unit_sample(selection, route, directory)
+            result["unitSample"] = _unit_sample(selection, route, directory, native_reader=native_reader)
         unit_sample = result.get("unitSample", {}).get("path")
         desktop = capture_backend == "desktop"
         render = plot_physical_waypoints.render_desktop_pair if desktop else plot_physical_waypoints.render

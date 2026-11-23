@@ -21,7 +21,7 @@ class ViewWindowTests(unittest.TestCase):
     button = fixture.PlaybackWindowStateTests.button
     launch = fixture.PlaybackWindowStateTests.launch
 
-    def prepare(self, document=None):
+    def prepare(self, document=None, *, view_native_reader=None):
         runtime_identity = dict(fixture.TEST_IDENTITY, processId=123, processStartUtcTicks="99")
         self.document = document or {
             "waypoints": [["A", 0, 0], ["B", 1, 0]], "heights": [10, 11],
@@ -36,7 +36,7 @@ class ViewWindowTests(unittest.TestCase):
         self.target = {"processId": 123, "processStartUtcTicks": "99", "hwnd": 100}
         self.adapter = SimpleNamespace(read=lambda **kwargs: pose, pid=123, target=self.target,
                                        input_receipt_path=self.path / "unused.jsonl")
-        self.launch(self.adapter, path)
+        self.launch(self.adapter, path, view_native_reader=view_native_reader)
 
     def wait_idle(self):
         deadline = time.monotonic() + 3
@@ -53,7 +53,8 @@ class ViewWindowTests(unittest.TestCase):
                 if isinstance(w, fixture.ttk.Label) and w.cget("textvariable")]
 
     def test_save_view_captures_snapshot_and_opens_only_on_click(self):
-        self.prepare()
+        published = self.path / "RiftReader2.Live.exe"
+        self.prepare(view_native_reader=published)
         entered, release = threading.Event(), threading.Event()
         def save(*args, **kwargs):
             entered.set()
@@ -87,6 +88,7 @@ class ViewWindowTests(unittest.TestCase):
         self.assertTrue(kwargs["export_rerun"])
         self.assertFalse(kwargs.get("include_units", False))
         self.assertEqual("wgc", kwargs["capture_backend"])
+        self.assertEqual(kwargs["native_reader"], published)
         self.assertTrue(any("Rerun unavailable: not installed" in value for value in self.labels()))
 
     def test_capture_is_disabled_when_route_has_estimated_heights_only(self):

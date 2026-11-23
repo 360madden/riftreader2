@@ -422,6 +422,7 @@ def build_parser():
     arg("app.open", "--pid", type=positive, help="explicit physical RIFT process ID")
     arg("app.open", "--route", type=Path)
     arg("app.open", "--basis", type=Path)
+    arg("app.open", "--view-native-reader", type=Path, help="absolute path to a local published reader for Save view telemetry")
     arg("app.open", "--background", action="store_true", help="start the helper hidden")
     arg("app.show", "--tab", choices=("replay","edit","scene","explore","library","activity"), help="show a workspace tab")
     arg("receipt.list", "--directory", type=Path, default=ROOT / "artifacts", help="receipt directory; offline")
@@ -1019,6 +1020,9 @@ def _launch(args, protocol):
                                         "Use route load FILE [--discard] explicitly, then app open. No additional helper was launched.", exit_code=4)
         if args.basis is not None:
             raise protocol.CliError("basis-relaunch-required", "--basis applies only when opening a new helper; the selected helper is already running.", exit_code=4)
+        if args.view_native_reader is not None:
+            raise protocol.CliError("view-native-reader-relaunch-required",
+                                    "--view-native-reader applies when launching a new Waypoints window.", exit_code=4)
         shown = protocol.request(existing, "app.hide" if args.background else "app.show", {}, timeout=args.timeout)
         if not shown.get("ok"):
             return shown
@@ -1027,7 +1031,8 @@ def _launch(args, protocol):
     from scripts.launch_physical_waypoints import start_window_process
     launch_token = uuid.uuid4().hex
     command = ["--cli", "--launch-token", launch_token]
-    for flag, value in (("--physical-pid", args.pid), ("--route", args.route), ("--basis", args.basis)):
+    for flag, value in (("--physical-pid", args.pid), ("--route", args.route), ("--basis", args.basis),
+                        ("--view-native-reader", args.view_native_reader)):
         if value is not None: command.extend((flag, str(value)))
     if args.background: command.append("--background")
     try:

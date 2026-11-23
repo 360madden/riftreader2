@@ -40,6 +40,11 @@ class LauncherTests(unittest.TestCase):
         window, _ = self.run_launcher(["--physical-pid", "7"])
         self.assertFalse(window.call_args.args[0].auto_reconnect)
 
+    def test_published_view_reader_reaches_the_window(self):
+        published = self.root / "RiftReader2.Live.exe"
+        window, _ = self.run_launcher(["--view-native-reader", str(published)])
+        self.assertEqual(window.call_args.args[0].view_native_reader, published)
+
     def test_check_reports_binding(self):
         with patch.object(launcher.subprocess, "Popen") as spawn:
             window, output = self.run_launcher(["--detach-window", "--physical-pid", "7", "--check"])

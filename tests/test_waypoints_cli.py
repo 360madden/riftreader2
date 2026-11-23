@@ -592,19 +592,25 @@ class CliTests(unittest.TestCase):
             self.assertEqual(code,4)
             self.assertEqual(json.loads(out)['error']['code'],'route-load-required')
             spawn.assert_not_called()
+            code,out,_ = self.call('app','open','--view-native-reader','reader.exe','--json')
+            self.assertEqual(code,4)
+            self.assertEqual(json.loads(out)['error']['code'],'view-native-reader-relaunch-required')
+            spawn.assert_not_called()
 
     def test_app_open_matches_launch_token_across_windows_redirector(self):
         from types import SimpleNamespace
         token = 'unique-launch-token'
         descriptor = {'sessionId':'new', 'pid':999, 'launchToken':token}
         child = SimpleNamespace(pid=123, poll=lambda:None)
+        reader = str(Path.cwd() / 'published reader' / 'RiftReader2.Live.exe')
         with patch.object(protocol,'discover_sessions',side_effect=[[],[descriptor]]), patch.object(cli.uuid,'uuid4',return_value=SimpleNamespace(hex=token)), patch.object(cli.subprocess,'Popen',return_value=child) as spawn:
-            code,out,_ = self.call('app','open','--json')
+            code,out,_ = self.call('app','open','--view-native-reader',reader,'--json')
             self.assertEqual(code,0)
             self.assertEqual(json.loads(out)['data']['pid'],999)
             command=spawn.call_args.args[0]
             self.assertEqual(command[0], cli.sys.executable)
             self.assertEqual(command[command.index('--launch-token')+1],token)
+            self.assertEqual(command[command.index('--view-native-reader')+1],reader)
 
     def test_app_open_reuses_matching_route_file_key(self):
         session={'sessionId':'s','pid':123}

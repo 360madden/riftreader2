@@ -31,7 +31,7 @@ def change_zone(source):
 
 def zone_reader(test, *, change_after=None, events=None):
     """Write actual-contract source files; every native acquisition is injected."""
-    def read(selection, kind, *, output):
+    def read(selection, kind, *, output, native_reader=None):
         test.assertEqual(kind, "zone-context")
         test.assertEqual(selection["target"], test.target)
         after = output.name == "zone-after.json"
@@ -106,7 +106,7 @@ class SaveViewTests(unittest.TestCase):
         self.select.assert_called_once_with("AMD-DESKTOP", self.target["processId"])
         self.capture.assert_called_once_with("physical-amd-desktop", "AMD-DESKTOP",
             output=self.output / "capture", physical_pid=self.target["processId"],
-            native_facing=True, physical_capture_backend="wgc")
+            native_facing=True, physical_capture_backend="wgc", native_reader=None)
         self.process.assert_not_called()
 
     def test_moved_wgc_bundle_replays_with_unchanged_receipt_and_native_pins(self):
@@ -158,12 +158,15 @@ class SaveViewTests(unittest.TestCase):
         self.assertFalse(result["focusChanged"])
         self.capture.assert_called_once_with("physical-rift-station", host,
             output=self.output / "capture", physical_pid=self.target["processId"],
-            native_facing=True, physical_capture_backend="wgc")
+            native_facing=True, physical_capture_backend="wgc", native_reader=None)
 
     def test_optional_unit_sample_retained_and_passed_to_rerun(self):
         self.python.write_bytes(b"not-executed")
+        published = self.root / "RiftReader2.Live.exe"
+        published.touch()
         calls = []
-        def read(selection, kind, *, output, **kwargs):
+        def read(selection, kind, *, output, native_reader, **kwargs):
+            self.assertEqual(native_reader, published)
             calls.append(kind)
             if kind == "zone-context":
                 return {"status": "blocked", "reason": "optional-zone-unavailable"}
@@ -188,8 +191,9 @@ class SaveViewTests(unittest.TestCase):
             return types.SimpleNamespace(returncode=0, stdout=json.dumps(
                 dict(status="offline-rerun-evidence-export", output=str(out))))
         self.process.side_effect = export
-        result = self.save(include_units=True)
+        result = self.save(include_units=True, native_reader=published)
         self.assertEqual(result["status"], "saved-route-view-candidate", result)
+        self.assertEqual(self.capture.call_args.kwargs["native_reader"], published)
         self.assertEqual(calls, ["zone-context", "zone-context", "unit-positions", "unit-names"])
         sample = result["unitSample"]
         self.assertEqual(sample["status"], "saved")
@@ -209,6 +213,13 @@ class SaveViewTests(unittest.TestCase):
                                      saved.load_route(moved / manifest["route"]), [])
         self.assertEqual(scans[0]["nativeSource"]["sha256"], sample["sha256"])
         self.assertTrue((moved / manifest["unitSample"]["names"]["receiptPath"]).is_file())
+
+    def test_missing_published_reader_fails_before_process_selection_or_output(self):
+        result = self.save(native_reader=self.root / "missing.exe")
+        self.assertEqual(result["reason"], "native-reader-not-built")
+        self.assertFalse(self.output.exists())
+        self.select.assert_not_called()
+        self.capture.assert_not_called()
 
     def test_optional_unit_failure_or_identity_mismatch_keeps_core_and_omits_sample(self):
         self.python.write_bytes(b"not-executed")
@@ -258,7 +269,7 @@ class SaveViewTests(unittest.TestCase):
         key = str(2**64 - 1)
         names = pin_native_source(names_report(keys=[key]), self.target)
         names["observation"]["rows"][0]["entityAddressDecimal"] = positions["observation"]["rows"][1]["entityAddressDecimal"]
-        def read(selection, kind, *, output, unit_keys):
+        def read(selection, kind, *, output, unit_keys, native_reader=None):
             self.assertEqual(kind, "unit-names")
             self.assertEqual(unit_keys, [key])
             output.write_text(json.dumps(names))
@@ -360,7 +371,7 @@ class SaveViewTests(unittest.TestCase):
                     if fault == "source-identity":
                         source["observation"]["identity"]["processId"] += 1
                 reader = zone_reader(self, change_after=change)
-                def read(selection, kind, *, output):
+                def read(selection, kind, *, output, native_reader=None):
                     receipt = reader(selection, kind, output=output)
                     if output.name == "zone-after.json":
                         if fault == "target": receipt["target"]["hwnd"] += 1

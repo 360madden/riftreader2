@@ -90,7 +90,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
         return next(w for w in self.widgets(self.roots[0])
                     if isinstance(w, ttk.Treeview) and tuple(w["columns"]) == ("name", "x", "z"))
 
-    def launch(self, adapter=None, route=None):
+    def launch(self, adapter=None, route=None, *, view_native_reader=None):
         if adapter is not None:
             if not getattr(adapter, "binding", None):
                 adapter.binding = {"runtimeIdentity": dict(TEST_IDENTITY)}
@@ -98,7 +98,8 @@ class PlaybackWindowStateTests(unittest.TestCase):
                 adapter.target = None
         args = SimpleNamespace(expected_host="AMD-DESKTOP", physical_pid=None if adapter is None else 123,
                                initial_adapter=adapter, basis=Path("unused"), face_waypoints=True,
-                               route=route, auto_reconnect=True, initial_reason="waiting" if adapter is None else None)
+                               route=route, auto_reconnect=True, initial_reason="waiting" if adapter is None else None,
+                               view_native_reader=view_native_reader)
         app.launch_window(args)
         deadline = time.monotonic() + 3
         while time.monotonic() < deadline:

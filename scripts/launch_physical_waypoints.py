@@ -86,6 +86,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--physical-pid", type=int, help="required when several RIFT clients are running")
     parser.add_argument("--basis", type=Path, help="override the local host's movement calibration file")
+    parser.add_argument("--view-native-reader", type=Path,
+                        help="absolute path to a local published reader for Save view telemetry")
     parser.add_argument("--route", type=Path)
     parser.add_argument("--check", action="store_true", help="verify readiness without opening a window or sending input")
     parser.add_argument("--background", action="store_true", help="start with the helper window hidden")
@@ -137,6 +139,7 @@ def main(argv=None):
         else:
             launch_window(SimpleNamespace(expected_host=host, physical_pid=pid,
                                           basis=args.basis, route=args.route,
+                                          view_native_reader=args.view_native_reader,
                                           face_waypoints=True, auto_reconnect=args.physical_pid is None,
                                           initial_adapter=adapter, initial_reason=waiting_reason,
                                           background=args.background, cli=args.cli, launch_token=args.launch_token,

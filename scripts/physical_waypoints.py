@@ -1809,9 +1809,13 @@ def launch_window(args):
                 if adapter.pid != pid or adapter.target != target:
                     raise WaypointError("RIFT connection changed; refresh before saving a view")
                 output = ROOT / "artifacts" / ("waypoint-view-" + uuid.uuid4().hex)
+                view_reader = getattr(args, "view_native_reader", None)
+                options = {"native_reader": view_reader} if view_reader is not None else {}
+                if include_units:
+                    options["include_units"] = True
                 result = save_route_view(args.expected_host, pid, document, output,
                                          expected_target=target, export_rerun=True, capture_backend=capture_backend,
-                                         **({"include_units": True} if include_units else {}))
+                                         **options)
                 if (result.get("status") != "saved-route-view-candidate" or not result.get("image")
                         or result.get("inputSent") is not False or type(result.get("focusChanged")) is not bool
                         or (capture_backend == "wgc" and result.get("focusChanged") is not False)):
@@ -5186,6 +5190,8 @@ def main(argv=None):
     parser.add_argument("--expected-host", required=True, help="verified local Windows machine name")
     parser.add_argument("--physical-pid", required=True, type=int)
     parser.add_argument("--basis", type=Path, help="override the local host's movement calibration file")
+    parser.add_argument("--view-native-reader", type=Path,
+                        help="absolute path to a local published reader for Save view telemetry")
     parser.add_argument("--route", type=Path, help="load a waypoint JSON into the window without running it")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--go", nargs=2, type=float, metavar=("X", "Z"))
@@ -5210,6 +5216,8 @@ def main(argv=None):
                   args.run_route is not None or args.play_route is not None)
     if args.route is not None and cli_action:
         parser.error("--route cannot be combined with --go / --face-bearing / --run-route / --play-route")
+    if args.view_native_reader is not None and cli_action:
+        parser.error("--view-native-reader is only used in the Waypoints window")
     if (args.reverse or args.resume or args.progress) and args.play_route is None:
         parser.error("--reverse / --resume / --progress requires --play-route")
     if args.record_to is not None and args.go is None and args.run_route is None:

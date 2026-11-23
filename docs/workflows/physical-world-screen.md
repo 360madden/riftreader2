@@ -510,6 +510,15 @@ intact, including its recorded capture path. Replay checks its recorded hash,
 the image hash, and both retained native source hashes before rendering.
 The original host, process and build still identify the evidence.
 
+When opening a new Waypoints window, `--view-native-reader` selects an absolute
+local published reader path for the facing, zone, and nearby-unit reads performed
+by **Save view**.
+
+```powershell
+.\Waypoints.cmd --view-native-reader $rr2PublishedReader
+.\rr2-waypoints.cmd app open --view-native-reader $rr2PublishedReader
+```
+
 To regenerate the projection on an analysis host, pass a new output directory:
 
 ```powershell
