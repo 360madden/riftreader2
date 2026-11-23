@@ -12,7 +12,9 @@ The standalone nearby replay reproduced those counts from four copied JSON files
 without a live reader. [Nearby replay](../artifacts/native-level-passive-legion-p31684-20261123/nearby-replay.json)
 
 LEGION passed the NPC survey's installed-addon and published-reader checks,
-including the keyed native level command. The generated capture command keeps
+including the keyed native level command. Preparation now verifies either the
+standalone addon or the Casting fallback. [Addon checks](../artifacts/npc-survey-addon-layouts-legion-20261123.json)
+The generated capture command keeps
 the reader path, process start ticks, executable hash and deadline from
 preparation. The live Lua comparison still needs an
 advancing nonce-bound survey. [NPC survey preparation](reference/physical-nearby-npc-correlation-2026-11-21.md#prepare-and-replay-a-saved-bind-plan)

@@ -8,6 +8,16 @@ and append `"npc_survey.lua"` to the existing `RunOnStartup` list. Keep one
 active copy of the survey. The registered slash owner comes from the loading
 addon's metadata. The telemetry identifies its producer as RiftReader2NpcSurvey.
 
+Check that the installed manifest loads the expected survey module before
+binding it. The check uses the local Windows Documents folder by default.
+
+```powershell
+$rr2Host = [Environment]::MachineName
+$rr2Python = $env:RIFTREADER2_PYTHON
+if (!$rr2Python) { $rr2Python = 'python' }
+& $rr2Python -B scripts/prepare_physical_npc_survey.py --expected-host $rr2Host --check-addon
+```
+
 After a UI reload, enter `/rr2survey status` and verify the response is
 `unbound`. Bind a fresh nonce with either form.
 
@@ -21,7 +31,7 @@ For visible units, the first page is selected by default. Use
 checkout, read a page into a new output directory.
 
 ```powershell
-python scripts/npc_survey_live.py --expected-host AMD-DESKTOP --physical-pid $riftPid --session-id $nonce --visible-page 1 --output $newOutput
+& $rr2Python scripts/npc_survey_live.py --expected-host $rr2Host --physical-pid $riftPid --session-id $nonce --visible-page 1 --output $newOutput
 ```
 
 For an explicit selection, use `--unit-ids` with the same comma-separated IDs

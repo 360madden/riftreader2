@@ -8,8 +8,10 @@ label in `RiftAddon.toc` is not a reliable deployed-build identifier; use SHA-25
 
 ```powershell
 $rr2Host = [Environment]::MachineName
-python scripts/addon_sync.py check --expected-host $rr2Host
-python scripts/addon_sync.py verify --expected-host $rr2Host
+$rr2Python = $env:RIFTREADER2_PYTHON
+if (!$rr2Python) { $rr2Python = 'python' }
+& $rr2Python -B scripts/addon_sync.py check --expected-host $rr2Host
+& $rr2Python -B scripts/addon_sync.py verify --expected-host $rr2Host
 ```
 
 Run from the checkout with the configured Python. Check and verify default to
@@ -25,7 +27,7 @@ explicitly. When several targets are selected, each gets its own result.
 ### Inspect addon metadata
 
 ```powershell
-python scripts/rift_addon_inventory.py --expected-host $rr2Host --detail-addon RiftReader2
+& $rr2Python -B scripts/rift_addon_inventory.py --expected-host $rr2Host --detail-addon RiftReader2
 ```
 
 The inventory defaults to the local Windows Documents folder and reports file

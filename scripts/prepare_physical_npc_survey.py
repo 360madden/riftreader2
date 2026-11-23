@@ -28,7 +28,11 @@ SCHEMA = "rr2-npc-survey-preparation/2"
 LEGACY_SCHEMA = "rr2-npc-survey-preparation/1"
 ADDON_EVIDENCE = "addon-evidence"
 MANIFEST_NAME = "RiftAddon.toc"
+# Retained plans use this filename regardless of the installed addon's layout.
 MODULE_NAME = "npc_survey.lua"
+SURVEY_ADDON_ID = "RiftReader2NpcSurvey"
+CASTING_ADDON_ID = "RiftReader2Casting"
+INSTALLED_MODULES = {SURVEY_ADDON_ID: "survey.lua", CASTING_ADDON_ID: MODULE_NAME}
 
 
 def require(condition, reason):
@@ -36,23 +40,28 @@ def require(condition, reason):
         raise ValueError("npc-survey-prepare-" + reason)
 
 
-def default_casting_directory():
+def _local_survey_directories():
     try:
-        return observe_physical.local_rift_addons_root() / "RiftReader2Casting"
+        addons = observe_physical.local_rift_addons_root()
     except ValueError as error:
-        raise ValueError("npc-survey-prepare-provide-installed-casting-directory") from error
+        raise ValueError("npc-survey-prepare-provide-installed-addon-directory") from error
+    manifests = (addons / identifier / MANIFEST_NAME for identifier in INSTALLED_MODULES)
+    return [path.parent for path in manifests if path.exists() or path.is_symlink()]
 
 
-def _verify_manifest(raw):
+def _manifest_survey_module(raw):
     manifest = raw.decode("utf-8-sig")
-    identifier = any(
-        line.strip() == 'Identifier = "RiftReader2Casting"'
-        for line in manifest.splitlines())
-    startup = re.search(
-        r'(?m)^\s*RunOnStartup\s*=\s*\{([^}]*)\}', manifest)
-    require(identifier and startup is not None
-            and re.search(r'"npc_survey\.lua"', startup.group(1)) is not None,
-            "npc-survey-not-listed-in-casting-manifest")
+    manifest = re.sub(r'"[^"\r\n]*"|--[^\r\n]*',
+                      lambda token: "" if token[0].startswith("--") else token[0], manifest)
+    identifiers = re.findall(r'(?m)^[ \t]*Identifier[ \t]*=[ \t]*"([^"\r\n]+)"', manifest)
+    startup = re.findall(r'(?m)^[ \t]*RunOnStartup[ \t]*=\s*\{([^}]*)\}', manifest)
+    require(len(identifiers) == 1 and identifiers[0] in INSTALLED_MODULES and len(startup) == 1,
+            "npc-survey-not-listed-in-addon-manifest")
+    identifier = identifiers[0]
+    module_name = INSTALLED_MODULES[identifier]
+    occurrences = re.findall(r'"([^"\r\n]+)"', startup[0]).count(module_name)
+    require(occurrences <= 1, "npc-survey-listed-more-than-once")
+    return identifier, module_name if occurrences == 1 else None
 
 
 def _asset(path, limit):
@@ -63,19 +72,29 @@ def _asset(path, limit):
     return raw, hashlib.sha256(raw).hexdigest().upper()
 
 
-def installed_survey(casting_dir):
+def installed_survey(addon_dir=None):
     """Read the installed configuration and confirm the module matches this checkout."""
-    casting_dir = Path(casting_dir)
-    toc = casting_dir / MANIFEST_NAME
-    lua = casting_dir / MODULE_NAME
-    original = ROOT / "addon" / "RiftReader2NpcSurvey" / "survey.lua"
-    manifest, manifest_sha = _asset(toc, 64 * 1024)
-    _verify_manifest(manifest)
+    directories = _local_survey_directories() if addon_dir is None else [Path(addon_dir)]
+    require(directories, "addon-source-unavailable")
+    installations = []
+    for directory in directories:
+        toc = directory / MANIFEST_NAME
+        manifest, manifest_sha = _asset(toc, 64 * 1024)
+        identifier, module_name = _manifest_survey_module(manifest)
+        if addon_dir is None:
+            require(directory.name == identifier, "addon-directory-identifier-mismatch")
+        if module_name is not None:
+            installations.append((identifier, toc, directory / module_name, manifest, manifest_sha))
+    require(len(installations) <= 1, "npc-survey-multiple-configured-addons")
+    require(installations, "npc-survey-not-listed-in-addon-manifest")
+    identifier, toc, lua, manifest, manifest_sha = installations[0]
+    original = ROOT / "addon" / SURVEY_ADDON_ID / INSTALLED_MODULES[SURVEY_ADDON_ID]
     module, installed = _asset(lua, 256 * 1024)
     _, expected = _asset(original, 256 * 1024)
     require(installed == expected, "installed-npc-survey-source-mismatch")
     return {"installedManifest": str(toc),
             "installedLua": str(lua),
+            "installedAddonId": identifier,
             "installedManifestSha256": manifest_sha,
             "installedLuaSha256": installed,
             "configurationVerified": True,
@@ -111,7 +130,7 @@ def prepare(host, pid, destination, *, radius=35.0, limit=12, include_levels=Fal
     require(physical_rift.is_local_host(host), "wrong-host")
     native_reader = physical_rift._native_reader_path(native_reader)
     require(native_reader.is_file(), "native-reader-not-built")
-    addon, manifest, module = installed_survey(default_casting_directory() if casting_dir is None else casting_dir)
+    addon, manifest, module = installed_survey(casting_dir)
     output = Path(destination)
     if not output.is_absolute():
         output = ROOT / output
@@ -191,11 +210,9 @@ def prepare(host, pid, destination, *, radius=35.0, limit=12, include_levels=Fal
             "joinCommand": compare_command,
             "inputSent": False, "addonActivated": False,
             "combatAuthorized": False,
-            "qualification": ("Installed Casting manifest and NPC survey Lua source "
-                              "bytes match repository, not proof the running client "
-                              "loaded or bound the addon. In-game bind is a separate "
-                              "user action; capture must independently observe "
-                              "advancing nonce/player-bound frames. Sequential "
+            "qualification": ("The installed manifest lists the verified NPC survey Lua source. "
+                              "After a manual bind, advancing nonce/player-bound frames confirm "
+                              "publication in the running client. Sequential "
                               "native/API names, level and relation remain candidates "
                               "without combat or movement authorization.")
         }
@@ -266,7 +283,9 @@ def replay_plan(path):
         _, module_sha = _asset(evidence / MODULE_NAME, 256 * 1024)
         require(addon.get("installedManifestSha256") == manifest_sha
                 and addon["installedLuaSha256"] == module_sha, "plan-addon-evidence-mismatch")
-        _verify_manifest(manifest)
+        identifier, module_name = _manifest_survey_module(manifest)
+        require(module_name is not None and addon.get("installedAddonId", identifier) == identifier,
+                "plan-addon-evidence-mismatch")
         addon_status = "retained-bytes-verified"
     planned = set(ids)
     return {"status": "replayed-plan-candidate", "planSha256": digest,
@@ -284,7 +303,7 @@ def _check_dependencies(host, casting_dir, native_reader, *, include_levels=Fals
         kinds += ("unit-levels",)
     reader = physical_rift.check_native_reader(host, native_reader, kind=kinds)
     try:
-        addon, _, _ = installed_survey(casting_dir or default_casting_directory())
+        addon, _, _ = installed_survey(casting_dir)
         addon["status"] = "addon-configuration-ready"
     except (OSError, ValueError) as exc:
         addon = {"status": "blocked", "reason": str(exc)[:240]}
@@ -307,7 +326,8 @@ def main(argv=None):
     parser.add_argument("--max-ids", type=int, default=12)
     parser.add_argument("--include-levels", action="store_true",
                         help="collect native numeric-level candidates for NPC comparison")
-    parser.add_argument("--installed-casting-dir", type=Path)
+    parser.add_argument("--installed-addon-dir", "--installed-casting-dir", type=Path,
+                        help="local standalone NPC survey or Casting addon directory")
     parser.add_argument("--native-reader", type=Path, help="absolute path to a local published reader")
     parser.add_argument("--output-dir", type=Path)
     args = parser.parse_args(argv)
@@ -316,11 +336,11 @@ def main(argv=None):
     reader_options = args.native_reader is not None or args.include_levels
     if args.replay_plan:
         if (acquisition_requested or reader_options or args.expected_host is not None
-                or args.installed_casting_dir is not None):
+                or args.installed_addon_dir is not None):
             parser.error("--replay-plan uses only the saved plan and its sibling evidence files")
     elif args.check_addon:
         if acquisition_requested or reader_options:
-            parser.error("--check-addon accepts only --expected-host and --installed-casting-dir")
+            parser.error("--check-addon accepts only --expected-host and --installed-addon-dir")
     elif args.check_dependencies:
         if acquisition_requested:
             parser.error("--check-dependencies does not accept a game PID, output directory, radius or ID limit")
@@ -335,17 +355,17 @@ def main(argv=None):
             require(physical_rift.is_local_host(host if args.expected_host is None else args.expected_host),
                     "wrong-host")
             if args.check_dependencies:
-                dependencies = _check_dependencies(host, args.installed_casting_dir, args.native_reader,
+                dependencies = _check_dependencies(host, args.installed_addon_dir, args.native_reader,
                                                    include_levels=args.include_levels)
                 print(json.dumps(dependencies))
                 return 0 if dependencies["status"] == "survey-dependencies-ready" else 2
-            addon, _, _ = installed_survey(args.installed_casting_dir or default_casting_directory())
+            addon, _, _ = installed_survey(args.installed_addon_dir)
             print(json.dumps(dict(addon, status="addon-configuration-ready", ownerHost=host, inputSent=False)))
             return 0
         path, report = prepare(args.expected_host, args.physical_pid,
                                args.output_dir, radius=args.radius,
                                limit=args.max_ids, include_levels=args.include_levels,
-                               casting_dir=args.installed_casting_dir, native_reader=args.native_reader)
+                               casting_dir=args.installed_addon_dir, native_reader=args.native_reader)
     except (ValueError, TypeError, OSError, KeyError, OverflowError) as exc:
         print(json.dumps({"status": "blocked",
                           "reason": str(exc)[:240],

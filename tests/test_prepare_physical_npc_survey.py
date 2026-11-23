@@ -256,10 +256,41 @@ class NPCPreparationTests(unittest.TestCase):
 
     def test_default_installed_addon_uses_windows_documents(self):
         documents = self.dir / "Redirected Documents"
-        with patch.object(prep.observe_physical, "_run",
-                          return_value=(0, str(documents) + "\n")):
-            self.assertEqual(prep.default_casting_directory(), documents / "RIFT" /
-                             "Interface" / "AddOns" / "RiftReader2Casting")
+        addons = documents / "RIFT" / "Interface" / "AddOns"
+        addons.mkdir(parents=True)
+        standalone = shutil.copytree(self.source.parent, addons / "RiftReader2NpcSurvey")
+        casting = shutil.copytree(self.installed, addons / "RiftReader2Casting")
+        (casting / "RiftAddon.toc").write_text(
+            'Identifier = "RiftReader2Casting"\n'
+            'RunOnStartup = { -- "npc_survey.lua" }\n "main.lua" }\n', encoding="utf-8")
+        with patch.object(prep.observe_physical, "_run", return_value=(0, str(documents) + "\n")), \
+             redirect_stdout(StringIO()) as output:
+            self.assertEqual(prep.main(["--check-addon", "--expected-host", "RIFT-STATION"]), 0)
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["installedAddonId"], "RiftReader2NpcSurvey")
+        self.assertEqual(Path(result["installedLua"]), standalone / "survey.lua")
+
+    def test_automatic_discovery_refuses_two_configured_survey_addons(self):
+        addons = self.dir / "two addon folders"
+        addons.mkdir()
+        shutil.copytree(self.source.parent, addons / "RiftReader2NpcSurvey")
+        shutil.copytree(self.installed, addons / "RiftReader2Casting")
+        with patch.object(prep.observe_physical, "local_rift_addons_root", return_value=addons), \
+             redirect_stdout(StringIO()) as output:
+            code = prep.main(["--check-addon", "--expected-host", "RIFT-STATION"])
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(output.getvalue())["reason"],
+                         "npc-survey-prepare-npc-survey-multiple-configured-addons")
+
+    def test_standalone_plan_keeps_replayable_manifest_and_module_bytes(self):
+        standalone = shutil.copytree(self.source.parent, self.dir / "standalone addon")
+        path, plan = self.prepare(casting_dir=standalone)
+        self.assertEqual(plan["installedAddon"]["installedAddonId"], "RiftReader2NpcSurvey")
+        self.assertEqual(self.replay(path)["addonEvidenceStatus"], "retained-bytes-verified")
+        plan["installedAddon"]["installedAddonId"] = "RiftReader2Casting"
+        path.write_text(json.dumps(plan), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "plan-addon-evidence-mismatch"):
+            self.replay(path)
 
     def test_no_named_candidates_creates_failure_and_not_bind_command(self):
         self.nearby["samples"]=[{"nameStatus":"unavailable",
