@@ -399,7 +399,7 @@ def stream_burst(provider, channel, stop, counts, *, popen=subprocess.Popen, sam
             or (not continuous and 1 <= samples <= (30000 if extended else 30))), "stream-samples-invalid")
     require(type(interval_ms) is int and 20 <= interval_ms <= 200, "stream-interval-invalid")
     require(provider.target["hostName"].casefold() == socket.gethostname().casefold(), "host-mismatch")
-    command = [str(physical.NATIVE_EXE), "sample-current-facing-stream", "--pid",
+    command = [str(physical._native_reader_path()), "sample-current-facing-stream", "--pid",
         str(provider.target["processId"]), "--start-ticks", str(provider.target["processStartUtcTicks"]),
         "--samples", str(samples), "--interval-ms", str(interval_ms)]
     if duration_ms is not None:

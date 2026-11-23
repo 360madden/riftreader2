@@ -404,7 +404,7 @@ def _json_result(completed):
 def inspect_client_geometry(adapter, *, native_exe=None, run=subprocess.run):
     """Read current pinned client geometry without focus or input."""
     from scripts import physical_rift
-    executable = Path(native_exe or physical_rift.NATIVE_EXE).absolute()
+    executable = Path(native_exe or physical_rift._native_reader_path()).absolute()
     expected = adapter.target
     command = [str(executable), "move-key", "--inspect", "--pid", str(adapter.pid),
                "--expect-start-ticks", str(expected["processStartUtcTicks"]),
@@ -446,7 +446,7 @@ def native_combat_click(adapter, target, *, action, action_id, rectangle, pin,
     """Invoke exactly one physical combat click and normalize a trusted receipt."""
     from scripts import physical_rift
     from scripts.continuous_move import _owner_start_ticks
-    executable = Path(native_exe or physical_rift.NATIVE_EXE).absolute()
+    executable = Path(native_exe or physical_rift._native_reader_path()).absolute()
     owner = owner_identity or (os.getpid(), _owner_start_ticks())
     stop_path = Path(stop_file or ROOT / "artifacts" /
                      ("combat-click-stop-" + uuid.uuid4().hex + ".flag")).absolute()

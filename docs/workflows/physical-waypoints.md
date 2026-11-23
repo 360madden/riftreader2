@@ -886,6 +886,9 @@ Use `rr2-waypoints.cmd doctor --local --dependencies-only` before starting RIFT.
 It starts the reader's help command, checks Tcl and verifies the calibration
 file belongs to the local host. The regular local check verifies the build and
 player against a running client.
+Set `RR2_NATIVE_READER` to the absolute path of a complete local publish to use
+that build for Waypoints, its native movement commands and STOP recovery.
+[Native reader publish steps](development.md#publish-the-local-native-reader)
 
 Waypoints looks for `config/physical-movement-basis.<lowercase-host>.json` by
 default. The checkout includes the AMD-DESKTOP basis. On other Windows hosts,

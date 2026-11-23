@@ -503,20 +503,24 @@ class ContinuousMoveTests(unittest.TestCase):
             stderr = io.StringIO("native crash")
             def poll(self): return self.returncode
         commands = []
+        reader = self.root / "published reader.exe"
+        launch = Mock(return_value=Crashed())
         def recover(command, **kwargs):
             commands.append(command)
             return successful_recovery(command, **kwargs)
-        with patch("scripts.physical_waypoints.read_stationary", return_value=self.start):
+        with patch.dict("os.environ", {"RR2_NATIVE_READER": str(reader)}), \
+             patch("scripts.physical_waypoints.read_stationary", return_value=self.start):
             with self.assertRaisesRegex(Exception, "result unavailable.*key-up recovery verified"):
                 move.move_to(self.adapter, 100, 0, threading.Event(),
-                    popen=lambda *args, **kwargs: Crashed(),
-                    native_exe=self.root / "native.exe", owner_identity=(55, 66),
+                    popen=launch, owner_identity=(55, 66),
                     stop_path=self.root / "crash.stop", recovery_run=recover)
+        self.assertEqual(launch.call_args.args[0][:2], [str(reader), "follow-route"])
         self.assertFalse(self.adapter._continuous_move_receipt_trusted)
         self.assertIsNone(self.adapter.last_input_receipt)
         self.assertEqual([command[command.index("--key") + 1] for command in commands],
                          ["w", "a", "d"])
         self.assertTrue(all("--no-focus" in command for command in commands))
+        self.assertEqual([command[0] for command in commands], [str(reader)] * 3)
 
     def test_untrusted_receipt_recovery_failure_remains_halted_and_unknown_input(self):
         def unsafe_recovery(command, **kwargs):
@@ -539,8 +543,11 @@ class ContinuousMoveTests(unittest.TestCase):
                                           threading.Event())
             read.assert_not_called()
 
-        recovered = move.retry_release(self.adapter, native_exe=self.root / "native.exe",
-                                       run=successful_recovery)
+        reader = self.root / "published reader.exe"
+        release = Mock(side_effect=successful_recovery)
+        with patch.dict("os.environ", {"RR2_NATIVE_READER": str(reader)}):
+            recovered = move.retry_release(self.adapter, run=release)
+        self.assertEqual([call.args[0][0] for call in release.call_args_list], [str(reader)] * 3)
         self.assertTrue(recovered["releaseSucceeded"])
         self.assertFalse(self.adapter._continuous_input_release_fault)
 

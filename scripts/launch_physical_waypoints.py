@@ -47,7 +47,7 @@ def check_local_setup(physical_pid=None, basis=None, *, dependencies_only=False)
     if dependencies_only and physical_pid is not None:
         raise ValueError("dependency-check-does-not-select-rift")
     basis_path = movement_basis_path(host, basis).absolute()
-    reader = physical_rift.NATIVE_EXE
+    reader = physical_rift._native_reader_path()
     checks = {"tkinter": _check_tkinter(), "nativeReader": {"status": "available", "path": str(reader)},
               "movementBasis": {"status": "present", "path": str(basis_path)}}
     if not reader.is_file():

@@ -568,7 +568,7 @@ class PhysicalAdapter:
         return rates
 
     def pulse(self, action, *, focus):
-        command = [str(physical_rift.NATIVE_EXE), "move-key", "--pid", str(self.pid),
+        command = [str(physical_rift._native_reader_path()), "move-key", "--pid", str(self.pid),
                    "--expect-start-ticks", self.target["processStartUtcTicks"],
                    "--expect-sha256", self.target["executableSha256"],
                    "--expect-hwnd", hex(self.target["hwnd"]),

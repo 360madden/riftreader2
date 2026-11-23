@@ -467,7 +467,7 @@ def retry_release(adapter, *, native_exe=None, run=subprocess.run):
     from scripts.physical_waypoints import WaypointError
     if not getattr(adapter, "_continuous_input_release_fault", False):
         raise WaypointError("No unresolved continuous-input release fault")
-    executable = Path(native_exe or physical_rift.NATIVE_EXE).absolute()
+    executable = Path(native_exe or physical_rift._native_reader_path()).absolute()
     with adapter.reserve() as lease:
         lease.check()
         recovery = _recover_after_untrusted_exit(
@@ -533,7 +533,7 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
         raise WaypointError(f"Movement time must be 1-{MAX_TRIP_SECONDS} seconds")
     if stop.is_set():
         raise Stopped("Stopped; no movement helper launched")
-    executable = Path(native_exe or physical_rift.NATIVE_EXE).absolute()
+    executable = Path(native_exe or physical_rift._native_reader_path()).absolute()
     stop_path = Path(stop_path or (ROOT / "artifacts" /
                      ("continuous-move-stop-" + uuid.uuid4().hex + ".flag"))).absolute()
     if not stop_path.is_absolute() or stop_path.exists():

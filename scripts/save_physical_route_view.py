@@ -302,7 +302,7 @@ def _desktop_capture(host, pid, pinned, directory, result):
     observe_physical.require_clear_desktop_turn()
     require(CAPTURE_PYTHON.is_file(), "desktop-capture-environment-unavailable")
     result.update(focusRequested=True, focusMayChange=True, focusChanged=None)
-    command = [str(physical_rift.NATIVE_EXE), "move-key", "--focus-only", "--pid", str(pid),
+    command = [str(physical_rift._native_reader_path()), "move-key", "--focus-only", "--pid", str(pid),
                "--expect-start-ticks", pinned["processStartUtcTicks"], "--expect-sha256", pinned["executableSha256"],
                "--expect-hwnd", hex(pinned["hwnd"]), "--json"]
     focused = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=10, check=False,

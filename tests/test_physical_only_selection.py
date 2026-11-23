@@ -118,13 +118,32 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
             published.touch()
             dst = Path(temporary) / "new-read.json"
             failure = subprocess.CompletedProcess([], 2, stdout="", stderr="fixture")
-            with patch.object(physical, "select_physical", return_value=selection), \
+            with patch.dict("os.environ", {"RR2_NATIVE_READER": "relative.exe"}), \
+                 patch.object(physical, "select_physical", return_value=selection), \
                  patch.object(physical.subprocess, "run", return_value=failure) as run, \
                  redirect_stdout(io.StringIO()):
                 code = physical.main(["--expected-host", "AMD-DESKTOP", "--read-native", "vitals",
                                       "--native-reader", str(published), "--output", str(dst)])
             self.assertEqual(code, 2)
             self.assertEqual(run.call_args.args[0][:3], [str(published), "sample-current-vitals", "--pid"])
+
+    def test_local_reader_environment_applies_to_preflight_and_bound_collectors(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            published = Path(temporary) / "RiftReader2.Live.exe"
+            help_text = "RiftReader2.Live native tools\nsample-current-facing --pid N"
+            with patch.dict("os.environ", {"RR2_NATIVE_READER": str(published)}), \
+                 patch.object(physical.observe_physical, "_run", return_value=(0, help_text)) as run, \
+                 patch.object(physical, "read_native") as read:
+                with self.assertRaisesRegex(ValueError, "native-reader-not-built"):
+                    physical.bind_native_reader(read, None)
+                published.touch()
+                check = physical.check_native_reader("AMD-DESKTOP", kind="facing")
+                self.assertEqual(check["nativeReaderPath"], str(published))
+                self.assertEqual(check["status"], "ready")
+                run.assert_called_once()
+                self.assertEqual(run.call_args.args[0], [published, "--help"])
+                physical.bind_native_reader(read, None)({}, "facing")
+                read.assert_called_once_with({}, "facing", native_reader=published)
 
     def test_other_windows_host_can_select_its_local_process(self):
         target = dict(IDENTITY, hostName="OTHER-PC")

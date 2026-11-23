@@ -99,7 +99,9 @@ python -B scripts/physical_rift.py --expected-host $rr2Host --check-native-reade
 ```
 
 Add `--native-reader $rr2PublishedReader` to use that build in the following
-native read commands.
+native read commands. Set `$env:RR2_NATIVE_READER = $rr2PublishedReader` to use
+it as the default for physical reads and Waypoints in this shell and its child
+processes. An explicit `--native-reader` takes precedence where supported.
 
 ```powershell
 python scripts/physical_rift.py --expected-host $rr2Host --read-native vitals

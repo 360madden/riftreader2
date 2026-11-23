@@ -90,15 +90,18 @@ try {
     # Collect both unittest cases and pytest functions. Keep Qt off the desktop.
     $previousQtPlatform = $env:QT_QPA_PLATFORM
     $previousDotNet = $env:RIFTREADER2_DOTNET
+    $previousNativeReader = $env:RR2_NATIVE_READER
     try {
         $env:QT_QPA_PLATFORM = 'offscreen'
         $env:RIFTREADER2_DOTNET = $DotNet
+        $env:RR2_NATIVE_READER = $null
         & $LuaPython -m pytest --disable-plugin-autoload -q tests
         if ($LASTEXITCODE -ne 0) { throw 'Host Python test suite failed.' }
     }
     finally {
         $env:QT_QPA_PLATFORM = $previousQtPlatform
         $env:RIFTREADER2_DOTNET = $previousDotNet
+        $env:RR2_NATIVE_READER = $previousNativeReader
     }
     $reportPath = Join-Path $runDirectory 'analysis.json'
     $replayPath = Join-Path $runDirectory 'replay.json'

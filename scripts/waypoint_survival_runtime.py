@@ -507,7 +507,7 @@ class WaypointSurvivalRuntime:
             return self.native_context_reader(adapter)
         from scripts import physical_rift
         target = _target(adapter)
-        command = [str(physical_rift.NATIVE_EXE), "sample-current-survival",
+        command = [str(physical_rift._native_reader_path()), "sample-current-survival",
                    "--expected-host", self._configured_binding["hostName"],
                    "--pid", str(target["processId"]), "--expect-start-ticks",
                    str(target["processStartUtcTicks"]), "--expect-sha256",
