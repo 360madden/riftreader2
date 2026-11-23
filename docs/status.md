@@ -1,5 +1,7 @@
 # Current status
 
+**2026-11-23 — copied legacy Waypoints scenes can regenerate projections and Rerun recordings.** On LEGION, the `--saved-view` commands replayed WGC and DXcam fixtures whose recorded Windows drive was unavailable. Each replay reproduced three projected points, verified its Rerun recording, and left all ten source files byte-for-byte intact. Changed receipts and substituted source paths were refused. [Replay commands](workflows/physical-world-screen.md) · [LEGION replay results](../artifacts/legacy-scene-replay-legion-20261123.json)
+
 **2026-11-23 — copied legacy Waypoints scenes open their saved assets.** On LEGION, fixtures using an unavailable Windows drive as the recorded origin resolved the copied projection PNG and Rerun recording. The GUI fixture opened the copied paths only after the corresponding commands. The synthetic WGC and DXcam copies both passed `rerun rrd verify`. **165 focused tests and 227 subtests passed.** [Saved scene workflow](workflows/physical-world-screen.md)
 
 **2026-11-23 — one publish command produces the native reader and WGC probe.** On LEGION, both tools published from a fresh checkout using the pinned SDK. A copied publish in a path with spaces passed five startup checks, all **31 WGC self-checks**, and a synthetic native-reader smoke test. The copied WGC runtime configuration lists the bundled Desktop Runtime. [Publish command](workflows/development.md#publish-both-physical-tools-for-local-use) · [Publish and copy results](../artifacts/physical-tools-publish-legion-20261123.json)

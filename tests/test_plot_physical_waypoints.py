@@ -3,6 +3,7 @@ from copy import deepcopy
 import hashlib
 import json
 from pathlib import Path
+import shutil
 import socket
 from tempfile import TemporaryDirectory
 import unittest
@@ -14,6 +15,22 @@ from scripts import plot_physical_waypoints as plot
 from tests.test_physical_facing import report, optical_camera
 from tests.test_physical_only_selection import IDENTITY
 from tests.test_physical_turn_visual_pair import make_receipt
+
+
+def copy_legacy_view(root, result, backend):
+    manifest = {"directory": str(root), "status": "saved-route-view-candidate", "captureBackend": backend,
+                "projection": result["report"], "route": result["route"], "observation": result["observation"]}
+    if backend == "wgc":
+        observation_path = Path(result["observation"])
+        observation = json.loads(observation_path.read_text(encoding="utf-8"))
+        manifest["nativeSources"] = pins = {}
+        for key in ("beforeOutput", "afterOutput"):
+            path = Path(observation["nativeFacing"][key])
+            pins[key] = {"retained": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+        observation["retainedNativeSources"] = pins
+        observation_path.write_text(json.dumps(observation), encoding="utf-8")
+    (root / "view.json").write_text(json.dumps(manifest), encoding="utf-8")
+    return shutil.copytree(root, root / "copied scene", ignore=shutil.ignore_patterns("copied scene"))
 
 
 class PlotTests(unittest.TestCase):
@@ -95,6 +112,24 @@ class PlotTests(unittest.TestCase):
             self.assertEqual(image.getpixel((160, 0)), (34, 34, 34))
         self.assertEqual(json.loads(Path(result["report"]).read_text())["playerGround"]["worldXYZ"],
                          plot.physical._native_values("facing", self.after)["positionXYZCandidate"])
+
+    @unittest.skipUnless(Path.cwd().drive, "legacy Windows bundle")
+    def test_copied_legacy_view_checks_original_receipt_and_native_fingerprints(self):
+        baseline = self.run_render()
+        copied = copy_legacy_view(self.root, baseline, "wgc")
+        view = plot.SavedViewReplay(copied / "view.json")
+        result = plot.render(view.source, view.route, self.root / "replay", saved_view=view)
+        self.assertEqual(result["points"], baseline["points"])
+        self.assertEqual(result["frameReceipt"], str(copied / self.receipt.name))
+        self.assertEqual(result["savedViewSource"]["path"], str(copied / "view.json"))
+        refused = self.root / "refused"
+        with self.assertRaisesRegex(ValueError, "saved-view-render-source-mismatch"):
+            plot.render(self.root / "observation.json", view.route, refused, saved_view=view)
+        receipt = copied / self.receipt.name
+        receipt.write_bytes(receipt.read_bytes() + b"\n")
+        with self.assertRaisesRegex(ValueError, "retained-visual-receipt-mismatch"):
+            plot.render(view.source, view.route, refused, saved_view=view)
+        self.assertFalse(refused.exists())
 
     def test_overlapping_recorded_labels_use_separate_lanes_without_moving_markers(self):
         self.route["waypoints"] = [[f"Recorded {number}", 7427, 2946] for number in range(1, 8)]
@@ -235,6 +270,20 @@ class DesktopPairPlotTests(unittest.TestCase):
         self.assertEqual(3, len(result["points"]))
         self.assertTrue(Path(result["annotatedImage"]).is_file())
         self.assertEqual(str(self.image), result["originalImage"])
+
+    @unittest.skipUnless(Path.cwd().drive, "legacy Windows bundle")
+    def test_copied_legacy_desktop_view_verifies_the_original_pair(self):
+        baseline = self.render_pair()
+        copied = copy_legacy_view(self.root, baseline, "desktop")
+        view = plot.SavedViewReplay(copied / "view.json")
+        result = plot.render_desktop_pair(view.source, view.route, self.root / "replay", saved_view=view)
+        self.assertEqual(result["points"], baseline["points"])
+        self.assertEqual(result["originalImage"], str(copied / self.image.name))
+        view.source.write_bytes(view.source.read_bytes() + b"\n")
+        refused = self.root / "refused"
+        with self.assertRaisesRegex(ValueError, "saved-view-capture-fingerprint-mismatch"):
+            plot.render_desktop_pair(view.source, view.route, refused, saved_view=view)
+        self.assertFalse(refused.exists())
 
     def test_desktop_pair_replays_on_an_unrelated_analysis_host(self):
         host = "RIFT-STATION"

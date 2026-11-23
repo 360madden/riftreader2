@@ -553,16 +553,22 @@ by **Save view**.
 .\rr2-waypoints.cmd app open --view-native-reader $rr2PublishedReader
 ```
 
-To regenerate the projection on an analysis host, pass a new output directory:
+To regenerate the projection on an analysis host, pass the copied scene's
+`view.json` and a new output directory. This works for WGC and DXcam scenes,
+including older manifests that record absolute Windows paths. Keep the complete
+scene with its original projection report, capture and native source files.
+Replay uses the original fingerprints and writes to the new output path. Set
+`RR2_RERUN_PYTHON` to the Python environment with the Rerun requirements to run
+the second command.
 
 ```powershell
-python scripts/plot_physical_waypoints.py --observation "$bundle/observation.json" --route "$bundle/route.json" --output "$bundle-replayed"
+python scripts/plot_physical_waypoints.py --saved-view "$bundle/view.json" --output "$bundle-replayed"
+& $env:RR2_RERUN_PYTHON scripts/export_physical_rerun.py --saved-view "$bundle/view.json" --output "$bundle-replayed.rrd"
 ```
 
-For a DXcam bundle, use `--desktop-pair "$bundle/desktop-pair.json"` in place of
-`--observation`. The Rerun exporter accepts the same source and route arguments,
-with `--output` pointing to a new `.rrd` file. To regenerate a projection or
-recording from older absolute-path evidence, use its original source location.
+For an individual capture, pass `--route` with `--observation` for WGC or
+`--desktop-pair` for DXcam. The Rerun exporter also accepts optional independent
+nearby position samples through `--unit-sample`.
 The explicit desktop Save view/Open view buttons passed on PID17212 after normal relaunch
 restored game rendering: seven markers, exact retained native copies, a 2.050 s
 capture and 0.790 s native bracket. The resulting `view.rrd` passed upstream verify,

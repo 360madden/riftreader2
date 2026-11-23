@@ -464,7 +464,7 @@ def save_route_view(expected_host, physical_pid, document, output, *, expected_t
         projection = render(observation_path, route_path, directory / "projection")
         projection_summary = dict(projection, bundleVersion=1, bundleRoot="..")
         _relative_fields(projection_summary, directory, "observation", "route", "nativeBefore", "nativeAfter",
-                         "originalImage", "annotatedImage", "report")
+                         "originalImage", "frameReceipt", "annotatedImage", "report")
         write_json_atomic(Path(projection["report"]), projection_summary)
         result.update(status="saved-route-view-candidate", image=projection["annotatedImage"],
                       projection=projection["report"])

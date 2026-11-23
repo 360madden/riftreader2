@@ -219,15 +219,17 @@ def default_blueprint(rr, rrb, captures, *, display_camera=None, nearby_samples=
         auto_layout=False, auto_views=False)
 
 
-def prepare(route_path, observations, scratch, *, images=True, desktop_pairs=(), camera_rays=True):
+def prepare(route_path, observations, scratch, *, images=True, desktop_pairs=(), camera_rays=True, saved_view=None):
     """Reuse the existing complete bracket/image/projection validator unchanged."""
     route = load_route(route_path)
+    if saved_view is not None:
+        plot.require(route["sha256"].casefold() == saved_view.route_sha256, "saved-view-route-hash-mismatch")
     plot.require(plot.physical.valid_host_name(route["identity"]["machine"]), "invalid-recorded-route-host")
     frames = []
     sources = [(source, False) for source in observations] + [(source, True) for source in desktop_pairs]
     for index, (source, desktop) in enumerate(sources):
         renderer = plot.render_desktop_pair if desktop else plot.render
-        result = renderer(source, route_path, Path(scratch) / str(index))
+        result = renderer(source, route_path, Path(scratch) / str(index), saved_view=saved_view)
         if desktop:
             plot.require(result.get("sourceKind") == "desktop-composite-event-candidate"
                          and result.get("capturedAtUtc") is None
@@ -403,10 +405,8 @@ def later_sample_projection(scan, frame):
             return json.loads(raw.decode("utf-8-sig"), object_pairs_hook=plot.unique_fields,
                               parse_constant=lambda _: (_ for _ in ()).throw(ValueError("nonfinite-json")))
         observation = raw_source(dict(path=frame["projection"]["observation"], sha256=frame["sourceSha256"]))
-        receipt_path = Path(observation["receipt"])
-        if not receipt_path.is_absolute():
-            receipt_path = Path(frame["projection"]["observation"]).parent / receipt_path
-        receipt = raw_source(dict(path=str(receipt_path), sha256=frame["projection"]["receiptSha256"]))
+        receipt = raw_source(dict(path=frame["projection"]["frameReceipt"],
+                                  sha256=frame["projection"]["receiptSha256"]))
         plot.require(receipt.get("requestedBackend") == "wgc", "later-samples-require-wgc-receipt")
         plot.require(observation["target"] == scan["target"], "later-sample-full-target-mismatch")
         units = raw_source(scan["nativeSource"])
@@ -554,7 +554,7 @@ def nearby_samples_markdown(scan, *, include_names=False):
 
 
 def export(route_path, observations, output, *, images=True, sink_factory=RerunSink, desktop_pairs=(), camera_rays=True,
-           unit_samples=()):
+           unit_samples=(), saved_view=None):
     route_path, output = Path(route_path).resolve(), Path(output).resolve()
     plot.require(output.suffix.lower() == ".rrd" and not output.exists() and output.parent.is_dir(),
                  "new-rrd-output-required")
@@ -563,7 +563,7 @@ def export(route_path, observations, output, *, images=True, sink_factory=RerunS
     # Existing renderer writes a scratch annotated PNG; it is discarded after validation.
     with TemporaryDirectory(prefix="rr2-rerun-", dir=output.parent) as scratch:
         route, frames = prepare(route_path, observations, scratch, images=images, desktop_pairs=desktop_pairs,
-                                camera_rays=camera_rays)
+                                camera_rays=camera_rays, saved_view=saved_view)
     unit_scans = prepare_unit_samples(unit_samples, route, frames)
     later_views = []
     for scan_number, scan in enumerate(unit_scans, 1):
@@ -693,7 +693,8 @@ def export(route_path, observations, output, *, images=True, sink_factory=RerunS
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--route", type=Path, required=True)
+    parser.add_argument("--route", type=Path, help="recorded route for explicit capture inputs")
+    parser.add_argument("--saved-view", type=Path, help="replay a complete saved view from its view.json")
     parser.add_argument("--observation", type=Path, action="append", default=[])
     parser.add_argument("--desktop-pair", type=Path, action="append", default=[],
                         help="explicit retained DXcam/native candidate; capture UTC is only an upper bound")
@@ -703,10 +704,19 @@ def main(argv=None):
     parser.add_argument("--no-images", action="store_true", help="validate retained PNGs but omit image payloads")
     parser.add_argument("--no-camera-rays", action="store_true", help="omit optional native projection display rays")
     args = parser.parse_args(argv)
+    if args.saved_view is not None:
+        if args.route is not None or args.observation or args.desktop_pair:
+            parser.error("--saved-view cannot be combined with --route, --observation or --desktop-pair")
+    elif args.route is None:
+        parser.error("--route is required unless --saved-view is supplied")
     try:
+        view = plot.SavedViewReplay(args.saved_view) if args.saved_view is not None else None
+        if view is not None:
+            args.route = view.route
+            (args.desktop_pair if view.desktop else args.observation).append(view.source)
         result = export(args.route, args.observation, args.output, images=not args.no_images,
                         desktop_pairs=args.desktop_pair, camera_rays=not args.no_camera_rays,
-                        unit_samples=args.unit_sample)
+                        unit_samples=args.unit_sample, saved_view=view)
     except (ValueError, OSError, KeyError, TypeError, AttributeError, ImportError) as error:
         print(json.dumps({"status": "blocked", "reason": str(error), "inputSent": False}))
         return 2

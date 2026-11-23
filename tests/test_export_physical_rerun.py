@@ -62,6 +62,17 @@ class ExportTests(unittest.TestCase):
         return exporter.export(self.route, [self.observation] if observations is None else observations,
                                self.output, sink_factory=self.sink, **kwargs)
 
+    @unittest.skipUnless(Path.cwd().drive, "legacy Windows bundle")
+    def test_copied_legacy_view_export_keeps_same_host_and_copied_source(self):
+        projection = json.loads((self.fixture.output / "waypoints.json").read_text(encoding="utf-8"))
+        copied = plot_fixtures.copy_legacy_view(self.root, projection, "wgc")
+        view = exporter.plot.SavedViewReplay(copied / "view.json")
+        result = exporter.export(view.route, [view.source], self.output, sink_factory=self.sink, saved_view=view)
+        self.assertEqual(result["observationCount"], 1)
+        metadata = next(data for entity, _, data, _ in self.sinks[0].events if entity == "evidence/observations/0001")
+        self.assertEqual(metadata["source"], str(view.source))
+        self.assertEqual(metadata["projection"]["machine"], "AMD-DESKTOP")
+
     def test_xyz_projection_and_distinct_actual_timestamps_preserved(self):
         original = self.fixture.image.read_bytes()
         with patch("socket.gethostname", return_value="ANALYSIS-PC"):

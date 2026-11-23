@@ -22,7 +22,7 @@ from scripts import physical_rift as physical
 from scripts.physical_turn_visual_pair import (client_frame_mapping,
     project_client_point_to_frame, verified_frame, require, unique_fields)
 from scripts.waypoint_progress import write_json_atomic
-from scripts.waypoint_view_bundle import bundle_asset
+from scripts.waypoint_view_bundle import bundle_asset, saved_scene_asset
 from scripts.physical_waypoint_overlay import _label_layout
 
 
@@ -34,6 +34,47 @@ def _read(path):
 def _path(value, parent):
     path = Path(value)
     return path if path.is_absolute() else parent / path
+
+
+class SavedViewReplay:
+    """Use the original projection's fingerprints to replay a complete saved scene."""
+
+    def __init__(self, path):
+        from scripts.plot_physical_units import _saved
+
+        self.path = Path(path).resolve()
+        self.manifest, self.reference = _saved(self.path)
+        require(self.manifest.get("status") == "saved-route-view-candidate"
+                and self.manifest.get("bundleVersion") in (None, 1), "saved-view-manifest-required")
+        backend = self.manifest.get("captureBackend")
+        require(backend in ("wgc", "desktop"), "invalid-saved-view-backend")
+        self.desktop = backend == "desktop"
+        self.route = self.asset(self.manifest["route"])
+        self.source = self.asset(self.manifest["observation"])
+        self.projection, _ = _saved(self.asset(self.manifest["projection"]))
+        require(self.projection.get("status") == "offline-waypoint-projection-candidate"
+                and self.asset(self.projection["observation"]) == self.source
+                and self.asset(self.projection["route"]) == self.route, "saved-view-projection-source-mismatch")
+        self.route_document, route_source = _saved(self.route)
+        self.route_sha256 = route_source["sha256"]
+        require(self.route_sha256 == self.projection["routeSha256"].casefold(),
+                "saved-view-route-hash-mismatch")
+
+    def asset(self, value):
+        asset = saved_scene_asset(self.path.parent, self.manifest, value)
+        require(asset is not None, "saved-view-source-outside-bundle")
+        path = asset.resolve()
+        require(path.is_relative_to(self.path.parent), "saved-view-source-outside-bundle")
+        return path
+
+    def check_capture(self, receipt_digest, image_digest):
+        require(receipt_digest.casefold() == self.projection["receiptSha256"].casefold()
+                and image_digest.casefold() == self.projection["imageSha256"].casefold(),
+                "saved-view-capture-fingerprint-mismatch")
+
+    def check_source(self, source, route, *, desktop):
+        require(source == self.source and route == self.route and desktop == self.desktop,
+                "saved-view-render-source-mismatch")
 
 
 def _number(value):
@@ -61,28 +102,42 @@ def project(camera, xyz, mapping):
     return result
 
 
-def render(observation_path, route_path, output):
+def render(observation_path, route_path, output, *, saved_view=None):
     observation_path, route_path, output = map(lambda p: Path(p).resolve(), (observation_path, route_path, output))
     require(not output.exists() and output.parent.is_dir(), "fresh-output-directory-required")
-    observation, route = _read(observation_path), _read(route_path)
+    if saved_view is not None:
+        saved_view.check_source(observation_path, route_path, desktop=False)
+    observation = _read(observation_path)
+    route = saved_view.route_document if saved_view is not None else _read(route_path)
     require(observation.get("status") == "verified-awaiting-visual-review"
             and observation.get("workflow") == "physical", "physical-observation-required")
     bracket = observation.get("nativeFacing", {})
     require(bracket.get("status") == "stable-bracket-candidate", "stable-native-frame-bracket-required")
     retained = observation.get("retainedFrame")
-    if retained is not None:
+    if retained is not None or saved_view is not None:
         from scripts.plot_physical_units import _saved
 
-        before, after = (bundle_asset(observation_path.parent, bracket[key]) for key in ("beforeOutput", "afterOutput"))
+        def source_asset(value):
+            return (saved_view.asset(value) if saved_view is not None
+                    else bundle_asset(observation_path.parent, value))
+
+        before, after = (source_asset(bracket[key]) for key in ("beforeOutput", "afterOutput"))
         reports = []
         for key, path in (("beforeOutput", before), ("afterOutput", after)):
             native, source = _saved(path)
             pin = observation["retainedNativeSources"][key]
-            require(bundle_asset(observation_path.parent, pin["retained"]) == path
-                    and pin["sha256"] == source["sha256"], "retained-native-source-mismatch")
+            require(source_asset(pin["retained"]) == path
+                    and pin["sha256"].casefold() == source["sha256"], "retained-native-source-mismatch")
+            if saved_view is not None:
+                saved_pin = saved_view.manifest["nativeSources"][key]
+                require(source_asset(saved_pin["retained"]) == path
+                        and saved_pin["sha256"].casefold() == source["sha256"], "saved-view-native-source-mismatch")
             reports.append(native)
-        image_path = bundle_asset(observation_path.parent, observation["image"])
-        receipt_path = bundle_asset(observation_path.parent, observation["receipt"])
+        image_path = source_asset(observation["image"])
+        receipt_path = source_asset(observation["receipt"])
+        if retained is None:
+            retained = {"originalOutputPath": observation["image"],
+                        "receiptSha256": saved_view.projection["receiptSha256"].upper()}
     else:
         before, after = (_path(bracket[key], observation_path.parent) for key in ("beforeOutput", "afterOutput"))
         reports = [_read(path) for path in (before, after)]
@@ -91,6 +146,8 @@ def render(observation_path, route_path, output):
     values = [physical._native_values("facing", report) for report in reports]
     first, last = [report["observation"] for report in reports]
     frame, image, digest, receipt_digest = verified_frame(image_path, receipt_path, retained_frame=retained)
+    if saved_view is not None:
+        saved_view.check_capture(receipt_digest, digest)
     mapping = client_frame_mapping(frame)
     require(mapping.get("status") == "available-candidate", "available-client-frame-mapping-required")
     target, identity = observation["target"], reports[0]["identity"]
@@ -125,10 +182,11 @@ def render(observation_path, route_path, output):
     return _render_validated(observation_path, route_path, output, route, host=host, identity=identity,
         values=values[-1], camera=camera, mapping=mapping, image=image, image_path=image_path, digest=digest,
         receipt_digest=receipt_digest, captured_at=frame["capturedCompletedAtUtc"],
-        native_before=before, native_after=after)
+        native_before=before, native_after=after, source_metadata={"frameReceipt": str(receipt_path)},
+        saved_view=saved_view)
 
 
-def render_desktop_pair(pair_path, route_path, output):
+def render_desktop_pair(pair_path, route_path, output, *, saved_view=None):
     """Admit a retained DXcam/native event pair without constructing a WGC receipt."""
     from scripts.probe_dxcam import _output
     from scripts.probe_dxcam_native_pair import compare
@@ -136,12 +194,16 @@ def render_desktop_pair(pair_path, route_path, output):
 
     pair_path, route_path, output = (Path(p).resolve() for p in (pair_path, route_path, output))
     require(not output.exists() and output.parent.is_dir(), "fresh-output-directory-required")
+    if saved_view is not None:
+        saved_view.check_source(pair_path, route_path, desktop=True)
     pair, pair_source = _saved(pair_path)
     def source_path(value):
+        if saved_view is not None:
+            return saved_view.asset(value)
         if pair.get("bundleVersion") == 1:
             return bundle_asset(pair_path.parent, value)
         return _path(value, pair_path.parent).resolve()
-    route = _read(route_path)
+    route = saved_view.route_document if saved_view is not None else _read(route_path)
     require(pair.get("status") == "stable-native-composite-event-candidate"
             and pair.get("diagnosticKind") == "dxcam-native-event-pair/1"
             and pair.get("inputSent") is False and pair.get("focusChanged") is False
@@ -242,6 +304,8 @@ def render_desktop_pair(pair_path, route_path, output):
     raw = image_path.read_bytes()
     digest = hashlib.sha256(raw).hexdigest()
     require(digest.casefold() == pair["imageSha256"].casefold(), "desktop-image-hash-mismatch")
+    if saved_view is not None:
+        saved_view.check_capture(pair_source["sha256"], digest)
     with Image.open(BytesIO(raw)) as original:
         require(original.format == "PNG" and original.mode == "RGB" and original.size == tuple(rect[2:]),
                 "desktop-image-format-or-size-mismatch")
@@ -260,12 +324,12 @@ def render_desktop_pair(pair_path, route_path, output):
             "capturedAtUtcKind": "unavailable-exact-desktop-event-utc",
             "captureUpperBoundAtUtc": last["startedAtUtc"],
             "desktopEvent": pair["event"], "desktopQpcMarks": pair["qpcMarks"],
-            "desktopSourceLimitations": pair.get("limitations", [])})
+            "desktopSourceLimitations": pair.get("limitations", [])}, saved_view=saved_view)
 
 
 def _render_validated(observation_path, route_path, output, route, *, host, identity, values,
                       camera, mapping, image, image_path, digest, receipt_digest, captured_at,
-                      native_before, native_after, source_metadata=None):
+                      native_before, native_after, source_metadata=None, saved_view=None):
     """Shared projection/drawing only after the selected source's own admission."""
     from scripts.waypoint_measurements import parse_projection_route
     parsed_route = parse_projection_route(route)
@@ -323,7 +387,8 @@ def _render_validated(observation_path, route_path, output, route, *, host, iden
               "observation": str(observation_path), "route": str(route_path),
               "capturedAtUtc": captured_at,
               "nativeBefore": str(native_before), "nativeAfter": str(native_after),
-              "routeSha256": hashlib.sha256(route_path.read_bytes()).hexdigest(),
+              "routeSha256": (saved_view.route_sha256 if saved_view is not None
+                              else hashlib.sha256(route_path.read_bytes()).hexdigest()),
               "originalImage": str(image_path.resolve()), "imageSha256": digest,
               "receiptSha256": receipt_digest, "annotatedImage": str(output / "waypoints.png"),
               "report": str(output / "waypoints.json"), "clientFrameMapping": mapping,
@@ -335,6 +400,8 @@ def _render_validated(observation_path, route_path, output, route, *, host, iden
                    if parsed_route["provenanceKind"] == "recorded-route" else
                    "Independent point observations preserved; no continuously recorded path is claimed.")]}
     result.update(source_metadata or {})
+    if saved_view is not None:
+        result["savedViewSource"] = saved_view.reference
     output.mkdir()
     image.save(output / "waypoints.png", "PNG")
     write_json_atomic(output / "waypoints.json", result)
@@ -346,11 +413,18 @@ def main(argv=None):
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--observation", type=Path)
     source.add_argument("--desktop-pair", type=Path, help="retained DXcam/native capture candidate")
-    parser.add_argument("--route", type=Path, required=True)
+    source.add_argument("--saved-view", type=Path, help="replay a complete saved view from its view.json")
+    parser.add_argument("--route", type=Path, help="recorded route for an explicit observation or desktop pair")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
+    if (args.saved_view is None) == (args.route is None):
+        parser.error("use --saved-view alone or pair --route with --observation or --desktop-pair")
     try:
-        if args.desktop_pair is None:
+        if args.saved_view is not None:
+            view = SavedViewReplay(args.saved_view)
+            renderer = render_desktop_pair if view.desktop else render
+            result = renderer(view.source, view.route, args.output, saved_view=view)
+        elif args.desktop_pair is None:
             result = render(args.observation, args.route, args.output)
         else:
             result = render_desktop_pair(args.desktop_pair, args.route, args.output)
