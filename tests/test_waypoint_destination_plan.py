@@ -380,6 +380,43 @@ class DestinationPlanTests(unittest.TestCase):
             self.assertEqual(options["env"]["JAVA_HOME"], str(java))
             self.assertEqual(bridge.os.environ["JAVA_HOME"], "")
 
+    def test_an_explicit_local_checkout_can_ignore_a_copied_registration(self):
+        registration = bridge._registration_path()
+        registration.parent.mkdir()
+        foreign = self.root / "copied runtime"
+        original = json.dumps({"schema": bridge.RIFTWORLD_REGISTRATION_SCHEMA, "host": "COPIED-PC",
+            "checkout": str(foreign), "python": str(foreign / "python.exe"),
+            "upstream": str(foreign / "RiftAssetDumper"), "javaHome": str(foreign / "jdk")})
+        registration.write_text(original, encoding="utf-8")
+        process = subprocess.CompletedProcess([], 0, '{"status":"ready"}', "")
+        with patch.dict(bridge.os.environ, RR2_RIFTWORLD_ROOT="", RR2_RIFTWORLD_PYTHON="",
+                        RR2_RIFTWORLD_UPSTREAM="", JAVA_HOME=""), \
+                patch.object(subprocess, "run", return_value=process) as run:
+            refused = bridge.check_dependencies(runner=run)
+            self.assertEqual(refused["reason"], "riftworld-registration-host-mismatch")
+            run.assert_not_called()
+            with patch.dict(bridge.os.environ, RR2_RIFTWORLD_ROOT=str(self.world)):
+                checked = bridge.check_dependencies(riftworld_python=sys.executable, runner=run)
+            self.assertEqual(checked["status"], "ready")
+            self.assertEqual(run.call_args.kwargs["cwd"], self.world)
+            self.assertEqual(run.call_args.args[0][-1], "")
+            self.assertNotIn("env", run.call_args.kwargs)
+        self.assertEqual(registration.read_text(encoding="utf-8"), original)
+
+    def test_complete_riftworld_overrides_bypass_unused_settings(self):
+        registration = bridge._registration_path()
+        registration.parent.mkdir()
+        registration.write_text("invalid", encoding="utf-8")
+        upstream, _ = self.retained_build()
+        process = subprocess.CompletedProcess([], 0, '{"status":"ready"}', "")
+        with patch.dict(bridge.os.environ, JAVA_HOME=str(self.root / "JDK")), \
+                patch.object(subprocess, "run", return_value=process) as run:
+            checked = bridge.check_dependencies(riftworld_root=self.world, riftworld_python=sys.executable,
+                                                riftworld_upstream=upstream, runner=run)
+        self.assertEqual(checked["status"], "ready")
+        self.assertEqual(run.call_args.args[0][-1], str(upstream))
+        self.assertNotIn("env", run.call_args.kwargs)
+
     def retained_build(self):
         upstream = self.world / "matching upstream"
         upstream.mkdir()

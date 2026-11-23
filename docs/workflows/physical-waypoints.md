@@ -31,6 +31,11 @@ JDK. The command records the RiftWorld checkout, Python, RiftAssetDumper and
 Java paths that passed the check. Later shells can use the same setup, and
 explicit command options and environment variables take precedence.
 
+In a copied checkout, select the local RiftWorld checkout with `--riftworld-root`
+or `RR2_RIFTWORLD_ROOT`. Waypoints uses the local Python, RiftAssetDumper and Java
+settings or defaults when the saved registration belongs to another host.
+Register the working toolchain to reuse it in new shells.
+
 ```powershell
 $rr2Host = [Environment]::MachineName
 & $rr2Python -B scripts/waypoint_destination_plan.py --register-dependencies --expected-host $rr2Host `

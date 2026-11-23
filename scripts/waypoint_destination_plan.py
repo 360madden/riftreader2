@@ -152,7 +152,11 @@ def _registration_path():
     return ROOT / ".local" / "riftworld-toolchain.json"
 
 
-def _registered_riftworld():
+def _registered_riftworld(root, python, upstream):
+    selected_root = root or os.environ.get("RR2_RIFTWORLD_ROOT")
+    if (selected_root and (python or os.environ.get("RR2_RIFTWORLD_PYTHON"))
+            and (upstream or os.environ.get("RR2_RIFTWORLD_UPSTREAM")) and os.environ.get("JAVA_HOME")):
+        return {}
     path = _registration_path()
     _plain_path(path)
     if not path.exists():
@@ -163,6 +167,8 @@ def _registered_riftworld():
     if settings.get("schema") != RIFTWORLD_REGISTRATION_SCHEMA or not valid_host_name(host):
         raise ValueError("invalid-riftworld-registration")
     if host.casefold() != platform.node().casefold():
+        if selected_root:
+            return {}
         raise ValueError("riftworld-registration-host-mismatch")
     paths = {}
     for key in keys:
@@ -217,7 +223,7 @@ def check_dependencies(*, riftworld_root=None, riftworld_python=None, riftworld_
     result = {"status": "blocked", "ownerHost": platform.node(), "inputSent": False,
               "currentRouteChanged": False}
     try:
-        registered = _registered_riftworld() if use_registered else {}
+        registered = _registered_riftworld(riftworld_root, riftworld_python, riftworld_upstream) if use_registered else {}
         root, _, python = _riftworld_tools(riftworld_root, riftworld_python, registered)
         environment = _riftworld_environment(registered)
     except (OSError, ValueError) as error:
@@ -915,7 +921,7 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
     for name, limit in snap_limits.items():
         if limit is not None and (not _finite_number(limit) or limit < 0):
             raise ValueError(f"{name} snap limit must be finite and nonnegative")
-    registered = _registered_riftworld()
+    registered = _registered_riftworld(riftworld_root, riftworld_python, riftworld_upstream)
     world_root, query_tool, python = _riftworld_tools(riftworld_root, riftworld_python, registered)
     environment = _riftworld_environment(registered)
     riftworld_runner = partial(runner, **environment) if environment else runner
@@ -1384,7 +1390,7 @@ def replay_destination_archive(handoff_path, output_directory, *, riftworld_root
                 for digest in members.values()):
             raise ValueError("invalid-destination-archive-member-hash")
 
-    registered = _registered_riftworld()
+    registered = _registered_riftworld(riftworld_root, riftworld_python, riftworld_upstream)
     world, _, python = _riftworld_tools(riftworld_root, riftworld_python, registered)
     upstream = _configured_riftworld_upstream(riftworld_upstream, registered)
     if upstream is None:
