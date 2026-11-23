@@ -1011,11 +1011,9 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
                         last_cancel_reason = "session-unavailable-during-preparation"
                 return last_cancel_reason
 
-            if upstream is None:
-                prepare_command = [str(python), "-m", "riftworld", "prepare-area", "--build-nav"]
-            else:
-                prepare_command = [str(python), "-B", str(ROOT / "scripts/prepare_riftworld_area.py"),
-                                   "--upstream", str(upstream)]
+            prepare_command = [str(python), "-B", str(ROOT / "scripts/prepare_riftworld_area.py")]
+            if upstream is not None:
+                prepare_command += ["--upstream", str(upstream)]
             prepare_command += ["--request", str(prepare_request), "--source-index", str(source_index),
                                 "--allow-partial-navigation", "--receipt", str(preparation_receipt),
                                 "--handoff", str(handoff_path)]

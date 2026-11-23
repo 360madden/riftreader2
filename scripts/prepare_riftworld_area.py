@@ -1,4 +1,4 @@
-"""Prepare a RiftWorld area using an explicitly selected navigation dependency."""
+"""Prepare a RiftWorld area for Waypoints using the local toolchain."""
 
 import argparse
 import json
@@ -21,8 +21,9 @@ def _navigation_descriptor(build, upstream, output):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("request", "source-index", "upstream", "receipt", "handoff"):
+    for name in ("request", "source-index", "receipt", "handoff"):
         parser.add_argument(f"--{name}", type=Path, required=True)
+    parser.add_argument("--upstream", type=Path)
     parser.add_argument("--profile", type=Path)
     parser.add_argument("--allow-partial-navigation", action="store_true", required=True)
     args = parser.parse_args(argv)
@@ -31,8 +32,8 @@ def main(argv=None):
     world = Path.cwd().resolve()
     sys.path.insert(0, str(world))
     from riftworld import preparation
-    from riftworld.core import read_json, write_json
-    from riftworld.navigation import build_navigation
+    from riftworld.core import content_id, read_json, sha256, write_json
+    from riftworld.navigation import DEFAULT_UPSTREAM, build_navigation
     from riftworld.preparation import prepared_navigation_handoff
     from riftworld.storage import ensure_processing_space
 
@@ -44,19 +45,31 @@ def main(argv=None):
 
     scene_store = world / "cache/scenes"
     patch_store = world / "data/patches"
-    preparation_store = world / "cache/preparations"
+    preparation_root = world / "cache/rr2-preparations"
+    source_index = args.source_index.resolve(strict=True)
+    # RiftWorld keys preparation lookups by semantic IDs, but its receipts
+    # contain absolute references and exact hashes. Keep those receipts local
+    # to their input and storage paths while sharing the large geometry caches.
+    binding = content_id({
+        "sourceIndex": str(source_index),
+        "sourceIndexSha256": sha256(source_index),
+        "sceneStore": str(scene_store.resolve()),
+        "patchStore": str(patch_store.resolve()),
+        "preparationRoot": str(preparation_root.resolve()),
+    })
+    preparation_store = preparation_root / binding
     navigation_cache = world / "cache/navigation"
     for destination in (scene_store, patch_store, preparation_store,
                         navigation_cache, receipt.parent, handoff_path.parent):
         ensure_processing_space(destination)
     handle = preparation.prepare_area(
-        read_json(args.request), args.source_index,
+        read_json(args.request), source_index,
         scene_store=scene_store, patch_store=patch_store, preparation_store=preparation_store,
         allow_partial_navigation=args.allow_partial_navigation,
     )
     patch = handle.patch
     profile = read_json(args.profile) if args.profile is not None else {}
-    upstream = args.upstream.resolve()
+    upstream = (args.upstream or DEFAULT_UPSTREAM).resolve()
     try:
         build = build_navigation(
             patch.geometry_path, navigation_cache, bounds=tuple(patch.document["requestedBounds"]),

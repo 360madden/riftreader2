@@ -57,6 +57,13 @@ and Java environment. If a cached build records a different upstream path,
 Waypoints makes a verified copy with the selected path for that plan. Without
 an upstream setting, fresh preparation uses RiftWorld's default layout.
 
+Waypoints keeps preparation receipts under `cache/rr2-preparations` in the
+selected RiftWorld checkout. Each group binds the resolved source index path,
+its SHA-256 and the local storage paths. Moving or copying the index creates a
+receipt for its new location while reusing matching cached scenes, patches and
+Detour builds. Repeating preparation with the same index and storage reuses
+that receipt.
+
 For a copied retained map, restore the RiftWorld archive and rebuild its index
 with `build-source-index --retained-patch` and the copied model stores. Pass that
 index and the archive's request and destination catalog to `--prepare-request`.

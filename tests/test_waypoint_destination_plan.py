@@ -951,6 +951,10 @@ class DestinationPlanTests(unittest.TestCase):
         self.assertEqual("adoptable", result["status"], result["blockers"])
         self.assertEqual("prepared", result["stages"]["preparation"])
         self.assertEqual(1, len(self.prepare_calls))
+        command, options = self.prepare_calls[0]
+        self.assertEqual(Path(command[2]).name, "prepare_riftworld_area.py")
+        self.assertNotIn("--upstream", command)
+        self.assertEqual(options["cwd"], self.world)
         self.assertFalse(result["inputSent"])
         self.assertFalse(result["currentRouteChanged"])
         self.assertEqual(catalog_bytes, self.catalog.read_bytes())
