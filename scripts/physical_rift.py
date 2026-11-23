@@ -62,11 +62,11 @@ NATIVE_EXE = (ROOT / "src" / "RiftReader2.Live" / "bin" / "Debug" /
               "net10.0-windows" / "win-x64" / "RiftReader2.Live.exe")
 
 
-def _native_reader_path(override=None):
+def _configured_native_reader_path(override):
     if override is None:
         override = os.environ.get("RR2_NATIVE_READER")
         if not override:
-            return observe_physical.published_physical_tool("native-reader/RiftReader2.Live.exe") or NATIVE_EXE
+            return observe_physical.published_physical_tool("native-reader/RiftReader2.Live.exe")
     path = Path(override)
     if not path.is_absolute() or path.anchor.startswith(("\\\\", "//")):
         raise ValueError("invalid-native-reader-path")
@@ -74,11 +74,15 @@ def _native_reader_path(override=None):
     return path
 
 
+def _native_reader_path(override=None):
+    return _configured_native_reader_path(override) or NATIVE_EXE
+
+
 def bind_native_reader(read, override):
     """Use one configured local reader throughout a multi-source collection."""
-    if override is None and not (os.environ.get("RR2_NATIVE_READER") or os.environ.get("RR2_PHYSICAL_TOOLS_ROOT")):
+    path = _configured_native_reader_path(override)
+    if path is None:
         return read
-    path = _native_reader_path(override)
     if not path.is_file():
         raise ValueError("native-reader-not-built")
     return partial(read, native_reader=path)

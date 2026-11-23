@@ -17,7 +17,7 @@ OFFLINE_PROBE_REPORT = {"status": "offline-self-test-passed", "passed": 31,
 
 class TargetRoutingTests(unittest.TestCase):
     def setUp(self):
-        self.enterContext(patch.dict("os.environ", {"RR2_WGC_PROBE": "", "RR2_PHYSICAL_TOOLS_ROOT": ""}))
+        self.enterContext(patch.dict("os.environ", {"RR2_WGC_PROBE": "", "RR2_PHYSICAL_TOOLS_ROOT": "debug"}))
         self.hostname = patch.object(tool.socket, "gethostname", return_value="AMD-DESKTOP")
         self.hostname.start()
         self.addCleanup(self.hostname.stop)
@@ -163,6 +163,48 @@ class TargetRoutingTests(unittest.TestCase):
                                            "RR2_NATIVE_READER": str(reader), "RR2_WGC_PROBE": str(probe)}):
                 self.assertEqual(physical_rift._native_reader_path(), reader)
                 self.assertEqual(observe_gpu._probe_path(), probe)
+
+    def test_registered_bundle_selects_tools_without_environment_settings(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            checkout = root / "checkout"
+            bundle = root / "external bundle"
+            reader = bundle / "native-reader/RiftReader2.Live.exe"
+            probe = bundle / "wgc-probe/PhysicalWgcProbe.exe"
+            registration = checkout / ".local/physical-tools.json"
+            for path in (reader, probe, registration):
+                path.parent.mkdir(parents=True)
+            reader.touch()
+            probe.touch()
+            registration.write_text(json.dumps({"schema": "rr2-physical-tools/1", "host": "amd-desktop",
+                                                "root": str(bundle)}), encoding="utf-8")
+            with patch.object(observe_physical, "ROOT", checkout), \
+                 patch.dict("os.environ", {"RR2_NATIVE_READER": "", "RR2_PHYSICAL_TOOLS_ROOT": ""}), \
+                 patch.object(physical_rift, "read_native") as native:
+                self.assertEqual(observe_gpu._probe_path(), probe)
+                physical_rift.bind_native_reader(native, None)({}, "facing")
+                native.assert_called_once_with({}, "facing", native_reader=reader)
+                with patch.dict("os.environ", {"RR2_PHYSICAL_TOOLS_ROOT": "debug"}):
+                    self.assertEqual(observe_gpu._probe_path(), observe_gpu.PROBE)
+                    self.assertIs(physical_rift.bind_native_reader(native, None), native)
+
+    def test_bad_registration_blocks_both_tools_and_can_be_overridden(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            registration = root / ".local/physical-tools.json"
+            registration.parent.mkdir()
+            foreign = {"schema": "rr2-physical-tools/1", "host": "OTHER-PC", "root": str(root)}
+            with patch.object(observe_physical, "ROOT", root), \
+                 patch.dict("os.environ", {"RR2_NATIVE_READER": "", "RR2_PHYSICAL_TOOLS_ROOT": ""}):
+                for contents, reason in (("{", "invalid-physical-tools-registration"),
+                                         (json.dumps(foreign), "physical-tools-registration-host-mismatch")):
+                    with self.subTest(reason=reason):
+                        registration.write_text(contents, encoding="utf-8")
+                        self.assertEqual(observe_gpu.check_probe()["reason"], reason)
+                        check = physical_rift.check_native_reader("AMD-DESKTOP", kind="facing")
+                        self.assertEqual(check["detail"], reason)
+                with patch.dict("os.environ", {"RR2_PHYSICAL_TOOLS_ROOT": str(root)}):
+                    self.assertEqual(observe_gpu._probe_path(), root / "wgc-probe/PhysicalWgcProbe.exe")
 
     def test_preflight_requires_relocation_support_only_for_a_probe_outside_the_checkout(self):
         report = dict(OFFLINE_PROBE_REPORT)

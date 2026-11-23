@@ -54,8 +54,27 @@ def _local_absolute_path(value, reason):
 def published_physical_tool(relative_path):
     """Resolve one executable in the bundle produced by publish-physical-tools.ps1."""
     root = os.environ.get("RR2_PHYSICAL_TOOLS_ROOT")
-    if not root:
+    if root == "debug":
         return None
+    if not root:
+        registration = ROOT / ".local" / "physical-tools.json"
+        if not registration.exists() and not registration.is_symlink():
+            return None
+        _plain_path(registration)
+        _require(registration.is_file(), "invalid-physical-tools-registration")
+        with registration.open("rb") as stream:
+            raw = stream.read(16385)
+        _require(0 < len(raw) <= 16384, "invalid-physical-tools-registration")
+        try:
+            settings = json.loads(raw)
+        except ValueError as error:
+            raise ValueError("invalid-physical-tools-registration") from error
+        _require(isinstance(settings, dict) and settings.get("schema") == "rr2-physical-tools/1"
+                 and valid_host_name(settings.get("host")) and isinstance(settings.get("root"), str),
+                 "invalid-physical-tools-registration")
+        _require(settings["host"].casefold() == socket.gethostname().casefold(),
+                 "physical-tools-registration-host-mismatch")
+        root = settings["root"]
     return _local_absolute_path(Path(root) / relative_path, "invalid-physical-tools-root")
 
 

@@ -122,14 +122,19 @@ a new local directory, and keep both tool folders intact when copying them.
 
 ```powershell
 $rr2Host = [Environment]::MachineName
-$rr2Tools = .\scripts\publish-physical-tools.ps1 -ExpectedHost $rr2Host
-$env:RR2_PHYSICAL_TOOLS_ROOT = $rr2Tools.Directory
+.\scripts\publish-physical-tools.ps1 -ExpectedHost $rr2Host -UseForCheckout
 .\rr2-check-dependencies.cmd --expected-host $rr2Host --workflow wgc
 ```
 
-On another checkout or Windows host, set `RR2_PHYSICAL_TOOLS_ROOT` to the
-absolute local path of the copied bundle. `RR2_NATIVE_READER` and
-`RR2_WGC_PROBE` take precedence for their respective tools when set.
+`-UseForCheckout` records the verified bundle as the checkout's selection for
+later launches, including from Explorer. To reuse a copied bundle, run
+`publish-physical-tools.ps1 -ExpectedHost $rr2Host -RegisterBundle PATH` with
+its local path. Registration checks both tools and uses the current host's
+checkout settings. It needs PowerShell 7 and the published bundle.
+
+`RR2_PHYSICAL_TOOLS_ROOT` selects a different local bundle for the current shell
+or selects the checkout's Debug builds with the value `debug`.
+`RR2_NATIVE_READER` and `RR2_WGC_PROBE` take precedence for their respective tools.
 The WGC probe uses the requested output path to find the checkout's `artifacts`
 directory. Republish older bundles if the dependency check reports
 `gpu-probe-relocation-update-required`.

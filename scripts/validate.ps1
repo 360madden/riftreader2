@@ -98,7 +98,7 @@ try {
         $env:QT_QPA_PLATFORM = 'offscreen'
         $env:RIFTREADER2_DOTNET = $DotNet
         $env:RR2_NATIVE_READER = $null
-        $env:RR2_PHYSICAL_TOOLS_ROOT = $null
+        $env:RR2_PHYSICAL_TOOLS_ROOT = 'debug'
         $env:RR2_OVERLAY_PYTHON = $null
         $env:RR2_RERUN_PYTHON = $null
         & $LuaPython -m pytest --disable-plugin-autoload -q tests
