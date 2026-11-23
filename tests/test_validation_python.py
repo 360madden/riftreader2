@@ -52,7 +52,7 @@ class ValidationPythonTests(unittest.TestCase):
         )
         return stub
 
-    def resolve(self, tools, *, override=""):
+    def resolve(self, tools, *, override="", shared_python=""):
         environment = dict(os.environ)
         environment.update(
             PATH=os.pathsep.join(str(tool.parent) for tool in tools),
@@ -60,6 +60,7 @@ class ValidationPythonTests(unittest.TestCase):
             RR2_VALIDATION_TEST_REPO=str(self.repository),
             RR2_VALIDATION_TEST_OVERRIDE=str(override),
             RR2_VALIDATION_TEST_PYTHON=sys.executable,
+            RIFTREADER2_PYTHON=str(shared_python),
         )
         return subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-Command", RESOLVE],
                               cwd=self.folder, env=environment, capture_output=True,
@@ -75,16 +76,31 @@ class ValidationPythonTests(unittest.TestCase):
     def test_explicit_override_reports_its_own_failure(self):
         wrong = self.python_stub("explicit Python", fail_lua=True)
         ready = self.python_stub("automatic Python")
-        result = self.resolve([ready], override=wrong)
+        result = self.resolve([ready], override=wrong, shared_python=ready)
         self.assertEqual(result.returncode, 2)
         self.assertIn("Configured Python", result.stderr)
         self.assertIn("Lua 5.1 unavailable", result.stderr)
         self.assertEqual(result.stdout, "")
 
-    def test_checkout_venv_precedes_path(self):
+    def test_finds_shared_python_outside_path(self):
+        shared = self.python_stub("shared Python")
+        ready = self.python_stub("working PATH Python")
+        result = self.resolve([ready], shared_python=shared)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(Path(result.stdout.strip()), shared)
+
+    def test_skips_shared_python_without_validation_dependencies(self):
+        shared = self.python_stub("shared Python without Lua", fail_lua=True)
+        ready = self.python_stub("working PATH Python")
+        result = self.resolve([ready], shared_python=shared)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(Path(result.stdout.strip()), ready)
+
+    def test_checkout_venv_precedes_shared_python_and_path(self):
         environment = self.repository / ".venv"
         venv.EnvBuilder(with_pip=False).create(environment)
-        result = self.resolve([self.python_stub("working PATH Python")])
+        shared = self.python_stub("shared Python")
+        result = self.resolve([self.python_stub("working PATH Python")], shared_python=shared)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(Path(result.stdout.strip()), environment / "Scripts" / "python.exe")
 

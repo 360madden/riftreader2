@@ -38,6 +38,9 @@ function Resolve-ValidationPython {
     $candidates = @(
         Join-Path $RepositoryRoot 'artifacts/tools/lua-python/Scripts/python.exe'
         Join-Path $RepositoryRoot '.venv/Scripts/python.exe'
+        if ($env:RIFTREADER2_PYTHON -and [IO.Path]::IsPathFullyQualified($env:RIFTREADER2_PYTHON)) {
+            $env:RIFTREADER2_PYTHON
+        }
         Get-Command -Name python -CommandType Application -All -ErrorAction SilentlyContinue |
             Select-Object -ExpandProperty Source
     )

@@ -610,11 +610,12 @@ exact SDK from this checkout. An explicit `-DotNet PATH` or
 fails directly.
 
 Validation checks `artifacts/tools/lua-python/Scripts/python.exe`, the
-checkout's `.venv`, Python installations on `PATH`, then installations listed
-by the Windows `py` launcher. It selects the first interpreter that passes the
-Python package, Tcl and pinned Lua checks. Use `-LuaPython PATH` or
-`RIFTREADER2_LUA_PYTHON` to check and use one specific interpreter. If it fails,
-validation reports the missing dependencies for that interpreter.
+checkout's `.venv`, the absolute executable in `RIFTREADER2_PYTHON`, Python
+installations on `PATH`, then installations listed by the Windows `py` launcher.
+It selects the first interpreter that passes the Python package, Tcl and pinned
+Lua checks. Use `-LuaPython PATH` or `RIFTREADER2_LUA_PYTHON` to check and use one
+specific interpreter. If it fails, validation reports the missing dependencies
+for that interpreter.
 
 ```powershell
 pwsh -NoProfile -File .\scripts\validate.ps1 -LuaPython artifacts/tools/lua-python/Scripts/python.exe
