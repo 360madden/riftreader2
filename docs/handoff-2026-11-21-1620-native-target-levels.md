@@ -44,6 +44,10 @@ ReaderBridge, NPC survey, and Telemetry startup checks. The Telemetry check
 found all three installed addon files. Optional Qt and Rerun started in their
 separate environments for dependency checks without opening a window.
 [LEGION dependency results](../artifacts/physical-dependencies-legion-86a9aca.json)
+The prepared-map check separately verified the local JPype, Java and pinned
+Recast and Detour JARs. It also verified a saved build against the local
+dependency checkout when its recorded path was unavailable.
+[Prepared-map dependencies](../artifacts/prepared-map-dependencies-legion-20261123.json)
 A passive LEGION run on build 1179, PID 31684, verified an advancing
 Telemetry publisher in two windows. Independent replay from a copied folder
 reproduced 106 distinct frames and zero observed A–B–A cycles. Live

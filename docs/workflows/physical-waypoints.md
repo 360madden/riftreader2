@@ -13,6 +13,21 @@ when using an environment outside that checkout's `.venv`. The explicit options
 `--riftworld-root` and `--riftworld-python` take precedence. Each plan records the
 checkout and Python it used.
 
+Check the prepared-map toolchain from the RR2 checkout before planning.
+The check uses RiftWorld's configured Python, verifies the pinned dependency
+checkout and JARs, and starts Java through JPype to load Recast and Detour.
+It needs no map or running RIFT process.
+
+```powershell
+$rr2Python = $env:RIFTREADER2_PYTHON
+if (!$rr2Python) { $rr2Python = 'python' }
+& $rr2Python -B scripts/waypoint_destination_plan.py --check-dependencies
+```
+
+Add `--build PATH` to verify a saved Detour build and its artifacts. If its
+recorded dependency path is unavailable, pass the local pinned checkout with
+`--riftworld-upstream PATH` to check the build against those dependencies.
+
 When a saved Detour build records a different machine's RiftAssetDumper path,
 pass `--riftworld-upstream` with the path to the local `cache\RiftAssetDumper`
 checkout and the normal `--build` arguments. Use the pinned dependency revision

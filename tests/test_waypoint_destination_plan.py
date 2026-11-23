@@ -102,6 +102,32 @@ class DestinationPlanTests(unittest.TestCase):
         self.assertEqual(result["riftWorldRuntime"]["checkout"], str(self.world.resolve()))
         self.assertEqual(result["riftWorldRuntime"]["python"], str(Path(sys.executable).resolve()))
 
+    def test_dependency_check_uses_selected_python_and_optional_build(self):
+        upstream = self.world / "local upstream"
+        upstream.mkdir()
+        runtime = {"status": "ready", "javaVersion": "21", "jpypeVersion": "1.7.1"}
+        calls = []
+
+        def run(command, **kwargs):
+            calls.append((command, kwargs))
+            return subprocess.CompletedProcess(command, 0, json.dumps(runtime), "")
+
+        result = bridge.check_dependencies(riftworld_root=self.world, riftworld_python=sys.executable,
+                                           riftworld_upstream=upstream, build=self.build, runner=run)
+        command, kwargs = calls[0]
+        self.assertEqual(command[:3], [str(Path(sys.executable).resolve()), "-B", "-c"])
+        self.assertEqual(command[-2:], [str(self.build.absolute()), str(upstream.absolute())])
+        self.assertEqual(kwargs["cwd"], self.world.resolve())
+        self.assertEqual(result["navigationRuntime"], runtime)
+        self.assertFalse(result["inputSent"] or result["currentRouteChanged"])
+
+    def test_dependency_cli_refuses_to_execute(self):
+        with patch.object(bridge, "check_dependencies") as check, contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as exits:
+                bridge.main(["--check-dependencies", "--execute"])
+        self.assertEqual(exits.exception.code, 2)
+        check.assert_not_called()
+
     def retained_build(self):
         upstream = self.world / "matching upstream"
         upstream.mkdir()

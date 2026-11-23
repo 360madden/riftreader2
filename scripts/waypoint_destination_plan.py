@@ -35,6 +35,61 @@ from scripts.waypoint_view_bundle import bundle_asset
 SCHEMA = "rr2.destination-plan/1"
 RIFTWORLD_ROOT = ROOT.parent / "RiftWorld"
 
+RIFTWORLD_STARTUP_PROBE = r"""
+import json
+from pathlib import Path
+import sys
+
+result = {"status": "blocked"}
+stage = "riftworld-import"
+try:
+    from tools import query_destination
+    from tools.nav_patch import resolve_java_home, verify_upstream
+    from riftworld import navigation
+    query_tool = Path(query_destination.__file__).resolve()
+    if query_tool != (Path.cwd() / "tools" / "query_destination.py").resolve():
+        raise ValueError(f"Destination query tool was loaded from an unexpected checkout: {query_tool}")
+    result["queryTool"] = str(query_tool)
+
+    stage = "jpype-import"
+    import jpype
+    result["jpypeVersion"] = jpype.__version__
+
+    stage = "navigation-build"
+    supplied_build, supplied_upstream = sys.argv[1:]
+    manifest = None
+    if supplied_build:
+        build = Path(supplied_build)
+        if build.is_dir():
+            build /= "navigation.json"
+        if build.name != "navigation.json":
+            raise ValueError("Navigation build descriptor must be navigation.json")
+        manifest = navigation._read_manifest(build.parent)
+        result["navigationBuild"] = {"path": str(build), "buildId": manifest["buildId"]}
+
+    stage = "riftassetdumper-dependencies"
+    upstream = Path(supplied_upstream or (manifest or {}).get("pipelineCheckout") or navigation.DEFAULT_UPSTREAM)
+    result["pipelineCheckout"] = str(upstream)
+    if upstream.anchor.startswith(("\\", "//")) or not upstream.is_dir():
+        raise ValueError(f"Local RiftAssetDumper checkout is unavailable at {upstream}")
+    dependencies = verify_upstream(upstream)
+    if manifest is not None and dependencies != manifest["dependencies"]:
+        raise ValueError("Navigation build dependencies do not match the selected checkout")
+    result["pipelineDependencies"] = dependencies
+
+    stage = "java-detour-startup"
+    result["javaHome"] = str(resolve_java_home())
+    navigation._load_upstream(upstream)
+    jpype.JClass("org.recast4j.recast.RecastBuilder")
+    jpype.JClass("org.recast4j.detour.NavMeshQuery")
+    result["javaVersion"] = str(jpype.JClass("java.lang.System").getProperty("java.version"))
+    result["status"] = "ready"
+except (Exception, SystemExit) as error:
+    result.update(failedCheck=stage, reason=str(error)[:400])
+print(json.dumps(result))
+sys.exit(0 if result["status"] == "ready" else 2)
+"""
+
 
 def _read(path, limit=MAX_CANDIDATE_BYTES):
     value, digest = _read_document(path, limit)
@@ -55,6 +110,44 @@ def _identity(value):
 
 def _reference(path):
     return {"path": str(Path(path).resolve()), "sha256": _hash(path)}
+
+
+def _riftworld_tools(root, python):
+    world_root = Path(root or os.environ.get("RR2_RIFTWORLD_ROOT") or RIFTWORLD_ROOT).resolve()
+    if not world_root.is_dir():
+        raise ValueError(f"RiftWorld checkout is unavailable at {world_root}")
+    query_tool = world_root / "tools" / "query_destination.py"
+    if not query_tool.is_file():
+        raise ValueError(f"RiftWorld destination query tool is unavailable at {query_tool}")
+    configured = python or os.environ.get("RR2_RIFTWORLD_PYTHON")
+    executable = Path(configured or world_root / ".venv" / "Scripts" / "python.exe").resolve()
+    if not executable.is_file():
+        raise ValueError(f"RiftWorld Python is unavailable at {executable}")
+    return world_root, query_tool, executable
+
+
+def check_dependencies(*, riftworld_root=None, riftworld_python=None, riftworld_upstream=None,
+                       build=None, runner=subprocess.run):
+    """Check the selected local navigation toolchain without a game session or build."""
+    result = {"status": "blocked", "ownerHost": platform.node(), "inputSent": False,
+              "currentRouteChanged": False}
+    try:
+        root, _, python = _riftworld_tools(riftworld_root, riftworld_python)
+    except (OSError, ValueError) as error:
+        return dict(result, failedCheck="riftworld-paths", reason=str(error))
+    result["riftWorldRuntime"] = {"checkout": str(root), "python": str(python)}
+    try:
+        command = [str(python), "-B", "-c", RIFTWORLD_STARTUP_PROBE,
+                   str(Path(build).absolute()) if build is not None else "",
+                   str(Path(riftworld_upstream).absolute()) if riftworld_upstream is not None else ""]
+        completed = runner(command, cwd=root, text=True, capture_output=True, check=False, timeout=30)
+        report = json.loads(completed.stdout)
+        if (not isinstance(report, dict) or report.get("status") not in {"ready", "blocked"}
+                or completed.returncode != (0 if report["status"] == "ready" else 2)):
+            raise ValueError("invalid RiftWorld startup response")
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        return dict(result, failedCheck="riftworld-startup-probe", reason=str(error)[:400])
+    return {**result, "status": report["status"], "navigationRuntime": report}
 
 
 def _relocate_navigation_build(reference, output, upstream):
@@ -695,16 +788,7 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
     if search_extent is not None and (isinstance(search_extent, bool)
                                      or not math.isfinite(search_extent) or search_extent <= 0):
         raise ValueError("search extent must be finite and positive")
-    world_root = Path(riftworld_root or os.environ.get("RR2_RIFTWORLD_ROOT") or RIFTWORLD_ROOT).resolve()
-    if not world_root.is_dir():
-        raise ValueError(f"RiftWorld checkout is unavailable at {world_root}")
-    query_tool = world_root / "tools" / "query_destination.py"
-    if not query_tool.is_file():
-        raise ValueError(f"RiftWorld destination query tool is unavailable at {query_tool}")
-    configured_python = riftworld_python or os.environ.get("RR2_RIFTWORLD_PYTHON")
-    python = Path(configured_python or world_root / ".venv" / "Scripts" / "python.exe").resolve()
-    if not python.is_file():
-        raise ValueError(f"RiftWorld Python is unavailable at {python}")
+    world_root, query_tool, python = _riftworld_tools(riftworld_root, riftworld_python)
     catalog = Path(catalog).resolve()
     inputs = {"catalog": _reference(catalog)}
     if preparing:
@@ -993,8 +1077,10 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
 
 def parser():
     result = argparse.ArgumentParser(description=__doc__)
-    result.add_argument("--catalog", type=Path, required=True)
+    result.add_argument("--catalog", type=Path)
     mode = result.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--check-dependencies", action="store_true",
+                      help="check the local RiftWorld Python, JDK and pinned navigation dependencies")
     mode.add_argument("--patch", type=Path, help="Existing exact patch; requires --build")
     mode.add_argument("--prepare-request", type=Path,
                       help="Area-request recipe; requires --source-index and a predeclared source-bound destination")
@@ -1003,14 +1089,14 @@ def parser():
     result.add_argument("--allow-partial-navigation", action="store_true")
     result.add_argument("--prepare-profile", type=Path)
     result.add_argument("--prepare-timeout-seconds", type=float, default=600)
-    result.add_argument("--destination", required=True)
-    starts = result.add_mutually_exclusive_group(required=True)
+    result.add_argument("--destination")
+    starts = result.add_mutually_exclusive_group()
     starts.add_argument("--from", dest="start", type=_xyz)
     starts.add_argument("--from-current", action="store_true",
                         help="read fresh bound native XYZ through the exact --session; no game input")
     starts.add_argument("--from-recovery-plan", dest="recovery_plan", type=Path,
                         help="plan-only: verify a halted run and fresh same-player recovery pose; never resume input")
-    result.add_argument("--out-dir", dest="output_directory", type=Path, required=True)
+    result.add_argument("--out-dir", dest="output_directory", type=Path)
     result.add_argument("--riftworld-root", type=Path,
                         help="RiftWorld checkout (default: RR2_RIFTWORLD_ROOT or sibling RiftWorld)")
     result.add_argument("--riftworld-python", type=Path,
@@ -1030,9 +1116,22 @@ def parser():
 
 
 def main(argv=None):
-    args = parser().parse_args(argv)
+    cli = parser()
+    args = cli.parse_args(argv)
+    options = vars(args)
+    if options.pop("check_dependencies"):
+        allowed = {"riftworld_root", "riftworld_python", "riftworld_upstream", "build"}
+        if any(value != cli.get_default(key) for key, value in options.items() if key not in allowed):
+            cli.error("--check-dependencies accepts only --build and the --riftworld-* paths")
+        result = check_dependencies(**{key: options[key] for key in allowed})
+        print(json.dumps(result, indent=2, allow_nan=False))
+        return 0 if result["status"] == "ready" else 2
+    if any(value is None for value in (args.catalog, args.destination, args.output_directory)):
+        cli.error("planning requires --catalog, --destination and --out-dir")
+    if args.start is None and not args.from_current and args.recovery_plan is None:
+        cli.error("planning requires --from, --from-current or --from-recovery-plan")
     try:
-        result = plan_destination(**vars(args))
+        result = plan_destination(**options)
         print(json.dumps(result, indent=2, allow_nan=False))
         return 130 if result["status"] in {"stopped", "cancelled"} else 2 if result["status"] in {
             "blocked", "halted", "execution-unverified"} else 0
