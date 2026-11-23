@@ -90,6 +90,20 @@ python scripts/physical_rift.py --expected-host $rr2Host --read-native vitals --
 # Add --physical-pid PID if more than one local RIFT instance is running.
 ```
 
+For two candidate native positions across a 1–30 second observation window,
+use the manual motion probe. It keeps the PID, process epoch, build, window
+identity and sampled player key consistent. Use a fresh output directory to
+retain both raw reports and replay the candidate displacement offline.
+
+```powershell
+python -B scripts/physical_manual_motion_probe.py --host $rr2Host --pid CURRENT_PID --seconds 2 --output artifacts/NEW_MANUAL_MOTION
+python -B scripts/physical_manual_motion_probe.py --replay artifacts/NEW_MANUAL_MOTION/manual-motion.json
+```
+
+The report records both sample times and the XYZ delta. The observer sends no
+keys and leaves focus alone. Replay can run on another analysis machine after
+copying the directory. It checks both raw report hashes and recomputes the delta.
+
 With the freshly verified `CURRENT_PID`, use a new output directory for each
 command. NPC survey preparation verifies the installed addon files and prints
 the bind and capture commands. It looks under the current user's Windows
@@ -181,7 +195,7 @@ For a **single-command, read-only** distance/progress preview against an existin
 named anchor (replace the example catalog and ID with actual saved values):
 
 ```powershell
-python scripts/physical_rift.py --expected-host AMD-DESKTOP --physical-pid CURRENT_PID --read-native position --samples 10 --interval-ms 100 --anchor-catalog config/my-anchors.json --anchor-id North_Gate
+python scripts/physical_rift.py --expected-host $rr2Host --physical-pid CURRENT_PID --read-native position --samples 10 --interval-ms 100 --anchor-catalog config/my-anchors.json --anchor-id North_Gate
 ```
 
 The `offlineAnchorPreview` is candidate X/Z arithmetic only. It never authorizes

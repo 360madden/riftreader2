@@ -1,4 +1,5 @@
 """Offline physical-only selection tests; no game input or VMware dependencies."""
+from hashlib import sha256
 import io
 import json
 from pathlib import Path
@@ -996,6 +997,7 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
                  patch.object(physical.subprocess, "run", side_effect=fake_run):
                 result = physical.read_native(selected, "position", destination,
                                               samples=2, interval_ms=0)
+            self.assertEqual(result["nativeSourceSha256"], sha256(destination.read_bytes()).hexdigest())
         self.assertEqual(result["status"], "complete")
         self.assertEqual(result["nativeSummary"]["recordType"],
                          "native-current-position-candidate-summary/1")
