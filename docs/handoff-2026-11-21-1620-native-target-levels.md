@@ -38,16 +38,19 @@ advancing nonce-bound survey. [NPC survey preparation](reference/physical-nearby
 The current Windows workflow verifies the local host before using physical
 tools. A fresh checkout can use a published native reader, a calibration
 verified for that host, and local Python environments. The fresh LEGION
-checkout at `86a9aca` passed the full gate, including the Lua 5.1 producer
+checkout at `5280ee1` passed the full gate, including the Lua 5.1 producer
 checks. The newly published reader passed the Waypoints, WGC, DXcam,
 ReaderBridge, NPC survey, and Telemetry startup checks. The Telemetry check
 found all three installed addon files. Optional Qt and Rerun started in their
 separate environments for dependency checks without opening a window.
-[LEGION dependency results](../artifacts/physical-dependencies-legion-86a9aca.json)
+[LEGION dependency results](../artifacts/physical-dependencies-legion-5280ee1.json)
 The prepared-map check separately verified the local JPype, Java and pinned
 Recast and Detour JARs. It also verified a saved build against the local
 dependency checkout when its recorded path was unavailable.
 [Prepared-map dependencies](../artifacts/prepared-map-dependencies-legion-20261123.json)
+The fresh checkout also replayed ReaderBridge player level 45, the 12-ID NPC
+plan and the relocated Watch route from saved inputs.
+[Portable replay results](../artifacts/portable-workflow-replay-legion-5280ee1.json)
 A passive LEGION run on build 1179, PID 31684, verified an advancing
 Telemetry publisher in two windows. Independent replay from a copied folder
 reproduced 106 distinct frames and zero observed A–B–A cycles. Live
@@ -77,7 +80,7 @@ a copied self-contained publish. The copied build passed all 31 self-checks
 with the runtime overrides cleared. [Self-contained WGC setup](../tools/physical-wgc-probe/README.md#publish-with-the-runtime-included)
 The AMD-DESKTOP process observations below are dated evidence.
 [Portable checkout setup](workflows/development.md#reuse-local-tools-from-a-fresh-checkout)
-· [LEGION validation log](../artifacts/validation-legion-86a9aca.log)
+· [LEGION validation log](../artifacts/validation-legion-5280ee1.log)
 
 **Machine verified:** **AMD-DESKTOP**, from machine-local Windows PowerShell `[Environment]::MachineName` (exit 0 at 16:20:19 EST); Workbridge **0.16.5-dev** rooted at `C:\work`.\
 **Repository:** `C:\work\riftreader2`; branch **`codex/modular-foundation`**.\
