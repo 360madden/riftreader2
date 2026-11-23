@@ -93,11 +93,11 @@ They feed the **Domain → Application → Infrastructure** core, composed by ei
 
 ## 🖥️ Current live target: physical RIFT
 
-As of **November 10, 2026**, RR2's active live workflow uses the actual
-`rift_x64` process running on **AMD-DESKTOP or LEGION**. VMware RIFT labs are
-retired from active RR2 operation; older lab scripts and results remain for
-historical research. Physical observation already supports strict host routing
-and explicit PID selection for multibox sessions. See the
+RR2 uses the actual `rift_x64` process on the **verified local Windows host**.
+The same physical observation workflow accepts AMD-DESKTOP, LEGION, and other
+Windows hosts. Pass the selected local PID when several clients are running.
+The VMware RIFT lab scripts and results remain available for historical
+research. See the
 [physical-first development workflow](docs/workflows/development.md#current-live-workflow-physical-rift-only-2026-11-10).
 
 Live native telemetry and input require separate host/process/freshness and
