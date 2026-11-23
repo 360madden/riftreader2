@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import math
+import os
 import re
 from pathlib import Path
 import socket
@@ -58,6 +59,45 @@ NATIVE_RECEIPTS = {
 }
 NATIVE_EXE = (ROOT / "src" / "RiftReader2.Live" / "bin" / "Debug" /
               "net10.0-windows" / "win-x64" / "RiftReader2.Live.exe")
+
+
+def _native_reader_path(override):
+    if override is None:
+        return NATIVE_EXE
+    path = Path(override)
+    if not path.is_absolute() or path.anchor.startswith(("\\\\", "//")):
+        raise ValueError("invalid-native-reader-path")
+    observe_physical._plain_path(path)
+    return path
+
+
+def check_native_reader(expected_host=None, native_reader=None):
+    host = socket.gethostname()
+    result = {"status": "blocked", "workflow": "physical", "ownerHost": host}
+    if not valid_host_name(host) or (expected_host is not None and not is_local_host(expected_host)):
+        return dict(result, reason="host-mismatch")
+    try:
+        reader = _native_reader_path(native_reader)
+        result["nativeReaderPath"] = str(reader)
+        if not reader.is_file():
+            return dict(result, reason="native-reader-not-built")
+    except (TypeError, ValueError, OSError) as exc:
+        return dict(result, reason="invalid-native-reader-path", detail=str(exc)[:240])
+    try:
+        code, help_text = observe_physical._run([reader, "--help"], 15,
+                                               env={**os.environ, "DOTNET_DISABLE_GUI_ERRORS": "1"})
+    except (ValueError, OSError) as exc:
+        return dict(result, reason="native-reader-launch-failed", detail=str(exc)[:240])
+    if code != 0:
+        return dict(result, reason="native-reader-failed", exitCode=code)
+    lines = help_text.splitlines()
+    if not lines or lines[0] != "RiftReader2.Live native tools":
+        return dict(result, reason="unrecognized-native-reader-help")
+    advertised = {line.split(maxsplit=1)[0] for line in lines[1:] if line.strip()}
+    missing = sorted(set(NATIVE_READS.values()) - advertised)
+    if missing:
+        return dict(result, reason="native-reader-commands-not-advertised", missingCommands=missing)
+    return dict(result, status="ready", nativeCommandsAdvertised=len(NATIVE_READS))
 
 
 def is_local_host(expected_host):
@@ -1560,7 +1600,7 @@ def _strict_native_json(data):
 
 def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
                 include_position=False, include_transform_sources=False, include_target=False,
-                unit_limit=None, start_bucket=None, unit_keys=None):
+                unit_limit=None, start_bucket=None, unit_keys=None, native_reader=None):
     """Read a candidate from the exact selected LOCAL physical process, without input."""
     if selection.get("status") != "ready":
         return selection
@@ -1605,16 +1645,21 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
             or not isinstance(target_host, str)
             or target_host.casefold() != actual_host.casefold()):
         return dict(selection, status="blocked", reason="invalid-local-process-identity")
-    if not NATIVE_EXE.is_file():
+    try:
+        reader = _native_reader_path(native_reader)
+    except (OSError, TypeError, ValueError) as exc:
+        return dict(selection, status="blocked", reason="invalid-native-reader-path",
+                    detail=str(exc)[:240])
+    if not reader.is_file():
         return dict(selection, status="blocked", reason="native-reader-not-built",
-                    buildHint="dotnet build src/RiftReader2.Live")
+                    nativeReaderPath=str(reader), buildHint="dotnet build src/RiftReader2.Live")
     path = (Path(output) if output is not None else
             ROOT / "artifacts" / ("physical-native-" + kind + "-" + uuid.uuid4().hex + ".json"))
     if not path.is_absolute():
         path = ROOT / path
     if path.exists():
         return dict(selection, status="blocked", reason="native-output-exists")
-    command = [str(NATIVE_EXE), NATIVE_READS[kind], "--pid", str(pid),
+    command = [str(reader), NATIVE_READS[kind], "--pid", str(pid),
                "--start-ticks", ticks, "--output", str(path)]
     # Build 1179 has independently verified player/position/facing/actor-owner anchors.
     # Raw orientation reuses the owner-checked pose component exercised by facing.
@@ -1786,8 +1831,13 @@ def main(argv=None):
                         help="optional guard: refuse a different physical PC")
     parser.add_argument("--physical-pid", type=int,
                         help="pin one local rift_x64.exe PID; required if multiple exist")
-    parser.add_argument("--read-native", choices=tuple(NATIVE_READS),
-                        help="read one candidate from the pinned physical process; no input")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--read-native", choices=tuple(NATIVE_READS),
+                      help="read one candidate from the pinned physical process; no input")
+    mode.add_argument("--check-native-reader", action="store_true",
+                      help="check the local executable's read-only commands without finding a game process")
+    parser.add_argument("--native-reader", type=Path,
+                        help="absolute path to a local RiftReader2.Live executable for native reads")
     parser.add_argument("--output", type=Path,
                         help="new JSON file for --read-native (default: unique artifacts path)")
     parser.add_argument("--samples", type=int,
@@ -1810,6 +1860,15 @@ def main(argv=None):
     parser.add_argument("--project-world", type=float, nargs=3, metavar=("X", "Y", "Z"),
                         help="with facing: project this world point into normalized client coordinates")
     args = parser.parse_args(argv)
+    if args.check_native_reader:
+        if any(value is not None and value is not False for name, value in vars(args).items()
+               if name not in ("check_native_reader", "native_reader", "expected_host")):
+            parser.error("--check-native-reader accepts only --expected-host and --native-reader")
+        result = check_native_reader(args.expected_host, args.native_reader)
+        print(json.dumps(result, sort_keys=True))
+        return 0 if result["status"] == "ready" else 2
+    if args.native_reader is not None and args.read_native is None:
+        parser.error("--native-reader requires --read-native or --check-native-reader")
     unit_keys = args.unit_keys.split(",") if args.unit_keys is not None else None
     anchor_requested = args.anchor_catalog is not None or args.anchor_id is not None
     if args.project_world is not None and (args.read_native != "facing" or
@@ -1853,6 +1912,8 @@ def main(argv=None):
                         if args.unit_limit is not None or args.start_bucket is not None else {})
         if unit_keys is not None:
             scan_options["unit_keys"] = unit_keys
+        if args.native_reader is not None:
+            scan_options["native_reader"] = args.native_reader
         result = read_native(result, args.read_native, args.output,
                              samples=args.samples, interval_ms=args.interval_ms,
                               include_position=args.include_position,

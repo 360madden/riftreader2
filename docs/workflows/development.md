@@ -68,7 +68,15 @@ python scripts/physical_rift.py --expected-host $rr2Host
 # With multiple physical RIFT instances, pass --physical-pid with the chosen PID.
 ```
 
-Native read-only telemetry now has a **single physical-only command** on the verified host:
+Use `--check-native-reader` to check that the executable starts and advertises
+the native read commands. The check needs no game process. The wrapper defaults
+to the checkout's Debug build. Use `--native-reader` with an absolute local path
+to select a published build for a dependency check or a `--read-native` command.
+
+```powershell
+python scripts/physical_rift.py --expected-host $rr2Host --check-native-reader
+python scripts/physical_rift.py --expected-host $rr2Host --check-native-reader --native-reader $rr2PublishedReader
+```
 
 ```powershell
 python scripts/physical_rift.py --expected-host $rr2Host --read-native vitals

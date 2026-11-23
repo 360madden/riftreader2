@@ -84,6 +84,45 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         self.assertEqual(result["reason"], "host-mismatch")
         reader.assert_not_called()
 
+    def test_native_reader_preflight_checks_commands_without_selecting_a_game(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            published = Path(temporary) / "RiftReader2.Live.exe"
+            published.touch()
+            commands = list(physical.NATIVE_READS.values())
+            help_text = "\n".join(["RiftReader2.Live native tools", *commands])
+            with patch.object(physical, "select_physical") as select, \
+                 patch.object(physical.observe_physical, "_run", return_value=(0, help_text)) as run, \
+                 redirect_stdout(io.StringIO()) as output:
+                code = physical.main(["--check-native-reader", "--expected-host", "AMD-DESKTOP",
+                                      "--native-reader", str(published)])
+            self.assertEqual(code, 0)
+            self.assertEqual(json.loads(output.getvalue())["nativeCommandsAdvertised"], len(commands))
+            self.assertEqual(run.call_args.args[0], [published, "--help"])
+            select.assert_not_called()
+
+            with patch.object(physical.observe_physical, "_run", return_value=(0, help_text.rsplit("\n", 1)[0])):
+                incomplete = physical.check_native_reader("AMD-DESKTOP", published)
+            self.assertEqual(incomplete["reason"], "native-reader-commands-not-advertised")
+            self.assertEqual(incomplete["missingCommands"], [commands[-1]])
+            with patch.object(physical.observe_physical, "_run") as run:
+                self.assertEqual(physical.check_native_reader("LEGION", published)["reason"], "host-mismatch")
+            run.assert_not_called()
+
+    def test_published_native_reader_option_reaches_only_the_selected_read(self):
+        selection = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
+        with tempfile.TemporaryDirectory() as temporary:
+            published = Path(temporary) / "RiftReader2.Live.exe"
+            published.touch()
+            dst = Path(temporary) / "new-read.json"
+            failure = subprocess.CompletedProcess([], 2, stdout="", stderr="fixture")
+            with patch.object(physical, "select_physical", return_value=selection), \
+                 patch.object(physical.subprocess, "run", return_value=failure) as run, \
+                 redirect_stdout(io.StringIO()):
+                code = physical.main(["--expected-host", "AMD-DESKTOP", "--read-native", "vitals",
+                                      "--native-reader", str(published), "--output", str(dst)])
+            self.assertEqual(code, 2)
+            self.assertEqual(run.call_args.args[0][:3], [str(published), "sample-current-vitals", "--pid"])
+
     def test_other_windows_host_can_select_its_local_process(self):
         target = dict(IDENTITY, hostName="OTHER-PC")
         with patch.object(physical.socket, "gethostname", return_value="OTHER-PC"), \
