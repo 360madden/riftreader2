@@ -185,7 +185,7 @@ def _safe_relative(root: Path, value, name: str, *, maximum: int,
     if tracked:
         tracked_result = subprocess.run(
             ["git", "-C", str(root), "ls-files", "--error-unmatch", "--", normalized],
-            capture_output=True, text=True,
+            capture_output=True, text=True, env=os.environ.copy(),
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         if tracked_result.returncode:
@@ -389,10 +389,12 @@ class LabCodex:
                 "login": "available"}
 
     def _git_provenance(self) -> dict:
+        # Pass empty Git config values explicitly after Windows environment edits.
+        environment = os.environ.copy()
         head = subprocess.run(["git", "-C", str(self.root), "rev-parse", "HEAD"],
-                              capture_output=True, text=True, check=False)
+                              capture_output=True, text=True, check=False, env=environment)
         dirty = subprocess.run(["git", "-C", str(self.root), "status", "--porcelain"],
-                               capture_output=True, text=True, check=False)
+                               capture_output=True, text=True, check=False, env=environment)
         if head.returncode or dirty.returncode or not re.fullmatch(r"[0-9a-fA-F]{40,64}", head.stdout.strip()):
             raise LabCodexError("git-provenance-unavailable")
         return {"head": head.stdout.strip().lower(), "dirty": bool(dirty.stdout)}

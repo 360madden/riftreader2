@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -91,11 +92,14 @@ class Fixture:
         self.vmrun = root / "vmrun.exe"; self.vmrun.write_text("exe", encoding="utf-8")
         (self.repo / "task.md").write_text("Review input.\n", encoding="utf-8")
         (self.repo / "input.txt").write_text("tracked bytes\n", encoding="utf-8")
-        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
-        subprocess.run(["git", "-C", str(self.repo), "config", "user.email", "test@example.test"], check=True)
-        subprocess.run(["git", "-C", str(self.repo), "config", "user.name", "Test"], check=True)
-        subprocess.run(["git", "-C", str(self.repo), "add", "task.md", "input.txt"], check=True)
-        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "fixture"], check=True)
+        environment = os.environ.copy()
+        for arguments in (
+                ("init", "-q"),
+                ("config", "user.email", "test@example.test"),
+                ("config", "user.name", "Test"),
+                ("add", "task.md", "input.txt"),
+                ("commit", "-qm", "fixture")):
+            subprocess.run(["git", "-C", str(self.repo), *arguments], check=True, env=environment)
         self.config = root / "config.json"
         self.config.write_text(json.dumps({
             "schemaVersion": 1, "vmrun": str(self.vmrun), "labs": {
