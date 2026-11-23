@@ -26,6 +26,8 @@ from scripts import physical_rift
 from scripts.readerbridge_v3 import CONTROL, MAGIC, PACKET_SIZE, decode_packet
 
 MIB = 1024 * 1024
+SCOUT_COMMAND = "scout-values-native"
+CAPTURE_COMMAND = "capture-native"
 RBRG_PREFIX = "1196573266"
 RRAP_PREFIX = "1346458194"
 LIMITATIONS = [
@@ -93,7 +95,7 @@ def _run_native(command: str, request: Path, output: Path, runner, *, native_rea
     completed = runner([str(executable), command, "--request", str(request),
                         "--output", str(output)], cwd=ROOT, capture_output=True, text=True,
                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), timeout=15)
-    allowed = (0, 3) if command == "scout-values-native" else (0,)
+    allowed = (0, 3) if command == SCOUT_COMMAND else (0,)
     if completed.returncode not in allowed:
         raise CaptureError(f"native-{command}-failed:{completed.returncode}")
 
@@ -311,7 +313,7 @@ def acquire(expected_host: str, physical_pid: int, seed_index: Path, output: Pat
         scout_request_path = output / f"attempt-{attempt}.scout.request.json"
         scout_directory = output / f"attempt-{attempt}.scout"
         _write_json(scout_request_path, scout_request)
-        _run_native("scout-values-native", scout_request_path, scout_directory, runner, native_reader=reader)
+        _run_native(SCOUT_COMMAND, scout_request_path, scout_directory, runner, native_reader=reader)
         index_path = scout_directory / "index.json"
         index = _read_json(index_path)
         candidates = _validate_scout(index, target, scout_directory)
@@ -335,7 +337,7 @@ def acquire(expected_host: str, physical_pid: int, seed_index: Path, output: Pat
                 request_path = output / f"attempt-{attempt}.capture.request.json"
                 report_path = output / f"attempt-{attempt}.capture.json"
                 _write_json(request_path, request)
-                _run_native("capture-native", request_path, report_path, runner, native_reader=reader)
+                _run_native(CAPTURE_COMMAND, request_path, report_path, runner, native_reader=reader)
                 report = _read_json(report_path)
                 packet = _packet_from_capture(report, target, request)
                 decoded = decode_packet(packet)
@@ -385,16 +387,29 @@ def acquire(expected_host: str, physical_pid: int, seed_index: Path, output: Pat
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--expected-host", required=True)
-    parser.add_argument("--physical-pid", required=True, type=int)
-    parser.add_argument("--seed-index", required=True, type=Path)
-    parser.add_argument("--output", required=True, type=Path)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--physical-pid", type=int)
+    mode.add_argument("--check-dependencies", action="store_true",
+                      help="check the local native reader without selecting RIFT")
+    parser.add_argument("--seed-index", type=Path)
+    parser.add_argument("--output", type=Path)
     parser.add_argument("--native-reader", type=Path, help="absolute path to a local published reader")
-    parser.add_argument("--scan-mib", type=int, default=16,
+    parser.add_argument("--scan-mib", type=int,
                         help="bounded first-span scan size (1-32 MiB; default 16)")
     args = parser.parse_args(argv)
+    if args.check_dependencies:
+        if any(value is not None for value in (args.seed_index, args.output, args.scan_mib)):
+            parser.error("--check-dependencies accepts only --expected-host and --native-reader")
+        result = physical_rift.check_native_reader(
+            args.expected_host, args.native_reader, kind="player-context",
+            additional_commands=(SCOUT_COMMAND, CAPTURE_COMMAND))
+        print(json.dumps(dict(result, inputSent=False, readerBridgePublisher="unverified")))
+        return 0 if result["status"] == "ready" else 2
+    if args.seed_index is None or args.output is None:
+        parser.error("--physical-pid requires --seed-index and --output")
     try:
         print(json.dumps(acquire(args.expected_host, args.physical_pid, args.seed_index,
-                                 args.output, scan_mib=args.scan_mib,
+                                 args.output, scan_mib=16 if args.scan_mib is None else args.scan_mib,
                                  native_reader=args.native_reader), allow_nan=False))
         return 0
     except (ValueError, OSError) as exc:

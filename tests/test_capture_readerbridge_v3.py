@@ -1,7 +1,8 @@
 import base64
-from contextlib import chdir
+from contextlib import chdir, redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta, timezone
 import hashlib
+from io import StringIO
 import json
 from pathlib import Path
 import subprocess
@@ -157,6 +158,54 @@ class CaptureReaderBridgeTests(unittest.TestCase):
                                      selector=self.selector, native_reader=self.reader,
                                      read_context=read_context, progress=lambda _: None)
         return result, sleeps
+
+    def test_dependency_check_requires_all_reader_commands_and_never_selects_rift(self):
+        commands = ("sample-current-player-context", "scout-values-native", "capture-native")
+        args = ["--expected-host", HOST, "--check-dependencies", "--native-reader", str(self.reader)]
+        with patch.object(capture, "acquire") as acquire, \
+                patch.object(capture.physical_rift, "select_physical") as select, \
+                patch.object(capture.physical_rift.observe_physical, "_run") as run:
+            for missing in (None, *commands):
+                with self.subTest(missing=missing):
+                    run.reset_mock()
+                    run.return_value = (0, "\n".join(
+                        ["RiftReader2.Live native tools", *(command for command in commands if command != missing)]))
+                    with redirect_stdout(StringIO()) as stdout:
+                        self.assertEqual(2 if missing else 0, capture.main(args))
+                    report = json.loads(stdout.getvalue())
+                    self.assertFalse(report["inputSent"])
+                    self.assertEqual(report["readerBridgePublisher"], "unverified")
+                    self.assertEqual(report["nativeReaderPath"], str(self.reader))
+                    if missing:
+                        self.assertEqual(report["status"], "blocked")
+                        self.assertEqual(report["missingCommands"], [missing])
+                    else:
+                        self.assertEqual(report["status"], "ready")
+                        self.assertEqual(report["nativeCommandsAdvertised"], 3)
+                    run.assert_called_once()
+                    self.assertEqual(run.call_args.args[0], [self.reader, "--help"])
+        acquire.assert_not_called()
+        select.assert_not_called()
+
+    def test_dependency_check_rejects_capture_options(self):
+        for option, value in (("--physical-pid", "1"), ("--seed-index", "seed.json"),
+                              ("--output", "new path"), ("--scan-mib", "16")):
+            with self.subTest(option=option), redirect_stderr(StringIO()), \
+                    patch.object(capture.physical_rift, "check_native_reader") as check, \
+                    self.assertRaises(SystemExit) as exc:
+                capture.main(["--expected-host", HOST, "--check-dependencies", option, value])
+            self.assertEqual(exc.exception.code, 2)
+            check.assert_not_called()
+
+    def test_capture_cli_keeps_its_default_scan_budget(self):
+        output = self.root / "out"
+        with patch.object(capture, "acquire", return_value={"status": "captured"}) as acquire, \
+                redirect_stdout(StringIO()):
+            self.assertEqual(0, capture.main([
+                "--expected-host", HOST, "--physical-pid", "2468", "--seed-index", str(self.seed),
+                "--output", str(output), "--native-reader", str(self.reader),
+            ]))
+        acquire.assert_called_once_with(HOST, 2468, self.seed, output, scan_mib=16, native_reader=self.reader)
 
     def test_acquires_two_advancing_generations_with_bounded_requests(self):
         runner = FakeRunner()
