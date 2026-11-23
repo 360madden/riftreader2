@@ -17,9 +17,16 @@ class RestartBasisTests(unittest.TestCase):
         self.host = "RIFT-STATION"
         self.basis_file = Path(self.enterContext(TemporaryDirectory())) / "measured-basis.json"
         self.basis_file.touch()
-        self.basis = {"identity": {"machine": self.host, "processId": 10,
-                     "processStartUtcTicks": "100", "gameBuildSha256": "a" * 64,
-                     "unitKey": "123"}}
+        self.basis = {
+            "identity": {"machine": self.host, "processId": 10, "processStartUtcTicks": "100",
+                         "gameBuildSha256": "a" * 64, "unitKey": "123"},
+            "samples": {
+                "w": {"vxCandidate": 0.0, "vzCandidate": 0.01},
+                "s": {"vxCandidate": 0.0, "vzCandidate": -0.01},
+                "q": {"vxCandidate": 0.01, "vzCandidate": 0.0},
+                "e": {"vxCandidate": -0.01, "vzCandidate": 0.0},
+            },
+        }
         self.selection = {"status": "ready", "target": {"processStartUtcTicks": "200",
                           "executableSha256": "a" * 64, "processId": 20, "hwnd": 1234}}
         self.native = {"status": "complete", "nativeOutput": "mock", "nativeValues": {

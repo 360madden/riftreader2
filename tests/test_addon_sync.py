@@ -132,7 +132,9 @@ class InstalledCopyTests(unittest.TestCase):
         documents = self.root / "Redirected Documents"
         installed = documents / "RIFT" / "Interface" / "AddOns" / "RiftReader2"
         shutil.copytree(self.source, installed)
-        with patch.object(sync.observe_physical, "_run", return_value=(0, str(documents) + "\r\n")) as locator:
+        with patch.object(sync.observe_physical, "ROOT", self.root), \
+                patch.dict("os.environ", RR2_RIFT_ADDONS_ROOT=""), \
+                patch.object(sync.observe_physical, "_run", return_value=(0, str(documents) + "\r\n")) as locator:
             result = sync.run_pc("check", self.root, self.source, self.manifest_path)
         self.assertIn("[Environment]::GetFolderPath('MyDocuments')", locator.call_args.args[0][-1])
         self.assertTrue(result["success"], result["after"])

@@ -150,8 +150,10 @@ class InventoryTests(unittest.TestCase):
             addon.mkdir(parents=True)
             data = b"content marker omitted from the metadata report"
             (addon / "main.lua").write_bytes(data)
-            with patch.object(inventory.observe_physical, "_run",
-                              return_value=(0, str(documents) + "\r\n")) as folder:
+            with patch.object(inventory.observe_physical, "ROOT", root), \
+                    patch.dict("os.environ", RR2_RIFT_ADDONS_ROOT=""), \
+                    patch.object(inventory.observe_physical, "_run",
+                                 return_value=(0, str(documents) + "\r\n")) as folder:
                 result = inventory.run_pc(root, detail_addon="RiftReader2")
             self.assertIn("[Environment]::GetFolderPath('MyDocuments')", folder.call_args.args[0][-1])
             self.assertEqual(result["addonRoot"], str(addon_root))

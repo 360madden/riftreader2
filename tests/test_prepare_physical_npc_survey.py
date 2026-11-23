@@ -278,7 +278,9 @@ class NPCPreparationTests(unittest.TestCase):
         (casting / "RiftAddon.toc").write_text(
             'Identifier = "RiftReader2Casting"\n'
             'RunOnStartup = { -- "npc_survey.lua" }\n "main.lua" }\n', encoding="utf-8")
-        with patch.object(prep.observe_physical, "_run", return_value=(0, str(documents) + "\n")), \
+        with patch.object(prep.observe_physical, "ROOT", self.dir), \
+             patch.dict("os.environ", RR2_RIFT_ADDONS_ROOT=""), \
+             patch.object(prep.observe_physical, "_run", return_value=(0, str(documents) + "\n")), \
              redirect_stdout(StringIO()) as output:
             self.assertEqual(prep.main(["--check-addon", "--expected-host", "RIFT-STATION"]), 0)
         result = json.loads(output.getvalue())
