@@ -128,7 +128,10 @@ python -B scripts/prepare_physical_npc_survey.py --expected-host $rr2Host --phys
 For a published build, pass `--native-reader $rr2PublishedReader` to
 `physical_nearby_units.py`, `physical_selected_target_profile.py`, or
 `collect_physical_player_state.py`. Each collector uses the selected executable
-for all of its native samples.
+for all of its native samples. NPC survey preparation also accepts the option
+and carries it into its generated auto-map command. Use
+`prepare_physical_npc_survey.py --check-addon` to verify the installed NPC
+survey files before preparing a plan.
 
 Copy the player-state directory with its `summary.json` and native source files
 to replay it offline. Replay locates the sources beside the summary and checks

@@ -39,8 +39,17 @@ A successful join is a **research/candidate** result only. The default interval 
 Prepare a fresh plan for the current local RIFT process. The tool resolves the addon under the Windows Documents folder by default. Use `--installed-casting-dir` for a custom installation.
 
 ```powershell
+python -B scripts\prepare_physical_npc_survey.py --expected-host $rr2Host --check-addon
 python -B scripts\prepare_physical_npc_survey.py --expected-host $rr2Host --physical-pid CURRENT_VERIFIED_PID --include-levels --output-dir artifacts\NEW_NPC_BIND_PLAN
 ```
+
+The addon check verifies installed files without selecting a game process.
+Add `--native-reader $rr2PublishedReader` to preparation to use a local
+published executable for nearby data and the generated auto-map command's
+player-context read. A direct capture with an explicit seed uses the same
+option for its native scout and fragment reads. The generated commands include
+absolute paths to their scripts, so they can run from a different working
+directory on the capture host.
 
 Copy the entire plan folder, including `plan.json`, `native/` and `addon-evidence/`, to run the offline check from any checkout. Replay verifies the original capture identity and times, reconstructs the selected IDs, checks the saved bind text and verifies the retained manifest and Lua file. Older plans still replay with addon evidence reported as `recorded-only`.
 

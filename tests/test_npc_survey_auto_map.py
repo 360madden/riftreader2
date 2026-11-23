@@ -171,17 +171,20 @@ class NPCMapScoutTests(unittest.TestCase):
         target = dict(TARGET, hostName="RIFT-STATION")
         with TemporaryDirectory() as temp:
             saved = Path(temp) / "run"
+            published = saved.parent / "RiftReader2.Live.exe"
+            published.touch()
             with (patch.object(npc.physical_rift, "select_physical",
                                return_value={"status": "ready", "target": target}),
                   patch.object(npc, "_target", side_effect=lambda v: v),
                   patch.object(npc, "_same_target", return_value=True),
                   patch.object(npc.physical_rift, "read_native", return_value={
-                      "status": "complete", "target": target, "nativeValues": {"unitKey": "1"}}),
+                      "status": "complete", "target": target, "nativeValues": {"unitKey": "1"}}) as read,
                   patch.object(npc, "scout_mapped", side_effect=candidates) as scout,
                   patch.object(npc.survival_live, "autodiscover_seed") as seeded,
                   patch.object(npc.time, "sleep")):
                 report = npc.acquire("rift-station", 37676, NONCE, [UNIT],
-                                     saved, attempts=2, auto_map=True)
+                                     saved, attempts=2, auto_map=True, native_reader=published)
+                self.assertEqual(read.call_args.kwargs["native_reader"], published)
                 seeded.assert_not_called()
             self.assertEqual(report["status"], "advancing")
             self.assertEqual(report["host"], "RIFT-STATION")

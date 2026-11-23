@@ -105,13 +105,14 @@ def decode_frame(data, nonce, player_id, ids, page=None):
     return frame
 
 
-def scout(target, base, length, attempt):
+def scout(target, base, length, attempt, *, native_reader=None):
     request = survival_live._scout_request(target, base, length, 1000)
     request["references"] = [{"name": "rr2-npc-survey", "type": "int32",
                               "value": str(int.from_bytes(PREFIX[:4], "little")), "tolerance": None}]
     request_path = Path(str(attempt) + ".request.json")
     _write_json(request_path, request)
-    _run_native("scout-values-native", request_path, attempt, subprocess.run)
+    options = {"native_reader": native_reader} if native_reader is not None else {}
+    _run_native("scout-values-native", request_path, attempt, subprocess.run, **options)
     index = _read_json(attempt / "index.json")
     require(index.get("request") == request, "survey-scout-request-mismatch")
     results, addresses = [], []
@@ -126,7 +127,7 @@ def scout(target, base, length, attempt):
             addresses.append(address)
     for offset in range(0, len(addresses), 16):
         results.extend(survival_live._capture_known(target, addresses[offset:offset+16],
-                         Path(str(attempt) + f".frames-{offset//16+1}")))
+                         Path(str(attempt) + f".frames-{offset//16+1}"), **options))
     return results
 
 
@@ -250,7 +251,7 @@ def _retain_qualified_source(candidates, source, folder, slot):
 
 
 def acquire(host, pid, nonce, ids, output, seed_index=None, scan_mib=16,
-            attempts=5, page=None, auto_map=False):
+            attempts=5, page=None, auto_map=False, *, native_reader=None):
     require(isinstance(nonce, str) and re.fullmatch(r"[0-9a-f]{32}", nonce), "invalid-survey-nonce")
     require(type(auto_map) is bool and not (auto_map and seed_index is not None),
             "invalid-mapped-survey-options")
@@ -260,6 +261,8 @@ def acquire(host, pid, nonce, ids, output, seed_index=None, scan_mib=16,
         require(type(page) is int and 1<=page<=342,"invalid-visible-page")
     else:
         require(page is None and ids == requested_ids(",".join(ids)), "invalid-survey-selection")
+    read_native = physical_rift.bind_native_reader(physical_rift.read_native, native_reader)
+    scout_options = {"native_reader": native_reader} if native_reader is not None else {}
     selection = physical_rift.select_physical(expected_host=host, physical_pid=pid)
     require(selection.get("status") == "ready", "physical-selection-not-ready")
     owner = selection["target"]
@@ -273,8 +276,7 @@ def acquire(host, pid, nonce, ids, output, seed_index=None, scan_mib=16,
         base, length = _validate_seed(_read_json(seed), target, scan_mib)
     output = Path(output).absolute()
     output.mkdir(parents=True, exist_ok=False)
-    player = physical_rift.read_native(selection, "player-context",
-                                       output=output / "native-player-context.json")
+    player = read_native(selection, "player-context", output=output / "native-player-context.json")
     require(player.get("status") == "complete" and player.get("target") == owner,
             "survey-player-context-unavailable")
     player_id = survival_live._canonical_unit_key(player["nativeValues"]["unitKey"])
@@ -287,7 +289,7 @@ def acquire(host, pid, nonce, ids, output, seed_index=None, scan_mib=16,
             expected_host=host, owner_target=owner,
             diagnostics=output / f"attempt-{index}.locator.json")
                       if auto_map else
-                      scout(target, base, length, output/f"attempt-{index}.scout"))
+                      scout(target, base, length, output/f"attempt-{index}.scout", **scout_options))
         if not auto_map:
             require(physical_rift.select_physical(host, pid).get("target") == owner,
                     "survey-process-changed")
@@ -345,6 +347,8 @@ def main(argv=None):
     parser.add_argument("--auto-map",action="store_true",
                         help="bounded read-only private-memory discovery of exact "
                              "nonce-bound NPC frames without a scout seed")
+    parser.add_argument("--native-reader", type=Path,
+                        help="absolute path to a local published reader for native reads")
     parser.add_argument("--scan-mib",type=int,default=16)
     parser.add_argument("--max-attempts",type=int,default=5)
     args=parser.parse_args(argv)
@@ -352,7 +356,7 @@ def main(argv=None):
         ids=requested_ids(args.unit_ids) if args.unit_ids is not None else None
         report=acquire(args.expected_host,args.physical_pid,args.session_id,ids,
                        args.output,args.seed_index,args.scan_mib,args.max_attempts,
-                       args.visible_page,auto_map=args.auto_map)
+                       args.visible_page,auto_map=args.auto_map,native_reader=args.native_reader)
     except (OSError,ValueError,CaptureError,RuntimeError,subprocess.SubprocessError) as error:
         report={"status":"blocked","inputSent":False,"reason":str(error)}
     print(json.dumps(report,ensure_ascii=True,allow_nan=False))

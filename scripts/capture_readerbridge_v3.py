@@ -88,8 +88,9 @@ def _write_json(path: Path, value: dict) -> None:
     path.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n", encoding="utf-8")
 
 
-def _run_native(command: str, request: Path, output: Path, runner) -> None:
-    completed = runner([str(physical_rift.NATIVE_EXE), command, "--request", str(request),
+def _run_native(command: str, request: Path, output: Path, runner, *, native_reader=None) -> None:
+    executable = physical_rift._native_reader_path(native_reader)
+    completed = runner([str(executable), command, "--request", str(request),
                         "--output", str(output)], cwd=ROOT, capture_output=True, text=True,
                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), timeout=15)
     allowed = (0, 3) if command == "scout-values-native" else (0,)

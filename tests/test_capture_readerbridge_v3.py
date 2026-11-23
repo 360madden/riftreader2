@@ -201,7 +201,9 @@ class CaptureReaderBridgeTests(unittest.TestCase):
         runner = FakeRunner(scout_exit=3)
         request = self.root / "request.json"
         request.write_text("{}")
-        capture._run_native("scout-values-native", request, self.root / "unused", runner)
+        reader = self.root / "RiftReader2.Live.exe"
+        capture._run_native("scout-values-native", request, self.root / "unused", runner, native_reader=reader)
+        self.assertEqual(runner.calls[0][0][0], str(reader))
 
         directory = self.root / "scout"
         directory.mkdir()

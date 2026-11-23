@@ -1,8 +1,10 @@
 """Pure-Python tests for fresh native-NPC survey preparation, no game input."""
 from __future__ import annotations
 
+from contextlib import redirect_stdout
 from copy import deepcopy
 from datetime import datetime, timezone
+from io import StringIO
 import json
 from pathlib import Path
 import shutil
@@ -45,12 +47,14 @@ class NPCPreparationTests(unittest.TestCase):
                   "unitIdCandidate":"u0000000000000007"}]
         }
         self.native_call_count = 0
+        self.native_reader = None
         self.included_levels = False
         self.enterContext(patch.object(prep.physical_rift.socket, "gethostname", return_value="RIFT-STATION"))
 
-    def collect(self, host, pid, directory, *, radius, limit, include_levels=False):
+    def collect(self, host, pid, directory, *, radius, limit, include_levels=False, native_reader=None):
         self.native_call_count += 1
         self.included_levels = include_levels
+        self.native_reader = native_reader
         self.assertEqual((host,pid),("RIFT-STATION",PID))
         self.assertEqual(limit, 18)
         directory.mkdir()
@@ -87,7 +91,7 @@ class NPCPreparationTests(unittest.TestCase):
             "/rr2survey bind " + "a"*32))
         self.assertNotIn("u0000000000000007",result["inGameBindCommand"])
         self.assertIn("--auto-map",result["captureCommand"])
-        self.assertIn("scripts/npc_survey_live.py",result["captureCommand"])
+        self.assertIn(prep._quote(prep.ROOT / "scripts/npc_survey_live.py"), result["captureCommand"])
         self.assertTrue(result["captureCommand"].startswith("& " + prep._quote(sys.executable)))
         self.assertTrue(result["joinCommand"].startswith("& " + prep._quote(sys.executable)))
         self.assertIn("--max-gap-seconds 120",result["joinCommand"])
@@ -96,6 +100,25 @@ class NPCPreparationTests(unittest.TestCase):
         self.assertIn("18:02:00",result["nativeJoinDeadlineUtc"])
         self.assertEqual(json.loads(path.read_text()),result)
         self.assertEqual(self.native_call_count,1)
+
+    def test_published_reader_is_reused_by_the_generated_capture_command(self):
+        published = self.dir / "RiftReader2.Live.exe"
+        published.touch()
+        _, prepared = self.prepare(native_reader=published)
+        self.assertEqual(self.native_reader, published)
+        self.assertIn("--native-reader " + prep._quote(published), prepared["captureCommand"])
+        self.assertIn(prep._quote(prep.ROOT / "scripts/join_physical_nearby_npc_survey.py"), prepared["joinCommand"])
+
+    def test_check_addon_verifies_installation_without_selecting_process(self):
+        with patch.object(prep.physical_rift, "select_physical") as select, redirect_stdout(StringIO()) as output:
+            code = prep.main(["--check-addon", "--expected-host", "RIFT-STATION",
+                              "--installed-casting-dir", str(self.installed)])
+        self.assertEqual(code, 0)
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["status"], "addon-configuration-ready")
+        self.assertTrue(result["configurationVerified"])
+        self.assertEqual(result["runningAddonLoaded"], "unverified")
+        select.assert_not_called()
 
     def replay(self, path):
         with patch.object(prep.join, "original_native_nearby",

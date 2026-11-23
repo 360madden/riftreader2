@@ -130,6 +130,8 @@ class NpcSurveyTests(unittest.TestCase):
         target={"processId":42,"processStartUtcTicks":1234,"executableSha256":"A"*64}
         chunks=[[({"address":"0x11000"},self.sample(t))] for t in (13,13.3)]
         with tempfile.TemporaryDirectory() as tmp:
+            published=Path(tmp)/"RiftReader2.Live.exe"
+            published.touch()
             seed=Path(tmp)/"index.json"
             seed.write_text(json.dumps({"evidenceKind":"native-value-scout/1","identity":target,
                 "coveredSpans":[{"baseAddress":"0x10000","byteLength":16777216}]}))
@@ -137,9 +139,12 @@ class NpcSurveyTests(unittest.TestCase):
             owner=dict(target, hostName="AMD-DESKTOP")
             player={"status":"complete","target":owner,"nativeValues":{"unitKey":"1"}}
             with patch.object(survey.physical_rift,"select_physical",return_value={"status":"ready","target":owner}), \
-                 patch.object(survey.physical_rift,"read_native",return_value=player), patch.object(survey,"scout",side_effect=chunks), \
+                 patch.object(survey.physical_rift,"read_native",return_value=player) as read, \
+                 patch.object(survey,"scout",side_effect=chunks) as scout, \
                  patch.object(survey.time,"sleep"):
-                result=survey.acquire("AMD-DESKTOP",42,NONCE,[UNIT],out,seed)
+                result=survey.acquire("AMD-DESKTOP",42,NONCE,[UNIT],out,seed,native_reader=published)
+                self.assertEqual(read.call_args.kwargs["native_reader"],published)
+                self.assertEqual([call.kwargs["native_reader"] for call in scout.call_args_list],[published,published])
                 self.assertEqual((result["status"],result["observedUnits"]),("advancing",1))
                 self.assertEqual(result["confirmedUnitIds"],[UNIT])
                 self.assertEqual([source["sequence"] for source in result["sources"]],[1,2])
@@ -151,17 +156,20 @@ class NpcSurveyTests(unittest.TestCase):
         data=self.sample(13)
         target={"processId":42,"processStartUtcTicks":1234,"executableSha256":"A"*64}
         with tempfile.TemporaryDirectory() as tmp:
+            published=Path(tmp)/"RiftReader2.Live.exe"
             attempt=Path(tmp)/"attempt-1.scout"
-            def write_index(command,request,result,runner):
+            def write_index(command,request,result,runner,*,native_reader):
                 self.assertEqual(command,"scout-values-native")
+                self.assertEqual(native_reader,published)
                 req=json.loads(request.read_bytes())
                 self.assertIsNone(req["references"][0]["tolerance"])
                 self.assertEqual(req["references"][0]["value"],str(int.from_bytes(b"RR2N","little")))
                 result.mkdir()
                 (result/"index.json").write_text(json.dumps({"request":req}))
-            found=[({"address":"0x12000","referenceNames":["rr2-npc-survey"]},data)]
+            found=[({"address":"0x12000","referenceNames":["rr2-npc-survey"]},data),
+                   ({"address":"0x14000","referenceNames":["rr2-npc-survey"]},survey.PREFIX)]
             with patch.object(survey,"_run_native",write_index), \
                  patch.object(survey,"_validate_scout",return_value=found), \
-                 patch.object(survey.survival_live,"_capture_known") as capture:
-                self.assertEqual(survey.scout(target,0x10000,0x10000,attempt),found)
-                capture.assert_not_called()
+                 patch.object(survey.survival_live,"_capture_known",return_value=[]) as capture:
+                self.assertEqual(survey.scout(target,0x10000,0x10000,attempt,native_reader=published),found[:1])
+                capture.assert_called_once_with(target,[0x14000],Path(str(attempt)+".frames-1"),native_reader=published)

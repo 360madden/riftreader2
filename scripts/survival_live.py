@@ -420,7 +420,7 @@ def _captured_frames(report, target, request, addresses):
             for index in range(len(addresses))]
 
 
-def _capture_known(target, addresses, artifact_prefix, runner=subprocess.run):
+def _capture_known(target, addresses, artifact_prefix, runner=subprocess.run, *, native_reader=None):
     addresses = list(dict.fromkeys(addresses))[:16]
     if not addresses:
         return []
@@ -428,7 +428,8 @@ def _capture_known(target, addresses, artifact_prefix, runner=subprocess.run):
     request_path = Path(str(artifact_prefix) + ".request.json")
     report_path = Path(str(artifact_prefix) + ".json")
     _write_json(request_path, request)
-    _run_native("capture-native", request_path, report_path, runner)
+    options = {"native_reader": native_reader} if native_reader is not None else {}
+    _run_native("capture-native", request_path, report_path, runner, **options)
     frames = _captured_frames(_read_json(report_path), target, request, addresses)
     return [({"address": f"0x{address:X}"}, data)
             for address, data in zip(addresses, frames)]
