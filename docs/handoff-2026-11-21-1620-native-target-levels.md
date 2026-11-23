@@ -20,7 +20,7 @@ advancing nonce-bound survey. [NPC survey preparation](reference/physical-nearby
 The current Windows workflow verifies the local host before using physical
 tools. A fresh checkout can use a published native reader, a calibration
 verified for that host, and local Python environments. The fresh LEGION
-checkout at `92c6a72` passed the full gate with the Python configured for
+checkout at `6c21976` passed the full gate with the Python configured for
 Waypoints, including the real Lua 5.1 producer checks. The newly published
 reader passed the Waypoints, WGC, ReaderBridge, NPC survey, and Telemetry
 dependency checks. The Telemetry check found all three installed addon files.
@@ -33,7 +33,7 @@ changed-target and nonce-bound NPC confirmation remain pending.
 Workbridge capture still reports missing `dist/desktop-ui.mjs` and
 `dist/desktop-capture.mjs`. The AMD-DESKTOP process observations below are dated
 evidence. [Portable checkout setup](workflows/development.md#reuse-local-tools-from-a-fresh-checkout)
-· [LEGION validation log](../artifacts/validation-legion-92c6a72.log)
+· [LEGION validation log](../artifacts/validation-legion-6c21976.log)
 
 **Machine verified:** **AMD-DESKTOP**, from machine-local Windows PowerShell `[Environment]::MachineName` (exit 0 at 16:20:19 EST); Workbridge **0.16.5-dev** rooted at `C:\work`.\
 **Repository:** `C:\work\riftreader2`; branch **`codex/modular-foundation`**.\
