@@ -53,6 +53,8 @@ def check_probe():
             or report.get("inputSent") is not False or report.get("frameCaptured") is not False
             or type(report.get("passed")) is not int or report["passed"] < 1):
         return {**result, "reason": "gpu-probe-self-test-report-invalid"}
+    if report.get("outputCheckoutDiscovery") is not True and not probe.is_relative_to(ROOT):
+        return {**result, "reason": "gpu-probe-relocation-update-required"}
     return {**result, "status": "available", "checksPassed": report["passed"]}
 
 

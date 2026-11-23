@@ -92,6 +92,8 @@ This prints target metadata only; **no pixels or input**. Values in this file ar
 
 Direct invocation requires `--capture`, the same identity fields, `--allow-one-capture`, `--backend wgc|dxgi`, and an absolute `--out` path to a new PNG in the checkout's `artifacts` directory. The command writes a PNG and JSON receipt with image hash, frame dimensions, capture duration, before/after pinned identity, and sampled pixel diversity. Capture requires reviewed Workbridge GUI ownership and the `.tools\desktop-evidence` directory in the active local deployment.
 
+The probe finds the checkout from the output path. A published probe can live in a separate local tools directory and still write to the calling checkout's `artifacts` directory. If the dependency check reports `gpu-probe-relocation-update-required`, publish a fresh bundle before using the probe outside its checkout.
+
 ## Verified on AMD-DESKTOP
 
 - SDK **10.0.302**, Win-x64 target, WgcSharp 1.1.1 restore and Debug build: **0 errors / 0 warnings**.

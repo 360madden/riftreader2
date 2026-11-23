@@ -178,9 +178,9 @@ internal static class CapturePolicy
         return Path.Combine(Path.GetFullPath(root), ".tools", "desktop-evidence");
     }
 
-    internal static string ArtifactRoot(string probeDirectory)
+    private static string ArtifactRoot(string outputDirectory)
     {
-        for (var directory = new DirectoryInfo(probeDirectory); directory is not null; directory = directory.Parent)
+        for (var directory = new DirectoryInfo(outputDirectory); directory is not null; directory = directory.Parent)
         {
             if (File.Exists(Path.Combine(directory.FullName, "RiftReader2.slnx")) &&
                 File.Exists(Path.Combine(directory.FullName, "tools", "physical-wgc-probe", "PhysicalWgcProbe.csproj")))
@@ -189,15 +189,39 @@ internal static class CapturePolicy
         throw new InvalidOperationException("rr2-artifact-root-unavailable");
     }
 
-    internal static void RequireUnquarantined(string evidenceDirectory)
+    internal static string OutputPath(string requestedPath)
     {
-        if (!Directory.Exists(evidenceDirectory))
-            throw new InvalidOperationException("shared-gui-evidence-directory-missing");
-        for (var directory = new DirectoryInfo(evidenceDirectory); directory is not null; directory = directory.Parent)
+        var drive = Path.GetPathRoot(requestedPath);
+        if (!Path.IsPathFullyQualified(requestedPath) || drive is null || drive.Length != 3 ||
+            !char.IsAsciiLetter(drive[0]) || drive[1] != ':' ||
+            requestedPath.AsSpan(drive.Length).Contains(':') || new DriveInfo(drive).DriveType == DriveType.Network)
+            throw new InvalidOperationException("capture-output-must-be-local");
+        var output = Path.GetFullPath(requestedPath);
+        var parent = Path.GetDirectoryName(output)!;
+        if (!Directory.Exists(parent) || Path.Exists(output) || Path.Exists(output + ".json"))
+            throw new InvalidOperationException("capture-output-path-invalid-or-already-used");
+        RequirePlainDirectory(parent);
+        var relative = Path.GetRelativePath(ArtifactRoot(parent), output);
+        if (relative == "." || relative == ".." ||
+            relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) || Path.IsPathRooted(relative))
+            throw new InvalidOperationException("capture-output-must-be-in-rr2-artifacts");
+        return output;
+    }
+
+    private static void RequirePlainDirectory(string path)
+    {
+        for (var directory = new DirectoryInfo(path); directory is not null; directory = directory.Parent)
         {
             if ((File.GetAttributes(directory.FullName) & FileAttributes.ReparsePoint) != 0)
                 throw new InvalidOperationException("reparse-path");
         }
+    }
+
+    internal static void RequireUnquarantined(string evidenceDirectory)
+    {
+        if (!Directory.Exists(evidenceDirectory))
+            throw new InvalidOperationException("shared-gui-evidence-directory-missing");
+        RequirePlainDirectory(evidenceDirectory);
         foreach (var entry in Directory.EnumerateFileSystemEntries(evidenceDirectory))
         {
             var name = Path.GetFileName(entry);
@@ -357,17 +381,8 @@ internal static class Probe
             var evidenceDirectory = CapturePolicy.EvidenceDirectory(Environment.GetEnvironmentVariable("RR2_WORKBRIDGE_ROOT"));
             CapturePolicy.RequireUnquarantined(evidenceDirectory);
             var before = Target.Inspect(options);
-            var output = Path.GetFullPath(options.Output!);
-            var relative = Path.GetRelativePath(CapturePolicy.ArtifactRoot(AppContext.BaseDirectory), output);
-            if (relative == "." || relative == ".."
-                || relative.StartsWith(".." + Path.DirectorySeparatorChar,
-                    StringComparison.Ordinal) || Path.IsPathRooted(relative))
-                throw new InvalidOperationException("capture-output-must-be-in-rr2-artifacts");
+            var output = CapturePolicy.OutputPath(options.Output!);
             var receipt = output + ".json";
-            if (!Directory.Exists(Path.GetDirectoryName(output))
-                || File.Exists(output) || File.Exists(receipt)
-                || (File.GetAttributes(Path.GetDirectoryName(output)!) & FileAttributes.ReparsePoint) != 0)
-                throw new InvalidOperationException("capture-output-path-invalid-or-already-used");
             CapturePolicy.RequireUnquarantined(evidenceDirectory);
             var exact = Target.Inspect(options);
             if (before != exact)
@@ -528,6 +543,23 @@ internal static class Probe
         }
         foreach (var root in new[] { "", "relative", @"C:drive-relative", @"C:\base\..\other", @"\\server\share" })
             MustBlock(() => CapturePolicy.EvidenceDirectory(root), "invalid-workbridge-root");
+        var checkout = Directory.CreateTempSubdirectory("rr2 wgc output checkout ");
+        try
+        {
+            File.WriteAllText(Path.Combine(checkout.FullName, "RiftReader2.slnx"), "");
+            var project = checkout.CreateSubdirectory(Path.Combine("tools", "physical-wgc-probe"));
+            File.WriteAllText(Path.Combine(project.FullName, "PhysicalWgcProbe.csproj"), "");
+            var frameDirectory = checkout.CreateSubdirectory(Path.Combine("artifacts", "capture with spaces"));
+            var image = Path.Combine(frameDirectory.FullName, "frame.png");
+            Check(CapturePolicy.OutputPath(image) == image && !File.Exists(image), "output-relative-to-checkout");
+            var sibling = checkout.CreateSubdirectory("artifacts-other");
+            MustBlock(() => CapturePolicy.OutputPath(Path.Combine(sibling.FullName, "frame.png")),
+                "capture-output-must-be-in-rr2-artifacts");
+            MustBlock(() => CapturePolicy.OutputPath(@"\\server\share\frame.png"), "capture-output-must-be-local");
+            File.WriteAllText(image + ".json", "existing receipt");
+            MustBlock(() => CapturePolicy.OutputPath(image), "capture-output-path-invalid-or-already-used");
+        }
+        finally { checkout.Delete(recursive: true); }
         var bridge = Directory.CreateTempSubdirectory("rr2-wgc-admission-");
         var evidenceDirectory = CapturePolicy.EvidenceDirectory(bridge.FullName);
         try
@@ -578,7 +610,7 @@ internal static class Probe
         var quality = SampleQuality(bitmap);
         Check(quality is not null, "synthetic-image-quality");
         Print(new { status = "offline-self-test-passed",
-            passed, inputSent = false, frameCaptured = false });
+            passed, outputCheckoutDiscovery = true, inputSent = false, frameCaptured = false });
         return 0;
     }
 

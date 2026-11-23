@@ -130,6 +130,9 @@ $env:RR2_PHYSICAL_TOOLS_ROOT = $rr2Tools.Directory
 On another checkout or Windows host, set `RR2_PHYSICAL_TOOLS_ROOT` to the
 absolute local path of the copied bundle. `RR2_NATIVE_READER` and
 `RR2_WGC_PROBE` take precedence for their respective tools when set.
+The WGC probe uses the requested output path to find the checkout's `artifacts`
+directory. Republish older bundles if the dependency check reports
+`gpu-probe-relocation-update-required`.
 
 ### Prepare local physical Python environments
 

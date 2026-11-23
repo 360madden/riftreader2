@@ -58,6 +58,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Published WGC probe failed its offline self-test.' }
     $probeResult = $probeOutput | ConvertFrom-Json
     if ($probeResult.status -cne 'offline-self-test-passed' -or $probeResult.passed -lt 1 -or
+        $probeResult.outputCheckoutDiscovery -ne $true -or
         $probeResult.inputSent -ne $false -or $probeResult.frameCaptured -ne $false) {
         throw 'Published WGC probe returned an invalid offline self-test report.'
     }

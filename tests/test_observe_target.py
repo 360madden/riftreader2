@@ -12,7 +12,7 @@ from scripts import observe_gpu, observe_physical, physical_rift, physical_turn_
 
 
 OFFLINE_PROBE_REPORT = {"status": "offline-self-test-passed", "passed": 31,
-                        "inputSent": False, "frameCaptured": False}
+                        "outputCheckoutDiscovery": True, "inputSent": False, "frameCaptured": False}
 
 
 class TargetRoutingTests(unittest.TestCase):
@@ -163,6 +163,22 @@ class TargetRoutingTests(unittest.TestCase):
                                            "RR2_NATIVE_READER": str(reader), "RR2_WGC_PROBE": str(probe)}):
                 self.assertEqual(physical_rift._native_reader_path(), reader)
                 self.assertEqual(observe_gpu._probe_path(), probe)
+
+    def test_preflight_requires_relocation_support_only_for_a_probe_outside_the_checkout(self):
+        report = dict(OFFLINE_PROBE_REPORT)
+        del report["outputCheckoutDiscovery"]
+        with TemporaryDirectory() as temp, \
+             patch.object(observe_gpu, "_run", return_value=(0, json.dumps(report))):
+            checkout = Path(temp) / "checkout"
+            checkout.mkdir()
+            external = Path(temp) / "probe.exe"
+            colocated = checkout / "probe.exe"
+            for probe in (external, colocated):
+                probe.touch()
+            with patch.object(observe_gpu, "ROOT", checkout), patch.object(observe_gpu, "PROBE", external):
+                self.assertEqual(observe_gpu.check_probe()["reason"], "gpu-probe-relocation-update-required")
+            with patch.object(observe_gpu, "ROOT", checkout), patch.object(observe_gpu, "PROBE", colocated):
+                self.assertEqual(observe_gpu.check_probe()["status"], "available")
 
     def test_incomplete_bundle_does_not_fall_back_to_a_default_probe(self):
         with TemporaryDirectory() as temp:
