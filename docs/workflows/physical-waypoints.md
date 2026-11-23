@@ -889,6 +889,20 @@ offline `scripts/physical_move_basis.py` builder can consume saved move-key
 receipts from any Windows hostname and requires all samples from one host,
 process epoch, build and player.
 
+Once the translation and turn measurements have been saved, build the basis
+offline. For each A/D trial, supply settled native `facing` bursts before and
+after the bounded `move-key` receipt. Use `--read-native facing --samples 3`
+for each burst. The builder verifies the key-down/up
+timing, same-player process identity, stationary XYZ and expected sign. It
+retains the source SHA-256s and records both turn rates as candidates. Input
+ownership and action approval are checked separately during live use.
+
+```powershell
+python -B scripts/physical_move_basis.py --forward w.json --backward s.json --left q.json --right e.json `
+  --turn-a a-before.json a-pulse.json a-after.json --turn-d d-before.json d-pulse.json d-after.json `
+  --out artifacts/measured-movement-basis.json
+```
+
 Cold-start behavior passed a live AMD-DESKTOP case on November 12: the same app
 opened with RIFT absent, waited through character selection, then bound the new
 Atank process and restored readiness without movement. Its completed route stayed

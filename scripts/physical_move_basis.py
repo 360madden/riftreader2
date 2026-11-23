@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Read-only empirical W/S/Q/E geometry from retained physical move-key receipts.
+"""Build offline W/S/Q/E movement vectors and optional A/D turn candidates.
 
-Calculates velocity/basis candidates only. No current-game access or input.
-No source here certifies unchanged player facing between individual pulses.
+Uses retained move-key receipts and native observations. The output preserves
+source provenance and the qualification limits of the recorded measurements.
 """
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ def geometry(first, second):
     }
 
 
-def analyze(paths, *, later_forward=None):
+def analyze(paths, *, later_forward=None, turn_sources=None):
     require(type(paths) is dict and set(paths) == set(KEYS), "basis-keys-required")
     inputs = {key: from_helper_receipt(Path(paths[key])) for key in KEYS}
     require(all(inputs[key]["key"] == key for key in KEYS), "basis-key-mismatch")
@@ -133,7 +133,7 @@ def analyze(paths, *, later_forward=None):
                 "qualification": "Rotated earlier key vectors to later forward; no later strafe measurements.",
             }
 
-    return {
+    basis = {
         "schemaVersion": 1,
         "status": "offline-physical-key-basis-candidate",
         "movementEligible": False,
@@ -165,6 +165,11 @@ def analyze(paths, *, later_forward=None):
             "Optional later-facing reprojection assumes rigid rotation and proportional speeds; not observed.",
         ],
     }
+    if turn_sources is not None:
+        from scripts.physical_turn_calibration_receipts import turn_calibration
+        require(cardinal, "basis-cardinal-geometry-required-for-turns")
+        basis["turnCalibrationCandidate"] = turn_calibration(basis["identity"], turn_sources)
+    return basis
 
 
 def main(argv=None):
@@ -173,18 +178,22 @@ def main(argv=None):
                            ("q", "--left"), ("e", "--right")):
         parser.add_argument(long_name, type=Path, required=True, dest=key)
     parser.add_argument("--later-forward", type=Path)
+    for key in ("a", "d"):
+        parser.add_argument(f"--turn-{key}", type=Path, nargs=3, metavar=("BEFORE", "PULSE", "AFTER"),
+                            help=f"settled facing reports bracketing one {key.upper()} move-key receipt")
     parser.add_argument("--out", type=Path)
     args = parser.parse_args(argv)
     try:
+        turns = {key: paths for key, paths in (("a", args.turn_a), ("d", args.turn_d)) if paths is not None}
         result = analyze({key: getattr(args, key) for key in KEYS},
-                         later_forward=args.later_forward)
+                         later_forward=args.later_forward, turn_sources=turns or None)
         rendered = json.dumps(result, sort_keys=True, allow_nan=False)
         if args.out:
             with args.out.open("x", encoding="utf-8") as stream:
                 stream.write(rendered + "\n")
         print(rendered)
         return 0
-    except (OSError, ValueError, OverflowError, RecursionError) as exc:
+    except (OSError, ValueError, TypeError, KeyError, OverflowError, RecursionError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)}))
         return 2
 

@@ -8,11 +8,16 @@ from io import StringIO
 import json
 import math
 from pathlib import Path
+import struct
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 import unittest
 
 from scripts import physical_move_basis as basis
 from scripts.physical_move_basis_waypoint import read_basis
+from scripts.physical_waypoints import PhysicalAdapter
+from tests.test_analyze_physical_turn_pair import sample
+from tests.test_physical_facing import report as facing_report
 from tests.test_physical_move_key_calibration import receipt
 
 
@@ -45,8 +50,63 @@ class PhysicalMoveBasisTests(unittest.TestCase):
         path.write_text(json.dumps(base), encoding="utf-8")
         return path
 
-    def analyze(self, *, later_forward=None):
-        return basis.analyze(self.paths, later_forward=later_forward)
+    def analyze(self, *, later_forward=None, turn_sources=None):
+        return basis.analyze(self.paths, later_forward=later_forward, turn_sources=turn_sources)
+
+    def turn_trial(self, key, second, before_angle, after_angle, *, moving=False, wrong_host=False):
+        pulse = receipt()
+        pulse.update(keys=[key], observedMilliseconds=255, holdMilliseconds=250,
+                     xyzFeedback=None)
+        if wrong_host:
+            pulse["machine"] = "DIFFERENT-PC"
+        identity = {field: pulse[field] for field in ("processId", "processStartUtcTicks", "executableSha256")}
+        t = datetime(2026, 11, 11, 14, 54, second, tzinfo=timezone.utc)
+
+        def stamp(milliseconds):
+            return (t + timedelta(milliseconds=milliseconds)).isoformat()
+
+        def facing(endpoint, angle, offset, drift):
+            report = facing_report()
+            report["identity"] = identity
+            for index, row in enumerate(report["observations"]):
+                orientation = sample("orientation", 1, -angle, identity=identity)
+                orientation["unitKey"] = "42"
+                bearing = -orientation["secondary"]["planarAngleDegreesCandidate"]
+                delta = (row["playerSystemBearingDegreesCandidate"] - bearing + 180) % 360 - 180
+                row.update(identity=identity, playerKeyDecimal="42",
+                           startedAtUtc=stamp(offset + 25 * index), completedAtUtc=stamp(offset + 25 * index + 1),
+                           positionOrientationCandidate=orientation, bodyBearingDegreesCandidate=bearing,
+                           primaryBearingDegreesCandidate=bearing, playerSystemMinusBodyDegreesCandidate=delta,
+                           playerSystemMinusPrimaryDegreesCandidate=delta)
+                position = dict(row["positionCandidate"])
+                position["x"] += drift
+                row["entityPositionCandidate"] = position
+                row["entityPositionRawBits"] = [struct.unpack("<I", struct.pack("<f", v))[0]
+                                               for v in position.values()]
+            path = self.root / f"{key}-{endpoint}.json"
+            path.write_text(json.dumps(report), encoding="utf-8")
+            return path
+
+        pulse["inputCallTiming"] = {
+            "startedAtUtc": stamp(200), "completedAtUtc": stamp(460), "monotonicElapsedMilliseconds": 260,
+            "executorObservedMilliseconds": 255, "utcOrderValid": True, "wallClockConsistentWithMonotonic": True,
+        }
+        pulse["keySendEvents"] = [
+            {"key": key, "phase": phase, "callStartedAtUtc": stamp(offset),
+             "callCompletedAtUtc": stamp(offset + 1), "sendCallElapsedMilliseconds": 1, "inserted": True}
+            for phase, offset in (("key-down", 205), ("key-up", 455))
+        ]
+        pulse["keyHoldWindows"] = [{
+            "key": key, "status": "candidate-sendinput-hold-bounds", "minimumMillisecondsCandidate": 249,
+            "midpointMillisecondsCandidate": 250, "maximumMillisecondsCandidate": 251,
+            "exactKeyDownUpTimesKnown": False, "gameResponseVerified": False,
+            "downCallStartedAtUtc": stamp(205), "downCallCompletedAtUtc": stamp(206),
+            "upCallStartedAtUtc": stamp(455), "upCallCompletedAtUtc": stamp(456),
+        }]
+        pulse_path = self.root / f"{key}-pulse.json"
+        pulse_path.write_text(json.dumps(pulse), encoding="utf-8")
+        return (facing("before", before_angle, 0, 0), pulse_path,
+                facing("after", after_angle, 630, .2 if moving else 0))
 
     def test_four_vectors_generate_cardinal_candidate_without_navigation_authority(self):
         result = self.analyze()
@@ -65,6 +125,56 @@ class PhysicalMoveBasisTests(unittest.TestCase):
                                ["unsignedAngleDegreesCandidate"], 180)
         self.assertAlmostEqual(result["geometry"]["forwardVsBackward"]
                                ["firstSpeedOverSecondCandidate"], 2)
+
+    def test_cli_adds_measured_turn_candidates_consumed_by_waypoints(self):
+        a = self.turn_trial("a", 5, 175, -150)
+        d = self.turn_trial("d", 7, -150, 175)
+        output = self.root / "with-turns.json"
+        argv = []
+        for key, name in zip("wsqe", ("forward", "backward", "left", "right")):
+            argv.extend((f"--{name}", str(self.paths[key])))
+        argv.extend(("--turn-a", *map(str, a), "--turn-d", *map(str, d), "--out", str(output)))
+        with contextlib.redirect_stdout(StringIO()):
+            self.assertEqual(basis.main(argv), 0)
+        document, _ = read_basis(output)
+        turn_rates = PhysicalAdapter.turn_rates(SimpleNamespace(basis=document))
+        self.assertAlmostEqual(turn_rates["a"], .14, places=6)
+        self.assertAlmostEqual(turn_rates["d"], -.14, places=6)
+        self.assertFalse(document["turnCalibrationCandidate"]["turnResponseQualified"])
+        self.assertFalse(document["navigationEligible"])
+
+    def test_turn_rates_reject_incomplete_foreign_or_translating_trials(self):
+        a = self.turn_trial("a", 5, 0, 35)
+        with self.assertRaisesRegex(ValueError, "turn-basis-both-keys-required"):
+            self.analyze(turn_sources={"a": a})
+        d = self.turn_trial("d", 7, 35, 0, wrong_host=True)
+        with self.assertRaisesRegex(ValueError, "turn-basis-pulse-identity-mismatch"):
+            self.analyze(turn_sources={"a": a, "d": d})
+        d = self.turn_trial("d", 7, 35, 0, moving=True)
+        with self.assertRaisesRegex(ValueError, "turn-basis-position-drift"):
+            self.analyze(turn_sources={"a": a, "d": d})
+
+    def test_turn_rates_reject_reversed_brackets_and_overlapping_pulses(self):
+        a = self.turn_trial("a", 5, 0, 35)
+        d = self.turn_trial("d", 5, 35, 0)
+        with self.assertRaisesRegex(ValueError, "turn-basis-overlapping-trials"):
+            self.analyze(turn_sources={"a": a, "d": d})
+        d = self.turn_trial("d", 7, 35, 0)
+        with self.assertRaisesRegex(ValueError, "turn-basis-facing-pulse-order-invalid"):
+            self.analyze(turn_sources={"a": a, "d": (d[2], d[1], d[0])})
+
+    def test_turn_rates_require_measured_hold_and_correct_direction(self):
+        a = self.turn_trial("a", 5, 0, 35)
+        d = self.turn_trial("d", 7, 35, 40)
+        with self.assertRaisesRegex(ValueError, "turn-basis-rate-unqualified"):
+            self.analyze(turn_sources={"a": a, "d": d})
+        d = self.turn_trial("d", 7, 35, 0)
+        pulse = json.loads(d[1].read_text(encoding="utf-8"))
+        for field in ("inputCallTiming", "keySendEvents", "keyHoldWindows"):
+            pulse.pop(field)
+        d[1].write_text(json.dumps(pulse), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "turn-basis-bounded-hold-required"):
+            self.analyze(turn_sources={"a": a, "d": d})
 
     def test_basis_from_a_third_host_can_be_reopened_and_rejects_mixed_hosts(self):
         host = "RR2_FIELD-PC"

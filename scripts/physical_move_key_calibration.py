@@ -125,7 +125,8 @@ def forward_pose_comparison(receipt, dx, dz):
             "headingQualified": False}
 
 
-def from_helper_receipt(path: Path):
+def verified_single_key_pulse(path: Path, allowed_keys):
+    """Reopen one helper receipt and validate the reported delivery and timing."""
     path = Path(path)
     require(not path.is_symlink() and path.is_file()
             and 1 <= path.stat().st_size <= MAX_BYTES,
@@ -149,7 +150,7 @@ def from_helper_receipt(path: Path):
             "helper-receipt-identity-invalid")
     keys = receipt.get("keys")
     require(isinstance(keys, list) and len(keys) == 1
-            and type(keys[0]) is str and keys[0] in movement.MOVEMENT_KEYS,
+            and type(keys[0]) is str and keys[0] in allowed_keys,
             "helper-receipt-movement-key-invalid")
     require(receipt.get("windowsInputInserted") is True
             and receipt.get("windowsInputAttempted") is True
@@ -248,6 +249,21 @@ def from_helper_receipt(path: Path):
             hold_source = "sendinput-keydown-keyup-bounded-midpoint"
             hold_bounds = {"minimumMillisecondsCandidate": minimum,
                            "maximumMillisecondsCandidate": maximum}
+    return receipt, {
+        "sourceReceiptSha256": hashlib.sha256(raw).hexdigest().upper(),
+        "requestedHoldMilliseconds": requested,
+        "observedHoldMilliseconds": effective_hold,
+        "executorObservedMilliseconds": observed,
+        "holdMeasurementSource": hold_source,
+        "holdBoundsCandidate": hold_bounds,
+    }
+
+
+def from_helper_receipt(path: Path):
+    receipt, pulse = verified_single_key_pulse(path, movement.MOVEMENT_KEYS)
+    keys = receipt["keys"]
+    effective_hold = pulse["observedHoldMilliseconds"]
+    observed = pulse["executorObservedMilliseconds"]
     rounded = int(math.floor(effective_hold + .5))
     feedback = receipt.get("xyzFeedback")
     require(isinstance(feedback, dict)
@@ -271,7 +287,9 @@ def from_helper_receipt(path: Path):
         point.append((a, b, pos))
     capture_gap = (point[1][0] - point[0][1]).total_seconds()
     if "inputCallTiming" in receipt:
-        require(point[0][1] <= call_start and call_end <= point[1][0],
+        timing = receipt["inputCallTiming"]
+        require(point[0][1] <= utc(timing["startedAtUtc"])
+                and utc(timing["completedAtUtc"]) <= point[1][0],
                 "helper-keysend-native-capture-order-invalid")
     require(0 < capture_gap <= observed / 1000 + 3,
             "helper-native-capture-gap-invalid")
@@ -302,14 +320,10 @@ def from_helper_receipt(path: Path):
         "schemaVersion": 1,
         "status": "offline-helper-move-calibration-candidate",
         "sourceKind": "rr2-move-key-json-receipt",
-        "sourceReceiptSha256": hashlib.sha256(raw).hexdigest().upper(),
+        **pulse,
         "qualification": "windows-key-inserted-and-released-with-native-xyz-candidates-only",
         "movementEligible": False, "actionVerified": False, "headingQualified": False,
         "gameResponseVerified": False, "key": measured.key,
-        "requestedHoldMilliseconds": requested, "observedHoldMilliseconds": effective_hold,
-        "executorObservedMilliseconds": observed,
-        "holdMeasurementSource": hold_source,
-        "holdBoundsCandidate": hold_bounds,
         "calibrationHoldMillisecondsRounded": rounded,
         "dxPerMillisecondCandidate": dx / effective_hold,
         "dzPerMillisecondCandidate": dz / effective_hold,
