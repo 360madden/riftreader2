@@ -27,10 +27,11 @@ class WindowsLauncherTests(unittest.TestCase):
         self.root = Path(temp.name) / "cloned checkout"
         (self.root / "scripts").mkdir(parents=True)
         for path in ("Waypoints.cmd", "rr2-waypoints.cmd", "rr2-check-dependencies.cmd", "rr2-observe.cmd",
+                     "rr2-setup-python.cmd",
                      "scripts/resolve-waypoints-python.cmd"):
             shutil.copyfile(ROOT / path, self.root / path)
         for path in ("launch_physical_waypoints.py", "waypoints_cli.py", "check_physical_dependencies.py",
-                     "observe_target.py"):
+                     "observe_target.py", "setup_physical_python.py"):
             (self.root / "scripts" / path).write_text(ENTRY_POINT, encoding="utf-8")
 
     def run_launcher(self, launcher, args=(), *, override=None, environment=None):
@@ -96,6 +97,42 @@ class WindowsLauncherTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("RIFTREADER2_PYTHON", result.stderr)
         self.assertEqual(result.stdout, "")
+
+    @staticmethod
+    def make_broken_python(environment):
+        venv.create(environment)
+        (environment / "pyvenv.cfg").write_text(
+            f"home = {environment / 'missing Python installation'}\n", encoding="utf-8")
+        return environment / "Scripts/python.exe"
+
+    def test_launchers_skip_copied_registration_with_missing_base_python(self):
+        registered = self.root / ".local/physical-python-link"
+        self.make_broken_python(registered / "core")
+        (registered / ".ready").touch()
+        prepared = self.root / ".local/physical-python"
+        venv.create(prepared / "core")
+        (prepared / ".ready").touch()
+        for launcher in ("rr2-setup-python.cmd", "rr2-check-dependencies.cmd", "rr2-observe.cmd",
+                         "rr2-waypoints.cmd", "Waypoints.cmd"):
+            with self.subTest(launcher=launcher):
+                result = self.run_launcher(launcher, ["--help"])
+                self.assertEqual(result.returncode, 17, result.stderr)
+                self.assertEqual(Path(json.loads(result.stdout)["executable"]),
+                                 prepared / "core/Scripts/python.exe")
+
+    def test_system_discovery_skips_broken_virtual_environment_on_path(self):
+        broken = self.make_broken_python(self.root / "broken Python")
+        installed = self.root / "existing Python"
+        venv.create(installed)
+        executable = installed / "Scripts/python.exe"
+        path = os.pathsep.join(map(str, (broken.parent, executable.parent)))
+        result = self.run_launcher("rr2-setup-python.cmd", environment={"PATH": path})
+        self.assertEqual(result.returncode, 17, result.stderr)
+        self.assertEqual(Path(json.loads(result.stdout)["executable"]), executable)
+
+        explicit = self.run_launcher("rr2-setup-python.cmd", override=broken, environment={"PATH": path})
+        self.assertNotEqual(explicit.returncode, 17)
+        self.assertEqual(explicit.stdout, "")
 
     def test_skips_store_alias_and_finds_python_later_on_path(self):
         local_app_data = self.root / "local data"

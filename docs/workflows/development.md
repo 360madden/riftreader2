@@ -187,13 +187,15 @@ installed optional environment. For the overlay environment, it checks the
 Qt Windows platform plugin and the installed DXcam wheel's runtime files.
 For Rerun, it checks the viewer version and writes a temporary synthetic recording.
 Use an environment prepared at its current location on this host. The
-interpreters stay at their installed path. Each tool uses an explicit interpreter
-override first, then the registered setup, then the checkout's default setup.
+interpreters stay at their installed path. The core launchers honor an explicit
+`RIFTREADER2_PYTHON` setting. With automatic discovery, they try the registered
+setup, the checkout's default setup, its `.venv`, and system Python. They skip
+interpreters that fail to start, including copied virtual environments whose
+base Python is missing. Workflow checks report required packages separately.
 
 To replace the checkout's Python junction with a verified local setup, run
-`--use-existing` with `--replace-link`. If the selected Python fails to start,
-the setup launcher tries a system Python. An explicit `RIFTREADER2_PYTHON`
-setting can select a working bootstrap interpreter.
+`--use-existing` with `--replace-link`. The setup launcher uses the same
+interpreter discovery when bootstrapping a repair.
 
 ```powershell
 .\rr2-setup-python.cmd --expected-host $rr2Host --use-existing $rr2PythonRoot --replace-link
