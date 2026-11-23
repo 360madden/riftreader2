@@ -25,6 +25,24 @@ class PhysicalDependenciesTests(unittest.TestCase):
         self.assertEqual(report["checks"], {})
         check.assert_not_called()
 
+    def test_register_addons_root_uses_host_verification_without_running_checks(self):
+        from scripts import observe_physical
+
+        with patch.object(preflight, "check_workflow") as check, \
+                patch.object(observe_physical, "register_local_rift_addons_root",
+                             return_value={"addonsRoot": "custom"}) as register:
+            refused, _ = self.run_cli("--expected-host", "other-host", "--register-addons-root", "custom")
+            self.assertEqual(refused, 2)
+            register.assert_not_called()
+            code, report = self.run_cli("--expected-host", "local-pc", "--register-addons-root", "custom")
+            self.assertEqual(code, 0)
+            self.assertEqual(report["status"], "registered")
+            self.assertEqual(report["addonsRoot"], "custom")
+            self.assertEqual(str(register.call_args.args[0]), "custom")
+            self.assertFalse(report["inputSent"])
+            self.assertFalse(report["captureAttempted"])
+            check.assert_not_called()
+
     def test_requested_workflows_run_once_even_after_a_blocked_check(self):
         blocked = {"status": "blocked", "exitCode": 2, "result": {"reason": "missing-capture-runner"}}
         ready = {"status": "ready", "exitCode": 0, "result": {"status": "ready"}}

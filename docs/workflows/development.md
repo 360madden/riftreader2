@@ -194,7 +194,7 @@ movement calibration measured on the Windows host that will run Waypoints.
 | Waypoints prepared maps | `RR2_RIFTWORLD_ROOT`, `RR2_RIFTWORLD_PYTHON`, `RR2_RIFTWORLD_UPSTREAM`, `JAVA_HOME` | Git on `PATH` and [local RiftWorld, JPype, Java and pinned navigation dependencies](physical-waypoints.md#prepared-map-destinations) |
 | Both native physical tools | `RR2_PHYSICAL_TOOLS_ROOT` | [Published or copied tools bundle](#publish-both-physical-tools-for-local-use) |
 | Native physical reads and Waypoints | `RR2_NATIVE_READER` | [Published Live reader](#publish-the-local-native-reader) |
-| Installed physical addons | `RR2_RIFT_ADDONS_ROOT` | Optional absolute local AddOns directory, with Windows Documents used by default |
+| Installed physical addons | `RR2_RIFT_ADDONS_ROOT` | [Register a custom local AddOns directory](addon-sync.md#check-the-local-windows-installation), or use Windows Documents |
 | Waypoints calibration | `RR2_WAYPOINTS_BASIS` | [Verified calibration folder](physical-waypoints.md#local-calibration-and-dependency-checks) |
 | WGC capture | `RR2_WGC_PROBE` | [Published WGC probe](#publish-both-physical-tools-for-local-use), Python with Pillow, and the active deployment's desktop-evidence directory |
 | Qt waypoint markers | `RR2_OVERLAY_PYTHON` | Python with [overlay requirements](../../requirements-overlay.txt) |

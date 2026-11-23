@@ -16,10 +16,19 @@ if (!$rr2Python) { $rr2Python = 'python' }
 
 Run from the checkout with the configured Python. Check and verify default to
 the local PC and use Windows' Documents known folder, including OneDrive
-redirection. Set `RR2_RIFT_ADDONS_ROOT` to the absolute local `AddOns` root for a
-custom RIFT installation. `--pc-folder PATH` takes precedence for an individual
+redirection. For a custom RIFT installation, set `$rr2AddOnsRoot` to the
+absolute path of its existing local `AddOns` directory.
+
+```powershell
+.\rr2-check-dependencies.cmd --expected-host $rr2Host --register-addons-root $rr2AddOnsRoot
+```
+
+Registration writes the checkout setting `.local/rift-addons.json` for the verified
+host. The dependency checks, inventory, and sync use
+the registered folder from new shells. `RR2_RIFT_ADDONS_ROOT` takes precedence
+for the current shell, and `--pc-folder PATH` takes precedence for an individual
 command. For sync, check and verify, `--pc-folder` points to the `RiftReader2`
-addon folder itself.
+addon folder itself. Register the new location after moving the folder.
 Exit code 2 identifies a failed installation or host check.
 
 The `sync` action changes installed files and requires an explicit target.
@@ -33,10 +42,9 @@ explicitly. When several targets are selected, each gets its own result.
 & $rr2Python -B scripts/rift_addon_inventory.py --expected-host $rr2Host --detail-addon RiftReader2
 ```
 
-The inventory defaults to the local Windows Documents folder and reports file
-attributes without opening addon content. For a custom installation, pass its
-`AddOns` directory to `--pc-folder`. A partial inventory exits 3 and lists the
-directories it skipped. The selected addon's metadata appears under
+The inventory reports file attributes without opening addon content. To select
+a folder for this command, pass the `AddOns` directory to `--pc-folder`. A partial
+inventory exits 3 and lists the directories it skipped. The selected addon's metadata appears under
 `detailFiles` when the directory could be inspected.
 
 ### Compare installed ApiAtlas code

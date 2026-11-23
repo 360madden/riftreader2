@@ -39,9 +39,37 @@ class InstalledAddonRootTests(unittest.TestCase):
 
     def test_default_respects_windows_documents_redirection(self):
         documents = Path.cwd() / "Redirected Documents"
-        with patch.dict(physical.os.environ, RR2_RIFT_ADDONS_ROOT=""), \
-                patch.object(physical, "_run", return_value=(0, str(documents) + "\r\n")):
-            self.assertEqual(physical.local_rift_addons_root(), documents / "RIFT" / "Interface" / "AddOns")
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(physical, "ROOT", Path(directory)), \
+                    patch.dict(physical.os.environ, RR2_RIFT_ADDONS_ROOT=""), \
+                    patch.object(physical, "_run", return_value=(0, str(documents) + "\r\n")):
+                self.assertEqual(physical.local_rift_addons_root(), documents / "RIFT" / "Interface" / "AddOns")
+
+    def test_registered_root_persists_and_requires_the_current_host(self):
+        with tempfile.TemporaryDirectory(prefix="Portable addon test ") as directory:
+            root = Path(directory)
+            addons = root / "Custom AddOns"
+            addons.mkdir()
+            with patch.object(physical, "ROOT", root), \
+                    patch.dict(physical.os.environ, RR2_RIFT_ADDONS_ROOT=""), \
+                    patch.object(physical.socket, "gethostname", return_value="LOCAL-PC") as host, \
+                    patch.object(physical, "_run") as documents:
+                with self.assertRaisesRegex(ValueError, "physical-host-mismatch"):
+                    physical.register_local_rift_addons_root(addons, "OTHER-PC")
+                self.assertFalse((root / ".local").exists())
+                result = physical.register_local_rift_addons_root(addons, "local-pc")
+                self.assertEqual(result["addonsRoot"], str(addons))
+                self.assertEqual(physical.local_rift_addons_root(), addons)
+                with patch.dict(physical.os.environ, RR2_RIFT_ADDONS_ROOT=str(root / "Override")):
+                    self.assertEqual(physical.local_rift_addons_root(), root / "Override")
+                host.return_value = "OTHER-PC"
+                with self.assertRaisesRegex(ValueError, "rift-addons-registration-host-mismatch"):
+                    physical.local_rift_addons_root()
+                host.return_value = "LOCAL-PC"
+                addons.rmdir()
+                with self.assertRaisesRegex(ValueError, "rift-addons-directory-unavailable"):
+                    physical.local_rift_addons_root()
+                documents.assert_not_called()
 
 
 class PhysicalTests(unittest.TestCase):

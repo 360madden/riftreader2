@@ -80,22 +80,33 @@ def main(argv=None):
     workflows = (*commands, "qt", "rerun")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--expected-host", required=True, help="verified local Windows machine name")
-    parser.add_argument("--workflow", action="append", choices=workflows,
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument("--workflow", action="append", choices=workflows,
                         help="run only this check (repeatable, defaults to all)")
+    action.add_argument("--register-addons-root", type=Path, metavar="PATH",
+                        help="remember a custom local AddOns directory for this checkout")
     args = parser.parse_args(argv)
 
     result = {"host": host, "status": "blocked", "checks": {}, "inputSent": False, "captureAttempted": False}
-    if physical_rift.is_local_host(args.expected_host):
+    if not physical_rift.is_local_host(args.expected_host):
+        result.update(reason="physical-host-mismatch", expectedHost=args.expected_host)
+    elif args.register_addons_root is not None:
+        from scripts.observe_physical import register_local_rift_addons_root
+
+        try:
+            result.update(register_local_rift_addons_root(args.register_addons_root, args.expected_host))
+            result["status"] = "registered"
+        except (OSError, ValueError) as error:
+            result["reason"] = str(error)
+    else:
         result["checks"] = {
             workflow: check_workflow(workflow, commands.get(workflow))
             for workflow in dict.fromkeys(args.workflow or workflows)
         }
         if all(check["status"] == "ready" for check in result["checks"].values()):
             result["status"] = "ready"
-    else:
-        result.update(reason="physical-host-mismatch", expectedHost=args.expected_host)
     print(json.dumps(result, indent=2, allow_nan=False))
-    return 0 if result["status"] == "ready" else 2
+    return 2 if result["status"] == "blocked" else 0
 
 
 if __name__ == "__main__":

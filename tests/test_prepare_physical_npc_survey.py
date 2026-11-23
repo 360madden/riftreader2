@@ -53,7 +53,7 @@ class NPCPreparationTests(unittest.TestCase):
         self.default_reader = self.dir / "RiftReader2.Live.exe"
         self.default_reader.touch()
         self.enterContext(patch.object(prep.physical_rift, "NATIVE_EXE", self.default_reader))
-        self.enterContext(patch.dict("os.environ", {"RR2_NATIVE_READER": ""}))
+        self.enterContext(patch.dict("os.environ", {"RR2_NATIVE_READER": "", "RR2_PHYSICAL_TOOLS_ROOT": "debug"}))
         self.enterContext(patch.object(prep.physical_rift.socket, "gethostname", return_value="RIFT-STATION"))
 
     def collect(self, host, pid, directory, *, radius, limit, include_levels=False, native_reader=None):

@@ -144,14 +144,48 @@ def _run(args, timeout=120, *, env=None):
                 proc.wait(timeout=10)
 
 
+def _rift_addons_registration():
+    return ROOT / ".local" / "rift-addons.json"
+
+
+def register_local_rift_addons_root(root, expected_host):
+    """Save an explicit AddOns directory for this checkout on the verified host."""
+    from scripts.waypoint_progress import write_json_atomic
+
+    host = socket.gethostname()
+    _require(valid_host_name(expected_host) and host.casefold() == expected_host.casefold(),
+             "physical-host-mismatch")
+    addons = _local_absolute_path(root, "invalid-rift-addons-root")
+    _require(addons.is_dir(), "rift-addons-directory-unavailable")
+    registration = _rift_addons_registration()
+    _plain_path(registration)
+    registration.parent.mkdir(exist_ok=True)
+    write_json_atomic(registration, {"schema": "rr2.rift-addons/1", "host": host, "root": str(addons)})
+    return {"addonsRoot": str(addons), "registration": str(registration)}
+
+
 def local_rift_addons_root():
-    """Resolve the configured AddOns root or the Windows Documents known folder."""
+    """Resolve the selected AddOns root or the Windows Documents known folder."""
     configured = os.environ.get("RR2_RIFT_ADDONS_ROOT")
     if configured:
-        addons = Path(configured)
-        _require(addons.is_absolute() and not addons.drive.startswith(("\\", "/"))
-                 and ".." not in addons.parts, "invalid-rift-addons-root")
-        _plain_path(addons)
+        return _local_absolute_path(configured, "invalid-rift-addons-root")
+    registration = _rift_addons_registration()
+    if registration.exists() or registration.is_symlink():
+        _plain_path(registration)
+        error = "invalid-rift-addons-registration"
+        _require(registration.is_file(), error)
+        with registration.open("rb") as stream:
+            raw = stream.read(16385)
+        _require(0 < len(raw) <= 16384, error)
+        try:
+            settings = json.loads(raw)
+        except ValueError as exc:
+            raise ValueError(error) from exc
+        _require(isinstance(settings, dict) and settings.get("schema") == "rr2.rift-addons/1"
+                 and valid_host_name(settings.get("host")) and isinstance(settings.get("root"), str), error)
+        _require(settings["host"].casefold() == socket.gethostname().casefold(), "rift-addons-registration-host-mismatch")
+        addons = _local_absolute_path(settings["root"], error)
+        _require(addons.is_dir(), "rift-addons-directory-unavailable")
         return addons
     code, text = _run([
         POWERSHELL, "-NoProfile", "-NonInteractive", "-Command",
