@@ -149,12 +149,11 @@ def _workbridge_response(text):
 
 
 def check_workbridge_capture_service(bridge):
-    """Discover the capture tool through the existing authenticated local CLI."""
+    """Discover the window lookup and capture tools in one authenticated call."""
     command = _workbridge_command(bridge)
     _require(command[1].is_file(), "desktop-workbridge-cli-unavailable")
     _require(command[3].is_dir(), "desktop-workbridge-service-state-unavailable")
-    tool = "desktop_capture_window"
-    code, text = _run([*command, "--list-tools", "--tool", tool, "--timeout", "6", "--json"], 10)
+    code, text = _run([*command, "--list-tools", "--timeout", "6", "--json"], 10)
     entry = _workbridge_response(text)
     if code != 0 or entry.get("ok") is not True:
         error = entry.get("error")
@@ -170,10 +169,16 @@ def check_workbridge_capture_service(bridge):
         return result
     tools = entry.get("tools")
     version = entry.get("serverVersion")
-    _require(entry.get("discovery") == "tools" and isinstance(tools, list)
-             and len(tools) == 1 and isinstance(tools[0], dict) and tools[0].get("name") == tool
+    _require(entry.get("discovery") == "tools" and isinstance(tools, list) and len(tools) <= 1000
+             and all(isinstance(tool, dict) and isinstance(tool.get("name"), str) for tool in tools)
              and isinstance(version, str) and re.fullmatch(r"[0-9][A-Za-z0-9.+-]{0,63}", version),
              "invalid-backend-response")
+    names = [tool["name"] for tool in tools]
+    _require(len(names) == len(set(names)), "invalid-backend-response")
+    missing = [name for name in ("desktop_windows", "desktop_capture_window") if name not in names]
+    if missing:
+        return {"status": "blocked", "reason": "TOOL_NOT_FOUND", "runtimeVersion": version,
+                "missingTools": missing}
     return {"status": "available", "runtimeVersion": version}
 
 

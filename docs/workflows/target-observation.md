@@ -13,7 +13,8 @@ python scripts/observe_target.py --target physical --expected-host $rr2Host --ph
 ```
 
 The second command is for a reviewed, focus-neutral WGC capture. It requires the
-local WGC probe build and the Workbridge desktop-evidence directory. The observer
+local WGC probe build, Pillow in the selected Python environment, and the
+Workbridge desktop-evidence directory. The observer
 returns a receipt named for the verified host. You can also select it explicitly
 with `--target physical-HOST`, using the local hostname in place of `HOST`.
 The existing `physical-amd-desktop` and `physical-legion` arguments remain valid.
@@ -31,15 +32,20 @@ Workbridge checkouts exist on the same machine.
 ```powershell
 $rr2Host = [Environment]::MachineName
 python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies
+python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies --physical-capture-backend wgc
+python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies --physical-capture-backend workbridge
 ```
 
-The dependency check reports the WGC executable, the desktop-turn directory
-and guard files, and the Workbridge window-capture tool's registration on the
-running service. It uses read-only tool discovery and requires no RIFT PID.
-Exit code `2` means at least one dependency is blocked. `RUNTIME_MISMATCH`
-includes both versions. It applies to the Workbridge window backend. WGC has
-its own build and desktop-turn checks. Run the capture command separately with
-a freshly verified PID after the checks for its backend pass.
+The check covers both backends by default. Choose a backend to check its
+requirements and the shared desktop-turn directory and guard files. WGC checks
+the probe executable and loads its Python image verifier. The output identifies
+the interpreter to use for a capture or for installing Pillow. Workbridge checks
+registration of `desktop_windows` and `desktop_capture_window` on the running
+service. A `RUNTIME_MISMATCH` includes the versions expected and running.
+
+The checks use read-only discovery and require no RIFT PID. Exit code `2` means
+a dependency in the selected scope is blocked. Run the capture separately with
+a freshly verified PID after its checks pass.
 
 The historical VMware material below is **archived**. The observation CLI now
 rejects `lab1`/`lab2` by default with `vmware-retired-use-physical-rift`;

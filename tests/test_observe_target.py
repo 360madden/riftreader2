@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts import observe_target as tool
-from scripts import observe_gpu, observe_physical
+from scripts import observe_gpu, observe_physical, physical_turn_visual_pair
 
 
 class TargetRoutingTests(unittest.TestCase):
@@ -73,6 +73,7 @@ class TargetRoutingTests(unittest.TestCase):
                 self.assertEqual(tool.main(args), 2)
                 result = json.loads(output.getvalue())
             self.assertEqual(result["ownerHost"], "RIFT-STATION")
+            self.assertEqual(result["backendScope"], "all")
             self.assertEqual(result["wgcProbe"]["status"], "available")
             self.assertEqual(result["desktopTurn"]["reason"], "shared-gui-evidence-directory-missing")
             self.assertEqual(result["workbridgeService"]["reason"], "RUNTIME_MISMATCH")
@@ -86,6 +87,56 @@ class TargetRoutingTests(unittest.TestCase):
             with patch.object(observe_gpu, "PROBE", probe), redirect_stdout(io.StringIO()) as output:
                 self.assertEqual(tool.main(args), 0)
                 self.assertEqual(json.loads(output.getvalue())["status"], "capture-dependencies-ready")
+
+    def test_backend_checks_ignore_dependencies_for_the_unselected_backend(self):
+        with TemporaryDirectory() as temp, \
+             patch.object(tool.socket, "gethostname", return_value="RIFT-STATION"), \
+             patch.object(observe_physical, "workbridge_root", return_value=Path(temp)), \
+             patch.object(observe_physical, "check_workbridge_capture_service") as service:
+            (Path(temp) / ".tools" / "desktop-evidence").mkdir(parents=True)
+            probe = Path(temp) / "wgc.exe"
+            args = ["--target", "physical", "--expected-host", "RIFT-STATION",
+                    "--check-dependencies", "--physical-capture-backend"]
+
+            with patch.object(observe_gpu, "PROBE", probe), redirect_stdout(io.StringIO()) as output:
+                service.return_value = {"status": "available", "runtimeVersion": "0.16.5-dev"}
+                self.assertEqual(tool.main([*args, "workbridge"]), 0)
+                result = json.loads(output.getvalue())
+                self.assertEqual(result["backendScope"], "workbridge")
+                self.assertNotIn("wgcProbe", result)
+
+            probe.touch()
+            service.reset_mock()
+            with patch.object(observe_gpu, "PROBE", probe), redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(tool.main([*args, "wgc"]), 0)
+                result = json.loads(output.getvalue())
+                self.assertEqual(result["backendScope"], "wgc")
+                self.assertNotIn("workbridgeService", result)
+            service.assert_not_called()
+
+    def test_explicit_workbridge_capture_keeps_the_foreground_admission_check(self):
+        result = tool.observe("physical", "AMD-DESKTOP", physical_capture_backend="workbridge")
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["reason"], "desktop-ownership-required")
+        with self.assertRaisesRegex(ValueError, "native-facing-requires-focus-neutral-physical-capture"):
+            tool.observe("physical", "AMD-DESKTOP", physical_capture_backend="workbridge", native_facing=True)
+
+    def test_missing_wgc_python_dependency_is_reported_without_hiding_workbridge_status(self):
+        with TemporaryDirectory() as temp, \
+             patch.object(observe_physical, "workbridge_root", return_value=Path(temp)), \
+             patch.object(observe_physical, "check_workbridge_capture_service", return_value={"status": "available"}), \
+             patch.object(observe_gpu, "frame_tools", side_effect=ValueError("wgc-python-pillow-unavailable")), \
+             patch.object(observe_gpu, "PROBE", Path(temp) / "probe.exe"), \
+             patch.object(observe_gpu, "_identity") as identity:
+            observe_gpu.PROBE.touch()
+            (Path(temp) / ".tools" / "desktop-evidence").mkdir(parents=True)
+            result = tool.observe("physical", "AMD-DESKTOP", check_dependencies=True)
+            capture = observe_gpu.capture_gpu("AMD-DESKTOP", Path(temp) / "capture")
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["wgcImageVerifier"]["reason"], "wgc-python-pillow-unavailable")
+        self.assertEqual(result["workbridgeService"]["status"], "available")
+        self.assertEqual(capture["reason"], "wgc-python-pillow-unavailable")
+        identity.assert_not_called()
 
     def test_capture_dependency_check_rejects_foreign_host_and_capture_options(self):
         for target, host, extra, reason in (
@@ -115,7 +166,7 @@ class TargetRoutingTests(unittest.TestCase):
                  patch.object(observe_gpu.socket, "gethostname", return_value="RIFT-STATION"), \
                  patch.object(observe_gpu, "_identity", return_value=target) as identity, \
                  patch.object(observe_gpu, "_run", return_value=(0, "")) as runner, \
-                 patch.object(observe_gpu, "read_frame", return_value=(report, None, "B" * 64)):
+                 patch.object(physical_turn_visual_pair, "read_frame", return_value=(report, None, "B" * 64)):
                 result = observe_gpu.capture_gpu("rift-station", root / "output", physical_pid=123)
         self.assertEqual(result["status"], "verified-awaiting-visual-review")
         self.assertEqual(result["targetId"], "physical-rift-station")

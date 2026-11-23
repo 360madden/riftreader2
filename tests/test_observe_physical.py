@@ -282,7 +282,7 @@ class PhysicalTests(unittest.TestCase):
             self.assertNotIn("--root", command)
             self.assertNotIn("--state-dir", command)
 
-    def test_workbridge_preflight_only_discovers_tool_and_reports_versions(self):
+    def test_workbridge_preflight_discovers_both_tools_and_reports_missing_tools_and_versions(self):
         bridge = self.root / "install" / "workbridge"
         cli = bridge / "scripts" / "workbridge-cli.mjs"
         cli.parent.mkdir(parents=True)
@@ -290,8 +290,12 @@ class PhysicalTests(unittest.TestCase):
         (bridge / ".local").mkdir()
         cases = (
             (0, {"ok": True, "discovery": "tools", "serverVersion": "0.16.5-dev",
-                 "tools": [{"name": "desktop_capture_window"}]},
+                 "tools": [{"name": "desktop_windows"}, {"name": "desktop_capture_window"}, {"name": "other"}]},
              {"status": "available", "runtimeVersion": "0.16.5-dev"}),
+            (0, {"ok": True, "discovery": "tools", "serverVersion": "0.16.5-dev",
+                 "tools": [{"name": "desktop_capture_window"}]},
+             {"status": "blocked", "reason": "TOOL_NOT_FOUND", "runtimeVersion": "0.16.5-dev",
+              "missingTools": ["desktop_windows"]}),
             (2, {"ok": False, "error": {"code": "RUNTIME_MISMATCH",
                                        "expectedVersion": "0.16.5-dev", "runtimeVersion": "0.16.4-dev",
                                        "message": "text not needed in the preflight receipt"}},
@@ -306,8 +310,7 @@ class PhysicalTests(unittest.TestCase):
                 self.assertEqual(physical.check_workbridge_capture_service(bridge), expected)
                 command = run.call_args.args[0]
                 self.assertEqual(command[1:], [cli, "--service-state", bridge / ".local",
-                                                "--list-tools", "--tool", "desktop_capture_window",
-                                                "--timeout", "6", "--json"])
+                                                "--list-tools", "--timeout", "6", "--json"])
                 self.assertEqual(run.call_args.args[1], 10)
 
     def test_cli_error_code_preserved(self):

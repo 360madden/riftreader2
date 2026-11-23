@@ -6,9 +6,19 @@ from pathlib import Path
 import socket
 
 from scripts.observe_physical import ROOT, _identity, _plain_path, _require, _run, valid_host_name
-from scripts.physical_turn_visual_pair import read_frame, client_frame_mapping
 
 PROBE = ROOT / "tools/physical-wgc-probe/bin/Debug/net10.0-windows10.0.19041.0/win-x64/PhysicalWgcProbe.exe"
+
+
+def frame_tools():
+    """Load the WGC receipt verifier on the Python interpreter that will use it."""
+    try:
+        from scripts import physical_turn_visual_pair
+    except ImportError as error:
+        if (error.name or "").split(".", 1)[0] == "PIL":
+            raise ValueError("wgc-python-pillow-unavailable") from error
+        raise
+    return physical_turn_visual_pair
 
 
 def capture_gpu(expected_host, output, *, physical_pid=None):
@@ -22,6 +32,7 @@ def capture_gpu(expected_host, output, *, physical_pid=None):
         _plain_path(directory)
         _require(not directory.exists() and directory.parent.is_dir(), "fresh-output-required")
         _require(PROBE.is_file(), "gpu-probe-build-required")
+        frames = frame_tools()
         before = _identity(physical_pid)
         _require(before["hostName"].casefold() == host.casefold(), "host-mismatch")
         _require(physical_pid is None or before["processId"] == physical_pid, "physical-pid-mismatch")
@@ -40,7 +51,7 @@ def capture_gpu(expected_host, output, *, physical_pid=None):
             reason = failure.get("reason") if isinstance(failure, dict) else None
             raise ValueError(reason or "gpu-capture-failed")
         _require(_identity(physical_pid) == before, "stale-identity")
-        report, _, digest = read_frame(image, receipt)
+        report, _, digest = frames.read_frame(image, receipt)
         pinned = report["targetBefore"]
         _require(report["machine"].casefold() == host.casefold() and report["requestedBackend"] == "wgc"
                  and pinned["pid"] == before["processId"]
@@ -53,7 +64,7 @@ def capture_gpu(expected_host, output, *, physical_pid=None):
             "image": str(image), "imageSha256": digest,
             "receipt": str(receipt), "capturedAtUtc": report["capturedCompletedAtUtc"],
             "target": before, "foregroundMayChange": False,
-            "clientFrameMapping": client_frame_mapping(report),
+            "clientFrameMapping": frames.client_frame_mapping(report),
         }
     except (ValueError, OSError, KeyError, TypeError) as error:
         return {"status": "blocked", "targetId": target_id, "workflow": "physical",

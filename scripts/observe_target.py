@@ -125,14 +125,10 @@ def _paired_preview(result, width, crop):
     return review_pair(Path(result["image"]), result["imageSha256"], crop, width)
 
 
-def _check_capture_dependencies():
-    from scripts import observe_physical, observe_gpu
+def _check_capture_dependencies(backend):
+    from scripts import observe_physical
 
     bridge = observe_physical.workbridge_root()
-    probe = observe_gpu.PROBE
-    wgc_probe = {"status": "available" if probe.is_file() else "blocked", "path": str(probe)}
-    if wgc_probe["status"] == "blocked":
-        wgc_probe["reason"] = "gpu-probe-build-required"
     turn = {"status": "clear", "path": str(bridge / ".tools" / "desktop-evidence")}
     try:
         observe_physical.require_clear_desktop_turn(bridge=bridge)
@@ -140,16 +136,32 @@ def _check_capture_dependencies():
         turn.update(status="blocked", reason=str(error))
     except OSError:
         turn.update(status="blocked", reason="desktop-turn-check-unavailable")
-    try:
-        service = observe_physical.check_workbridge_capture_service(bridge)
-    except (json.JSONDecodeError, OSError):
-        service = {"status": "blocked", "reason": "workbridge-discovery-unavailable"}
-    except ValueError as error:
-        service = {"status": "blocked", "reason": str(error)}
-    blocked = any(check["status"] == "blocked" for check in (wgc_probe, turn, service))
+    checks = {"desktopTurn": turn}
+    if backend in (None, "wgc"):
+        from scripts import observe_gpu
+
+        probe = observe_gpu.PROBE
+        wgc_probe = {"status": "available" if probe.is_file() else "blocked", "path": str(probe)}
+        if wgc_probe["status"] == "blocked":
+            wgc_probe["reason"] = "gpu-probe-build-required"
+        checks["wgcProbe"] = wgc_probe
+        verifier = {"status": "available", "pythonExecutable": sys.executable}
+        try:
+            observe_gpu.frame_tools()
+        except ValueError as error:
+            verifier.update(status="blocked", reason=str(error))
+        checks["wgcImageVerifier"] = verifier
+    if backend in (None, "workbridge"):
+        try:
+            service = observe_physical.check_workbridge_capture_service(bridge)
+        except (json.JSONDecodeError, OSError):
+            service = {"status": "blocked", "reason": "workbridge-discovery-unavailable"}
+        except ValueError as error:
+            service = {"status": "blocked", "reason": str(error)}
+        checks["workbridgeService"] = service
+    blocked = any(check["status"] == "blocked" for check in checks.values())
     return {"status": "blocked" if blocked else "capture-dependencies-ready",
-            "workbridgeRoot": str(bridge), "wgcProbe": wgc_probe,
-            "desktopTurn": turn, "workbridgeService": service,
+            "backendScope": backend or "all", "workbridgeRoot": str(bridge), **checks,
             "captureAttempted": False, "inputSent": False}
 
 
@@ -179,26 +191,26 @@ def observe(target_id, expected_host, output=None, *, native_vitals=False,
         raise ValueError("host-mismatch")
     if workflow == "physical":
         owner_host = actual_host
+    if physical_capture_backend is not None:
+        if workflow != "physical" or physical_capture_backend not in ("wgc", "workbridge"):
+            raise ValueError("invalid-physical-capture-backend")
     if check_dependencies:
         if (workflow != "physical" or output is not None or native_vitals or native_facing
                 or allow_foreground_change or with_preview or preview_detail_crop is not None
                 or preview_width != 840 or host_preview or physical_pid is not None
-                or historical_vm or physical_capture_backend is not None):
+                or historical_vm):
             raise ValueError("capture-dependency-check-incompatible-options")
-        result = _check_capture_dependencies()
+        result = _check_capture_dependencies(physical_capture_backend)
         if socket.gethostname().casefold() != actual_host.casefold():
             raise ValueError("host-changed")
         return dict(result, targetId=target_id, workflow=workflow, ownerHost=owner_host)
-    if physical_capture_backend is not None:
-        if workflow != "physical" or physical_capture_backend != "wgc":
-            raise ValueError("invalid-physical-capture-backend")
     if physical_pid is not None:
         if workflow != "physical":
             raise ValueError("physical-pid-incompatible-target")
         if type(physical_pid) is not int or not 1 <= physical_pid <= 4294967295:
             raise ValueError("invalid-physical-pid")
-    if type(native_facing) is not bool or (native_facing and
-            (workflow != "physical" or allow_foreground_change or host_preview or native_vitals)):
+    if type(native_facing) is not bool or (native_facing and (workflow != "physical"
+            or physical_capture_backend == "workbridge" or allow_foreground_change or host_preview or native_vitals)):
         raise ValueError("native-facing-requires-focus-neutral-physical-capture")
     if type(preview_width) is not int or not 500 <= preview_width <= 1600:
         raise ValueError("invalid-preview-width")
@@ -281,8 +293,8 @@ def main(argv=None):
                         help="VMware labs only: fast read-only FlaUI host screenshot, never movement authority")
     parser.add_argument("--allow-foreground-change", action="store_true",
                         help="physical capture only: explicitly allow the desktop backend to focus RIFT")
-    parser.add_argument("--physical-capture-backend", choices=("wgc",),
-                        help="capture directly with the local GPU probe without changing focus")
+    parser.add_argument("--physical-capture-backend", choices=("wgc", "workbridge"),
+                        help="select the capture backend or scope --check-dependencies")
     parser.add_argument("--physical-pid", type=int,
                         help="physical capture only: exact rift_x64 process ID for multibox sessions")
     parser.add_argument("--preview", action="store_true", help="include a bounded non-authoritative JPEG in the same result")
