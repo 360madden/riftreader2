@@ -26,6 +26,16 @@ $rr2Probe = 'tools\physical-wgc-probe\PhysicalWgcProbe.csproj'
 & $rr2DotNet run --project $rr2Probe -c Debug --no-build -- --self-test
 ```
 
+To use a published build, keep its companion files in the same directory and
+set `RR2_WGC_PROBE` in the shell that runs the observer.
+
+```powershell
+$rr2PublishedProbe = Join-Path (Get-Location).Path 'artifacts\tools\wgc-published'
+& $rr2DotNet publish $rr2Probe -c Release --no-restore --self-contained false -o $rr2PublishedProbe
+$env:RR2_WGC_PROBE = Join-Path $rr2PublishedProbe 'PhysicalWgcProbe.exe'
+& $env:RR2_WGC_PROBE --self-test
+```
+
 For a single local WGC capture, run the following from the repository root with Python and Pillow installed. Choose the current PID from the process listing. The observer writes a new artifact directory and returns the image and receipt paths.
 
 ```powershell

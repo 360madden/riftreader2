@@ -11,13 +11,28 @@ from scripts.observe_physical import ROOT, _identity, _plain_path, _require, _ru
 PROBE = ROOT / "tools/physical-wgc-probe/bin/Debug/net10.0-windows10.0.19041.0/win-x64/PhysicalWgcProbe.exe"
 
 
+def _probe_path():
+    override = os.environ.get("RR2_WGC_PROBE")
+    if not override:
+        return PROBE
+    probe = Path(override)
+    _require(probe.is_absolute() and not probe.anchor.startswith(("\\\\", "//"))
+             and ".." not in probe.parts, "invalid-gpu-probe-path")
+    _plain_path(probe)
+    return probe
+
+
 def check_probe():
     """Run the built probe's offline self-test without opening a target window."""
-    result = {"status": "blocked", "path": str(PROBE)}
-    if not PROBE.is_file():
+    try:
+        probe = _probe_path()
+    except (OSError, ValueError) as error:
+        return {"status": "blocked", "reason": str(error)}
+    result = {"status": "blocked", "path": str(probe)}
+    if not probe.is_file():
         return {**result, "reason": "gpu-probe-build-required"}
     try:
-        code, response = _run([PROBE, "--self-test"], 10,
+        code, response = _run([probe, "--self-test"], 10,
                               env={**os.environ, "DOTNET_DISABLE_GUI_ERRORS": "1"})
     except (OSError, ValueError):
         return {**result, "reason": "gpu-probe-self-test-unavailable"}
@@ -55,7 +70,8 @@ def capture_gpu(expected_host, output, *, physical_pid=None):
         _require(directory.is_absolute(), "absolute-output-required")
         _plain_path(directory)
         _require(not directory.exists() and directory.parent.is_dir(), "fresh-output-required")
-        _require(PROBE.is_file(), "gpu-probe-build-required")
+        probe = _probe_path()
+        _require(probe.is_file(), "gpu-probe-build-required")
         frames = frame_tools()
         before = _identity(physical_pid)
         _require(before["hostName"].casefold() == host.casefold(), "host-mismatch")
@@ -64,7 +80,7 @@ def capture_gpu(expected_host, output, *, physical_pid=None):
         image = directory / "image.png"
         receipt = directory / "image.png.json"
         code, response = _run([
-            PROBE, "--capture", "--allow-one-capture", "--host", host,
+            probe, "--capture", "--allow-one-capture", "--host", host,
             "--process", "rift_x64", "--pid", before["processId"],
             "--start-ticks", before["processStartUtcTicks"],
             "--sha256", before["executableSha256"],

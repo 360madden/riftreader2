@@ -17,6 +17,7 @@ OFFLINE_PROBE_REPORT = {"status": "offline-self-test-passed", "passed": 31,
 
 class TargetRoutingTests(unittest.TestCase):
     def setUp(self):
+        self.enterContext(patch.dict("os.environ", {"RR2_WGC_PROBE": ""}))
         self.hostname = patch.object(tool.socket, "gethostname", return_value="AMD-DESKTOP")
         self.hostname.start()
         self.addCleanup(self.hostname.stop)
@@ -117,12 +118,30 @@ class TargetRoutingTests(unittest.TestCase):
 
             probe.touch()
             service.reset_mock()
-            with patch.object(observe_gpu, "PROBE", probe), redirect_stdout(io.StringIO()) as output:
+            with patch.dict("os.environ", {"RR2_WGC_PROBE": str(probe)}), \
+                 redirect_stdout(io.StringIO()) as output:
                 self.assertEqual(tool.main([*args, "wgc"]), 0)
                 result = json.loads(output.getvalue())
                 self.assertEqual(result["backendScope"], "wgc")
+                self.assertEqual(result["wgcProbe"]["path"], str(probe))
                 self.assertNotIn("workbridgeService", result)
+            probe_runner.assert_called_once()
+            self.assertEqual(probe_runner.call_args.args[0], [probe, "--self-test"])
             service.assert_not_called()
+
+    def test_invalid_probe_override_refuses_preflight_and_capture(self):
+        with TemporaryDirectory() as temp, \
+             patch.dict("os.environ", {"RR2_WGC_PROBE": "relative/PhysicalWgcProbe.exe"}), \
+             patch.object(observe_gpu, "_identity") as identity, \
+             patch.object(observe_gpu, "_run") as runner:
+            output = Path(temp) / "capture"
+            preflight = observe_gpu.check_probe()
+            capture = observe_gpu.capture_gpu("AMD-DESKTOP", output)
+            self.assertFalse(output.exists())
+        self.assertEqual(preflight["reason"], "invalid-gpu-probe-path")
+        self.assertEqual(capture["reason"], "invalid-gpu-probe-path")
+        identity.assert_not_called()
+        runner.assert_not_called()
 
     def test_present_wgc_executable_must_pass_offline_self_test(self):
         with TemporaryDirectory() as temp:
@@ -195,7 +214,7 @@ class TargetRoutingTests(unittest.TestCase):
             root = Path(folder)
             probe = root / "probe.exe"
             probe.touch()
-            with patch.object(observe_gpu, "PROBE", probe), \
+            with patch.dict("os.environ", {"RR2_WGC_PROBE": str(probe)}), \
                  patch.object(observe_gpu.socket, "gethostname", return_value="RIFT-STATION"), \
                  patch.object(observe_gpu, "_identity", return_value=target) as identity, \
                  patch.object(observe_gpu, "_run", return_value=(0, "")) as runner, \
@@ -206,6 +225,7 @@ class TargetRoutingTests(unittest.TestCase):
         self.assertFalse(result["foregroundMayChange"])
         self.assertEqual(identity.call_count, 2)
         command = runner.call_args.args[0]
+        self.assertEqual(command[0], probe)
         self.assertEqual(command[command.index("--host") + 1], "RIFT-STATION")
         self.assertEqual(command[command.index("--pid") + 1], 123)
 

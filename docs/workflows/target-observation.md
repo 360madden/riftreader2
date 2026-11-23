@@ -44,7 +44,9 @@ The check covers both backends by default. Choose a backend to check its
 requirements and the shared desktop-turn directory and guard files. WGC runs
 the probe's offline self-test and loads its Python image verifier. The self-test
 requires a runnable build, including the companion files and .NET desktop
-runtime. The output gives the probe exit code if it fails and identifies the
+runtime. Set `RR2_WGC_PROBE` to the absolute path of a locally published
+`PhysicalWgcProbe.exe` to use it for dependency checks and captures. The output
+gives the probe exit code if it fails and identifies the
 Python interpreter to use for a capture or for installing Pillow. Workbridge checks
 registration of `desktop_windows` and `desktop_capture_window` on the running
 service and checks `dist/desktop-ui.mjs` and `dist/desktop-capture.mjs` in its
