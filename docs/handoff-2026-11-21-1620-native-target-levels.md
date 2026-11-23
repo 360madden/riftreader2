@@ -22,10 +22,11 @@ advancing nonce-bound survey. [NPC survey preparation](reference/physical-nearby
 The current Windows workflow verifies the local host before using physical
 tools. A fresh checkout can use a published native reader, a calibration
 verified for that host, and local Python environments. The fresh LEGION
-checkout at `6c21976` passed the full gate with the Python configured for
+checkout at `5888d48` passed the full gate with the Python configured for
 Waypoints, including the real Lua 5.1 producer checks. The newly published
 reader passed the Waypoints, WGC, ReaderBridge, NPC survey, and Telemetry
 dependency checks. The Telemetry check found all three installed addon files.
+[LEGION dependency results](../artifacts/physical-dependencies-legion-5888d48.json)
 A passive LEGION run on build 1179, PID 31684, verified an advancing
 Telemetry publisher in two windows. Independent replay from a copied folder
 reproduced 106 distinct frames and zero observed A–B–A cycles. Live
@@ -41,7 +42,7 @@ a copied self-contained publish. The copied build passed all 31 self-checks
 with the runtime overrides cleared. [Self-contained WGC setup](../tools/physical-wgc-probe/README.md#publish-with-the-runtime-included)
 The AMD-DESKTOP process observations below are dated evidence.
 [Portable checkout setup](workflows/development.md#reuse-local-tools-from-a-fresh-checkout)
-· [LEGION validation log](../artifacts/validation-legion-6c21976.log)
+· [LEGION validation log](../artifacts/validation-legion-5888d48.log)
 
 **Machine verified:** **AMD-DESKTOP**, from machine-local Windows PowerShell `[Environment]::MachineName` (exit 0 at 16:20:19 EST); Workbridge **0.16.5-dev** rooted at `C:\work`.\
 **Repository:** `C:\work\riftreader2`; branch **`codex/modular-foundation`**.\
