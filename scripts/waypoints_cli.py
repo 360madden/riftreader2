@@ -207,6 +207,13 @@ def build_parser():
             p.add_argument("--pose", action="store_true", help="include the existing reader's qualified pose, source and sample age; reads no new pose")
             p.add_argument("--interval", type=bounded(.1, 60), default=1., help="watch interval seconds, default 1")
             p.add_argument("--count", type=positive, help="stop watch after this many reports")
+        if name == "doctor":
+            p.add_argument("--local", action="store_true", default=argparse.SUPPRESS,
+                           help="check local prerequisites without a running helper")
+            p.add_argument("--pid", type=positive, default=argparse.SUPPRESS,
+                           help="with --local: select one physical RIFT PID")
+            p.add_argument("--basis", type=Path, default=argparse.SUPPRESS,
+                           help="with --local: check a specific movement calibration file")
     for group, verbs in {
         "app":"list open show hide close", "route":"list load save new add update remove reorder select undo validate run context tag-zone",
         "zone":"status refresh", "library":"list save import load show select",
@@ -621,6 +628,15 @@ def human_preview(preview):
 
 def human_data(command, data):
     if not isinstance(data, dict): return False
+    if command == "doctor" and data.get("scope") == "local":
+        target = data.get("target") or {}
+        print(f"Local Waypoints on {data['host']} | RIFT PID {target.get('processId', 'unavailable')}")
+        labels = {"tkinter": "Tkinter", "nativeReader": "Native reader", "movementBasis": "Movement calibration",
+                  "rift": "RIFT window", "pose": "Calibrated pose"}
+        for key, check in data["checks"].items():
+            details = [check[field] for field in ("reason", "path", "tclVersion") if field in check]
+            print(f"{labels[key]}: {check['status']}" + (f" | {' | '.join(details)}" if details else ""))
+        return True
     if command in {"status", "doctor"}:
         target, app, route = data.get("target") or {}, data.get("app") or {}, data.get("route") or {}
         print(f"Host: {data.get('host', target.get('hostName', '?'))} | RIFT PID: {target.get('processId', 'unavailable')}")
@@ -912,6 +928,7 @@ def emit(envelope, machine=False):
         print(f"{error.get('code', 'failed')}: {error.get('message', 'Operation failed')}", file=sys.stderr)
         if error.get("hint"): print(error["hint"], file=sys.stderr)
         if command in MOVEMENT and data: human_data(command, data)
+        if command == "doctor" and data and data.get("scope") == "local": human_data(command, data)
 
 
 def offline_route(path, operation):
@@ -1067,6 +1084,8 @@ def main(argv=None):
             if not args.current and all(getattr(args,k) is None for k in ("name","x","z","kind")):
                 raise UsageError("route update requires --name, --current, or a manual --x/--z coordinate change")
         if command == "trail.save" and args.segment != "latest": args.segment = positive(args.segment)
+        if command == "doctor" and not getattr(args, "local", False) and (hasattr(args, "pid") or hasattr(args, "basis")):
+            raise UsageError("doctor --pid and --basis require --local")
         if command in {"route.list", "route.validate"} and args.file:
             envelope = offline_route(args.file, command)
         elif command == "receipt.show":
@@ -1077,6 +1096,18 @@ def main(argv=None):
         elif command == "receipt.list":
             if not args.directory.is_dir(): raise ValueError("receipt directory does not exist")
             envelope = result(command, data={"files":[str(p.resolve()) for p in sorted({*args.directory.glob("waypoint-run-*.json"), *args.directory.glob("waypoint-input-*.jsonl")})], "inputSent":False})
+        elif command == "doctor" and getattr(args, "local", False):
+            if getattr(args, "session", None) is not None:
+                raise UsageError("doctor --local cannot select a helper session")
+            from scripts.launch_physical_waypoints import check_local_setup
+            data = check_local_setup(getattr(args, "pid", None), getattr(args, "basis", None))
+            error = None if data["ready"] else {
+                "code": "local-setup-blocked", "message": "Local Waypoints has missing or unavailable prerequisites.",
+                "exitCode": 2,
+            }
+            envelope = result(command, ok=data["ready"], status="completed" if data["ready"] else "blocked",
+                              data=data, error=error)
+            envelope["target"] = data["target"]
         elif command.startswith("diagnostics.") and getattr(args, "session", None) is None:
             from scripts import waypoint_cli_protocol as protocol
             sessions = protocol.discover_sessions()

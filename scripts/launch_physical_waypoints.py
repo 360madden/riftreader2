@@ -15,7 +15,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts import physical_rift
-from scripts.physical_waypoints import PhysicalAdapter, launch_window
+from scripts.physical_waypoints import PhysicalAdapter, launch_window, movement_basis_path
 
 
 def start_window_process(arguments):
@@ -23,6 +23,59 @@ def start_window_process(arguments):
     return subprocess.Popen(command, cwd=ROOT, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL,
                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+
+def _check_tkinter():
+    try:
+        import tkinter
+    except (ImportError, OSError):
+        return {"status": "blocked", "reason": "tkinter-unavailable"}
+    try:
+        version = tkinter.Tcl().eval("info patchlevel")
+    except tkinter.TclError:
+        return {"status": "blocked", "reason": "tcl-initialization-failed"}
+    return {"status": "available", "tclVersion": version}
+
+
+def check_local_setup(physical_pid=None, basis=None):
+    """Check local Waypoints setup without a GUI, control ownership or game input."""
+    host = socket.gethostname().upper()
+    if not physical_rift.valid_host_name(host):
+        raise ValueError("invalid-local-host")
+
+    basis_path = movement_basis_path(host, basis).resolve()
+    reader = physical_rift.NATIVE_EXE
+    checks = {"tkinter": _check_tkinter(), "nativeReader": {"status": "available", "path": str(reader)},
+              "movementBasis": {"status": "present", "path": str(basis_path)}}
+    if not reader.is_file():
+        checks["nativeReader"].update(status="blocked", reason="native-reader-not-built")
+    if not basis_path.is_file():
+        checks["movementBasis"].update(status="blocked", reason="movement-basis-missing")
+
+    selection = physical_rift.select_physical(host, physical_pid)
+    target = selection.get("target") if selection["status"] == "ready" else None
+    if target is None:
+        checks["rift"] = {"status": "blocked", "reason": selection["reason"]}
+    elif type(target.get("hwnd")) is not int or target["hwnd"] <= 0:
+        checks["rift"] = {"status": "blocked", "reason": "rift-window-unavailable"}
+    else:
+        checks["rift"] = {"status": "available"}
+
+    checks["pose"] = {"status": "not-checked"}
+    if all(checks[key]["status"] != "blocked" for key in ("nativeReader", "movementBasis", "rift")):
+        try:
+            # The adapter validates basis host/build/player and reads the native pose on construction.
+            adapter = PhysicalAdapter(host, target["processId"], basis_path)
+            if adapter.target != target:
+                raise ValueError("rift-identity-changed")
+            checks["pose"] = {"status": "available", "bearing": adapter.initial_pose.bearing,
+                              "calibrationBinding": adapter.binding}
+        except (OSError, ValueError) as error:
+            checks["pose"] = {"status": "blocked", "reason": str(error)}
+
+    return {"scope": "local", "host": host, "target": target,
+            "ready": all(check["status"] != "blocked" for check in checks.values()),
+            "checks": checks, "inputSent": False}
 
 
 def main(argv=None):

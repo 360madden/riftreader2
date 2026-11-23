@@ -59,6 +59,53 @@ class LauncherTests(unittest.TestCase):
                          getattr(launcher.subprocess, "CREATE_NO_WINDOW", 0))
         select.assert_not_called()
 
+    def test_local_doctor_reports_independent_missing_prerequisites(self):
+        with patch.object(waypoints, "ROOT", self.root), \
+             patch.object(launcher.socket, "gethostname", return_value="rift-station"), \
+             patch.object(launcher, "_check_tkinter", return_value={"status": "blocked", "reason": "tkinter-unavailable"}), \
+             patch.object(launcher.physical_rift, "NATIVE_EXE", self.root / "missing.exe"), \
+             patch.object(launcher.physical_rift, "select_physical",
+                          return_value={"status": "blocked", "reason": "not-running"}) as select, \
+             patch.object(launcher, "PhysicalAdapter") as adapter, \
+             patch.object(launcher, "launch_window") as window:
+            report = launcher.check_local_setup()
+        self.assertFalse(report["ready"])
+        self.assertFalse(report["inputSent"])
+        self.assertEqual(report["checks"]["nativeReader"]["reason"], "native-reader-not-built")
+        self.assertEqual(report["checks"]["rift"]["reason"], "not-running")
+        self.assertEqual(report["checks"]["movementBasis"]["path"],
+                         str(self.root / "config" / "physical-movement-basis.rift-station.json"))
+        self.assertEqual(report["checks"]["pose"]["status"], "not-checked")
+        select.assert_called_once_with("RIFT-STATION", None)
+        adapter.assert_not_called()
+        window.assert_not_called()
+
+    def test_local_doctor_checks_explicit_calibration_and_exact_process(self):
+        basis_path = self.root / "measured basis.json"
+        basis_path.touch()
+        reader = self.root / "reader.exe"
+        reader.touch()
+        target = {"processId": 7, "hwnd": 11, "processStartUtcTicks": "123"}
+        with patch.object(launcher.socket, "gethostname", return_value="RIFT-STATION"), \
+             patch.object(launcher, "_check_tkinter", return_value={"status": "available"}), \
+             patch.object(launcher.physical_rift, "NATIVE_EXE", reader), \
+             patch.object(launcher.physical_rift, "select_physical",
+                          return_value={"status": "ready", "target": target}) as select, \
+             patch.object(launcher, "PhysicalAdapter") as adapter:
+            adapter.return_value.target = target
+            adapter.return_value.initial_pose.bearing = 12.0
+            adapter.return_value.binding = {"mode": "measured-epoch"}
+            good = launcher.check_local_setup(7, basis_path)
+            self.assertTrue(good["ready"])
+            self.assertEqual(good["checks"]["pose"]["calibrationBinding"], {"mode": "measured-epoch"})
+            select.assert_called_once_with("RIFT-STATION", 7)
+            adapter.assert_called_once_with("RIFT-STATION", 7, basis_path.resolve())
+
+            adapter.return_value.target = dict(target, processStartUtcTicks="456")
+            changed = launcher.check_local_setup(7, basis_path)
+            self.assertFalse(changed["ready"])
+            self.assertEqual(changed["checks"]["pose"]["reason"], "rift-identity-changed")
+
     def test_default_waits_when_absent_or_ambiguous(self):
         for reason in ("not found", "ambiguous"):
             with self.subTest(reason=reason), \

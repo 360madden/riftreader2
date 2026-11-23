@@ -464,6 +464,12 @@ def read_stationary(adapter, stop):
     return second
 
 
+def movement_basis_path(host, basis_path=None):
+    if basis_path is not None:
+        return Path(basis_path)
+    return ROOT / "config" / f"physical-movement-basis.{host.lower()}.json"
+
+
 class PhysicalAdapter:
     """Fresh epoch-pinned input, with reusable numerical calibration seeds."""
 
@@ -478,8 +484,7 @@ class PhysicalAdapter:
         self.pid = pid = self.target["processId"]
         if type(self.target.get("hwnd")) is not int or self.target["hwnd"] <= 0:
             raise WaypointError("RIFT window is not ready; wait for the game window")
-        basis_path = (ROOT / "config" / f"physical-movement-basis.{host.lower()}.json"
-                      if basis_path is None else Path(basis_path))
+        basis_path = movement_basis_path(host, basis_path)
         if not basis_path.exists():
             raise WaypointError(f"Movement calibration for {host} is missing at {basis_path}. "
                                 "Supply --basis with a measured basis for this host, build and player.")

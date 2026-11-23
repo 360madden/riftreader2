@@ -9,9 +9,42 @@ from unittest.mock import patch
 
 from scripts import waypoint_cli_protocol as protocol
 from scripts import waypoints_cli as cli
+from scripts import launch_physical_waypoints as launcher
 
 
 class CliTests(unittest.TestCase):
+    def test_local_doctor_works_without_session_lookup_or_window_launch(self):
+        target = {"processId": 41, "hwnd": 100}
+        data = {"scope": "local", "host": "RIFT-STATION", "target": target,
+                "checks": {"movementBasis": {"status": "blocked", "reason": "movement-basis-missing"}},
+                "ready": False, "inputSent": False}
+        with patch.object(launcher, "check_local_setup", return_value=data) as check, \
+             patch.object(protocol, "resolve_session") as resolve, \
+             patch.object(launcher, "start_window_process") as spawn:
+            code, out, _ = self.call("doctor", "--local", "--pid", "41", "--basis", "local.json", "--json")
+            self.assertEqual(code, 2)
+            result = json.loads(out)
+            self.assertEqual(result["target"], target)
+            self.assertEqual(result["error"]["code"], "local-setup-blocked")
+            self.assertFalse(result["data"]["inputSent"])
+            check.assert_called_once_with(41, Path("local.json"))
+            code, out, _ = self.call("doctor", "--local")
+            self.assertEqual(code, 2)
+            self.assertIn("Movement calibration: blocked | movement-basis-missing", out)
+            resolve.assert_not_called()
+            spawn.assert_not_called()
+
+    def test_doctor_requires_local_scope_for_pid_or_basis_and_keeps_session_request(self):
+        for args in (("--pid", "41"), ("--basis", "local.json"), ("--local", "--session", "chosen")):
+            with self.subTest(args=args), patch.object(launcher, "check_local_setup") as check:
+                code, _, _ = self.call("doctor", *args, "--json")
+                self.assertEqual(code, 2)
+                check.assert_not_called()
+        with patch.object(protocol, "resolve_session", return_value={}), \
+             patch.object(protocol, "request", return_value=cli.result("doctor", data={})) as request:
+            self.assertEqual(self.call("doctor", "--json")[0], 0)
+            self.assertEqual(request.call_args.args[1:], ("doctor", {}))
+
     def test_machine_json_survives_legacy_windows_output_encoding(self):
         raw = io.BytesIO()
         stream = io.TextIOWrapper(raw, encoding="cp1252")
