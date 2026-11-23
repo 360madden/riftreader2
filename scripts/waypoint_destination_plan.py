@@ -129,6 +129,19 @@ def _riftworld_tools(root, python):
     return world_root, query_tool, executable
 
 
+def _configured_riftworld_upstream(override):
+    configured = override if override is not None else os.environ.get("RR2_RIFTWORLD_UPSTREAM")
+    if not configured:
+        return None
+    upstream = Path(configured)
+    if upstream.anchor.startswith(("\\", "//")):
+        raise ValueError(f"Local RiftAssetDumper checkout is unavailable at {upstream}")
+    upstream = upstream.resolve()
+    if upstream.anchor.startswith(("\\", "//")) or not upstream.is_dir():
+        raise ValueError(f"Local RiftAssetDumper checkout is unavailable at {upstream}")
+    return upstream
+
+
 def check_dependencies(*, riftworld_root=None, riftworld_python=None, riftworld_upstream=None,
                        build=None, runner=subprocess.run):
     """Check the selected local navigation toolchain without a game session or build."""
@@ -140,9 +153,13 @@ def check_dependencies(*, riftworld_root=None, riftworld_python=None, riftworld_
         return dict(result, failedCheck="riftworld-paths", reason=str(error))
     result["riftWorldRuntime"] = {"checkout": str(root), "python": str(python)}
     try:
+        upstream = _configured_riftworld_upstream(riftworld_upstream)
+    except (OSError, ValueError) as error:
+        return dict(result, failedCheck="riftassetdumper-path", reason=str(error))
+    try:
         command = [str(python), "-B", "-c", RIFTWORLD_STARTUP_PROBE,
                    str(Path(build).absolute()) if build is not None else "",
-                   str(Path(riftworld_upstream).absolute()) if riftworld_upstream is not None else ""]
+                   str(upstream) if upstream is not None else ""]
         completed = runner(command, cwd=root, text=True, capture_output=True, check=False, timeout=30)
         report = json.loads(completed.stdout)
         if (not isinstance(report, dict) or report.get("status") not in {"ready", "blocked"}
@@ -845,13 +862,8 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
         prepared = None
         preparation_owner = None
         identity_hint = {}
-        if riftworld_upstream is not None:
-            upstream = Path(riftworld_upstream)
-            if upstream.anchor.startswith(("\\", "//")):
-                raise ValueError(f"Local RiftAssetDumper checkout is unavailable at {upstream}")
-            upstream = upstream.resolve()
-            if upstream.anchor.startswith(("\\", "//")) or not upstream.is_dir():
-                raise ValueError(f"Local RiftAssetDumper checkout is unavailable at {upstream}")
+        upstream = _configured_riftworld_upstream(riftworld_upstream) if not preparing else None
+        if upstream is not None:
             inputs["originalBuild"] = inputs["build"]
             build = _relocate_navigation_build(inputs["originalBuild"], output / "navigation-build", upstream)
             inputs["build"] = _reference(build)
@@ -1105,7 +1117,8 @@ def parser():
     result.add_argument("--riftworld-python", type=Path,
                         help="RiftWorld Python (default: RR2_RIFTWORLD_PYTHON or that checkout's .venv)")
     result.add_argument("--riftworld-upstream", type=Path,
-                        help="Local pinned RiftAssetDumper checkout for a copied --build")
+                        help="local pinned RiftAssetDumper checkout for preflight or a saved build "
+                             "(default: RR2_RIFTWORLD_UPSTREAM when set)")
     result.add_argument("--native-receipt", dest="native_receipts", type=Path, action="append", default=[])
     result.add_argument("--native-context", type=Path)
     for name, default in (("native-start", None), ("native-end", None),

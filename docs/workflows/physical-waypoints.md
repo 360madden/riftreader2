@@ -25,14 +25,15 @@ if (!$rr2Python) { $rr2Python = 'python' }
 ```
 
 Add `--build PATH` to verify a saved Detour build and its artifacts. If its
-recorded dependency path is unavailable, pass the local pinned checkout with
-`--riftworld-upstream PATH` to check the build against those dependencies.
+recorded dependency path is unavailable, set `RR2_RIFTWORLD_UPSTREAM` to the
+local pinned RiftAssetDumper checkout. Both dependency checks use this setting,
+including `rr2-check-dependencies.cmd --workflow prepared-maps`.
+`--riftworld-upstream PATH` takes precedence when passed to the planner.
 
-When a saved Detour build records a different machine's RiftAssetDumper path,
-pass `--riftworld-upstream` with the path to the local `cache\RiftAssetDumper`
-checkout and the normal `--build` arguments. Use the pinned dependency revision
-and matching Recast and Detour JARs. The planner verifies the saved mesh and
-prepared OBJ while copying the build into `navigation-build` under the new
+The same local checkout setting applies when planning with a saved `--build`.
+Use the pinned dependency revision and matching Recast and Detour JARs. The
+planner verifies the saved mesh and prepared OBJ while copying the build into
+`navigation-build` under the new
 output directory. RiftWorld verifies the build identity and dependencies when
 it opens that copy. Bring the exact WorldPatch and its referenced files as well
 as the Detour build. The plan records hashes for both build manifests.

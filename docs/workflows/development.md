@@ -141,7 +141,7 @@ movement calibration measured on the Windows host that will run Waypoints.
 | --- | --- | --- |
 | Full development validation | `RIFTREADER2_DOTNET`, `RIFTREADER2_LUA_PYTHON` or `RIFTREADER2_PYTHON` | [Pinned SDK and prepared Python](#restore-build-and-test) |
 | Physical workflows and Waypoints | `RIFTREADER2_PYTHON` | Python with Tcl/Tk for Waypoints and Pillow for WGC |
-| Waypoints prepared maps | `RR2_RIFTWORLD_ROOT`, `RR2_RIFTWORLD_PYTHON`, `JAVA_HOME` | Git on `PATH` and [local RiftWorld, JPype, Java and pinned navigation dependencies](physical-waypoints.md#prepared-map-destinations) |
+| Waypoints prepared maps | `RR2_RIFTWORLD_ROOT`, `RR2_RIFTWORLD_PYTHON`, `RR2_RIFTWORLD_UPSTREAM`, `JAVA_HOME` | Git on `PATH` and [local RiftWorld, JPype, Java and pinned navigation dependencies](physical-waypoints.md#prepared-map-destinations) |
 | Both native physical tools | `RR2_PHYSICAL_TOOLS_ROOT` | [Published or copied tools bundle](#publish-both-physical-tools-for-local-use) |
 | Native physical reads and Waypoints | `RR2_NATIVE_READER` | [Published Live reader](#publish-the-local-native-reader) |
 | Installed physical addons | `RR2_RIFT_ADDONS_ROOT` | Optional absolute local AddOns directory, with Windows Documents used by default |

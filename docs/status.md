@@ -1,5 +1,7 @@
 # Current status
 
+**2026-11-23 — prepared maps accept a separate local RiftAssetDumper checkout.** On LEGION, `RR2_RIFTWORLD_UPSTREAM` selected a pinned checkout in a different folder for both the shared preflight and the saved Watch destination. The planner reproduced the same four-point Detour candidate and preserved the retained build. An unavailable setting was refused, and the explicit option took precedence. **102 focused tests and 50 subtests passed.** [Prepared-map setup](workflows/physical-waypoints.md#prepared-map-destinations) · [LEGION replay proof](../artifacts/prepared-map-configured-upstream-legion-20261123.json)
+
 **2026-11-23 — one bundle root selects the published native reader and WGC probe.** On LEGION, `RR2_PHYSICAL_TOOLS_ROOT` selected both copied executables from outside the checkout. Nine of ten startup checks passed. Both tools refused a relative bundle root. **151 focused tests and 158 subtests passed.** [Bundle setup](workflows/development.md#publish-both-physical-tools-for-local-use) · [Startup results](../artifacts/physical-preflight-single-bundle-legion-20261123.json)
 
 **2026-11-23 — the verified 0.16.4-dev Workbridge CLI reached the active LEGION catalog.** The default CLI reported a runtime mismatch. Pointing `RR2_WORKBRIDGE_CLI_ROOT` at the verified release payload returned the active **0.16.4-dev** catalog. The deployment still lacked all three capture runners. Both checks were read-only and attempted no capture. [Catalog comparison](../artifacts/workbridge-matching-cli-legion-20261123.json)

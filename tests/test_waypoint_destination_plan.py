@@ -112,14 +112,34 @@ class DestinationPlanTests(unittest.TestCase):
             calls.append((command, kwargs))
             return subprocess.CompletedProcess(command, 0, json.dumps(runtime), "")
 
-        result = bridge.check_dependencies(riftworld_root=self.world, riftworld_python=sys.executable,
-                                           riftworld_upstream=upstream, build=self.build, runner=run)
+        with patch.dict(bridge.os.environ, {"RR2_RIFTWORLD_UPSTREAM": str(self.root / "unused override")}):
+            result = bridge.check_dependencies(riftworld_root=self.world, riftworld_python=sys.executable,
+                                               riftworld_upstream=upstream, build=self.build, runner=run)
         command, kwargs = calls[0]
         self.assertEqual(command[:3], [str(Path(sys.executable).resolve()), "-B", "-c"])
         self.assertEqual(command[-2:], [str(self.build.absolute()), str(upstream.absolute())])
         self.assertEqual(kwargs["cwd"], self.world.resolve())
         self.assertEqual(result["navigationRuntime"], runtime)
         self.assertFalse(result["inputSent"] or result["currentRouteChanged"])
+
+    def test_dependency_check_uses_configured_upstream_and_refuses_a_missing_override(self):
+        upstream = self.world / "separate dependency checkout"
+        upstream.mkdir()
+        runtime = {"status": "ready", "pipelineCheckout": str(upstream)}
+        process = subprocess.CompletedProcess([], 0, json.dumps(runtime), "")
+        with patch.dict(bridge.os.environ, {"RR2_RIFTWORLD_UPSTREAM": str(upstream)}), \
+                patch.object(bridge.subprocess, "run", return_value=process) as run:
+            result = bridge.check_dependencies(riftworld_root=self.world, riftworld_python=sys.executable,
+                                               runner=run)
+        self.assertEqual(run.call_args.args[0][-1], str(upstream.resolve()))
+        self.assertEqual(result["status"], "ready")
+
+        with patch.dict(bridge.os.environ, {"RR2_RIFTWORLD_UPSTREAM": str(upstream / "missing")}), \
+                patch.object(bridge.subprocess, "run") as run:
+            result = bridge.check_dependencies(riftworld_root=self.world, riftworld_python=sys.executable,
+                                               runner=run)
+        self.assertEqual(result["failedCheck"], "riftassetdumper-path")
+        run.assert_not_called()
 
     def test_dependency_cli_refuses_to_execute(self):
         with patch.object(bridge, "check_dependencies") as check, contextlib.redirect_stderr(io.StringIO()):
@@ -145,7 +165,8 @@ class DestinationPlanTests(unittest.TestCase):
     def test_existing_build_can_use_a_local_copy_of_pinned_dependencies(self):
         upstream, document = self.retained_build()
         original = self.build.read_bytes()
-        result = self.plan(native=False, riftworld_upstream=upstream)
+        with patch.dict(bridge.os.environ, {"RR2_RIFTWORLD_UPSTREAM": str(upstream)}):
+            result = self.plan(native=False)
         command, _ = self.calls[0]
         copied = Path(command[command.index("--build") + 1])
         self.assertEqual(copied, self.root / "plan" / "navigation-build" / "navigation.json")
