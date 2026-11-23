@@ -183,11 +183,11 @@ that completed setup so a new shell or Explorer can find it.
 
 Registration creates `.local/physical-python-link` as a Windows directory
 junction after it runs the startup checks for the core interpreter and each
-installed optional environment, including the installed DXcam wheel's runtime
-files when the overlay environment is present. Use an environment prepared at
-its current location on this host. The interpreters stay at their installed
-path. Each tool uses an explicit interpreter override first, then the registered
-setup, then the checkout's default setup.
+installed optional environment. For the overlay environment, it checks the
+Qt Windows platform plugin and the installed DXcam wheel's runtime files.
+Use an environment prepared at its current location on this host. The
+interpreters stay at their installed path. Each tool uses an explicit interpreter
+override first, then the registered setup, then the checkout's default setup.
 
 To replace the checkout's Python junction with a verified local setup, run
 `--use-existing` with `--replace-link`. If the selected Python fails to start,
@@ -225,9 +225,10 @@ movement calibration measured on the Windows host that will run Waypoints.
 Run the startup checks on the computer where you will use RR2. The command
 reports each workflow in JSON and exits with code 2 if a selected check is
 blocked. It uses the same Python selection as the Waypoints launchers. Repeat
-`--workflow` to check a subset. Qt imports the marker presenter and Rerun prints
-the viewer version without opening windows. Game process identity and live
-addon publishers are verified separately during acquisition.
+`--workflow` to check a subset. Qt imports the marker presenter and checks that
+its Windows platform plugin can load. Rerun prints the viewer version. These
+checks open no windows. Game process identity and live addon publishers are
+verified separately during acquisition.
 
 The ReaderBridge check looks for `ReaderBridge/RiftAddon.toc` and
 `ReaderBridge/ReaderBridge.lua` under the configured AddOns root. It reports

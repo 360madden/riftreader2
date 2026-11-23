@@ -61,7 +61,8 @@ def _check_environment(name, python):
         _run([*command, "-c", "import tkinter; tkinter.Tcl(); from PIL import Image"],
              "Check Waypoints and WGC imports")
     elif name == "overlay":
-        _run([*command, "-c", "from scripts import qt_waypoint_overlay; import numpy; import comtypes; "
+        _run([*command, "-m", "scripts.qt_waypoint_overlay"], "Check Qt Windows platform plugin")
+        _run([*command, "-c", "import numpy; import comtypes; "
               "from scripts.probe_dxcam import require_capture_python; require_capture_python()"],
              "Check Qt startup and DXcam installation")
     elif name == "rerun":

@@ -2,8 +2,10 @@
 from contextlib import redirect_stdout
 from io import StringIO
 import json
+from pathlib import Path
 import subprocess
 import sys
+from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
@@ -79,6 +81,19 @@ class PhysicalDependenciesTests(unittest.TestCase):
         self.assertEqual(result, {"status": "blocked", "pythonExecutable": str(missing_python),
                                   "reason": "overlay-python-unavailable"})
         run.assert_not_called()
+
+    def test_qt_check_uses_the_platform_plugin_probe_and_reports_its_failure(self):
+        with TemporaryDirectory() as directory:
+            interpreter = Path(directory) / "pythonw.exe"
+            interpreter.touch()
+            receipt = {"status": "blocked", "reason": "qt-windows-platform-plugin-missing",
+                       "pluginPath": str(Path(directory) / "platforms/qwindows.dll")}
+            with patch.object(preflight.physical_view_tools, "overlay_python", return_value=interpreter), \
+                    patch.object(preflight, "run_check", return_value=subprocess.CompletedProcess(
+                        [], 2, json.dumps(receipt), "")) as run:
+                report = preflight.check_workflow("qt", None)
+            self.assertEqual(report, dict(receipt, pythonExecutable=str(interpreter), exitCode=2))
+            run.assert_called_once_with(interpreter, ("-m", "scripts.qt_waypoint_overlay"), cwd=preflight.ROOT)
 
     def test_optional_reports_work_without_site_packages_in_the_caller(self):
         missing_python = str(preflight.ROOT / "missing-test-view-venv/Scripts/python.exe")

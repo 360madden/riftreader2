@@ -47,18 +47,16 @@ def check_workflow(workflow, command):
             python = physical_view_tools.overlay_python(ROOT)
             if not python.is_file():
                 return {"status": "blocked", "pythonExecutable": str(python), "reason": "overlay-python-unavailable"}
-            probe = run_check(python, ("-c", "from scripts import qt_waypoint_overlay"), cwd=ROOT)
-            result = {"status": "ready", "pythonExecutable": str(python), "exitCode": probe.returncode}
-            return result if probe.returncode == 0 else dict(result, status="blocked", reason="qt-overlay-import-failed")
-
-        python = sys.executable
-        if workflow == "dxcam":
-            python = physical_view_tools.dxcam_python()
-            if not python.is_file():
-                return {"status": "blocked", "pythonExecutable": str(python),
-                        "reason": "desktop-capture-environment-unavailable"}
-        script, *args = command
-        probe = run_check(python, (str(ROOT / "scripts" / script), *args))
+            probe = run_check(python, ("-m", "scripts.qt_waypoint_overlay"), cwd=ROOT)
+        else:
+            python = sys.executable
+            if workflow == "dxcam":
+                python = physical_view_tools.dxcam_python()
+                if not python.is_file():
+                    return {"status": "blocked", "pythonExecutable": str(python),
+                            "reason": "desktop-capture-environment-unavailable"}
+            script, *args = command
+            probe = run_check(python, (str(ROOT / "scripts" / script), *args))
     except subprocess.TimeoutExpired:
         return {"status": "blocked", "reason": "dependency-check-timed-out"}
     except (OSError, ValueError) as error:
@@ -68,6 +66,14 @@ def check_workflow(workflow, command):
         receipt = json.loads(probe.stdout)
     except ValueError:
         receipt = None
+    if workflow == "qt":
+        result = {"status": "blocked", "pythonExecutable": str(python), "exitCode": probe.returncode}
+        if isinstance(receipt, dict) and isinstance(receipt.get("pluginPath"), str):
+            if probe.returncode == 0 and receipt.get("status") == "ready":
+                return {**result, **receipt}
+            if probe.returncode == 2 and receipt.get("status") == "blocked" and isinstance(receipt.get("reason"), str):
+                return {**result, **receipt}
+        return dict(result, reason="qt-overlay-import-failed")
     if not isinstance(receipt, dict):
         return {"status": "blocked", "exitCode": probe.returncode, "reason": "invalid-dependency-check-output"}
     return {"status": "ready" if probe.returncode == 0 else "blocked", "exitCode": probe.returncode,

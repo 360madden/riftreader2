@@ -5,17 +5,43 @@ Win32 bridge keeps placement in signed physical pixels. No target focus or input
 """
 import ctypes
 from ctypes import wintypes as W
+import json
 import math
+import os
+from pathlib import Path
 import threading
 from copy import deepcopy
 
 from PIL import Image, ImageChops, ImageQt
-from PySide6.QtCore import QCoreApplication, QEvent, QEventLoop, QPointF, QRectF, Qt, QThread, QTimer
+from PySide6.QtCore import (
+    QCoreApplication, QEvent, QEventLoop, QLibraryInfo, QPluginLoader, QPointF, QRectF, Qt, QThread, QTimer,
+)
 from PySide6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QApplication, QWidget
 
 
 _application_ref = None
+
+
+def check_windows_platform_plugin():
+    """Load the Windows platform plugin without instantiating it or creating a window."""
+    override = os.environ.get("QT_QPA_PLATFORM_PLUGIN_PATH")
+    override_plugin = Path(override) / "qwindows.dll" if override else None
+    if override_plugin is not None and override_plugin.is_file():
+        loader = QPluginLoader(str(override_plugin.absolute()))
+    else:
+        loader = QPluginLoader("platforms/qwindows.dll")
+    path = loader.fileName()
+    if not path:
+        expected = Path(QLibraryInfo.path(QLibraryInfo.LibraryPath.PluginsPath)) / "platforms/qwindows.dll"
+        return {"status": "blocked", "reason": "qt-windows-platform-plugin-missing", "pluginPath": str(expected)}
+    keys = loader.metaData().get("MetaData", {}).get("Keys", [])
+    if "windows" not in keys:
+        return {"status": "blocked", "reason": "qt-windows-platform-plugin-invalid", "pluginPath": path}
+    if not loader.load():
+        return {"status": "blocked", "reason": "qt-windows-platform-plugin-load-failed",
+                "pluginPath": path, "detail": loader.errorString()}
+    return {"status": "ready", "pluginPath": path}
 
 
 def _application():
@@ -325,3 +351,9 @@ class QtOwnedWindow:
                 QCoreApplication.sendPostedEvents(self.widget, QEvent.Type.DeferredDelete)
                 self.widget = None
             self.on_close = None
+
+
+if __name__ == "__main__":
+    report = check_windows_platform_plugin()
+    print(json.dumps(report))
+    raise SystemExit(0 if report["status"] == "ready" else 2)
