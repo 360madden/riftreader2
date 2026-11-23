@@ -7,13 +7,13 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'resolve-validation-dotnet.ps1')
 Push-Location $repoRoot
 try {
     if (-not $LuaPython) {
         $localLuaPython = Join-Path $repoRoot 'artifacts/tools/lua-python/Scripts/python.exe'
         $LuaPython = if (Test-Path -LiteralPath $localLuaPython) { $localLuaPython } else { 'python' }
     }
-    if (-not $DotNet) { $DotNet = 'dotnet' }
     if (-not (Get-Command -Name $LuaPython -CommandType Application -ErrorAction SilentlyContinue)) {
         throw 'Python executable not found. Pass -LuaPython or set RIFTREADER2_LUA_PYTHON.'
     }
@@ -22,18 +22,10 @@ try {
     & $LuaPython scripts/check_lua_runtime.py
     if ($LASTEXITCODE -ne 0) { throw 'Lua 5.1 test runtime missing. Install requirements-lua-tests.txt or pass -LuaPython; see docs/workflows/development.md.' }
     $pinnedSdk = (Get-Content -LiteralPath global.json -Raw | ConvertFrom-Json).sdk.version
-    $dotnetCommand = Get-Command -Name $DotNet -CommandType Application -ErrorAction SilentlyContinue
-    if (-not $dotnetCommand) {
-        throw ".NET SDK $pinnedSdk executable not found. Pass -DotNet or set RIFTREADER2_DOTNET."
-    }
-    $DotNet = $dotnetCommand.Source
-    # A resolver failure reports installed SDKs and exits nonzero when the pin is unavailable.
-    $selectedSdk = & $DotNet --version
-    if ($LASTEXITCODE -ne 0 -or ($selectedSdk -join "`n").Trim() -ne $pinnedSdk) {
-        throw "Validation requires .NET SDK $pinnedSdk from global.json. Pass -DotNet or set RIFTREADER2_DOTNET to its executable."
-    }
+    $DotNet = Resolve-ValidationDotNet -RepositoryRoot $repoRoot -PinnedSdk $pinnedSdk -DotNet $DotNet
     if ($CheckPrerequisites) {
         Write-Output "Validation prerequisites available on $([Environment]::MachineName): .NET SDK $pinnedSdk and host Python test dependencies."
+        Write-Output "Selected .NET executable $DotNet"
         return
     }
     $solution = 'RiftReader2.slnx'

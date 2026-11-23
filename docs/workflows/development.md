@@ -416,8 +416,8 @@ candidate data honestly. A concise evidence note is enough for a useful finding.
 
 - PowerShell 7 (`pwsh`).
 - The exact .NET SDK selected by `global.json` (`10.0.302`). The SDK pin disables
-  roll-forward. If it is outside `PATH`, pass `-DotNet` or set
-  `RIFTREADER2_DOTNET` to the pinned executable.
+  roll-forward. For a custom location outside automatic discovery, pass `-DotNet`
+  or set `RIFTREADER2_DOTNET` to the pinned executable.
 - 64-bit Python 3.14 with Tcl/Tk for the full host suite. The Lua contract tests
   use `lupa==2.8` and its Lua 5.1 module.
 - A local RiftReader2 checkout. Run the commands from its root.
@@ -487,6 +487,7 @@ pwsh -NoProfile -File .\scripts\validate.ps1 -CheckPrerequisites
 The manifest includes the Lua, control and overlay requirements plus NumPy and
 pytest. The prerequisites check verifies the selected SDK, Python imports,
 Tcl initialization and the Lua 5.1 runtime without starting a game or window.
+It prints the absolute .NET executable path selected for this checkout.
 The Python test step runs both unittest cases and pytest functions with Qt set
 to offscreen. It uses the Release build of the standalone RIFT Update Analyzer
 and the .NET executable selected by validation. For Lua-only changes,
@@ -494,10 +495,17 @@ and the .NET executable selected by validation. For Lua-only changes,
 PowerShell cache checks import their inbox modules using the child PowerShell's
 installation directory.
 
-The validation script resolves Lua Python in this order: explicit
-`-LuaPython PATH`, environment variable `RIFTREADER2_LUA_PYTHON`,
-`artifacts/tools/lua-python/Scripts/python.exe`, then `python` on `PATH`.
-Examples:
+Validation checks .NET installations on `PATH`, `DOTNET_ROOT_X64`, `DOTNET_ROOT`,
+the repository's `artifacts/tools/dotnet` directory and standard Windows
+installation locations. It also checks the pinned sibling when a discovered
+installation directory is named for its SDK version. A match must report the
+exact SDK from this checkout. An explicit `-DotNet PATH` or
+`RIFTREADER2_DOTNET` selects only that executable, so an incompatible override
+fails directly.
+
+For Lua Python, the order is explicit `-LuaPython PATH`, environment variable
+`RIFTREADER2_LUA_PYTHON`, `artifacts/tools/lua-python/Scripts/python.exe`, then
+`python` on `PATH`.
 
 ```powershell
 pwsh -NoProfile -File .\scripts\validate.ps1 -LuaPython artifacts/tools/lua-python/Scripts/python.exe
