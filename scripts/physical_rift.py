@@ -88,6 +88,27 @@ def bind_native_reader(read, override):
     return partial(read, native_reader=path)
 
 
+_LEGACY_MOVEMENT_COMMANDS = {
+    "move-key": "Exact --pid is required.",
+    "follow-route": "Required option missing: --expect-sha256",
+}
+
+
+def _legacy_movement_command_available(reader, command):
+    # Older releases omit these commands from help. With no target or execute
+    # flag, their parsers return before opening a game process or sending input.
+    try:
+        code, text = observe_physical._run([reader, command, "--json"], 6,
+                                           env={**os.environ, "DOTNET_DISABLE_GUI_ERRORS": "1"})
+        result = json.loads(text)
+    except (OSError, ValueError):
+        return False
+    return (code == 2 and isinstance(result, dict) and result.get("status") == "blocked"
+            and result.get("inputSent") is False and result.get("target") is None
+            and result.get("errorType") == "InvalidDataException"
+            and result.get("reason") == _LEGACY_MOVEMENT_COMMANDS[command])
+
+
 def check_native_reader(expected_host=None, native_reader=None, *,
                         kind: str | Sequence[str] | None = None,
                         additional_commands: Sequence[str] = ()):
@@ -123,10 +144,14 @@ def check_native_reader(expected_host=None, native_reader=None, *,
     if not lines or lines[0] != "RiftReader2.Live native tools":
         return dict(result, reason="unrecognized-native-reader-help")
     advertised = {line.split(maxsplit=1)[0] for line in lines[1:] if line.strip()}
-    missing = sorted(required - advertised)
+    legacy = {command for command in sorted((required - advertised) & _LEGACY_MOVEMENT_COMMANDS.keys())
+              if _legacy_movement_command_available(reader, command)}
+    if legacy:
+        result["legacyCommandsVerified"] = sorted(legacy)
+    missing = sorted(required - advertised - legacy)
     if missing:
         return dict(result, reason="native-reader-commands-not-advertised", missingCommands=missing)
-    return dict(result, status="ready", nativeCommandsAdvertised=len(required))
+    return dict(result, status="ready", nativeCommandsAdvertised=len(required & advertised))
 
 
 def is_local_host(expected_host):

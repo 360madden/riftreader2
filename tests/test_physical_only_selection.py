@@ -111,6 +111,27 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
                 self.assertEqual(physical.check_native_reader("LEGION", published)["reason"], "host-mismatch")
             run.assert_not_called()
 
+    def test_legacy_control_probe_requires_a_no_input_parser_refusal(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            published = Path(temporary) / "RiftReader2.Live.exe"
+            published.touch()
+            help_text = "RiftReader2.Live native tools\nsample-current-facing --pid PID"
+            blocked = {"status": "blocked", "inputSent": False, "errorType": "InvalidDataException"}
+            for unsafe in (False, True):
+                with self.subTest(reports_input=unsafe), \
+                     patch.object(physical.observe_physical, "_run", side_effect=[
+                         (0, help_text), (2, json.dumps({**blocked, "inputSent": unsafe,
+                                                        "reason": "Required option missing: --expect-sha256"})),
+                         (2, json.dumps({**blocked, "reason": "Exact --pid is required."})),
+                     ]) as run:
+                    report = physical.check_native_reader("AMD-DESKTOP", published, kind="facing",
+                                                          additional_commands=("move-key", "follow-route"))
+                    self.assertEqual(report["status"], "blocked" if unsafe else "ready")
+                    self.assertEqual(report.get("missingCommands", []), ["follow-route"] if unsafe else [])
+                    self.assertEqual([call.args[0] for call in run.call_args_list],
+                                     [[published, "--help"], [published, "follow-route", "--json"],
+                                      [published, "move-key", "--json"]])
+
     def test_published_native_reader_option_reaches_only_the_selected_read(self):
         selection = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
         with tempfile.TemporaryDirectory() as temporary:

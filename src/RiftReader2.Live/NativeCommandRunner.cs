@@ -30,6 +30,8 @@ public static class NativeCommandRunner
                 await output.WriteLineAsync("sample-current-facing-stream --pid N --start-ticks N [--samples N] [--interval-ms N] [--duration-ms N] [--include-target true]\nJSONL body and optical camera candidate stream; use explicit --duration-ms 0 --samples 0 to run until cancellation or process failure.");
                 await output.WriteLineAsync("position-panel [--profile PATH] [--output-directory NEW_DIRECTORY]\nStart / Read / Stop window; defaults to the profile beside this executable and a new local evidence session.");
                 await output.WriteLineAsync("target-cycle --help  |  One bounded Tab press for the pinned foreground game.");
+                await output.WriteLineAsync("move-key --pid PID --key KEY  |  Inspect or send a bounded pulse to a pinned game.");
+                await output.WriteLineAsync("follow-route --expected-host HOST --pid PID  |  Follow a continuous route for the pinned game.");
                 await output.WriteLineAsync("sample-current-unit-levels --pid N --start-ticks N --keys CSV --output PATH [--sha256 HEX] (numeric level candidates only)");
                 return 0;
             }

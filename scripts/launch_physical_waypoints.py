@@ -40,11 +40,13 @@ def _check_tkinter():
 
 def _check_native_reader(host, *, startup):
     if startup:
-        probe = physical_rift.check_native_reader(host, kind="facing")
+        probe = physical_rift.check_native_reader(
+            host, kind="facing", additional_commands=("move-key", "follow-route"))
         check = {"status": "available" if probe["status"] == "ready" else "blocked"}
         if "nativeReaderPath" in probe:
             check["path"] = probe["nativeReaderPath"]
-        for field in ("reason", "detail", "exitCode", "missingCommands"):
+        for field in ("reason", "detail", "exitCode", "missingCommands",
+                      "nativeCommandsAdvertised", "legacyCommandsVerified"):
             if field in probe:
                 check[field] = probe[field]
         return check

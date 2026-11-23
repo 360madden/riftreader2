@@ -129,7 +129,8 @@ class LauncherTests(unittest.TestCase):
              patch.object(launcher, "_check_tkinter", return_value={"status": "available"}), \
              patch.object(launcher.physical_rift, "NATIVE_EXE", reader), \
              patch.object(launcher.physical_rift.observe_physical, "_run",
-                          return_value=(0, "RiftReader2.Live native tools\nsample-current-facing --pid PID")) as run, \
+                          return_value=(0, "RiftReader2.Live native tools\nsample-current-facing --pid PID\n"
+                                           "move-key --pid PID\nfollow-route --pid PID")) as run, \
              patch.object(launcher.physical_rift, "select_physical") as select, \
              patch.object(launcher, "PhysicalAdapter") as adapter:
             good = launcher.check_local_setup(basis=basis_path, dependencies_only=True)
@@ -153,7 +154,7 @@ class LauncherTests(unittest.TestCase):
             vector["vxCandidate"] = original_velocity
             basis_path.write_text(json.dumps(calibration), encoding="utf-8")
 
-            run.return_value = (0, "RiftReader2.Live native tools\nsample-current-vitals")
+            run.return_value = (0, "RiftReader2.Live native tools\nsample-current-vitals\nmove-key\nfollow-route")
             mismatched_reader = launcher.check_local_setup(basis=basis_path, dependencies_only=True)
             self.assertFalse(mismatched_reader["ready"])
             self.assertEqual(mismatched_reader["checks"]["nativeReader"]["missingCommands"],

@@ -8,6 +8,18 @@ public sealed class FollowRouteCommandTests
 {
     private const ulong Player = 42;
 
+    [Fact]
+    public async Task NativeHelpAdvertisesWaypointsMovementCommands()
+    {
+        if (!OperatingSystem.IsWindows() || !Environment.Is64BitProcess)
+            return;
+        using var output = new StringWriter();
+        Assert.Equal(0, await NativeCommandRunner.RunAsync(["--help"], output, TextWriter.Null));
+        var commands = output.ToString().Split('\n');
+        Assert.Contains(commands, line => line.StartsWith("move-key ", StringComparison.Ordinal));
+        Assert.Contains(commands, line => line.StartsWith("follow-route ", StringComparison.Ordinal));
+    }
+
     private static FollowRouteCommand.Options Options(double x = 0, double z = 10) =>
         new("AMD-DESKTOP", 5, 100, new string('A', 64), 8, Player,
             10, 200, x, z, @"C:\temp\stop.signal", 1800, true, true);
