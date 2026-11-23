@@ -238,13 +238,12 @@ Other readers cover [ability catalogs](scripts/sample_current_native_ability_cat
 <details>
 <summary><strong>🟩 Addon synchronization and live-session binding</strong></summary>
 
-The source addon is distinct from the package installed in RIFT. RR2 contains tools for comparing, synchronizing, and verifying addon installations on the host and configured labs.
+Check the RiftReader2 package installed under the local Windows Documents folder.
 
 ```powershell
-# Run from the repository root with the configured environment.
-python scripts/addon_sync.py check --target all
-python scripts/addon_sync.py sync --target all
-python scripts/addon_sync.py verify --target all
+$rr2Host = [Environment]::MachineName
+python scripts/addon_sync.py check --expected-host $rr2Host
+python scripts/addon_sync.py verify --expected-host $rr2Host
 ```
 
 The `sync` command **changes installed addon files**. Use it only after reviewing the target-specific workflow. File hashes matching on disk do **not** establish that the game has reloaded the addon or that fresh live telemetry is available.

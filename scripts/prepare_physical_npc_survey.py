@@ -37,14 +37,10 @@ def require(condition, reason):
 
 
 def default_casting_directory():
-    code, text = observe_physical._run([
-        observe_physical.POWERSHELL, "-NoProfile", "-NonInteractive", "-Command",
-        "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);"
-        "[Environment]::GetFolderPath('MyDocuments')"
-    ], timeout=10)
-    documents = Path(text.strip())
-    require(code == 0 and documents.is_absolute(), "provide-installed-casting-directory")
-    return documents / "RIFT" / "Interface" / "AddOns" / "RiftReader2Casting"
+    try:
+        return observe_physical.local_rift_addons_root() / "RiftReader2Casting"
+    except ValueError as error:
+        raise ValueError("npc-survey-prepare-provide-installed-casting-directory") from error
 
 
 def _verify_manifest(raw):

@@ -1,36 +1,44 @@
-# Addon synchronization — three RIFT installations
+# RiftReader2 addon verification and synchronization
 
 The Git-tracked `addon/RiftReader2/` directory is the authoritative Lua addon.
 The game loads installed files, **not** files from the Git checkout. The version
 label in `RiftAddon.toc` is not a reliable deployed-build identifier; use SHA-256.
 
-## Commands (main Windows PC, from `C:\work\riftreader2`)
+## Check the local Windows installation
 
 ```powershell
-C:\Python314\python.exe scripts\addon_sync.py check --target all
-C:\Python314\python.exe scripts\addon_sync.py sync --target lab2
-C:\Python314\python.exe scripts\addon_sync.py sync --target all
-C:\Python314\python.exe scripts\addon_sync.py verify --target all
+$rr2Host = [Environment]::MachineName
+python scripts/addon_sync.py check --expected-host $rr2Host
+python scripts/addon_sync.py verify --expected-host $rr2Host
 ```
 
-Use `--target pc|lab1|lab2|all`. The `--pc-folder PATH` option is for a
-different local RIFT Documents location. Targets are processed independently,
-and an error on one does not suppress the others. A nonzero exit code means at
-least one selected installation is not verified consistent.
+Run from the checkout with the configured Python. Check and verify default to
+the local PC and use Windows' Documents known folder, including OneDrive
+redirection. Pass `--pc-folder PATH` if RIFT uses another local addon directory.
+Exit code 2 identifies a failed installation or host check.
+
+The `sync` action changes installed files and requires an explicit target.
+For a reviewed local deployment, use `sync --target pc --expected-host $rr2Host`.
+The historical `lab1`, `lab2`, and `all` targets select the old VMware workflow
+explicitly. When several targets are selected, each gets its own result.
 
 ## Installation and guarantees
 
-- **PC:** Current Windows user's `OneDrive\Documents\RIFT\Interface\AddOns\RiftReader2`.
+- **PC:** `RIFT\Interface\AddOns\RiftReader2` under the current Windows user's
+  configured Documents folder.
 - **Lab 1/2:** Each guest's `C:\Users\mrkoo\OneDrive\Documents\RIFT\Interface\AddOns\RiftReader2`.
   VMware access is through `LabCodex._session` and `GuestSession`, rechecking
   that VM's own cached credentials for every login. No cloud Codex CLI call.
-- All six `RiftAddon.toc`, `wire.lua`, `producer.lua`, `live.lua`,
-  `guidance.lua`, and `main.lua` files must match the exact source hashes.
-  The manifest enforces load order: `guidance.lua` before `main.lua`.
+- All seven `RiftAddon.toc`, `wire.lua`, `producer.lua`, `reference.lua`,
+  `live.lua`, `guidance.lua`, and `main.lua` files must match the exact source hashes.
+  The manifest enforces the load order, including `guidance.lua` before `main.lua`.
+  The report lists mismatches explained by LF or CRLF in `lineEndingOnly`.
+  Those files still fail exact byte verification.
 - `check` and `verify` first inspect Offline, Pinned, Unpinned,
   RecallOnOpen and RecallOnDataAccess flags. They skip hashing files explicitly
   flagged for cloud recall and report `cloud-recall-risk` without changing
-  the installation. A pinned cloud reparse file can still require hydration:
+  the installation. Regular local files can pass check and verify based on
+  their hashes. A pinned cloud reparse file can still require hydration:
   these checks are **best-effort**, not a strict no-download guarantee.
   `sync` compares all files,
   validates staged bytes, preserves displaced files in unique backups, installs
@@ -51,10 +59,10 @@ least one selected installation is not verified consistent.
 
 ## Required sequence
 
-1. After changing the Lua addon or restoring/rebooting a VM, run `check --target all`.
+1. After changing the Lua addon, run the read-only check on the intended installation.
 2. Deploy only when the target game's addon can be safely reloaded and no
    controller action is in progress. Run `sync` on the affected target(s).
-3. Run `verify --target all`. If any target fails, preserve the report and
+3. Run `verify` for the installations you checked. If any target fails, preserve the report and
    do not start a live movement experiment using that addon.
 4. **Ask Joey and wait for approval before any RIFT UI reload**, then use
    the existing reviewed console workflow (or reload manually).

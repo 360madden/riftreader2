@@ -9,28 +9,33 @@ import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
-import os
 from pathlib import Path
 import re
+import socket
 import subprocess
 import sys
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts import observe_physical
+
 SOURCE = ROOT / "addon" / "RiftReader2"
 GUEST_SCRIPT = ROOT / "scripts" / "addon_sync_guest.ps1"
 FILES = ("RiftAddon.toc", "wire.lua", "producer.lua", "reference.lua", "live.lua", "guidance.lua", "main.lua")
 GUEST_ADDON = r"C:\Users\mrkoo\OneDrive\Documents\RIFT\Interface\AddOns\RiftReader2"
 GUEST_LOCAL = r"C:\Users\mrkoo\AppData\Local\RiftReader2\addon-sync"
-HOST_PS = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+HOST_PS = str(observe_physical.POWERSHELL)
 
 
 class AddonSyncError(RuntimeError):
     pass
 
 
-def sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
+def sha256(raw: bytes) -> str:
+    return hashlib.sha256(raw).hexdigest().upper()
 
 
 def manifest(source: Path = SOURCE) -> dict:
@@ -42,15 +47,22 @@ def manifest(source: Path = SOURCE) -> dict:
     if entries != list(FILES[1:]):
         raise AddonSyncError("addon-manifest-load-order-changed")
     hashes = {}
+    line_endings = {}
     for name in FILES:
         path = source / name
         if not path.is_file() or path.is_symlink() or not 0 < path.stat().st_size <= 1024 * 1024:
             raise AddonSyncError("invalid-addon-source:" + name)
-        hashes[name] = sha256(path)
+        raw = path.read_bytes()
+        hashes[name] = sha256(raw)
+        lf = raw.replace(b"\r\n", b"\n")
+        if b"\r" not in lf:
+            variants = {sha256(lf), sha256(lf.replace(b"\n", b"\r\n"))} - {hashes[name]}
+            if variants:
+                line_endings[name] = sorted(variants)
     git = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"],
                          capture_output=True, text=True, check=False)
     return {"schemaVersion": 1, "gitHead": git.stdout.strip() if git.returncode == 0 else None,
-            "files": hashes}
+            "files": hashes, "lineEndingVariants": line_endings}
 
 
 def report_from_file(path: Path, target: str, data: dict) -> dict:
@@ -72,8 +84,10 @@ def report_from_file(path: Path, target: str, data: dict) -> dict:
 
 def run_pc(mode: str, run_root: Path, source: Path, manifest_path: Path,
            *, folder: Path | None = None, no_pin: bool = False) -> dict:
-    target = folder or (Path.home() / "OneDrive" / "Documents" / "RIFT"
-                        / "Interface" / "AddOns" / "RiftReader2")
+    target = (observe_physical.local_rift_addons_root() / "RiftReader2"
+              if folder is None else folder.absolute())
+    if target.drive.startswith(("\\", "/")):
+        raise AddonSyncError("main-pc-addon-directory-must-be-local")
     if not target.is_dir():
         raise AddonSyncError("main-pc-addon-directory-missing")
     report = run_root / "pc-result.json"
@@ -88,7 +102,10 @@ def run_pc(mode: str, run_root: Path, source: Path, manifest_path: Path,
     completed = subprocess.run(argv, capture_output=True, text=True, timeout=150)
     if completed.returncode != 0:
         raise AddonSyncError("main-pc-script-exited:" + str(completed.returncode))
-    return report_from_file(report, "pc", {"mode": mode})
+    result = report_from_file(report, "pc", {"mode": mode})
+    if str(result.get("machine", "")).casefold() != socket.gethostname().casefold():
+        raise AddonSyncError("main-pc-addon-report-host-mismatch")
+    return result
 
 
 def run_lab(lab_name: str, mode: str, run_root: Path, source: Path,
@@ -133,9 +150,23 @@ def run_lab(lab_name: str, mode: str, run_root: Path, source: Path,
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("check", "sync", "verify"))
-    parser.add_argument("--target", choices=("pc", "lab1", "lab2", "all"), default="all")
+    parser.add_argument("--target", choices=("pc", "lab1", "lab2", "all"),
+                        help="default for check and verify: pc; required for sync")
+    parser.add_argument("--expected-host", help="verify the requested Windows hostname for the pc target")
     parser.add_argument("--pc-folder", type=Path, help="Override the detected local RIFT addon folder")
     args = parser.parse_args(argv)
+    if args.action == "sync" and args.target is None:
+        parser.error("sync requires an explicit --target")
+    target_scope = args.target or "pc"
+    if args.expected_host is not None:
+        if target_scope != "pc" or not observe_physical.valid_host_name(args.expected_host):
+            parser.error("--expected-host requires the pc target and a valid Windows hostname")
+        actual_host = socket.gethostname()
+        if actual_host.casefold() != args.expected_host.casefold():
+            print(json.dumps({"action": args.action, "targets": {"pc": {
+                "success": False, "error": "host-mismatch", "machine": actual_host,
+                "expectedHost": args.expected_host}}}, indent=2))
+            return 2
 
     expected = manifest()
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8]
@@ -143,8 +174,9 @@ def main(argv: list[str] | None = None) -> int:
     run_root.mkdir(parents=True, exist_ok=False)
     manifest_path = run_root / "manifest.json"
     manifest_path.write_text(json.dumps(expected, indent=2) + "\n", encoding="utf-8")
+    line_endings = expected.get("lineEndingVariants", {})
 
-    targets = ("pc", "lab1", "lab2") if args.target == "all" else (args.target,)
+    targets = ("pc", "lab1", "lab2") if target_scope == "all" else (target_scope,)
     results = {}
     for target in targets:
         try:
@@ -153,6 +185,13 @@ def main(argv: list[str] | None = None) -> int:
             results[target] = {"success": bool(result["success"]), "updated": result["updated"],
                                "issues": [{e["name"]: e["reason"]} for e in result["after"]
                                           if not e["matches"]], "report": result["report"]}
+            line_ending_only = [e["name"] for e in result["after"]
+                                if e["reason"] == "hash-mismatch"
+                                and e["sha256"] in line_endings.get(e["name"], ())]
+            if line_ending_only:
+                results[target]["lineEndingOnly"] = line_ending_only
+            if target == "pc":
+                results[target].update(machine=result["machine"], destination=result["destination"])
         except Exception as error:
             # Preserve later targets and do not print VM credentials or raw arguments.
             results[target] = {"success": False, "error": str(error)}

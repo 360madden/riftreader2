@@ -1,5 +1,8 @@
 # LLM-coordinated RIFT addon synchronization
 
+For current physical Windows work, use the [local addon verification workflow](addon-sync.md#check-the-local-windows-installation).
+The material below records the earlier three-installation workflow and its evidence.
+
 Decision: Joey, 2026-11-05. The active LLM is the coordinator during a requested
 work session. No new background synchronization service, scheduler, always-on
 coordinator or unreviewed three-way mirroring.

@@ -92,6 +92,19 @@ def _run(args, timeout=120, *, env=None):
                 proc.wait(timeout=10)
 
 
+def local_rift_addons_root():
+    """Resolve the Windows Documents known folder without selecting RIFT."""
+    code, text = _run([
+        POWERSHELL, "-NoProfile", "-NonInteractive", "-Command",
+        "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);"
+        "[Environment]::GetFolderPath('MyDocuments')",
+    ], timeout=10)
+    documents = Path(text.strip())
+    _require(code == 0 and documents.is_absolute() and not documents.drive.startswith(("\\", "/")),
+             "local-documents-directory-unavailable")
+    return documents / "RIFT" / "Interface" / "AddOns"
+
+
 def _identity(physical_pid=None, *, require_window=True):
     _require(physical_pid is None or
              (type(physical_pid) is int and 1 <= physical_pid <= 4294967295),

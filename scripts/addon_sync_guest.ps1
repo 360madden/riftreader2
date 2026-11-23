@@ -12,7 +12,7 @@ Set-StrictMode -Version Latest
 $names = @('RiftAddon.toc','wire.lua','producer.lua','reference.lua','live.lua','guidance.lua','main.lua')
 $manifest=$null
 $phase='initial'
-$result = [ordered]@{ schemaVersion=1; mode=$Mode; machine=$env:COMPUTERNAME;
+$result = [ordered]@{ schemaVersion=1; mode=$Mode; machine=[Environment]::MachineName;
     timestampUtc=[DateTime]::UtcNow.ToString('o'); destination=$Destination;
     before=@(); after=@(); updated=@(); backups=@(); success=$false; error=$null }
 function Hash-File([string]$Path) {
@@ -45,7 +45,9 @@ function Inspect-Installed([string]$Name,[string]$Expected) {
             try {
                 $entry.sha256=Hash-File $p
                 if ($entry.sha256 -ne $Expected) { $entry.reason='hash-mismatch' }
-                elseif (-not $NoPin -and -not $entry.pinned) { $entry.reason='not-pinned' }
+                elseif (-not $NoPin -and -not $entry.pinned -and ($Mode -eq 'sync' -or ($flags -band 1024))) {
+                    $entry.reason='not-pinned'
+                }
                 else { $entry.matches=$true; $entry.reason='ok' }
             } catch { $entry.reason='unreadable' }
         }
