@@ -52,14 +52,14 @@ requires a runnable build, including the companion files and .NET desktop
 runtime. Set `RR2_WGC_PROBE` to the absolute path of a locally published
 `PhysicalWgcProbe.exe` to use it for dependency checks and captures. The output
 gives the probe exit code if it fails and identifies the
-Python interpreter to use for a capture or for installing Pillow. Workbridge
-checks Node startup and version before checking registration of `desktop_windows`
-and `desktop_capture_window` on the running service. It also checks
-`dist/desktop-ui.mjs` and `dist/desktop-capture.mjs` in that deployment.
-A `RUNTIME_MISMATCH` includes the CLI version and the running service version.
-`desktop-workbridge-runner-files-missing` names the files that the service
-cannot launch from its deployment. Install those through Workbridge's staged
-update workflow.
+Python interpreter to use for a capture or for installing Pillow. The Workbridge
+check inspects `dist/desktop-ui.mjs` and `dist/desktop-capture.mjs` in the active
+deployment and checks the local Node version. With those prerequisites present,
+it checks registration of `desktop_windows` and `desktop_capture_window` on the
+running service. A `RUNTIME_MISMATCH` then gives the CLI and service versions.
+`missingFiles` lists deployed runners even when the configured CLI or Node is
+unavailable. Missing runners also prevent a Workbridge capture from selecting a
+RIFT process. Restore them through Workbridge's staged update workflow.
 
 The checks use read-only discovery and require no RIFT PID. Exit code `2` means
 a dependency in the selected scope is blocked. Run the capture separately with

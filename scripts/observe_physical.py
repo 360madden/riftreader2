@@ -163,10 +163,26 @@ def _workbridge_response(text):
     return entry
 
 
+def _missing_workbridge_capture_runners(bridge):
+    # The active service launches these relative to its own deployed dist directory.
+    missing = []
+    for relative in ("dist/desktop-ui.mjs", "dist/desktop-capture.mjs"):
+        path = bridge / relative
+        _plain_path(path)
+        if not path.is_file():
+            missing.append(relative)
+    return missing
+
+
 def check_workbridge_capture_service(bridge):
     """Check the authenticated tool catalog and the deployed desktop runner files."""
-    command = _workbridge_command(bridge)
-    details = {"nodeExecutable": str(command[0]), "cliPath": str(command[1])}
+    missing_files = _missing_workbridge_capture_runners(bridge)
+    details = {"missingFiles": missing_files} if missing_files else {}
+    try:
+        command = _workbridge_command(bridge)
+    except ValueError as error:
+        return {**details, "status": "blocked", "reason": str(error)}
+    details.update(nodeExecutable=str(command[0]), cliPath=str(command[1]))
     try:
         node_code, node_text = _run([command[0], "--version"], 5)
     except (OSError, ValueError, subprocess.SubprocessError):
@@ -179,6 +195,8 @@ def check_workbridge_capture_service(bridge):
     if int(version_match[1]) < MIN_WORKBRIDGE_NODE_MAJOR:
         return {**details, "status": "blocked", "reason": "desktop-node-version-unsupported",
                 "minimumNodeMajor": MIN_WORKBRIDGE_NODE_MAJOR}
+    if missing_files:
+        return {**details, "status": "blocked", "reason": "desktop-workbridge-runner-files-missing"}
     code, text = _run([*command, "--list-tools", "--timeout", "6", "--json"], 10)
     entry = _workbridge_response(text)
     if code != 0 or entry.get("ok") is not True:
@@ -205,17 +223,6 @@ def check_workbridge_capture_service(bridge):
     if missing:
         return {**details, "status": "blocked", "reason": "TOOL_NOT_FOUND", "runtimeVersion": version,
                 "missingTools": missing}
-    # Workbridge executes these scripts from the running deployment's dist directory.
-    # Having the files beside the CLI alone cannot satisfy the server-side runner.
-    missing_files = []
-    for relative in ("dist/desktop-ui.mjs", "dist/desktop-capture.mjs"):
-        path = bridge / relative
-        _plain_path(path)
-        if not path.is_file():
-            missing_files.append(relative)
-    if missing_files:
-        return {**details, "status": "blocked", "reason": "desktop-workbridge-runner-files-missing",
-                "runtimeVersion": version, "missingFiles": missing_files}
     return {**details, "status": "available", "runtimeVersion": version}
 
 
@@ -252,6 +259,7 @@ def capture_physical(expected_host, output, *, allow_foreground_change=False,
         _require(not output.exists() and output.parent.is_dir(), "fresh-output-required")
         bridge = workbridge_root()
         command = _workbridge_command(bridge)
+        _require(not _missing_workbridge_capture_runners(bridge), "desktop-workbridge-runner-files-missing")
         output.mkdir()
         before = _identity(physical_pid)
         _require(physical_pid is None or before.get("processId") == physical_pid,

@@ -32,8 +32,10 @@ class PhysicalTests(unittest.TestCase):
         self.enterContext(patch.object(physical, "NODE", self.node))
         self.enterContext(patch.object(physical, "BRIDGE", self.root / "default-bridge"))
         self.install_cli(physical.BRIDGE)
+        self.install_desktop_files(physical.BRIDGE)
         self.alternate = self.root / "alternate install" / "workbridge"
         self.install_cli(self.alternate)
+        self.install_desktop_files(self.alternate)
         self.host = patch.object(physical.socket, "gethostname", return_value="AMD-DESKTOP")
         self.host.start()
         self.addCleanup(self.host.stop)
@@ -135,8 +137,8 @@ class PhysicalTests(unittest.TestCase):
         for path, reason in cases:
             with self.subTest(path=path), patch.dict(physical.os.environ, RR2_WORKBRIDGE_NODE=path), \
                  patch.object(physical, "_identity") as identity, patch.object(physical, "_run") as run:
-                with self.assertRaisesRegex(ValueError, reason):
-                    physical.check_workbridge_capture_service(physical.BRIDGE)
+                self.assertEqual(physical.check_workbridge_capture_service(physical.BRIDGE),
+                                 {"status": "blocked", "reason": reason})
                 self.assertEqual(self.capture()["reason"], reason)
                 self.assertFalse((self.root / "run").exists())
                 identity.assert_not_called()
@@ -344,7 +346,6 @@ class PhysicalTests(unittest.TestCase):
         cli = cli_root / "scripts" / "workbridge-cli.mjs"
         cli.parent.mkdir(parents=True)
         cli.touch()
-        self.install_desktop_files(physical.BRIDGE)
         catalog = {"ok": True, "discovery": "tools", "serverVersion": "0.16.4-dev",
                    "tools": [{"name": "desktop_windows"}, {"name": "desktop_capture_window"}]}
         windows = {"schemaVersion": 1, "index": 0, "tool": "desktop_windows", "ok": True,
@@ -362,23 +363,31 @@ class PhysicalTests(unittest.TestCase):
         self.assertFalse((cli_root / ".local").exists())
         self.assertFalse((cli_root / ".tools").exists())
 
-    def test_catalog_registration_cannot_replace_deployed_desktop_files(self):
-        cli_root = self.root / "compatible CLI"
-        cli = cli_root / "scripts/workbridge-cli.mjs"
-        cli.parent.mkdir(parents=True)
-        cli.touch()
-        self.install_desktop_files(cli_root)
-        response = {"ok": True, "discovery": "tools", "serverVersion": "0.16.4-dev",
-                    "tools": [{"name": "desktop_windows"}, {"name": "desktop_capture_window"}]}
-        with patch.dict(physical.os.environ, RR2_WORKBRIDGE_CLI_ROOT=str(cli_root)), \
-             patch.object(physical, "_run", side_effect=[NODE_VERSION, (0, json.dumps(response))]) as run:
+    def test_staged_cli_runners_do_not_replace_deployed_files(self):
+        (physical.BRIDGE / "dist/desktop-capture.mjs").unlink()
+        cli = self.alternate / "scripts/workbridge-cli.mjs"
+        with patch.dict(physical.os.environ, RR2_WORKBRIDGE_CLI_ROOT=str(self.alternate)), \
+             patch.object(physical, "_run", return_value=NODE_VERSION) as run, \
+             patch.object(physical, "_identity") as identity, patch.object(physical, "_call") as call:
             result = physical.check_workbridge_capture_service(physical.BRIDGE)
+            self.assertEqual(self.capture()["reason"], "desktop-workbridge-runner-files-missing")
+            identity.assert_not_called()
+            call.assert_not_called()
+            self.assertFalse((self.root / "run").exists())
         self.assertEqual(result, {"status": "blocked", "reason": "desktop-workbridge-runner-files-missing",
-                                  "runtimeVersion": "0.16.4-dev", "cliPath": str(cli),
+                                  "cliPath": str(cli),
                                   "nodeExecutable": str(self.node), "nodeVersion": "v24.20.0",
-                                  "missingFiles": ["dist/desktop-ui.mjs", "dist/desktop-capture.mjs"]})
-        self.assertIn("--list-tools", run.call_args.args[0])
-        self.assertEqual(run.call_count, 2)
+                                  "missingFiles": ["dist/desktop-capture.mjs"]})
+        run.assert_called_once_with([self.node, "--version"], 5)
+
+    def test_runner_gaps_are_reported_even_when_node_is_missing(self):
+        (physical.BRIDGE / "dist/desktop-ui.mjs").unlink()
+        with patch.dict(physical.os.environ, RR2_WORKBRIDGE_NODE=str(self.root / "missing.exe")), \
+             patch.object(physical, "_run") as run:
+            result = physical.check_workbridge_capture_service(physical.BRIDGE)
+        self.assertEqual(result, {"status": "blocked", "reason": "desktop-node-runtime-unavailable",
+                                  "missingFiles": ["dist/desktop-ui.mjs"]})
+        run.assert_not_called()
 
     def test_explicit_invalid_or_missing_cli_refuses_without_using_default(self):
         cases = (("", "invalid-workbridge-cli-root"), ("relative", "invalid-workbridge-cli-root"),
@@ -387,8 +396,8 @@ class PhysicalTests(unittest.TestCase):
         for path, reason in cases:
             with self.subTest(path=path), patch.dict(physical.os.environ, RR2_WORKBRIDGE_CLI_ROOT=path), \
                  patch.object(physical, "_run") as run:
-                with self.assertRaisesRegex(ValueError, reason):
-                    physical.check_workbridge_capture_service(physical.BRIDGE)
+                self.assertEqual(physical.check_workbridge_capture_service(physical.BRIDGE),
+                                 {"status": "blocked", "reason": reason})
                 self.assertEqual(self.capture()["reason"], reason)
                 run.assert_not_called()
                 self.assertFalse((self.root / "run").exists())
