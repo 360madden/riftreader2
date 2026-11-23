@@ -66,12 +66,18 @@ def check_local_setup(physical_pid=None, basis=None, *, dependencies_only=False)
 
     if dependencies_only and physical_pid is not None:
         raise ValueError("dependency-check-does-not-select-rift")
-    basis_path = movement_basis_path(host, basis).absolute()
+    basis_check = {"status": "present"}
     checks = {"tkinter": _check_tkinter(),
               "nativeReader": _check_native_reader(host, startup=dependencies_only),
-              "movementBasis": {"status": "present", "path": str(basis_path)}}
-    if not (basis_path.is_file() or basis_path.is_dir()):
-        checks["movementBasis"].update(status="blocked", reason="movement-basis-missing")
+              "movementBasis": basis_check}
+    basis_path = None
+    try:
+        basis_path = movement_basis_path(host, basis).absolute()
+        basis_check["path"] = str(basis_path)
+        if not (basis_path.is_file() or basis_path.is_dir()):
+            basis_check.update(status="blocked", reason="movement-basis-missing")
+    except (OSError, ValueError) as error:
+        basis_check.update(status="blocked", reason=str(error))
 
     if dependencies_only:
         if checks["movementBasis"]["status"] == "present":

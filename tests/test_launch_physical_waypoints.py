@@ -257,6 +257,31 @@ class LauncherTests(unittest.TestCase):
             with self.assertRaisesRegex(waypoints.WaypointError, "invalid-waypoints-basis-path"):
                 waypoints.movement_basis_path("RIFT-STATION")
 
+    def test_invalid_calibration_does_not_hide_other_checks_or_start_the_adapter(self):
+        target = {"processId": 7, "hwnd": 42}
+        reader = {"status": "blocked", "reason": "native-reader-not-built"}
+        with patch.dict("os.environ", RR2_WAYPOINTS_BASIS="relative/basis.json"), \
+             patch.object(launcher.socket, "gethostname", return_value="RIFT-STATION"), \
+             patch.object(launcher, "_check_tkinter", return_value={"status": "available"}), \
+             patch.object(launcher, "_check_native_reader", return_value=reader), \
+             patch.object(launcher.physical_rift, "select_physical",
+                          return_value={"status": "ready", "target": target}) as select, \
+             patch.object(launcher, "PhysicalAdapter") as adapter:
+            dependencies = launcher.check_local_setup(dependencies_only=True)
+            select.assert_not_called()
+            live = launcher.check_local_setup(physical_pid=7)
+            select.assert_called_once_with("RIFT-STATION", 7)
+            adapter.assert_not_called()
+        for report in dependencies, live:
+            self.assertFalse(report["ready"])
+            self.assertFalse(report["inputSent"])
+            self.assertEqual(report["checks"]["tkinter"]["status"], "available")
+            self.assertEqual(report["checks"]["nativeReader"], reader)
+            self.assertEqual(report["checks"]["movementBasis"],
+                             {"status": "blocked", "reason": "invalid-waypoints-basis-path"})
+        self.assertEqual(live["checks"]["rift"]["status"], "available")
+        self.assertEqual(live["checks"]["pose"]["status"], "not-checked")
+
     def test_local_calibration_folder_takes_precedence_over_packaged_basis(self):
         local = self.root / ".local" / "waypoints-calibration" / "rift-station"
         local.mkdir(parents=True)
