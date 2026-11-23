@@ -3,6 +3,7 @@ from contextlib import redirect_stdout
 from io import StringIO
 import json
 from pathlib import Path
+import sys
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
@@ -83,6 +84,11 @@ class PhysicalPythonSetupTests(unittest.TestCase):
                 existing.mkdir(parents=True)
                 with self.assertRaisesRegex(ValueError, "Physical Python link already exists"):
                     tool.use_existing(setup)
+                marker = existing / "user-file"
+                marker.write_bytes(b"preserve directory contents")
+                with self.assertRaisesRegex(ValueError, "requires-directory-junction"):
+                    tool.use_existing(setup, replace_link=True)
+                self.assertEqual(marker.read_bytes(), b"preserve directory contents")
                 self.assertTrue(existing.is_dir())
             run.assert_not_called()
 
@@ -109,3 +115,43 @@ class PhysicalPythonSetupTests(unittest.TestCase):
                         tool.use_existing(prepared)
                     self.assertEqual([call.args[0][0] for call in run.call_args_list], [str(core), str(rerun)])
                     self.assertFalse((checkout / ".local").exists())
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows directory junctions")
+    def test_link_replacement_restores_the_original_if_publication_fails(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            checkout = root / "checkout"
+            link = checkout / ".local/physical-python-link"
+            link.parent.mkdir(parents=True)
+            original, replacement = root / "old Python", root / "new Python"
+            for directory in (original, replacement):
+                python = directory / tool.INTERPRETERS["RIFTREADER2_PYTHON"]
+                python.parent.mkdir(parents=True)
+                python.write_bytes(directory.name.encode())
+                (directory / ".ready").touch()
+            rename = Path.rename
+
+            def fail_publication(source, target):
+                if source.name == "new" and target == link:
+                    raise OSError("cannot publish junction")
+                return rename(source, target)
+
+            with patch.object(tool, "ROOT", checkout), patch.object(tool, "_check_environment"):
+                tool._create_junction(link, original)
+                try:
+                    with patch.object(Path, "rename", autospec=True, side_effect=fail_publication):
+                        with self.assertRaisesRegex(OSError, "cannot publish junction"):
+                            tool.use_existing(replacement, replace_link=True)
+                    self.assertEqual(link.resolve(strict=True), original)
+                    self.assertEqual(list(link.parent.iterdir()), [link])
+                    result = tool.use_existing(replacement, replace_link=True)
+                    self.assertEqual(result["RIFTREADER2_PYTHON"],
+                                     str(replacement / tool.INTERPRETERS["RIFTREADER2_PYTHON"]))
+                    self.assertEqual(link.resolve(strict=True), replacement)
+                    self.assertEqual(list(link.parent.iterdir()), [link])
+                    for directory in (original, replacement):
+                        self.assertEqual((directory / tool.INTERPRETERS["RIFTREADER2_PYTHON"]).read_bytes(),
+                                         directory.name.encode())
+                finally:
+                    if tool._is_junction(tool._link_stat(link)):
+                        link.rmdir()

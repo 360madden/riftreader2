@@ -183,6 +183,18 @@ location on this host. The interpreters stay at their installed path. Each tool
 uses an explicit interpreter override first, then the registered setup, then
 the checkout's default setup.
 
+To replace the checkout's Python junction with a verified local setup, run
+`--use-existing` with `--replace-link`. If the selected Python fails to start,
+the setup launcher tries a system Python. An explicit `RIFTREADER2_PYTHON`
+setting can select a working bootstrap interpreter.
+
+```powershell
+.\rr2-setup-python.cmd --expected-host $rr2Host --use-existing $rr2PythonRoot --replace-link
+```
+
+The command verifies the replacement before changing the junction and preserves
+both environment directories.
+
 ### Reuse local tools from a fresh checkout
 
 Set the paths you want to override in the shell that runs RR2. Keep the complete
