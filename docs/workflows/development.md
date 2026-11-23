@@ -97,10 +97,10 @@ Documents folder. Pass `--installed-casting-dir` for a custom installation.
 Run the capture command after the operator binds the nonce in RIFT.
 
 ```powershell
-python -B scripts/physical_nearby_units.py --expected-host $rr2Host --physical-pid CURRENT_PID --output-dir artifacts/NEW_NEARBY
+python -B scripts/physical_nearby_units.py --expected-host $rr2Host --physical-pid CURRENT_PID --include-levels --output-dir artifacts/NEW_NEARBY
 python -B scripts/collect_physical_player_state.py --expected-host $rr2Host --physical-pid CURRENT_PID --include-stats --include-zone --output-dir artifacts/NEW_PLAYER_STATE
 python -B scripts/capture_physical_telemetry_target_series.py --expected-host $rr2Host --physical-pid CURRENT_PID --output-dir artifacts/NEW_TARGET_SERIES
-python -B scripts/prepare_physical_npc_survey.py --expected-host $rr2Host --physical-pid CURRENT_PID --output-dir artifacts/NEW_NPC_PLAN
+python -B scripts/prepare_physical_npc_survey.py --expected-host $rr2Host --physical-pid CURRENT_PID --include-levels --output-dir artifacts/NEW_NPC_PLAN
 ```
 
 The facing result includes `nativeValues.opticalCamera` for the supported selected

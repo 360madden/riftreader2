@@ -37,7 +37,7 @@ def _strict_file(path, max_bytes):
 
 
 def original_native_nearby(source):
-    """Re-derive nearby candidates from both original native reports, not summary."""
+    """Re-derive nearby candidates from the original native reports."""
     path = Path(source)
     saved, digest = _strict_file(path, 1_000_000)
     require(saved.get("schema") == nearby.SCHEMA
@@ -65,11 +65,19 @@ def original_native_nearby(source):
             picked, total, position_doc, positions, names_doc, names,
             pos_sha, name_sha, radius=saved["radius"], limit=saved["nameLimit"], host=host)
         last_native = names_doc["observation"]["completedAtUtc"]
+        if "unitLevels" in source_shas:
+            levels_doc, level_sha = _strict_file(path.parent / "unit-levels-native.json", 16 * 1024 * 1024)
+            require(source_shas["unitLevels"] == level_sha, "level-source-sha-mismatch")
+            levels = physical_rift._native_values("unit-levels", levels_doc)
+            nearby.add_level_candidates(rebuilt, position_doc, names_doc, levels_doc, levels, level_sha)
+            last_native = levels_doc["observation"]["completedAtUtc"]
     else:
         require(saved.get("status") == "no-nearby-position-candidates"
                 and saved.get("samples") == []
                 and saved.get("namedCandidateCount") == 0
                 and saved.get("totalNearbyPositionCandidates") == 0
+                and "numericLevelCandidateCount" not in saved
+                and "unitLevels" not in source_shas
                 and source_shas.get("unitNames") is None,
                 "empty-nearby-summary-mismatch")
         rebuilt = saved
@@ -142,6 +150,7 @@ def correlate(nearby_report, survey, *, max_gap_seconds=30.0,
         valid_level = (type(candidate_level) is int
                        and 1 <= candidate_level <= 1000)
         candidate_relation = detail.get("relation") if corroborated else None
+        native_level = row.get("numericLevelCandidate")
         rows.append({
             "unitIdCandidate": unit_id,
             "nativeNameCandidate": native_name,
@@ -157,6 +166,11 @@ def correlate(nearby_report, survey, *, max_gap_seconds=30.0,
             "positionAgreement": ("within-tolerance" if coordinate_match
                                   else "outside-tolerance" if complete_xyz else "unavailable"),
             "apiLevelCandidate": candidate_level if valid_level else None,
+            **({"nativeNumericLevelCandidate": native_level,
+                "levelAgreement": ("unavailable" if native_level is None or not valid_level
+                                   else "matching-candidates" if native_level == candidate_level
+                                   else "different-candidates")}
+               if "numericLevelCandidate" in row else {}),
             "apiRelationCandidate": candidate_relation
                 if type(candidate_relation) is str else None,
             "apiPlayerFlagCandidate": (detail.get("player")

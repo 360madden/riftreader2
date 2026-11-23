@@ -12,6 +12,7 @@ from scripts import join_physical_nearby_npc_survey as joined
 from scripts import npc_survey_live as npc
 from scripts import physical_nearby_units as native
 from scripts import physical_rift
+from tests.test_native_unit_level_projection import report as level_report
 from tests.test_physical_unit_names import report as name_report
 from tests.test_physical_unit_positions import report as position_report
 
@@ -128,6 +129,31 @@ class NearbyNpcJoinTests(unittest.TestCase):
         self.assertFalse(result["combatAuthorized"])
         self.assertFalse(result["moveAuthorized"])
         self.assertFalse(result["inputSent"])
+
+    def test_replayed_native_level_agrees_or_disagrees_with_npc_api_candidate(self):
+        level_doc = level_report()
+        observation = level_doc["observation"]
+        level_at = "2026-11-12T04:00:00.2500000Z"
+        observation.update(identity=deepcopy(self.pos_raw["observation"]["identity"]),
+                           startedAtUtc=level_at, completedAtUtc=level_at)
+        row = observation["rows"][0]
+        row.update(unitKey=UNIT_KEY, unitIdCandidate=UNIT, numericLevelCandidate=13,
+                   entityAddressDecimal=self.name_values["rows"][0]["entityAddressDecimal"],
+                   startedAtUtc=level_at, completedAtUtc=level_at)
+        observation["rows"] = [row]
+        summary = json.loads(self.native_summary.read_text())
+        level_sha = save(self.native_dir / "unit-levels-native.json", level_doc)
+        native.add_level_candidates(summary, self.pos_raw, self.name_raw, level_doc,
+                                    physical_rift._native_values("unit-levels", level_doc), level_sha)
+        save(self.native_summary, summary)
+        result = self.call()
+        self.assertEqual(result["samples"][0]["nativeNumericLevelCandidate"], 13)
+        self.assertEqual(result["samples"][0]["levelAgreement"], "matching-candidates")
+        self.make_npc(level=14)
+        result = self.call()
+        self.assertEqual(result["samples"][0]["apiLevelCandidate"], 14)
+        self.assertEqual(result["samples"][0]["levelAgreement"], "different-candidates")
+        self.assertFalse(result["combatAuthorized"])
 
     def test_native_summary_tamper_is_refused(self):
         document = json.loads(self.native_summary.read_text())

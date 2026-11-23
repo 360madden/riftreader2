@@ -1,12 +1,13 @@
 """Read-only nearby named RIFT unit candidates from one exact physical process.
 
-Combines the existing native unit-position and unit-name readers. Names,
-positions and screen projections are sequential candidates, never evidence
-of hostility, unit level, line-of-sight, matching world instance or attackability.
+Combines the existing native position, name and optional numeric-level readers.
+Each reader samples sequential candidates. Hostility, line of sight, world
+instance and attackability remain unqualified.
 """
 from __future__ import annotations
 
 import argparse
+from datetime import timedelta
 import hashlib
 import json
 import math
@@ -20,6 +21,8 @@ if str(ROOT) not in sys.path:
 from scripts import physical_rift
 
 SCHEMA = "rr2-physical-nearby-units/1"
+LEVEL_BATCH_LIMIT = 12
+LEVEL_SOURCE_MAX_SPAN = timedelta(seconds=30)
 
 
 def require(value, reason):
@@ -145,12 +148,49 @@ def combine(selected, total_nearby, position_raw, positions, name_raw, names,
     }
 
 
-def capture(expected_host, pid, destination, *, radius=35.0, limit=18,
+def level_batch_keys(samples):
+    """Prefer named rows so the NPC bind plan can use the same level batch."""
+    named = [row["unitKey"] for row in samples if row["nameStatus"] == "available-candidate"]
+    unnamed = [row["unitKey"] for row in samples if row["nameStatus"] != "available-candidate"]
+    return (named + unnamed)[:LEVEL_BATCH_LIMIT]
+
+
+def add_level_candidates(report, position_raw, name_raw, level_raw, levels, source_sha):
+    """Add a checked level only for the same unit and entity as the position."""
+    position, name, level = (raw["observation"] for raw in (position_raw, name_raw, level_raw))
+    require(level["identity"] == position["identity"]
+            and levels["selfKey"] == report["selfKey"], "position-level-owner-changed")
+    stamp = physical_rift._utc_tick_order_key
+    start, digit = stamp(position["startedAtUtc"])
+    require(stamp(name["completedAtUtc"]) <= stamp(level["startedAtUtc"])
+            <= stamp(level["completedAtUtc"]) <= (start + LEVEL_SOURCE_MAX_SPAN, digit),
+            "level-source-outside-capture-window")
+    samples, rows = report["samples"], levels["rows"]
+    require([row["unitKey"] for row in rows] == level_batch_keys(samples),
+            "level-request-sequence-mismatch")
+    entities = {row["unitKey"]: row["entityAddressDecimal"] for row in position["rows"]}
+    by_key = {sample["unitKey"]: sample for sample in samples}
+    for row in rows:
+        sample = by_key[row["unitKey"]]
+        candidate, reason = row["numericLevelCandidate"], row["unavailableReason"]
+        if row["entityAddressDecimal"] is not None and row["entityAddressDecimal"] != entities[sample["unitKey"]]:
+            candidate, reason = None, "entity-changed-between-reads"
+        sample.update(numericLevelCandidate=candidate, levelUnavailableReason=reason,
+                      levelStatus="numeric-level-candidate" if candidate is not None else "unavailable")
+    report["sourceSha256"]["unitLevels"] = source_sha
+    report["numericLevelCandidateCount"] = sum(sample["levelStatus"] == "numeric-level-candidate"
+                                               for sample in samples)
+    report["qualification"] = ("Sequential original-SHA pinned native positions, names and numeric levels "
+                               "from one physical process and player. Matched levels are native candidates. "
+                               "Position, displayed level, hostility and combat suitability remain unqualified.")
+
+
+def capture(expected_host, pid, destination, *, radius=35.0, limit=18, include_levels=False,
             choose=physical_rift.select_physical,
             read=physical_rift.read_native):
-    """Acquire two read-only native sources and save one joined candidate view."""
+    """Acquire read-only native sources and save one joined candidate view."""
     require(physical_rift.valid_host_name(expected_host)
-            and type(pid) is int and 0 < pid < 2 ** 31,
+            and type(pid) is int and 0 < pid < 2 ** 31 and type(include_levels) is bool,
             "invalid-explicit-host-or-pid")
     require(type(radius) in (int, float) and math.isfinite(radius)
             and 0 < radius <= 50 and type(limit) is int and 1 <= limit <= 32,
@@ -185,6 +225,16 @@ def capture(expected_host, pid, destination, *, radius=35.0, limit=18,
                 receipt_names, names_path, selected_process, "unit-names")
             report = combine(picked, total, pos_raw, positions, names_raw, names,
                              pos_hash, name_hash, radius=radius, limit=limit, host=host)
+            if include_levels:
+                require(choose(expected_host, pid).get("target") == target,
+                        "process-changed-before-levels")
+                level_path = destination / "unit-levels-native.json"
+                receipt_levels = read(selected_process, "unit-levels", output=level_path,
+                                      unit_keys=level_batch_keys(report["samples"]))
+                level_raw, levels, level_hash = source_from_receipt(
+                    receipt_levels, level_path, selected_process, "unit-levels")
+                require(receipt_levels.get("nativeSourceSha256") is not None, "level-source-sha-missing")
+                add_level_candidates(report, pos_raw, names_raw, level_raw, levels, level_hash)
         else:
             # A valid bounded scan may legitimately find zero nearby units.
             # Preserve the original source and do not fabricate a name lookup.
@@ -210,7 +260,7 @@ def capture(expected_host, pid, destination, *, radius=35.0, limit=18,
                                   "world-wide absence claim or gameplay decision.")
             }
         require(choose(expected_host, pid).get("target") ==
-                selected_process["target"], "process-changed-after-names")
+                target, "process-changed-after-reads")
         path = destination / "nearby-report.json"
         with path.open("x", encoding="utf-8", newline="\n") as stream:
             json.dump(report, stream, indent=2, allow_nan=False)
@@ -233,12 +283,14 @@ def main(argv=None):
     parser.add_argument("--physical-pid", required=True, type=int)
     parser.add_argument("--radius", type=float, default=35.0)
     parser.add_argument("--max-names", type=int, default=18)
+    parser.add_argument("--include-levels", action="store_true",
+                        help="read up to 12 nearby numeric-level candidates, named units first")
     parser.add_argument("--output-dir", required=True, type=Path)
     args = parser.parse_args(argv)
     try:
         path, report = capture(args.expected_host, args.physical_pid,
                                args.output_dir, radius=args.radius,
-                               limit=args.max_names)
+                               limit=args.max_names, include_levels=args.include_levels)
     except (ValueError, OSError, TypeError, KeyError, AttributeError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:240],
                           "inputSent": False}))
@@ -247,6 +299,8 @@ def main(argv=None):
                       "withinRadius": report["totalNearbyPositionCandidates"],
                       "reported": len(report["samples"]),
                       "namedCandidates": report["namedCandidateCount"],
+                      **({"numericLevelCandidates": report.get("numericLevelCandidateCount", 0)}
+                         if args.include_levels else {}),
                       "output": str(path), "inputSent": False}))
     return 0
 

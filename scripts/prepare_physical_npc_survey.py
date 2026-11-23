@@ -73,7 +73,7 @@ def _quote(value):
     return "'" + str(value).replace("'", "''") + "'"
 
 
-def prepare(host, pid, destination, *, radius=35.0, limit=12,
+def prepare(host, pid, destination, *, radius=35.0, limit=12, include_levels=False,
             casting_dir=None, nonce_factory=secrets.token_hex,
             capture_nearby=nearby.capture,
             select=physical_rift.select_physical,
@@ -82,6 +82,7 @@ def prepare(host, pid, destination, *, radius=35.0, limit=12,
     require(physical_rift.valid_host_name(host)
             and type(pid) is int and 0 < pid < 2**31
             and type(limit) is int and 1 <= limit <= 12
+            and type(include_levels) is bool
             and type(radius) in (int, float) and not isinstance(radius, bool)
             and 0 < radius <= 50,
             "invalid-host-pid-or-bounds")
@@ -98,7 +99,7 @@ def prepare(host, pid, destination, *, radius=35.0, limit=12,
         # `limit` named IDs. Nearby position candidates may include cache misses.
         nearby_path, native_report = capture_nearby(
             host, pid, output/"native", radius=radius,
-            limit=max(18, limit))
+            limit=max(18, limit), include_levels=include_levels)
         checked, native_sha, (native_started, native_at) = join.original_native_nearby(nearby_path)
         require(native_report == checked, "native-summary-changed")
         identity = checked["process"]
@@ -194,13 +195,15 @@ def main(argv=None):
     parser.add_argument("--physical-pid", required=True, type=int)
     parser.add_argument("--radius", type=float, default=35)
     parser.add_argument("--max-ids", type=int, default=12)
+    parser.add_argument("--include-levels", action="store_true",
+                        help="collect native numeric-level candidates for NPC comparison")
     parser.add_argument("--installed-casting-dir", type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
     args = parser.parse_args(argv)
     try:
         path, report = prepare(args.expected_host, args.physical_pid,
                                args.output_dir, radius=args.radius,
-                               limit=args.max_ids,
+                               limit=args.max_ids, include_levels=args.include_levels,
                                casting_dir=args.installed_casting_dir)
     except (ValueError, TypeError, OSError, KeyError, OverflowError) as exc:
         print(json.dumps({"status": "blocked",

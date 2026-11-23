@@ -44,9 +44,11 @@ class NPCPreparationTests(unittest.TestCase):
                   "unitIdCandidate":"u0000000000000007"}]
         }
         self.native_call_count = 0
+        self.included_levels = False
 
-    def collect(self, host, pid, directory, *, radius, limit):
+    def collect(self, host, pid, directory, *, radius, limit, include_levels=False):
         self.native_call_count += 1
+        self.included_levels = include_levels
         self.assertEqual((host,pid),("RIFT-STATION",PID))
         self.assertEqual(limit, 18)
         directory.mkdir()
@@ -92,6 +94,10 @@ class NPCPreparationTests(unittest.TestCase):
         self.assertIn("18:02:00",result["nativeJoinDeadlineUtc"])
         self.assertEqual(json.loads(path.read_text()),result)
         self.assertEqual(self.native_call_count,1)
+
+    def test_plan_can_capture_native_levels_with_the_nearby_report(self):
+        self.prepare(include_levels=True)
+        self.assertTrue(self.included_levels)
 
     def test_wider_native_name_batch_picks_twelve_named_unit_ids(self):
         self.nearby["samples"] = [

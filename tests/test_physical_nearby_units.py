@@ -12,6 +12,9 @@ import unittest
 from unittest.mock import patch
 
 from scripts import physical_nearby_units as near
+from scripts.native_unit_level_projection import values as level_projection
+from scripts.join_physical_nearby_npc_survey import original_native_nearby
+from tests.test_native_unit_level_projection import report as level_report
 
 SHA = "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"
 TIMES = ["2026-11-21T17:25:59.0000000+00:00",
@@ -57,6 +60,7 @@ def synthetic():
     }
     name_raw = {"observation": {
         "identity": deepcopy(identity), "startedAtUtc": TIMES[1],
+        "completedAtUtc": TIMES[1],
     }}
     name_values = {
         "selfKey": "42", "rows": [
@@ -77,6 +81,15 @@ class NearbyUnitTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.dest = Path(self.directory.name) / "new-capture"
         self.docs = synthetic()
+        self.level_doc = level_report()
+        level = self.level_doc["observation"]
+        level["identity"] = deepcopy(self.docs[0]["observation"]["identity"])
+        captured_at = "2026-11-21T17:26:01.0000000Z"
+        level.update(startedAtUtc=captured_at, completedAtUtc=captured_at)
+        for row, key in zip(level["rows"], ("43", "44")):
+            row.update(unitKey=key, unitIdCandidate=f"u{int(key):016X}",
+                       startedAtUtc=captured_at, completedAtUtc=captured_at)
+        level["rows"][0]["entityAddressDecimal"] = "200000000"
         self.selections = []
         self.reads = []
 
@@ -88,8 +101,10 @@ class NearbyUnitTests(unittest.TestCase):
     def read(self, selection, kind, *, output, unit_limit=None,
              unit_keys=None):
         self.reads.append((kind, unit_limit, unit_keys))
-        raw, values = (self.docs[:2] if kind == "unit-positions"
-                       else self.docs[2:])
+        if kind == "unit-levels":
+            raw, values = self.level_doc, level_projection(self.level_doc)
+        else:
+            raw, values = self.docs[:2] if kind == "unit-positions" else self.docs[2:]
         raw = deepcopy(raw)
         raw["observation"]["identity"] = deepcopy(self.docs[0]["observation"]["identity"])
         content = json.dumps(raw, separators=(",", ":")).encode()
@@ -102,11 +117,14 @@ class NearbyUnitTests(unittest.TestCase):
 
     def invoke(self, **kwargs):
         with patch.object(near.physical_rift, "_native_values",
-                          side_effect=lambda kind, _: (
-                              deepcopy(self.docs[1]) if kind == "unit-positions"
-                              else deepcopy(self.docs[3]))):
+                          side_effect=self.project):
             return near.capture("AMD-DESKTOP", 37676, self.dest,
                                 choose=self.choose, read=self.read, **kwargs)
+
+    def project(self, kind, document):
+        if kind == "unit-levels":
+            return level_projection(document)
+        return deepcopy(self.docs[1] if kind == "unit-positions" else self.docs[3])
 
     def test_bounded_native_position_and_name_candidates(self):
         path, report = self.invoke()
@@ -126,6 +144,41 @@ class NearbyUnitTests(unittest.TestCase):
         self.assertFalse(report["inputSent"])
         self.assertTrue(all(len(sha) == 64 for sha in report["sourceSha256"].values()))
         self.assertEqual(json.loads(path.read_text())["samples"], report["samples"])
+
+    def test_levels_are_bound_to_entities_and_replayed_from_original(self):
+        path, report = self.invoke(include_levels=True)
+        self.assertEqual(self.reads[-1], ("unit-levels", None, ["43", "44"]))
+        self.assertEqual(report["numericLevelCandidateCount"], 1)
+        self.assertEqual(report["samples"][0]["numericLevelCandidate"], 10)
+        self.assertIsNone(report["samples"][1]["numericLevelCandidate"])
+        self.assertEqual(report["samples"][0]["combatSuitabilityStatus"], "unqualified")
+        with patch.object(near.physical_rift, "_native_values", side_effect=self.project):
+            rebuilt, _, _ = original_native_nearby(path)
+            self.assertEqual(rebuilt, report)
+            (self.dest / "unit-levels-native.json").write_text("{}")
+            with self.assertRaisesRegex(ValueError, "level-source-sha-mismatch"):
+                original_native_nearby(path)
+
+    def test_level_entity_change_withholds_level(self):
+        self.level_doc["observation"]["rows"][0]["entityAddressDecimal"] = "200000512"
+        _, report = self.invoke(include_levels=True)
+        self.assertEqual(report["numericLevelCandidateCount"], 0)
+        self.assertIsNone(report["samples"][0]["numericLevelCandidate"])
+        self.assertEqual(report["samples"][0]["levelUnavailableReason"], "entity-changed-between-reads")
+
+    def test_level_batch_is_bounded_and_prioritizes_named_units(self):
+        samples = [{"unitKey": str(key), "nameStatus": "unavailable" if key < 6
+                    else "available-candidate"} for key in range(1, 19)]
+        self.assertEqual(near.level_batch_keys(samples), [str(key) for key in range(6, 18)])
+
+    def test_level_reader_time_must_follow_names_within_window(self):
+        level = self.level_doc["observation"]
+        late = "2026-11-21T17:26:30.0000000Z"
+        level.update(startedAtUtc=late, completedAtUtc=late)
+        for row in level["rows"]:
+            row.update(startedAtUtc=late, completedAtUtc=late)
+        with self.assertRaisesRegex(ValueError, "level-source-outside-capture-window"):
+            self.invoke(include_levels=True)
 
     def test_entity_change_withholds_name_instead_of_reusing_old_identity(self):
         p, v, n, nv = self.docs

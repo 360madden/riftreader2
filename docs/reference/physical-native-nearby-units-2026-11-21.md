@@ -17,6 +17,12 @@ C:\Python314\python.exe -B scripts\physical_nearby_units.py --expected-host AMD-
 
 Use the actual PID from the new preflight. `--radius` must be greater than 0 and at most 50 native horizontal units; `--max-names` is bounded to 1–32. The CLI refuses existing output directories rather than overwriting their evidence, returns exit 2 for unavailable/invalid sources, and writes `failure.json` for an acquisition failure after directory creation.
 
+## Numeric level candidates
+
+On the verified local Windows host, add `--include-levels` to the nearby reader or to `scripts/prepare_physical_npc_survey.py`. The reader saves `unit-levels-native.json` alongside the position and name sources. It requests up to 12 keys, prioritizing named units so the NPC plan can use that same batch. A level attaches only when its unit key, entity address, player, process and build match, and the three captures fit within 30 seconds.
+
+NPC correlation replays the original level source against its SHA-256 and reports whether the native and Lua numeric candidates agree when it has both. A level result leaves hostility and combat suitability unqualified.
+
 ## Physical acceptance
 
 - Verified exact physical RIFT process: AMD-DESKTOP, PID `37676`, process-start ticks `639308565554559088`, executable SHA-256 `DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01`.
