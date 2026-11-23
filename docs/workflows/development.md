@@ -380,12 +380,11 @@ candidate data honestly. A concise evidence note is enough for a useful finding.
 
 - PowerShell 7 (`pwsh`).
 - The exact .NET SDK selected by `global.json` (`10.0.302`). The SDK pin disables
-  roll-forward. Use `-DotNet` with `scripts/validate.ps1` when the pinned SDK is
-  installed outside `PATH`. On LEGION, its executable is
-  `C:\work\tools\dotnet\10.0.302\dotnet.exe`.
-- Python with `lupa==2.8` and its Lua 5.1 module for addon and cross-language
-  contract tests.
-- Repository root `C:\work\riftreader2`.
+  roll-forward. If it is outside `PATH`, pass `-DotNet` or set
+  `RIFTREADER2_DOTNET` to the pinned executable.
+- 64-bit Python 3.14 with Tcl/Tk for the full host suite. The Lua contract tests
+  use `lupa==2.8` and its Lua 5.1 module.
+- A local RiftReader2 checkout. Run the commands from its root.
 
 Keep Git identity repository-local. The intended author is `360madden` with
 email `360madden@gmail.com`; do not change global Git configuration.
@@ -393,7 +392,6 @@ email `360madden@gmail.com`; do not change global Git configuration.
 ## Start safely
 
 ```powershell
-Set-Location -LiteralPath 'C:\work\riftreader2'
 git status --short --branch
 $rr2Host = [Environment]::MachineName
 $rr2Host
@@ -442,17 +440,23 @@ these are starting roles, not fixed assignments or evidence of readiness.
 
 ## Restore, build, and test
 
-The Lua suite is required for Lua/shared-contract changes and full-repository
-validation claims; it is not a prerequisite for unrelated native discovery.
-A repository-local environment keeps its dependency
-isolated and reproducible:
+Use a repository-local environment for the full validation suite:
 
 ```powershell
 python -m venv artifacts/tools/lua-python
-artifacts/tools/lua-python/Scripts/python.exe -m pip install -r requirements-lua-tests.txt -r requirements-control.txt
+artifacts/tools/lua-python/Scripts/python.exe -m pip install -r requirements-validation.txt
+pwsh -NoProfile -File .\scripts\validate.ps1 -CheckPrerequisites
 ```
 
-Full Python discovery also imports Pillow for screenshot tests. The two requirements files above provide the pinned Lua and control-test dependencies in the same interpreter. On Windows, the local PowerShell cache tests use the built-in Microsoft.PowerShell.Utility module for `Get-FileHash`. If a host shell overrides `PSModulePath`, include the Windows PowerShell system module directory in the test process.
+The manifest includes the Lua, control and overlay requirements plus NumPy and
+pytest. The prerequisites check verifies the selected SDK, Python imports,
+Tcl initialization and the Lua 5.1 runtime without starting a game or window.
+The Python test step runs both unittest cases and pytest functions with Qt set
+to offscreen. It uses the Release build of the standalone RIFT Update Analyzer
+and the .NET executable selected by validation. For Lua-only changes,
+`requirements-lua-tests.txt` is sufficient for the focused Lua tests. The local
+PowerShell cache checks import their inbox modules using the child PowerShell's
+installation directory.
 
 The validation script resolves Lua Python in this order: explicit
 `-LuaPython PATH`, environment variable `RIFTREADER2_LUA_PYTHON`,
@@ -462,7 +466,8 @@ Examples:
 ```powershell
 pwsh -NoProfile -File .\scripts\validate.ps1 -LuaPython artifacts/tools/lua-python/Scripts/python.exe
 $env:RIFTREADER2_LUA_PYTHON = 'C:\path\to\python.exe'
-pwsh -NoProfile -File .\scripts\validate.ps1
+$env:RIFTREADER2_DOTNET = 'C:\path\to\pinned-sdk\dotnet.exe'
+pwsh -NoProfile -File .\scripts\validate.ps1 -CheckPrerequisites
 ```
 
 The repository does not depend on or hardcode a V1 addon or Python path.

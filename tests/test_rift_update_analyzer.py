@@ -1,9 +1,10 @@
 r"""Focused black-box tests for the standalone .NET 10 RIFT update analyzer.
 
 Run after building the helper:
-    C:\Python314\python.exe -m unittest discover -s tests -p test_rift_update_analyzer.py -v
+    python -m unittest tests.test_rift_update_analyzer -v
 """
 import json
+import os
 from pathlib import Path
 import socket
 import subprocess
@@ -25,7 +26,7 @@ class UpdateAnalyzerTests(unittest.TestCase):
     def run_cli(self, *args, expected=0):
         self.assertTrue(DLL.is_file(), f"Build missing: {DLL}")
         completed = subprocess.run(
-            ["dotnet", str(DLL), *map(str, args)],
+            [os.environ.get("RIFTREADER2_DOTNET") or "dotnet", str(DLL), *map(str, args)],
             capture_output=True,
             text=True,
             timeout=40,

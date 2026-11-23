@@ -153,7 +153,8 @@ class Recorder:
     def observe(self, pose): pass
     @property
     def progress(self): return {'sampleCount': 2, 'observedPathLength': 1.0}
-    def finish(self):
+    def preview(self): return {'waypoints': [], 'heights': []}
+    def finish(self, *, raw_output_dir=None):
         (root / 'finish-entered').touch()
         while (root / 'hold-finish').exists(): time.sleep(.01)
         return {'waypoints': [['Start', 1, 2], ['End', 2, 3]]}
@@ -425,12 +426,14 @@ class GuiBridgeTests(unittest.TestCase):
 
         # Stop the next recording through the GUI's existing button, which uses
         # its default destination rather than supplying a new CLI file.
+        self.assertTrue(self.call('route.new')['ok'])
         self.assertTrue(self.call('record.start')['ok'])
         (self.root / 'gui-stop').touch()
+        route_directory = self.root / 'artifacts' / 'waypoint-routes'
         end = time.monotonic() + 5
-        while not list((self.root / 'artifacts').glob('recorded-route-*.json')) and time.monotonic() < end:
+        while not list(route_directory.glob('recorded-route-*.json')) and time.monotonic() < end:
             time.sleep(.02)
-        self.assertTrue(list((self.root / 'artifacts').glob('recorded-route-*.json')))
+        self.assertTrue(list(route_directory.glob('recorded-route-*.json')))
         self.assertFalse(old_path.exists())
 
     def test_correlated_stop_cancels_queued_request_before_admission(self):

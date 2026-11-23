@@ -9,6 +9,13 @@ from unittest import mock
 from scripts import launch_live_reader as launcher
 
 
+def run_cache_script(script):
+    return subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+         launcher.HOST_POWERSHELL_IMPORTS + script],
+        capture_output=True, text=True, timeout=25)
+
+
 class GuestReaderCacheTests(unittest.TestCase):
     def test_cache_path_is_exact_hash_and_lab_scoped(self):
         a = launcher.guest_reader_cache_path("lab1", "A" * 64)
@@ -91,20 +98,16 @@ class GuestReaderCacheTests(unittest.TestCase):
             cache = Path(folder) / "cache.exe"
             digest = launcher.sha(Path(__file__))
             script = launcher.guest_reader_cache_probe(str(cache), digest)
-            def check():
-                return subprocess.run(
-                    ["powershell", "-NoProfile", "-NonInteractive", "-Command",
-                     "$ErrorActionPreference='Stop';" + script + ";Write-Output $cacheHit"],
-                    capture_output=True, text=True, timeout=25)
-            miss = check()
+            script += ";Write-Output $cacheHit"
+            miss = run_cache_script(script)
             self.assertEqual(miss.returncode, 0, miss.stderr)
             self.assertEqual(miss.stdout.strip(), "False")
             cache.write_bytes(Path(__file__).read_bytes())
-            hit = check()
+            hit = run_cache_script(script)
             self.assertEqual(hit.returncode, 0, hit.stderr)
             self.assertEqual(hit.stdout.strip(), "True")
             cache.write_bytes(b"corrupt")
-            corrupt = check()
+            corrupt = run_cache_script(script)
             self.assertNotEqual(corrupt.returncode, 0)
             self.assertIn("reader-cache-hash-mismatch", corrupt.stderr)
 
@@ -125,18 +128,12 @@ class GuestReaderCacheTests(unittest.TestCase):
                     str(cache), str(destination), digest),
             )
             for script in scripts:
-                result = subprocess.run(
-                    ["powershell", "-NoProfile", "-NonInteractive", "-Command",
-                     "$ErrorActionPreference='Stop';" + script],
-                    capture_output=True, text=True, timeout=25)
+                result = run_cache_script(script)
                 self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(cache.read_bytes(), source.read_bytes())
             self.assertEqual(destination.read_bytes(), source.read_bytes())
             cache.write_bytes(b"corrupted")
-            refused = subprocess.run(
-                ["powershell", "-NoProfile", "-NonInteractive", "-Command",
-                 "$ErrorActionPreference='Stop';" + scripts[1]],
-                capture_output=True, text=True, timeout=25)
+            refused = run_cache_script(scripts[1])
             self.assertNotEqual(refused.returncode, 0)
             self.assertIn("reader-cache-hash-drift", refused.stderr)
             self.assertEqual(destination.read_bytes(), source.read_bytes())

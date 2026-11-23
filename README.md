@@ -128,10 +128,10 @@ results and restart/obstacle limitations. Launching the window sends no game inp
 
 | Tool | Version / purpose |
 |:--|:--|
-| 🪟 **Windows** | Required for native process reading and VMware-lab integrations |
+| 🪟 **Windows** | Required for native physical process reads and full host validation |
 | 🟣 **.NET SDK** | Exactly **10.0.302**, pinned with roll-forward disabled in [`global.json`](global.json) |
 | 🔵 **PowerShell** | PowerShell **7** (`pwsh`) for the repository validation workflow |
-| 🟨 **Python** | Tooling and optional lab scripts; Lua tests use `lupa==2.8` with a Lua 5.1 module |
+| 🟨 **Python** | Use 64-bit Python 3.14 with Tcl/Tk for full host validation |
 
 See the [complete development setup](docs/workflows/development.md). The core offline libraries are modular; live integration is Windows-specific.
 
@@ -164,11 +164,12 @@ dotnet run --project src/RiftReader2.Cli -- analyze --manifest samples/demo/capt
 
 ### 4. Validate the repository
 
-The full gate requires the Lua/Python test runtime described in the setup guide:
+Install the host validation dependencies in a repository-local environment:
 
 ```powershell
 python -m venv artifacts/tools/lua-python
-.\artifacts\tools\lua-python\Scripts\python.exe -m pip install -r requirements-lua-tests.txt
+.\artifacts\tools\lua-python\Scripts\python.exe -m pip install -r requirements-validation.txt
+pwsh -NoProfile -File .\scripts\validate.ps1 -CheckPrerequisites
 pwsh -NoProfile -File .\scripts\validate.ps1
 ```
 

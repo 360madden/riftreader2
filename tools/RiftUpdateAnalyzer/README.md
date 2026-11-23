@@ -2,23 +2,29 @@
 
 Standalone **read-only file comparison** for RR2 game-update preparation. It never launches RIFT, sends keys, modifies game files, reads process memory, or installs patches.
 
-## Build and verify (AMD-DESKTOP only)
+## Build and verify on Windows
 
-From PowerShell in `C:\work\riftreader2`:
+From PowerShell in the RiftReader2 checkout:
 
 ```powershell
-dotnet build tools\RiftUpdateAnalyzer\RiftUpdateAnalyzer.csproj -c Release
-C:\Python314\python.exe -m unittest discover -s tests -p test_rift_update_analyzer.py -v
+dotnet build tools\RiftUpdateAnalyzer\RiftUpdateAnalyzer.csproj -c Release -p:RestoreLockedMode=true
+python -m unittest tests.test_rift_update_analyzer -v
 ```
 
-No external NuGet dependencies. Requires .NET SDK/runtime 10.0.
+Use the SDK pinned in `global.json`. When it is outside `PATH`, set
+`RIFTREADER2_DOTNET` to its executable for the Python tests and invoke that
+executable for the build. The full repository validation builds this tool
+and passes its selected .NET executable to the tests.
 
 ## One-command comparison after the patch
 
-Run from **AMD-DESKTOP** PowerShell after Glyph finishes and game files are settled:
+Run on the verified Windows host after Glyph finishes and game files are settled.
+Set `$rrBaseline`, `$rrGameExe`, `$rrInterface`, `$rrRoutes` and `$rrOutput` to
+the local paths for this comparison.
 
 ```powershell
-dotnet tools\RiftUpdateAnalyzer\bin\Release\net10.0\RiftUpdateAnalyzer.dll run --expected-host AMD-DESKTOP --baseline-dir C:\work\riftreader2\artifacts\prepatch-20261117-0631 --game-exe "C:\Program Files (x86)\Glyph\Games\RIFT\Live\rift_x64.exe" --interface-dir C:\Users\mrkoo\OneDrive\Documents\Rift\Interface --routes-dir C:\work\riftreader2\artifacts\waypoint-routes --out-dir C:\work\riftreader2\artifacts\patch-comparison-AFTER-20261117
+$rrHost = [Environment]::MachineName
+dotnet tools\RiftUpdateAnalyzer\bin\Release\net10.0\RiftUpdateAnalyzer.dll run --expected-host $rrHost --baseline-dir $rrBaseline --game-exe $rrGameExe --interface-dir $rrInterface --routes-dir $rrRoutes --out-dir $rrOutput
 ```
 
 Choose a **new, not-yet-existing** output directory each time. Four immutable artifacts are written there:
@@ -35,7 +41,8 @@ The exit code is `0` when the selected content is unchanged, `1` when any select
 Create snapshots from arbitrary explicit sources (use a new output filename for every capture):
 
 ```powershell
-dotnet tools\RiftUpdateAnalyzer\bin\Release\net10.0\RiftUpdateAnalyzer.dll capture --expected-host AMD-DESKTOP --source "game=C:\Program Files (x86)\Glyph\Games\RIFT\Live\rift_x64.exe" --source "routes=C:\work\riftreader2\artifacts\waypoint-routes" --out C:\work\riftreader2\artifacts\example-current.json
+$rrHost = [Environment]::MachineName
+dotnet tools\RiftUpdateAnalyzer\bin\Release\net10.0\RiftUpdateAnalyzer.dll capture --expected-host $rrHost --source "game=$rrGameExe" --source "routes=$rrRoutes" --out artifacts\example-current.json
 dotnet tools\RiftUpdateAnalyzer\bin\Release\net10.0\RiftUpdateAnalyzer.dll compare --before C:\path\baseline.json --after C:\path\current.json --out C:\path\changes.json
 dotnet tools\RiftUpdateAnalyzer\bin\Release\net10.0\RiftUpdateAnalyzer.dll report --comparison C:\path\changes.json --out C:\path\changes.md
 ```

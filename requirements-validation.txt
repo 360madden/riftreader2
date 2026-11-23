@@ -1,0 +1,6 @@
+# Host-side test suite. Live capture backends have separate requirements.
+-r requirements-lua-tests.txt
+-r requirements-control.txt
+-r requirements-overlay.txt
+numpy==2.5.4
+pytest==9.0.2

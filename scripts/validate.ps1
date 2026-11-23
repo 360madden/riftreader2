@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$LuaPython = $env:RIFTREADER2_LUA_PYTHON,
-    [string]$DotNet = 'dotnet'
+    [string]$DotNet = $env:RIFTREADER2_DOTNET,
+    [switch]$CheckPrerequisites
 )
 
 $ErrorActionPreference = 'Stop'
@@ -12,8 +13,29 @@ try {
         $localLuaPython = Join-Path $repoRoot 'artifacts/tools/lua-python/Scripts/python.exe'
         $LuaPython = if (Test-Path -LiteralPath $localLuaPython) { $localLuaPython } else { 'python' }
     }
+    if (-not $DotNet) { $DotNet = 'dotnet' }
+    if (-not (Get-Command -Name $LuaPython -CommandType Application -ErrorAction SilentlyContinue)) {
+        throw 'Python executable not found. Pass -LuaPython or set RIFTREADER2_LUA_PYTHON.'
+    }
+    & $LuaPython scripts/check_validation_python.py
+    if ($LASTEXITCODE -ne 0) { throw 'Host test dependencies unavailable. Install requirements-validation.txt in the selected Python and include Tcl/Tk.' }
     & $LuaPython scripts/check_lua_runtime.py
     if ($LASTEXITCODE -ne 0) { throw 'Lua 5.1 test runtime missing. Install requirements-lua-tests.txt or pass -LuaPython; see docs/workflows/development.md.' }
+    $pinnedSdk = (Get-Content -LiteralPath global.json -Raw | ConvertFrom-Json).sdk.version
+    $dotnetCommand = Get-Command -Name $DotNet -CommandType Application -ErrorAction SilentlyContinue
+    if (-not $dotnetCommand) {
+        throw ".NET SDK $pinnedSdk executable not found. Pass -DotNet or set RIFTREADER2_DOTNET."
+    }
+    $DotNet = $dotnetCommand.Source
+    # A resolver failure reports installed SDKs and exits nonzero when the pin is unavailable.
+    $selectedSdk = & $DotNet --version
+    if ($LASTEXITCODE -ne 0 -or ($selectedSdk -join "`n").Trim() -ne $pinnedSdk) {
+        throw "Validation requires .NET SDK $pinnedSdk from global.json. Pass -DotNet or set RIFTREADER2_DOTNET to its executable."
+    }
+    if ($CheckPrerequisites) {
+        Write-Output "Validation prerequisites available on $([Environment]::MachineName): .NET SDK $pinnedSdk and host Python test dependencies."
+        return
+    }
     $solution = 'RiftReader2.slnx'
     $allowed = @{
         'RiftReader2.Domain' = @()
@@ -42,6 +64,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Locked restore failed.' }
     & $DotNet build $solution --configuration Release --no-restore
     if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
+    & $DotNet build tools/RiftUpdateAnalyzer/RiftUpdateAnalyzer.csproj --configuration Release -p:RestoreLockedMode=true
+    if ($LASTEXITCODE -ne 0) { throw 'RIFT Update Analyzer build for the Python tests failed.' }
     & $DotNet test $solution --configuration Release --no-build --no-restore
     if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
     & $DotNet format $solution --verify-no-changes --no-restore --verbosity minimal
@@ -79,9 +103,19 @@ try {
         & $windowsPowerShell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $repoRoot ('tests/' + $helperTest))
         if ($LASTEXITCODE -ne 0) { throw "Helper ownership mock failed: $helperTest" }
     }
-    # Discover every host Python test, including new VM/transfer guards, not a static module list.
-    & $LuaPython -m unittest discover -s tests -p 'test_*.py'
-    if ($LASTEXITCODE -ne 0) { throw 'Complete host Python unittest discovery suite failed.' }
+    # Collect both unittest cases and pytest functions. Keep Qt off the desktop.
+    $previousQtPlatform = $env:QT_QPA_PLATFORM
+    $previousDotNet = $env:RIFTREADER2_DOTNET
+    try {
+        $env:QT_QPA_PLATFORM = 'offscreen'
+        $env:RIFTREADER2_DOTNET = $DotNet
+        & $LuaPython -m pytest --disable-plugin-autoload -q tests
+        if ($LASTEXITCODE -ne 0) { throw 'Host Python test suite failed.' }
+    }
+    finally {
+        $env:QT_QPA_PLATFORM = $previousQtPlatform
+        $env:RIFTREADER2_DOTNET = $previousDotNet
+    }
     $reportPath = Join-Path $runDirectory 'analysis.json'
     $replayPath = Join-Path $runDirectory 'replay.json'
     $argsCommon = @('--manifest', 'samples/demo/capture.json', '--config', 'config/default.json')
