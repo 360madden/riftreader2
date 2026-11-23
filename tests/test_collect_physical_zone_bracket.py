@@ -45,6 +45,7 @@ class ZoneBracketTests(unittest.TestCase):
         identity = {
             "processId": selection["target"]["processId"],
             "processStartUtcTicks": int(selection["target"]["processStartUtcTicks"]),
+            "executablePath": selection["target"]["executablePath"],
             "executableSha256": selection["target"]["executableSha256"].upper(),
             "moduleBaseAddress": 123456, "moduleSize": 1234567,
         }

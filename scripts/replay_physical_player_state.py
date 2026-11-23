@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import ntpath
 from pathlib import Path
 import sys
 
@@ -73,7 +74,8 @@ def verified_state(filename):
                 and (saved["samples"] == 1 if kind in ("stats", "zone-before", "zone-after")
                      else 2 <= saved["samples"] <= 10)
                 and isinstance(saved.get("sourceSha256"), str)
-                and Path(str(saved.get("path", ""))).name == kind + ".json",
+                and isinstance(saved.get("path"), str)
+                and ntpath.basename(saved["path"]) == kind + ".json",
                 kind + "-invalid-source-pin")
         # Resolve fixed local filenames, NOT arbitrary absolute paths from receipts.
         report, actual_sha = context.load(filename.parent / (kind + ".json"),
@@ -85,10 +87,7 @@ def verified_state(filename):
             rows = [observation] if isinstance(observation, dict) else None
         else:
             identity, rows = report.get("identity"), report.get("observations")
-        require(isinstance(identity, dict)
-                and identity.get("processId") == owner["processId"]
-                and str(identity.get("processStartUtcTicks")) == owner["processStartUtcTicks"]
-                and str(identity.get("executableSha256", "")).upper() == build_sha
+        require(state.source_matches_target(identity, owner)
                 and (identity.get("moduleBaseAddress"), identity.get("moduleSize")) == module
                 and report.get("status") == "complete"
                 and ((kind == "stats" and report.get("contractVersion") == "native-current-stats-candidate/1")
@@ -244,6 +243,9 @@ def _compare_states(a, b):
         "evidenceKind": "amd-physical-player-state-pair/1",
         "beforeSummarySha256": a["summarySha256"],
         "afterSummarySha256": b["summarySha256"],
+        "target": a["target"],
+        "beforeCompletedAtUtc": a["lastCompletedAtUtc"],
+        "afterStartedAtUtc": b["firstStartedAtUtc"],
         "processId": a["target"]["processId"],
         "selfKeyCandidate": a["selfKeyCandidate"],
         "positionDeltaCandidate": delta,
@@ -294,6 +296,7 @@ def history(summaries):
     return {
         "schemaVersion": 1, "status": "candidate-only",
         "evidenceKind": "amd-physical-player-state-history/1",
+        "target": captures[0]["target"],
         "processId": captures[0]["target"]["processId"],
         "selfKeyCandidate": captures[0]["selfKeyCandidate"],
         "captureCount": len(captures),
@@ -304,6 +307,8 @@ def history(summaries):
         "segments": [{
             "beforeSummarySha256": edge["beforeSummarySha256"],
             "afterSummarySha256": edge["afterSummarySha256"],
+            "beforeCompletedAtUtc": edge["beforeCompletedAtUtc"],
+            "afterStartedAtUtc": edge["afterStartedAtUtc"],
             "positionDeltaCandidate": edge["positionDeltaCandidate"],
             "planarDistanceCandidate": edge["planarDistanceCandidate"],
             "healthDeltaCandidate": edge["healthDeltaCandidate"],
@@ -345,12 +350,17 @@ def main(argv=None):
     except (OSError, ValueError, TypeError, KeyError, OverflowError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:220]}))
         return 2
-    brief = {"status": result["status"], "evidenceKind": result["evidenceKind"]}
+    brief = {"status": result["status"], "evidenceKind": result["evidenceKind"],
+             "target": result["target"]}
     if "sources" in result:
         brief.update(summarySha256=result["summarySha256"],
-                     sourceCount=len(result["sources"]))
+                     sourceCount=len(result["sources"]),
+                     firstStartedAtUtc=result["firstStartedAtUtc"],
+                     lastCompletedAtUtc=result["lastCompletedAtUtc"])
     elif "segments" in result:
         brief.update(captureCount=result["captureCount"],
+                     firstStartedAtUtc=result["firstStartedAtUtc"],
+                     lastCompletedAtUtc=result["lastCompletedAtUtc"],
                      sumPlanarChordsCandidate=result["sumPlanarChordsCandidate"],
                      netPositionDeltaCandidate=result["netPositionDeltaCandidate"],
                      healthObservedCount=result["healthObservedCount"],
@@ -361,7 +371,9 @@ def main(argv=None):
                       nativeStatsHistory={k: v for k, v in result["nativeStatsHistory"].items()
                                           if k != "changed"})
     else:
-        brief.update(positionDeltaCandidate=result["positionDeltaCandidate"],
+        brief.update(beforeCompletedAtUtc=result["beforeCompletedAtUtc"],
+                     afterStartedAtUtc=result["afterStartedAtUtc"],
+                     positionDeltaCandidate=result["positionDeltaCandidate"],
                      planarDistanceCandidate=result["planarDistanceCandidate"],
                      healthDeltaCandidate=result["healthDeltaCandidate"],
                      nativeStatsComparison=result["nativeStatsComparison"])

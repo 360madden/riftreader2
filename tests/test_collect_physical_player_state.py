@@ -29,6 +29,7 @@ class StateTests(unittest.TestCase):
         identity = {
             "processId": OWNER["processId"],
             "processStartUtcTicks": int(epoch or OWNER["processStartUtcTicks"]),
+            "executablePath": selection["target"]["executablePath"],
             "executableSha256": selection["target"]["executableSha256"].upper(),
             "moduleBaseAddress": module, "moduleSize": 1234567,
         }
@@ -114,6 +115,7 @@ class StateTests(unittest.TestCase):
             "status": "complete", "observation": {
                 "identity": {"processId": OWNER["processId"],
                              "processStartUtcTicks": int(OWNER["processStartUtcTicks"]),
+                             "executablePath": selection["target"]["executablePath"],
                              "executableSha256": selection["target"]["executableSha256"].upper(),
                              "moduleBaseAddress": 123456, "moduleSize": 1234567},
                 "unitKey": 239816685251645959,
@@ -233,6 +235,24 @@ class StateTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "self-key-changed"):
                 state.collect(123, Path(temp) / "out")
             self.assertEqual(read.call_count, 2)
+
+    def test_different_executable_path_is_rejected_before_summary(self):
+        def fake(selection, kind, path, *, samples, interval_ms):
+            result = self.fake_read(selection, kind, path, samples=samples,
+                                    interval_ms=interval_ms)
+            report = json.loads(path.read_text(encoding="utf-8"))
+            report["identity"]["executablePath"] = r"C:\Other\rift_x64.exe"
+            path.write_text(json.dumps(report), encoding="utf-8")
+            return result
+
+        with TemporaryDirectory() as temp, \
+             patch.object(state.socket, "gethostname", return_value=HOST), \
+             patch.object(state.physical_rift, "select_physical", return_value=SELECTION), \
+             patch.object(state.physical_rift, "read_native", side_effect=fake):
+            destination = Path(temp) / "result"
+            with self.assertRaisesRegex(ValueError, "player-context-source-identity-invalid"):
+                state.collect(123, destination)
+            self.assertFalse((destination / "summary.json").exists())
 
     def test_changed_module_is_rejected(self):
         def fake(selection, kind, path, *, samples, interval_ms):

@@ -117,6 +117,17 @@ python -B scripts/capture_physical_telemetry_target_series.py --expected-host $r
 python -B scripts/prepare_physical_npc_survey.py --expected-host $rr2Host --physical-pid CURRENT_PID --include-levels --output-dir artifacts/NEW_NPC_PLAN
 ```
 
+Copy the player-state directory with its `summary.json` and native source files
+to replay it offline. Replay locates the sources beside the summary and checks
+each SHA-256, executable path and process identity recorded at capture. Pair
+and history reports retain the capture host, process identity and sample times.
+`--after` compares two ordered captures from the same process on the same host.
+
+```powershell
+python -B scripts/replay_physical_player_state.py --summary artifacts/NEW_PLAYER_STATE/summary.json
+python -B scripts/replay_physical_player_state.py --summary artifacts/EARLIER_PLAYER_STATE/summary.json --after artifacts/NEW_PLAYER_STATE/summary.json
+```
+
 The RR2A1 collector compares advancing unbound addon coordinates with native
 position brackets. The RR2R1 probe can retain potential reference frames for
 offline replay. A strict RR2R1 assessment requires the exact active addon nonce.

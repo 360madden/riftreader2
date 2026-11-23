@@ -299,13 +299,60 @@ class StateReplayTests(unittest.TestCase):
             replay.verified_state(self.home / "missing.json")
 
 
+class PortableSourceTests(unittest.TestCase):
+    def test_windows_paths_in_relocated_bundle_and_rehashed_wrong_executable(self):
+        target = {"hostName": "RIFT-STATION", "processId": 42, "hwnd": 12,
+                  "processStartUtcTicks": "639300936028818696",
+                  "executableSha256": replay.state.BUILD_SHA,
+                  "executablePath": r"D:\Games\Rift\rift_x64.exe"}
+        identity = {**target, "processStartUtcTicks": int(target["processStartUtcTicks"]),
+                    "executablePath": "d:/games/RIFT/RIFT_X64.EXE",
+                    "moduleBaseAddress": 1000, "moduleSize": 500}
+        receipt = {"schemaVersion": 1, "evidenceKind": "amd-physical-player-state-candidate/1",
+                   "status": "complete-candidate", "ownerHost": target["hostName"],
+                   "target": target, "selfKeyCandidate": "123", "sources": {},
+                   "moduleBaseAddress": 1000, "moduleSize": 500}
+        values = {"health": {"status": "calculated-candidate", "current": 100}}
+        with TemporaryDirectory() as temp, patch.object(replay, "_native_values", return_value=values):
+            home = Path(temp)
+            summary = home / "summary.json"
+            for index, kind in enumerate(replay.state.KINDS):
+                rows = []
+                for second in (index * 2, index * 2 + 1):
+                    timestamp = f"2026-11-12T12:00:{second:02d}Z"
+                    rows.append({"identity": identity, "unitKey": 123,
+                                 "startedAtUtc": timestamp, "completedAtUtc": timestamp})
+                source = {"status": "complete", "requestedSamples": 2, "completedSamples": 2,
+                          "identity": identity, "observations": rows,
+                          "observation": None if kind == "position" else rows[-1]}
+                path = home / (kind + ".json")
+                path.write_text(json.dumps(source), encoding="utf-8")
+                receipt["sources"][kind] = {
+                    "samples": 2, "path": rf"D:\original checkout\{kind}.json",
+                    "sourceSha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                    "candidateValues": values,
+                }
+            summary.write_text(json.dumps(receipt), encoding="utf-8")
+            self.assertEqual(replay.verified_state(summary)["target"], target)
+
+            path = home / "position.json"
+            source = json.loads(path.read_bytes())
+            source["identity"]["executablePath"] = r"D:\Other\rift_x64.exe"
+            path.write_text(json.dumps(source), encoding="utf-8")
+            receipt["sources"]["position"]["sourceSha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+            summary.write_text(json.dumps(receipt), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "position-invalid-source-owner"):
+                replay.verified_state(summary)
+
+
 class ComparisonUnitTests(unittest.TestCase):
     """Synthetic pair mathematics; independent of ignored local artifacts."""
 
-    def pair(self, *, same=False, overlap=False, changed=False, missing_health=False, stats=None):
+    def pair(self, *, same=False, overlap=False, changed=False, changed_host=False,
+             missing_health=False, stats=None):
         from unittest.mock import patch
         first = {
-            "summarySha256": "A", "target": {"processId": 42, "start": 100},
+            "summarySha256": "A", "target": {"hostName": "RIFT-STATION", "processId": 42, "start": 100},
             "moduleBaseAddress": 1000, "moduleSize": 500,
             "selfKeyCandidate": "123",
             "lastCompletedAtUtc": "2026-11-12T12:00:01+00:00",
@@ -318,6 +365,8 @@ class ComparisonUnitTests(unittest.TestCase):
                                          else "2026-11-12T12:00:02+00:00"))
         if changed:
             second["target"]["start"] = 101
+        if changed_host:
+            second["target"]["hostName"] = "ANOTHER-PC"
         second["candidateValues"]["position"].update(x=13.0, z=15.0)
         second["candidateValues"]["vitals"]["health"] = (
             {"status": "unavailable", "current": None} if missing_health
@@ -347,6 +396,13 @@ class ComparisonUnitTests(unittest.TestCase):
         self.assertEqual(result["positionDeltaCandidate"], {"x": 3.0, "y": 0.0, "z": 4.0})
         self.assertEqual(result["planarDistanceCandidate"], 5.0)
         self.assertEqual(result["healthDeltaCandidate"], -15)
+        self.assertEqual(result["target"]["hostName"], "RIFT-STATION")
+        self.assertEqual(result["beforeCompletedAtUtc"], "2026-11-12T12:00:01+00:00")
+        self.assertEqual(result["afterStartedAtUtc"], "2026-11-12T12:00:02+00:00")
+
+    def test_changed_host_rejected_even_with_same_pid_and_start(self):
+        with self.assertRaisesRegex(ValueError, "owner-or-epoch-changed"):
+            self.pair(changed_host=True)
 
     def test_changed_epoch_rejected(self):
         with self.assertRaisesRegex(ValueError, "owner-or-epoch-changed"):
@@ -389,6 +445,9 @@ class ComparisonUnitTests(unittest.TestCase):
     def test_pair_cli_reports_position_health_and_stats_without_null_placeholders(self):
         with patch.object(replay, "compare", return_value={
             "status": "candidate-only", "evidenceKind": "amd-physical-player-state-pair/1",
+            "target": {"hostName": "RIFT-STATION", "processId": 42},
+            "beforeCompletedAtUtc": "2026-11-12T12:00:01+00:00",
+            "afterStartedAtUtc": "2026-11-12T12:00:02+00:00",
             "positionDeltaCandidate": {"x": -2.4, "y": -2.5, "z": 55.7},
             "planarDistanceCandidate": 55.8,
             "healthDeltaCandidate": 0,
@@ -402,6 +461,7 @@ class ComparisonUnitTests(unittest.TestCase):
         self.assertEqual(report["positionDeltaCandidate"]["z"], 55.7)
         self.assertEqual(report["planarDistanceCandidate"], 55.8)
         self.assertEqual(report["healthDeltaCandidate"], 0)
+        self.assertEqual(report["target"]["hostName"], "RIFT-STATION")
         for unused in ("sourceCount", "summarySha256", "captureCount"):
             self.assertNotIn(unused, report)
 
@@ -427,6 +487,9 @@ class HistoryUnitTests(unittest.TestCase):
                           side_effect=[self.sample(i) for i in range(3)]):
             result = replay.history(["one", "two", "three"])
         self.assertEqual(result["captureCount"], 3)
+        self.assertEqual(result["target"], self.sample(0)["target"])
+        self.assertEqual(result["segments"][0]["beforeCompletedAtUtc"], self.sample(0)["lastCompletedAtUtc"])
+        self.assertEqual(result["segments"][0]["afterStartedAtUtc"], self.sample(1)["firstStartedAtUtc"])
         self.assertEqual([s["planarDistanceCandidate"] for s in result["segments"]], [5, 5])
         self.assertEqual(result["sumPlanarChordsCandidate"], 10)
         self.assertEqual(result["netPositionDeltaCandidate"], {"x": 6, "y": 0, "z": 8})

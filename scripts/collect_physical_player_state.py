@@ -7,6 +7,7 @@ native zone IDs. Not an atomic snapshot, live Lua reference or qualified gamepla
 from __future__ import annotations
 import argparse
 import json
+import ntpath
 from pathlib import Path
 import socket
 import sys
@@ -27,6 +28,22 @@ KINDS = ("player-context", "position", "vitals")
 def require(ok, reason):
     if not ok:
         raise ValueError("physical-player-state-" + reason)
+
+
+def source_matches_target(identity, target):
+    """Match the executable recorded by the Windows process reader."""
+    if not isinstance(identity, dict):
+        return False
+    source_path = identity.get("executablePath")
+    target_path = target.get("executablePath")
+    return (isinstance(source_path, str) and bool(source_path)
+            and isinstance(target_path, str) and bool(target_path)
+            and ntpath.normcase(source_path) == ntpath.normcase(target_path)
+            and type(identity.get("processId")) is int
+            and identity["processId"] == target["processId"]
+            and str(identity.get("processStartUtcTicks")) == target["processStartUtcTicks"]
+            and str(identity.get("executableSha256", "")).upper() ==
+                str(target["executableSha256"]).upper())
 
 
 def pin(pid, *, expected_host=None):
@@ -90,10 +107,7 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False,
         observation = report.get("observation")
         identity = (observation.get("identity") if read_kind in ("stats", "zone-context")
                     and isinstance(observation, dict) else report.get("identity"))
-        require(isinstance(identity, dict)
-                and identity.get("processId") == pid
-                and str(identity.get("processStartUtcTicks")) == owner["processStartUtcTicks"]
-                and str(identity.get("executableSha256", "")).upper() == build_sha
+        require(source_matches_target(identity, owner)
                 and type(identity.get("moduleBaseAddress")) is int
                 and type(identity.get("moduleSize")) is int
                 and identity["moduleBaseAddress"] > 0 and identity["moduleSize"] > 0
