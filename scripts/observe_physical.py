@@ -41,13 +41,17 @@ def _plain_path(path):
                      "reparse-path")
 
 
-def workbridge_root():
-    """Use the configured local deployment, or the standard installation path."""
-    root = Path(os.environ.get("RR2_WORKBRIDGE_ROOT", BRIDGE))
+def _local_workbridge_root(value, reason):
+    root = Path(value)
     _require(root.is_absolute() and not root.drive.startswith(("\\", "/"))
-             and ".." not in root.parts, "invalid-workbridge-root")
+             and ".." not in root.parts, reason)
     _plain_path(root)
     return root
+
+
+def workbridge_root():
+    """Use the configured local deployment, or the standard installation path."""
+    return _local_workbridge_root(os.environ.get("RR2_WORKBRIDGE_ROOT", BRIDGE), "invalid-workbridge-root")
 
 
 def require_clear_desktop_turn(*, bridge=None):
@@ -129,14 +133,18 @@ def _identity(physical_pid=None, *, require_window=True):
 
 
 def _workbridge_command(bridge):
-    cli = bridge / "scripts" / "workbridge-cli.mjs"
+    override = os.environ.get("RR2_WORKBRIDGE_CLI_ROOT")
+    cli_root = bridge if override is None else _local_workbridge_root(override, "invalid-workbridge-cli-root")
+    cli = cli_root / "scripts" / "workbridge-cli.mjs"
     state = bridge / ".local"
     _plain_path(cli)
     _plain_path(state)
     node = NODE if NODE.is_file() else shutil.which("node")
     _require(node is not None, "desktop-node-runtime-unavailable")
-    # The authenticated service state identifies the local deployment. Desktop
-    # tools do not depend on the service's separate file-workspace root.
+    _require(cli.is_file(), "desktop-workbridge-cli-unavailable")
+    _require(state.is_dir(), "desktop-workbridge-service-state-unavailable")
+    # The running owner keeps service state and desktop evidence in its deployment.
+    # The CLI may come from a separate, compatible local build.
     return [node, cli, "--service-state", state]
 
 
@@ -149,10 +157,9 @@ def _workbridge_response(text):
 
 
 def check_workbridge_capture_service(bridge):
-    """Discover the window lookup and capture tools in one authenticated call."""
+    """Check the authenticated tool catalog and the deployed desktop runner files."""
     command = _workbridge_command(bridge)
-    _require(command[1].is_file(), "desktop-workbridge-cli-unavailable")
-    _require(command[3].is_dir(), "desktop-workbridge-service-state-unavailable")
+    cli_path = str(command[1])
     code, text = _run([*command, "--list-tools", "--timeout", "6", "--json"], 10)
     entry = _workbridge_response(text)
     if code != 0 or entry.get("ok") is not True:
@@ -161,7 +168,7 @@ def check_workbridge_capture_service(bridge):
         reason = error.get("code")
         _require(isinstance(reason, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", reason),
                  "workbridge-discovery-failed")
-        result = {"status": "blocked", "reason": reason}
+        result = {"status": "blocked", "reason": reason, "cliPath": cli_path}
         for field in ("expectedVersion", "runtimeVersion"):
             version = error.get(field)
             if isinstance(version, str) and re.fullmatch(r"[0-9][A-Za-z0-9.+-]{0,63}", version):
@@ -177,9 +184,20 @@ def check_workbridge_capture_service(bridge):
     _require(len(names) == len(set(names)), "invalid-backend-response")
     missing = [name for name in ("desktop_windows", "desktop_capture_window") if name not in names]
     if missing:
-        return {"status": "blocked", "reason": "TOOL_NOT_FOUND", "runtimeVersion": version,
+        return {"status": "blocked", "reason": "TOOL_NOT_FOUND", "runtimeVersion": version, "cliPath": cli_path,
                 "missingTools": missing}
-    return {"status": "available", "runtimeVersion": version}
+    # Workbridge executes these scripts from the running deployment's dist directory.
+    # Having the files beside the CLI alone cannot satisfy the server-side runner.
+    missing_files = []
+    for relative in ("dist/desktop-ui.mjs", "dist/desktop-capture.mjs"):
+        path = bridge / relative
+        _plain_path(path)
+        if not path.is_file():
+            missing_files.append(relative)
+    if missing_files:
+        return {"status": "blocked", "reason": "desktop-workbridge-runner-files-missing", "runtimeVersion": version,
+                "cliPath": cli_path, "missingFiles": missing_files}
+    return {"status": "available", "runtimeVersion": version, "cliPath": cli_path}
 
 
 def _call(tool, arguments, output, *, bridge=None):

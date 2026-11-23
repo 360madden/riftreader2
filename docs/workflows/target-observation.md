@@ -23,11 +23,15 @@ option requires desktop ownership. [WGC build and inspection](../../tools/physic
 
 The standard Workbridge deployment is `C:\work\workbridge-mcp`. If Workbridge
 is installed elsewhere, set `RR2_WORKBRIDGE_ROOT` to the absolute directory of
-the active local deployment in the environment that launches RiftReader. The
-Workbridge CLI, WGC, DXcam and Waypoints view checks all use that root. The guard
-directory is `.tools\desktop-evidence` within the deployment. Keep the setting
-pointed at the installation that owns the desktop turn, including when several
-Workbridge checkouts exist on the same machine.
+the active deployment. Its `.local` directory identifies the running service.
+Its `.tools\desktop-evidence` directory holds the desktop turn and is shared
+by the Workbridge, WGC, DXcam and Waypoints view checks.
+
+If source in that deployment is ahead of the installed service, set
+`RR2_WORKBRIDGE_CLI_ROOT` to the absolute directory of a built local Workbridge
+checkout or release payload whose CLI matches the running version. This changes
+the executable script used for Workbridge calls. The running deployment still
+provides the service state, desktop evidence, and capture runner files.
 
 ```powershell
 $rr2Host = [Environment]::MachineName
@@ -41,7 +45,11 @@ requirements and the shared desktop-turn directory and guard files. WGC checks
 the probe executable and loads its Python image verifier. The output identifies
 the interpreter to use for a capture or for installing Pillow. Workbridge checks
 registration of `desktop_windows` and `desktop_capture_window` on the running
-service. A `RUNTIME_MISMATCH` includes the versions expected and running.
+service and checks `dist/desktop-ui.mjs` and `dist/desktop-capture.mjs` in its
+deployment. A `RUNTIME_MISMATCH` includes the versions expected and running.
+`desktop-workbridge-runner-files-missing` names the files that the service
+cannot launch from its deployment. Install those through Workbridge's staged
+update workflow.
 
 The checks use read-only discovery and require no RIFT PID. Exit code `2` means
 a dependency in the selected scope is blocked. Run the capture separately with
