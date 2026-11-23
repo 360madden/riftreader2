@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import ctypes
 import hashlib
-from importlib import metadata, util
 import json
 import math
 from pathlib import Path
@@ -15,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from scripts import observe_physical, physical_rift as native
-from scripts.probe_dxcam import DXCAM_VERSION, _DXcamBackend, _output, _snapshot, require
+from scripts.probe_dxcam import _DXcamBackend, _output, _snapshot, check_capture_python, require
 from scripts.waypoint_progress import write_json_atomic
 from scripts.live_physical_waypoints import _expected_target, _hwnd_argument
 
@@ -26,18 +25,9 @@ def check_dependencies(expected_host, native_reader=None):
               "pythonExecutable": sys.executable, "inputSent": False, "focusChanged": False}
     if not native.is_local_host(expected_host):
         return dict(result, reason="host-mismatch")
-    missing = [name for module, name in (("dxcam", "dxcam"), ("PIL", "Pillow"),
-                                         ("numpy", "numpy"), ("comtypes", "comtypes"))
-               if util.find_spec(module) is None]
-    if missing:
-        return dict(result, reason="dxcam-python-dependencies-missing", missingPackages=missing)
-    try:
-        version = metadata.version("dxcam")
-    except metadata.PackageNotFoundError:
-        version = None
-    result["dxcamVersion"] = version
-    if version != DXCAM_VERSION:
-        return dict(result, reason=f"dxcam-{DXCAM_VERSION}-required")
+    result.update(check_capture_python())
+    if "reason" in result:
+        return result
     reader = native.check_native_reader(expected_host, native_reader, kind="facing")
     result["nativeReader"] = reader
     if reader["status"] != "ready":

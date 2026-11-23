@@ -521,7 +521,8 @@ if (!$rr2CapturePython) { $rr2CapturePython = '.\.local\overlay-venv\Scripts\pyt
 & $rr2CapturePython -B scripts/probe_dxcam_native_pair.py --check-dependencies --expected-host ([Environment]::MachineName) --native-reader $rr2PublishedReader
 ```
 
-The check discovers the packages without initializing DXcam and starts the
+The check discovers the packages and checks the installed DXcam wheel's runtime
+files without initializing DXcam. It reports missing files before starting the
 native reader in help mode. Display availability is checked during capture.
 
 A successful `artifacts/waypoint-view-*` bundle contains route, original PNG, copied native

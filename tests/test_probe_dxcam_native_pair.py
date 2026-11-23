@@ -5,12 +5,13 @@ import hashlib
 from io import StringIO
 import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import numpy as np
 
-from scripts import probe_dxcam_native_pair as pair
+from scripts import probe_dxcam as capture, probe_dxcam_native_pair as pair
 from tests import test_plot_physical_waypoints as fixtures
 from tests import test_probe_dxcam as device_fixture
 
@@ -18,8 +19,7 @@ from tests import test_probe_dxcam as device_fixture
 class DependencyTests(unittest.TestCase):
     def test_dependency_cli_checks_the_selected_reader_without_a_game_process(self):
         with (patch.object(pair.socket, "gethostname", return_value="RIFT-STATION"),
-              patch.object(pair.util, "find_spec", return_value=object()),
-              patch.object(pair.metadata, "version", return_value=pair.DXCAM_VERSION),
+              patch.object(pair, "check_capture_python", return_value={"dxcamVersion": capture.DXCAM_VERSION}),
               patch.object(pair.native, "check_native_reader", return_value={"status": "ready"}) as reader,
               patch.object(pair.native, "select_physical") as select,
               redirect_stdout(StringIO()) as output):
@@ -33,7 +33,7 @@ class DependencyTests(unittest.TestCase):
 
     def test_missing_packages_and_wrong_host_skip_reader_startup(self):
         with (patch.object(pair.socket, "gethostname", return_value="RIFT-STATION"),
-              patch.object(pair.util, "find_spec", return_value=None) as find_spec,
+              patch.object(capture.importlib.util, "find_spec", return_value=None) as find_spec,
               patch.object(pair.native, "check_native_reader") as reader):
             wrong_host = pair.check_dependencies("OTHER-PC")
             find_spec.assert_not_called()
@@ -42,6 +42,37 @@ class DependencyTests(unittest.TestCase):
         self.assertEqual(wrong_host["reason"], "host-mismatch")
         self.assertEqual(report["reason"], "dxcam-python-dependencies-missing")
         self.assertEqual(report["missingPackages"], ["dxcam", "Pillow", "numpy", "comtypes"])
+
+    def test_dxcam_inventory_detects_missing_files_and_shadowed_packages(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            initializer = root / "dxcam/__init__.py"
+            backend = root / "dxcam/core/dxgi_duplicator.py"
+            backend.parent.mkdir(parents=True)
+            initializer.touch()
+            metadata = root / "dxcam-0.3.0.dist-info"
+            metadata.mkdir()
+            (metadata / "METADATA").write_text("Name: dxcam\nVersion: 0.3.0\n", encoding="utf-8")
+            (metadata / "RECORD").write_text(
+                "dxcam/__init__.py,sha256=placeholder,0\n"
+                "dxcam/core/dxgi_duplicator.py,sha256=placeholder,0\n", encoding="utf-8")
+            distribution = capture.importlib.metadata.PathDistribution(metadata)
+            with (patch.object(pair.socket, "gethostname", return_value="RIFT-STATION"),
+                  patch.object(capture.importlib.metadata, "distribution", return_value=distribution),
+                  patch.object(capture.importlib.util, "find_spec",
+                               return_value=SimpleNamespace(origin=str(initializer))) as spec,
+                  patch.object(pair.native, "check_native_reader", return_value={"status": "ready"}) as reader):
+                result = pair.check_dependencies("RIFT-STATION")
+                self.assertEqual(result["reason"], "dxcam-python-installation-incomplete")
+                self.assertEqual(result["missingFiles"], ["dxcam/core/dxgi_duplicator.py"])
+                backend.touch()
+                spec.return_value = SimpleNamespace(origin=str(root / "other/dxcam/__init__.py"))
+                result = pair.check_dependencies("RIFT-STATION")
+                self.assertEqual(result["reason"], "dxcam-python-package-location-mismatch")
+                reader.assert_not_called()
+                spec.return_value = SimpleNamespace(origin=str(initializer))
+                self.assertEqual(pair.check_dependencies("RIFT-STATION")["status"], "ready")
+                reader.assert_called_once()
 
 
 class Qpc:

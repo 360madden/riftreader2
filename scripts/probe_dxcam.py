@@ -5,12 +5,15 @@ DXcam is imported lazily only after exact-host/target/foreground admission.
 """
 from __future__ import annotations
 import argparse
+import csv
 from datetime import datetime, timezone
 import hashlib
 import importlib.metadata
+import importlib.util
+from io import StringIO
 import json
 import math
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import socket
 import statistics
 import sys
@@ -32,6 +35,51 @@ def require(condition, reason):
         raise ValueError(reason)
 
 
+def check_capture_python():
+    """Validate the installed DXcam wheel without importing the capture package."""
+    packages = {"dxcam": "dxcam", "PIL": "Pillow", "numpy": "numpy", "comtypes": "comtypes"}
+    sources = {module: importlib.util.find_spec(module) for module in packages}
+    missing = [packages[module] for module, spec in sources.items() if spec is None]
+    if missing:
+        return {"reason": "dxcam-python-dependencies-missing", "missingPackages": missing}
+    try:
+        distribution = importlib.metadata.distribution("dxcam")
+    except importlib.metadata.PackageNotFoundError:
+        distribution = None
+    version = distribution.version if distribution is not None else None
+    report = {"dxcamVersion": version}
+    if version != DXCAM_VERSION:
+        return {**report, "reason": f"dxcam-{DXCAM_VERSION}-required"}
+    try:
+        # Distribution.files can omit entries that are absent from disk.
+        record = distribution.read_text("RECORD") or ""
+        entries = (PurePosixPath(name) for name, digest, _ in csv.reader(StringIO(record), strict=True) if digest)
+        runtime = [entry for entry in entries
+                   if entry.parts[:1] == ("dxcam",) and ".." not in entry.parts
+                   and entry.suffix in {".py", ".pyd", ".dll"}]
+        initializer = PurePosixPath("dxcam/__init__.py")
+        if initializer not in runtime:
+            return {**report, "reason": "dxcam-installation-record-unavailable"}
+        origin = sources["dxcam"].origin
+        if not origin or Path(origin).resolve() != Path(distribution.locate_file(initializer)).resolve():
+            return {**report, "reason": "dxcam-python-package-location-mismatch"}
+        missing_files = sorted(entry.as_posix() for entry in runtime
+                               if not distribution.locate_file(entry).is_file())
+    except (OSError, ValueError, csv.Error):
+        return {**report, "reason": "dxcam-installation-record-unavailable"}
+    if missing_files:
+        return {**report, "reason": "dxcam-python-installation-incomplete", "missingFiles": missing_files}
+    return report
+
+
+def require_capture_python():
+    report = check_capture_python()
+    if "reason" in report:
+        missing = ", ".join(report.get("missingFiles", report.get("missingPackages", [])))
+        detail = f": {missing}" if missing else ""
+        raise ValueError(report["reason"] + detail)
+
+
 def _snapshot(target):
     from scripts.physical_waypoint_overlay import target_snapshot
     return target_snapshot(target)
@@ -44,7 +92,7 @@ class _DXcamBackend:
     by get_latest_frame, but a nonblocking lock avoids its Event.wait loop.
     """
     def __init__(self):
-        require(importlib.metadata.version("dxcam") == DXCAM_VERSION, f"dxcam-{DXCAM_VERSION}-required")
+        require_capture_python()
         import dxcam
         self.module = dxcam
 

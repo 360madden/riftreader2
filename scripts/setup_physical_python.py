@@ -61,8 +61,9 @@ def _check_environment(name, python):
         _run([*command, "-c", "import tkinter; tkinter.Tcl(); from PIL import Image"],
              "Check Waypoints and WGC imports")
     elif name == "overlay":
-        _run([*command, "-c", "from scripts import qt_waypoint_overlay; import numpy; import comtypes"],
-             "Check Qt and capture environment imports")
+        _run([*command, "-c", "from scripts import qt_waypoint_overlay; import numpy; import comtypes; "
+              "from scripts.probe_dxcam import require_capture_python; require_capture_python()"],
+             "Check Qt startup and DXcam installation")
     elif name == "rerun":
         env = dict(os.environ, CI="1")
         env.pop("FORCE_RERUN_ANALYTICS", None)
