@@ -39,6 +39,16 @@ A same-version `0.16.4-dev` Workbridge repair candidate passed release validatio
 and independent manifest verification. Its receipt is pending review. The live
 owner still has mixed package and runtime versions and an incomplete desktop bundle.
 [Repair candidate verification](../artifacts/workbridge-0164-repair-proof-legion-20261123.json)
+
+On LEGION, an isolated copy of the active installation reproduced the CLI version
+mismatch and missing capture files. The candidate passed CLI and RR2 preflight
+after all 2,872 runtime files were verified. Restoring the 2,865 baseline files
+reproduced the original failures. A synthetic WinApp fixture returned a verified
+PNG, and replaying that request caused no second backend capture.
+Live window capture remains unverified for this candidate.
+[Replacement and rollback](../artifacts/workbridge-0164-runtime-rehearsal-legion-20261123.json)
+· [Synthetic capture](../artifacts/workbridge-0164-synthetic-capture-legion-20261123.json)
+
 The separate staged `0.16.5-dev` owner returned a version-only WinApp probe to RR2.
 The probe uses the service's executable selection. [LEGION WinApp probe](../artifacts/workbridge-winapp-service-legion-20261123.json)
 WGC passed its dependency checks with both a private x64 Desktop Runtime and
