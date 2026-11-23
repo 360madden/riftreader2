@@ -11,6 +11,14 @@ endpoint and returned 10 named nearby units with native numeric level candidates
 The standalone nearby replay reproduced those counts from four copied JSON files
 without a live reader. [Nearby replay](../artifacts/native-level-passive-legion-p31684-20261123/nearby-replay.json)
 
+The newest LEGION check on PID 424 returned 10 named units with numeric level
+candidates and one additional unnamed numeric level candidate. Both native
+target endpoints had no selection. Two Telemetry windows replayed with 100
+distinct frames and no observed target cycles. Replay refused to merge the two
+process epochs. The observations sent no input.
+[Native replay](../artifacts/physical-legion-p424-f27f0e44/independent-native-replay.json)
+· [Telemetry replay](../artifacts/physical-legion-p424-f27f0e44/independent-telemetry-replay.json)
+
 LEGION passed the NPC survey's installed-addon and published-reader checks,
 including the keyed native level command. Preparation now verifies either the
 standalone addon or the Casting fallback. [Addon checks](../artifacts/npc-survey-addon-layouts-legion-20261123.json)
