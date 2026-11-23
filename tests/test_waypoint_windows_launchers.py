@@ -26,9 +26,10 @@ class WindowsLauncherTests(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name) / "cloned checkout"
         (self.root / "scripts").mkdir(parents=True)
-        for path in ("Waypoints.cmd", "rr2-waypoints.cmd", "scripts/resolve-waypoints-python.cmd"):
+        for path in ("Waypoints.cmd", "rr2-waypoints.cmd", "rr2-check-dependencies.cmd",
+                     "scripts/resolve-waypoints-python.cmd"):
             shutil.copyfile(ROOT / path, self.root / path)
-        for path in ("launch_physical_waypoints.py", "waypoints_cli.py"):
+        for path in ("launch_physical_waypoints.py", "waypoints_cli.py", "check_physical_dependencies.py"):
             (self.root / "scripts" / path).write_text(ENTRY_POINT, encoding="utf-8")
 
     def run_launcher(self, launcher, args=(), *, override=None, environment=None):
@@ -44,9 +45,10 @@ class WindowsLauncherTests(unittest.TestCase):
         return subprocess.run(command, cwd=self.root.parent, env=environ, capture_output=True,
                               text=True, timeout=15)
 
-    def test_desktop_and_cli_preserve_arguments_and_explicit_interpreter(self):
+    def test_launchers_preserve_arguments_and_explicit_interpreter(self):
         args = ["--route", "Example route with spaces.json", "--basis", "Calibration folder"]
-        for launcher, prefix in (("rr2-waypoints.cmd", []), ("Waypoints.cmd", ["--detach-window"])):
+        for launcher, prefix in (("rr2-waypoints.cmd", []), ("Waypoints.cmd", ["--detach-window"]),
+                                 ("rr2-check-dependencies.cmd", [])):
             with self.subTest(launcher=launcher):
                 result = self.run_launcher(launcher, args, override=sys.executable)
                 self.assertEqual(result.returncode, 17, result.stderr)
@@ -83,3 +85,15 @@ class WindowsLauncherTests(unittest.TestCase):
         })
         self.assertEqual(result.returncode, 17, result.stderr)
         self.assertEqual(Path(json.loads(result.stdout)["executable"]), executable)
+
+    def test_dependency_launcher_can_fall_back_to_windows_py(self):
+        launcher = shutil.which("py.exe")
+        if launcher is None:
+            self.skipTest("Windows Python launcher is unavailable")
+        launcher_dir = Path(launcher).parent
+        if launcher_dir.name.casefold() != "windowsapps" and (launcher_dir / "python.exe").is_file():
+            self.skipTest("Cannot isolate py.exe from the installed python.exe")
+        args = ["--expected-host", "LOCAL-PC", "--workflow", "prepared-maps"]
+        result = self.run_launcher("rr2-check-dependencies.cmd", args, environment={"PATH": str(launcher_dir)})
+        self.assertEqual(result.returncode, 17, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["arguments"], args)

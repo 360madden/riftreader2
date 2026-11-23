@@ -122,7 +122,7 @@ movement calibration measured on the Windows host that will run Waypoints.
 | --- | --- | --- |
 | Full development validation | `RIFTREADER2_DOTNET`, `RIFTREADER2_LUA_PYTHON` or `RIFTREADER2_PYTHON` | [Pinned SDK and prepared Python](#restore-build-and-test) |
 | Physical workflows and Waypoints | `RIFTREADER2_PYTHON` | Python with Tcl/Tk for Waypoints and Pillow for WGC |
-| Waypoints prepared maps | `RR2_RIFTWORLD_ROOT`, `RR2_RIFTWORLD_PYTHON`, `JAVA_HOME` | [Local RiftWorld, JPype, Java and pinned navigation dependencies](physical-waypoints.md#prepared-map-destinations) |
+| Waypoints prepared maps | `RR2_RIFTWORLD_ROOT`, `RR2_RIFTWORLD_PYTHON`, `JAVA_HOME` | Git on `PATH` and [local RiftWorld, JPype, Java and pinned navigation dependencies](physical-waypoints.md#prepared-map-destinations) |
 | Native physical reads and Waypoints | `RR2_NATIVE_READER` | [Published Live reader](#publish-the-local-native-reader) |
 | Installed physical addons | `RR2_RIFT_ADDONS_ROOT` | Optional absolute local AddOns directory, with Windows Documents used by default |
 | Waypoints calibration | `RR2_WAYPOINTS_BASIS` | [Verified calibration folder](physical-waypoints.md#local-calibration-and-dependency-checks) |
@@ -134,17 +134,16 @@ movement calibration measured on the Windows host that will run Waypoints.
 
 Run the startup checks on the computer where you will use RR2. The command
 reports each workflow in JSON and exits with code 2 if a selected check is
-blocked. Repeat `--workflow` to check a subset. Qt imports the marker presenter
-and Rerun prints the viewer version without opening windows. Game process
-identity and live addon publishers are verified separately during acquisition.
+blocked. It uses the same Python selection as the Waypoints launchers. Repeat
+`--workflow` to check a subset. Qt imports the marker presenter and Rerun prints
+the viewer version without opening windows. Game process identity and live
+addon publishers are verified separately during acquisition.
 
 ```powershell
 $rr2Host = [Environment]::MachineName
-$rr2Python = $env:RIFTREADER2_PYTHON
-if (!$rr2Python) { $rr2Python = 'python' }
-& $rr2Python -B scripts/check_physical_dependencies.py --expected-host $rr2Host
+.\rr2-check-dependencies.cmd --expected-host $rr2Host
 # Check only WGC and prepared maps
-& $rr2Python -B scripts/check_physical_dependencies.py --expected-host $rr2Host --workflow wgc --workflow prepared-maps
+.\rr2-check-dependencies.cmd --expected-host $rr2Host --workflow wgc --workflow prepared-maps
 # Check the SDK and Python used by the development gate
 .\scripts\validate.ps1 -CheckPrerequisites
 ```
@@ -152,6 +151,8 @@ if (!$rr2Python) { $rr2Python = 'python' }
 ### Read native telemetry
 
 ```powershell
+$rr2Python = $env:RIFTREADER2_PYTHON
+if (!$rr2Python) { $rr2Python = 'python' }
 & $rr2Python scripts/physical_rift.py --expected-host $rr2Host --read-native vitals
 # Also: position, orientation, actor-pose, smoothed-scalar, player-context, selected-target, stats.
 # For read-only actor/model/render matrix candidates (NOT qualified body heading):

@@ -38,6 +38,7 @@ RIFTWORLD_ROOT = ROOT.parent / "RiftWorld"
 RIFTWORLD_STARTUP_PROBE = r"""
 import json
 from pathlib import Path
+import shutil
 import sys
 
 result = {"status": "blocked"}
@@ -72,6 +73,8 @@ try:
     result["pipelineCheckout"] = str(upstream)
     if upstream.anchor.startswith(("\\", "//")) or not upstream.is_dir():
         raise ValueError(f"Local RiftAssetDumper checkout is unavailable at {upstream}")
+    if shutil.which("git") is None:
+        raise ValueError("Git must be on PATH to verify the pinned RiftAssetDumper revision")
     dependencies = verify_upstream(upstream)
     if manifest is not None and dependencies != manifest["dependencies"]:
         raise ValueError("Navigation build dependencies do not match the selected checkout")

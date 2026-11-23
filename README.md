@@ -123,6 +123,9 @@ for automation; movement requires explicit `--execute` and retains STOP/release.
 
 Both launchers use `RIFTREADER2_PYTHON` when set to a Python executable, then a
 checkout-local `.venv`, Python on `PATH`, or the Windows `py` launcher. Run
+`.\rr2-check-dependencies.cmd --expected-host ([Environment]::MachineName)` to
+check startup dependencies for the physical workflows with the same Python
+selection. Run
 `.\Waypoints.cmd --check` to see the local RIFT and movement calibration
 readiness in the console without opening the helper window.
 
