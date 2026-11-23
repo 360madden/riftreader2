@@ -190,11 +190,14 @@ owns the travel, combat and recovery handoff.
 ```powershell
 python scripts/survival_state.py --summary PATH_TO_COMPOSITE_SUMMARY
 python scripts/readerbridge_v3.py --packet PATH_TO_RETAINED_PACKET
-python scripts/capture_readerbridge_v3.py --expected-host AMD-DESKTOP --physical-pid PID --seed-index PATH_TO_CURRENT_EPOCH_SCOUT_INDEX --output NEW_DIRECTORY
+$rr2Host = [Environment]::MachineName
+python scripts/capture_readerbridge_v3.py --expected-host $rr2Host --physical-pid PID --seed-index PATH_TO_CURRENT_EPOCH_SCOUT_INDEX --output NEW_DIRECTORY --native-reader $rr2PublishedReader
 ```
 
-The acquisition command reacquires packet addresses in a bounded scope from a
-fresh same-process scout; a seed from another process epoch is refused. A live
+The acquisition uses the [local published reader](../workflows/development.md#publish-the-local-native-reader)
+for player identity and packet evidence. It verifies the same player on both
+sides of the acquisition. A fresh same-process scout supplies the bounded scope
+and a seed from another process epoch is refused. A live
 pair matched two advancing packet generations to exact same-generation player
 identity companions and exposed HP 18208/18208 and Power 100. This foundation
 intake reports `ready: false` because its packet alone cannot establish changed

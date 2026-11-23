@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 import hashlib
 import json
@@ -22,7 +23,6 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts import physical_rift
-from scripts.physical_waypoints import PhysicalAdapter
 from scripts.readerbridge_v3 import CONTROL, MAGIC, PACKET_SIZE, decode_packet
 
 MIB = 1024 * 1024
@@ -261,24 +261,44 @@ def _packet_from_capture(report: dict, target: dict, request: dict) -> bytes:
     return packet
 
 
+def _read_current_self(selection, reader, read_context):
+    readout = read_context(selection, "player-context", native_reader=reader)
+    if (readout.get("status") != "complete" or readout.get("nativeRead") != "player-context"
+            or readout.get("target") != selection["target"]):
+        raise CaptureError("player-context-unavailable-or-owner-changed")
+    values = readout.get("nativeValues", {})
+    try:
+        sampled = datetime.fromisoformat(values["sampledAtUtc"])
+        age = (datetime.now(timezone.utc) - sampled).total_seconds()
+    except (KeyError, TypeError, ValueError) as exc:
+        raise CaptureError("invalid-player-context-time") from exc
+    if not -0.1 <= age <= 2:
+        raise CaptureError("stale-player-context")
+    return _canonical_unit_key(values.get("unitKey"))
+
+
 def acquire(expected_host: str, physical_pid: int, seed_index: Path, output: Path,
-            *, scan_mib: int = 16, runner=subprocess.run, sleep=time.sleep,
-            selector=physical_rift.select_physical, adapter_factory=PhysicalAdapter,
+            *, scan_mib: int = 16, native_reader=None, runner=subprocess.run, sleep=time.sleep,
+            selector=physical_rift.select_physical, read_context=physical_rift.read_native,
             progress=_stderr_progress) -> dict:
+    # Native commands run from the checkout, even when invoked from elsewhere.
+    seed_index, output = Path(seed_index).absolute(), Path(output).absolute()
     if output.exists():
         raise CaptureError("output-already-exists")
     if type(scan_mib) is not int or not 1 <= scan_mib <= 32:
         raise CaptureError("scan-mib-out-of-range")
+    if not physical_rift.is_local_host(expected_host):
+        raise CaptureError("host-mismatch")
+    reader = physical_rift._native_reader_path(native_reader)
+    if not reader.is_file():
+        raise CaptureError("native-reader-not-built")
     selection = selector(expected_host=expected_host, physical_pid=physical_pid)
     if selection.get("status") != "ready":
         raise CaptureError("physical-selection-not-ready:" + str(selection.get("reason", "unknown")))
     target = _target(selection.get("target", {}))
     seed = _read_json(seed_index)
     base, scan_bytes = _validate_seed(seed, target, scan_mib)
-    adapter = adapter_factory(expected_host, physical_pid, None)
-    if not _same_target(adapter.target, target):
-        raise CaptureError("adapter-process-identity-mismatch")
-    self_id = _canonical_unit_key(adapter.unit_key)
+    self_id = _read_current_self(selection, reader, read_context)
     output.mkdir(parents=True, exist_ok=False)
     progress({"stage": "admitted", "processId": target["processId"],
               "startAddress": f"0x{base:X}", "maxScanBytes": scan_bytes})
@@ -291,7 +311,7 @@ def acquire(expected_host: str, physical_pid: int, seed_index: Path, output: Pat
         scout_request_path = output / f"attempt-{attempt}.scout.request.json"
         scout_directory = output / f"attempt-{attempt}.scout"
         _write_json(scout_request_path, scout_request)
-        _run_native("scout-values-native", scout_request_path, scout_directory, runner)
+        _run_native("scout-values-native", scout_request_path, scout_directory, runner, native_reader=reader)
         index_path = scout_directory / "index.json"
         index = _read_json(index_path)
         candidates = _validate_scout(index, target, scout_directory)
@@ -315,7 +335,7 @@ def acquire(expected_host: str, physical_pid: int, seed_index: Path, output: Pat
                 request_path = output / f"attempt-{attempt}.capture.request.json"
                 report_path = output / f"attempt-{attempt}.capture.json"
                 _write_json(request_path, request)
-                _run_native("capture-native", request_path, report_path, runner)
+                _run_native("capture-native", request_path, report_path, runner, native_reader=reader)
                 report = _read_json(report_path)
                 packet = _packet_from_capture(report, target, request)
                 decoded = decode_packet(packet)
@@ -346,6 +366,8 @@ def acquire(expected_host: str, physical_pid: int, seed_index: Path, output: Pat
             break
     if len(generations) != 2 or generations[1]["sequence"] <= generations[0]["sequence"]:
         raise CaptureError("two-advancing-generations-not-observed")
+    if _read_current_self(selection, reader, read_context) != self_id:
+        raise CaptureError("player-changed-during-readerbridge-acquisition")
     result = {"schemaVersion": 1, "evidenceKind": "readerbridge-v3-bounded-acquisition/1",
               "status": "captured", "ready": False, "inputSent": False,
               "guiStateChanged": False, "target": target, "selfId": self_id,
@@ -366,14 +388,16 @@ def main(argv=None) -> int:
     parser.add_argument("--physical-pid", required=True, type=int)
     parser.add_argument("--seed-index", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--native-reader", type=Path, help="absolute path to a local published reader")
     parser.add_argument("--scan-mib", type=int, default=16,
                         help="bounded first-span scan size (1-32 MiB; default 16)")
     args = parser.parse_args(argv)
     try:
         print(json.dumps(acquire(args.expected_host, args.physical_pid, args.seed_index,
-                                 args.output, scan_mib=args.scan_mib), allow_nan=False))
+                                 args.output, scan_mib=args.scan_mib,
+                                 native_reader=args.native_reader), allow_nan=False))
         return 0
-    except (CaptureError, OSError) as exc:
+    except (ValueError, OSError) as exc:
         print(json.dumps({"status": "blocked", "ready": False, "inputSent": False,
                           "reason": str(exc)}, allow_nan=False))
         return 2

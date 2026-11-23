@@ -1,10 +1,13 @@
 import base64
+from contextlib import chdir
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import Mock, patch
 
 from scripts import capture_readerbridge_v3 as capture
 from scripts.readerbridge_v3 import decode_packet
@@ -20,12 +23,7 @@ SELF_NUMBER = 239816685251645959
 SELF_ID = "u035400012FA2D207"
 
 
-class Adapter:
-    target = TARGET
-    unit_key = str(SELF_NUMBER)
-
-    def __init__(self, host, pid, basis):
-        self.arguments = host, pid, basis
+HOST = "RIFT-STATION"
 
 
 def snapshot(data):
@@ -103,6 +101,13 @@ class CaptureReaderBridgeTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
+        local_host = patch.object(capture.physical_rift.socket, "gethostname", return_value=HOST)
+        local_host.start()
+        self.addCleanup(local_host.stop)
+        self.reader = self.root / "Reader with spaces" / "RiftReader2.Live.exe"
+        self.reader.parent.mkdir()
+        self.reader.touch()
+        self.context_reads = []
         self.seed = self.root / "seed.json"
         self.seed.write_text(json.dumps({"evidenceKind": "native-value-scout/1",
                                          "identity": TARGET,
@@ -114,10 +119,15 @@ class CaptureReaderBridgeTests(unittest.TestCase):
 
     @staticmethod
     def selector(**kwargs):
-        return {"status": "ready", "target": TARGET}
+        return {"status": "ready", "ownerHost": HOST, "target": TARGET}
 
-    def test_acquires_two_advancing_generations_with_bounded_requests(self):
-        runner = FakeRunner()
+    def read_context(self, selection, kind, *, native_reader):
+        self.context_reads.append((kind, native_reader))
+        return {**selection, "status": "complete", "nativeRead": kind,
+                "nativeValues": {"unitKey": str(SELF_NUMBER),
+                                 "sampledAtUtc": datetime.now(timezone.utc).isoformat()}}
+
+    def acquire_two_generations(self, runner, read_context):
         calls = {"decode": 0}
         original = capture.decode_packet
 
@@ -139,23 +149,28 @@ class CaptureReaderBridgeTests(unittest.TestCase):
                 value["sampledAt"] = str(DECODED["sourceTimeMs"] / 1000 + 1)
             return value
 
-        capture.decode_packet = advancing_decoder
-        capture._companion = advancing_companion
-        try:
-            sleeps = []
-            result = capture.acquire("AMD-DESKTOP", TARGET["processId"], self.seed,
-                                     self.root / "out", runner=runner, sleep=sleeps.append,
-                                     selector=self.selector, adapter_factory=Adapter,
-                                     progress=lambda _: None)
-        finally:
-            capture.decode_packet = original
-            capture._companion = original_companion
+        sleeps = []
+        with patch.object(capture, "decode_packet", advancing_decoder), \
+                patch.object(capture, "_companion", advancing_companion), chdir(self.root):
+            result = capture.acquire(HOST, TARGET["processId"], Path("seed.json"),
+                                     Path("out"), runner=runner, sleep=sleeps.append,
+                                     selector=self.selector, native_reader=self.reader,
+                                     read_context=read_context, progress=lambda _: None)
+        return result, sleeps
+
+    def test_acquires_two_advancing_generations_with_bounded_requests(self):
+        runner = FakeRunner()
+        result, sleeps = self.acquire_two_generations(runner, self.read_context)
         self.assertFalse(result["ready"])
         self.assertFalse(result["inputSent"])
         self.assertEqual([DECODED["sequence"], DECODED["sequence"] + 1],
                          [g["sequence"] for g in result["generations"]])
         self.assertEqual([1.1], sleeps)
         self.assertEqual(4, len(runner.calls))
+        self.assertEqual([("player-context", self.reader)] * 2, self.context_reads)
+        self.assertTrue(all(call[0][0] == str(self.reader) for call in runner.calls))
+        self.assertTrue(all(Path(call[0][3]).parent == self.root / "out" for call in runner.calls))
+        self.assertTrue(all(Path(call[0][5]).parent == self.root / "out" for call in runner.calls))
         self.assertTrue(all(call[1]["timeout"] == 15 for call in runner.calls))
         scout_request = json.loads((self.root / "out/attempt-1.scout.request.json").read_text())
         self.assertEqual(16 * capture.MIB, scout_request["maxScanBytes"])
@@ -167,32 +182,70 @@ class CaptureReaderBridgeTests(unittest.TestCase):
         capture_request = json.loads((self.root / "out/attempt-1.capture.request.json").read_text())
         self.assertEqual([4096, 4096, 200], [r["byteLength"] for r in capture_request["ranges"]])
 
+    def test_refuses_publication_when_the_native_player_changes(self):
+        def changed_player(*args, **kwargs):
+            result = self.read_context(*args, **kwargs)
+            if len(self.context_reads) == 2:
+                result["nativeValues"]["unitKey"] = str(SELF_NUMBER + 1)
+            return result
+
+        with self.assertRaisesRegex(capture.CaptureError, "player-changed-during-readerbridge-acquisition"):
+            self.acquire_two_generations(FakeRunner(), changed_player)
+        self.assertTrue((self.root / "out/generation-2.bin").is_file())
+        self.assertFalse((self.root / "out/result.json").exists())
+
     def test_rejects_seed_from_another_epoch_before_native_or_output(self):
         bad = json.loads(self.seed.read_text())
         bad["identity"]["processStartUtcTicks"] += 1
         self.seed.write_text(json.dumps(bad))
         runner = FakeRunner()
         with self.assertRaisesRegex(capture.CaptureError, "seed-process-epoch-or-build-mismatch"):
-            capture.acquire("AMD-DESKTOP", TARGET["processId"], self.seed, self.root / "out",
-                            runner=runner, selector=self.selector, adapter_factory=Adapter,
+            capture.acquire(HOST, TARGET["processId"], self.seed, self.root / "out",
+                            runner=runner, selector=self.selector, native_reader=self.reader, read_context=self.read_context,
                             progress=lambda _: None)
         self.assertEqual([], runner.calls)
         self.assertFalse((self.root / "out").exists())
 
+    def test_missing_reader_refuses_before_process_selection(self):
+        selector = Mock()
+        output = self.root / "out"
+        with self.assertRaisesRegex(capture.CaptureError, "native-reader-not-built"):
+            capture.acquire(HOST, TARGET["processId"], self.seed, output,
+                            native_reader=self.root / "missing.exe", selector=selector)
+        selector.assert_not_called()
+        self.assertFalse(output.exists())
+
+    def test_stale_player_context_refuses_before_packet_acquisition(self):
+        runner = FakeRunner()
+        output = self.root / "out"
+
+        def stale_context(*args, **kwargs):
+            context = self.read_context(*args, **kwargs)
+            stale = datetime.now(timezone.utc) - timedelta(seconds=20)
+            context["nativeValues"]["sampledAtUtc"] = stale.isoformat()
+            return context
+
+        with self.assertRaisesRegex(capture.CaptureError, "stale-player-context"):
+            capture.acquire(HOST, TARGET["processId"], self.seed, output,
+                            native_reader=self.reader, runner=runner, selector=self.selector,
+                            read_context=stale_context, progress=lambda _: None)
+        self.assertEqual([], runner.calls)
+        self.assertFalse(output.exists())
+
     def test_rejects_scan_above_32_mib_and_existing_output(self):
         with self.assertRaisesRegex(capture.CaptureError, "scan-mib-out-of-range"):
-            capture.acquire("AMD-DESKTOP", 1, self.seed, self.root / "out", scan_mib=33)
+            capture.acquire(HOST, 1, self.seed, self.root / "out", scan_mib=33)
         output = self.root / "existing"
         output.mkdir()
         with self.assertRaisesRegex(capture.CaptureError, "output-already-exists"):
-            capture.acquire("AMD-DESKTOP", 1, self.seed, output)
+            capture.acquire(HOST, 1, self.seed, output)
 
     def test_rejects_unverified_range_hash_and_never_publishes_ready(self):
         runner = FakeRunner(corrupt_capture_hash=True)
         with self.assertRaisesRegex(capture.CaptureError, "two-advancing-generations-not-observed"):
-            capture.acquire("AMD-DESKTOP", TARGET["processId"], self.seed, self.root / "out",
+            capture.acquire(HOST, TARGET["processId"], self.seed, self.root / "out",
                             runner=runner, sleep=lambda _: None, selector=self.selector,
-                            adapter_factory=Adapter, progress=lambda _: None)
+                            native_reader=self.reader, read_context=self.read_context, progress=lambda _: None)
         self.assertFalse((self.root / "out/result.json").exists())
         self.assertEqual(3, runner.scouts)
         self.assertEqual(6, len(runner.calls))  # three scouts and three packet reads, never more
@@ -245,9 +298,9 @@ class CaptureReaderBridgeTests(unittest.TestCase):
         capture.decode_packet = decoder
         capture._companion = companion
         try:
-            result = capture.acquire("AMD-DESKTOP", TARGET["processId"], self.seed,
+            result = capture.acquire(HOST, TARGET["processId"], self.seed,
                                      self.root / "out", runner=runner, sleep=lambda _: None,
-                                     selector=self.selector, adapter_factory=Adapter,
+                                     selector=self.selector, native_reader=self.reader, read_context=self.read_context,
                                      progress=lambda _: None)
         finally:
             capture.decode_packet = original_decode
