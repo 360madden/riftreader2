@@ -23,7 +23,7 @@ from scripts import observe_physical, physical_rift
 from scripts import replay_physical_telemetry_target as replay
 from scripts import replay_physical_telemetry_target_series as continuity
 
-SCHEMA = "physical-telemetry-target-series-capture/1"
+SCHEMA = continuity.CAPTURE_SERIES_SCHEMA
 TELEMETRY_FILES = ("RiftAddon.toc", "main.lua", "telemetry.lua")
 ADDRESS = re.compile(r"0x[1-9A-F][0-9A-F]*\Z")
 
@@ -45,6 +45,7 @@ def _stale_scope_candidate(report, target):
 
 def run(pid, output, *, count=3, interval_ms=500, scope_count=4,
         recover_stale_scope=False, stop_on_aba=False, expected_host=None, native_reader=None,
+        include_native_target_levels=False,
         collect=capture.collect, replay_target=replay.replay,
         combine=continuity.combine, sleep=time.sleep):
     """Preserve all original captures; refuse cross-epoch changes and stale windows."""
@@ -53,6 +54,7 @@ def run(pid, output, *, count=3, interval_ms=500, scope_count=4,
             and type(interval_ms) is int and 0 <= interval_ms <= 2000
             and type(scope_count) is int and 1 <= scope_count <= 8
             and type(recover_stale_scope) is bool
+            and type(include_native_target_levels) is bool
             and type(stop_on_aba) is bool,
             "invalid-bounds")
     collect = physical_rift.bind_native_reader(collect, native_reader)
@@ -64,6 +66,8 @@ def run(pid, output, *, count=3, interval_ms=500, scope_count=4,
     output.mkdir()
     paths, observations, selected = [], [], None
     host_option = {"expected_host": expected_host} if expected_host is not None else {}
+    target_options = ({"include_native_target_levels": True} if include_native_target_levels
+                      else {"include_native_target": True})
     pinned_target, recovery_attempts = None, []
     merged, early_stop = None, False
     try:
@@ -72,7 +76,7 @@ def run(pid, output, *, count=3, interval_ms=500, scope_count=4,
                 sleep(interval_ms / 1000)
             destination = output / f"capture-{index+1:02d}"
             options = {
-                "auto_scope": True, "include_native_target": True,
+                "auto_scope": True, **target_options,
                 "scope_count": scope_count if index == 0 else 1,
                 "discover_scope": index == 0,
                 **host_option,
@@ -114,9 +118,8 @@ def run(pid, output, *, count=3, interval_ms=500, scope_count=4,
                     "outcome": "attempted"}
                 recovery_attempts.append(attempt)
                 path, report = collect(
-                    pid, destination, auto_scope=True,
-                    include_native_target=True, scope_count=scope_count,
-                    discover_scope=True, **host_option)
+                    pid, destination, auto_scope=True, scope_count=scope_count,
+                    discover_scope=True, **target_options, **host_option)
                 attempt["outcome"] = "completed-candidate"
             require(type(report) is dict
                     and type(report.get("target")) is dict
@@ -135,10 +138,14 @@ def run(pid, output, *, count=3, interval_ms=500, scope_count=4,
             checked = replay_target(path)
             require(checked.get("qualificationStatus") == "candidate-only",
                     f"capture-{index+1:02d}-replay-refused")
+            level = checked.get("targetLevelComparison")
+            if include_native_target_levels:
+                require(isinstance(level, dict), f"capture-{index+1:02d}-target-level-replay-missing")
             paths.append(path)
             observations.append({"capture": index + 1, "status": checked["status"],
                                  "lastSequence": checked["lastSequence"],
-                                 "scopeCandidate": selected})
+                                 "scopeCandidate": selected,
+                                 **({"targetLevelComparison": level} if level is not None else {})})
             if stop_on_aba and len(paths) >= 2:
                 # Each merge independently reopens every original Lua/native
                 # source byte. Never stop on the final-target-only shortcut.
@@ -215,10 +222,12 @@ def _check_installed_telemetry(addon_dir):
             "directory": str(folder), "files": files}
 
 
-def check_dependencies(expected_host=None, native_reader=None, installed_telemetry_dir=None):
+def check_dependencies(expected_host=None, native_reader=None, installed_telemetry_dir=None, *,
+                       include_native_target_levels=False):
     """Check local startup prerequisites without selecting a game process."""
+    target_kind = "selected-target" if include_native_target_levels else "player-context"
     reader = physical_rift.check_native_reader(
-        expected_host, native_reader, kind=("zone-context", "player-context"))
+        expected_host, native_reader, kind=("zone-context", target_kind))
     platform_ready = capture.supports_readonly_windows_process()
     if reader.get("reason") == "host-mismatch":
         addon = {"status": "not-checked", "reason": "host-mismatch"}
@@ -263,6 +272,8 @@ def main(argv=None):
     parser.add_argument("--stop-on-aba", action="store_true", default=argparse.SUPPRESS,
                         help="stop before the requested window limit only after an "
                              "independent source-hashed A-B-A candidate is observed")
+    parser.add_argument("--include-native-target-levels", action="store_true", default=argparse.SUPPRESS,
+                        help="retain exact-ID selected-target level candidates in each window")
     options = vars(parser.parse_args(argv))
     dependency_check = options.pop("check_dependencies")
     pid = options.pop("physical_pid")
@@ -270,9 +281,11 @@ def main(argv=None):
     native_reader = options.pop("native_reader")
     installed_telemetry_dir = options.pop("installed_telemetry_dir")
     if dependency_check:
+        levels = options.pop("include_native_target_levels", False)
         if options:
-            parser.error("--check-dependencies accepts only --expected-host, --native-reader and --installed-telemetry-dir")
-        result = check_dependencies(expected_host, native_reader, installed_telemetry_dir)
+            parser.error("--check-dependencies accepts host, reader, installed addon and native level options")
+        result = check_dependencies(expected_host, native_reader, installed_telemetry_dir,
+                                    include_native_target_levels=levels)
         print(json.dumps(result))
         return 0 if result["status"] == "ready" else 2
     if installed_telemetry_dir is not None:

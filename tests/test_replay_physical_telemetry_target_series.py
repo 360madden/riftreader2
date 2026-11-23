@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from contextlib import redirect_stdout
 from copy import deepcopy
+import hashlib
 from io import StringIO
 import json
 from pathlib import Path
@@ -97,6 +98,43 @@ class TargetSeriesTests(unittest.TestCase):
         self.assertEqual(result["aBaAcrossCaptures"], [])
         self.assertEqual(result["lastObservedTargetRuns"], [{
             "targetUnitIdCandidate": None, "firstCapture": 1, "lastCapture": 2}])
+
+    def test_level_evidence_stays_attached_to_its_original_window(self):
+        first, second = report(10, A, 1), report(20, B, 2)
+        first["targetLevelComparison"] = {"nativeUnitIdCandidate": A, "nativeLevels": [14, 14]}
+        second["targetLevelComparison"] = {"nativeUnitIdCandidate": B, "nativeLevels": [27, 27]}
+        result = self.call([first, second])
+        self.assertEqual([row["targetLevelComparison"] for row in result["captures"]],
+                         [first["targetLevelComparison"], second["targetLevelComparison"]])
+
+    def test_copied_series_locates_the_verified_rediscovery_window_by_hash(self):
+        root = Path(self.tmp.name) / "copied series"
+        paths, windows = [], []
+        for index, name in enumerate(("capture-01", "capture-02-rediscovery"), 1):
+            directory = root / name
+            directory.mkdir(parents=True)
+            path = directory / "summary.json"
+            raw = json.dumps({"window": index}).encode()
+            path.write_bytes(raw)
+            paths.append(path)
+            windows.append({"capture": index, "evidenceSummarySha256": hashlib.sha256(raw).hexdigest().upper()})
+        failed = root / "capture-02" / "summary.json"
+        failed.parent.mkdir()
+        failed.write_text('{"status":"unqualified"}', encoding="utf-8")
+        rebuilt = {"captureCount": 2, "status": "target-continuity-observations-candidate",
+                   "runtimeIdentity": {"hostName": "RIFT-STATION"}, "captures": windows}
+        result = root / "result.json"
+        result.write_text(json.dumps({"schema": series.CAPTURE_SERIES_SCHEMA, "inputSent": False,
+                                      "qualificationStatus": "candidate-only", "completedCaptureCount": 2,
+                                      "continuity": rebuilt}), encoding="utf-8")
+        with patch.object(series, "combine", return_value=rebuilt) as combine:
+            self.assertEqual(series.replay_series(result), rebuilt)
+            combine.assert_called_once_with(paths)
+        paths[1].write_text('{"changed":true}', encoding="utf-8")
+        with patch.object(series, "combine") as combine:
+            with self.assertRaisesRegex(ValueError, "capture-series-window-02-missing-or-ambiguous"):
+                series.replay_series(result)
+            combine.assert_not_called()
 
     def test_unobserved_gaps_are_reported_not_fabricated_as_continuity(self):
         result = self.call([report(10, A, 1, first=7),

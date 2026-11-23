@@ -73,6 +73,16 @@ class SeriesCaptureTests(unittest.TestCase):
                          result["continuity"])
         self.assertFalse((self.output / "failure.json").exists())
 
+    def test_level_mode_requests_and_preserves_each_window_comparison(self):
+        level = {"status": "matching-exact-id-target-level-candidates", "advancingFrameCount": 2}
+
+        def replay_levels(path):
+            return dict(self.replay(path), targetLevelComparison=level)
+
+        _, result = self.execute_capture(include_native_target_levels=True, replay_target=replay_levels)
+        self.assertTrue(all(options.get("include_native_target_levels") for _, _, options in self.calls))
+        self.assertEqual([entry["targetLevelComparison"] for entry in result["individualCaptures"]], [level] * 3)
+
     def test_unqualified_window_aborts_without_claiming_freshness(self):
         def failed(pid, destination, **options):
             path, result = self.collect(pid, destination, **options)

@@ -19,10 +19,12 @@ if str(ROOT) not in sys.path:
 
 from scripts import physical_rift
 from scripts import replay_physical_telemetry_target as target_replay
+from scripts.compare_physical_player_context_pair import load
 
 SHA = re.compile(r"[0-9A-F]{64}\Z")
 UNIT = re.compile(r"u[0-9A-F]{16}\Z")
 SCHEMA = "physical-target-continuity-offline/1"
+CAPTURE_SERIES_SCHEMA = "physical-telemetry-target-series-capture/1"
 IDENTITY = ("hostName", "processId", "processStartUtcTicks", "executableSha256",
             "playerUnitId", "zoneIdCandidate", "sourceEpoch", "sourceSessionId")
 
@@ -133,6 +135,7 @@ def combine(paths, *, replay=target_replay.replay):
             require(last > prior["lastSequence"],
                     "no-new-advancing-source-sequence")
             gap = max(0, first - prior["lastSequence"] - 1)
+        level = result.get("targetLevelComparison")
         observations.append({
             "capture": index, "evidenceSummarySha256": sha,
             "firstSequence": first, "lastSequence": last,
@@ -145,6 +148,7 @@ def combine(paths, *, replay=target_replay.replay):
             "nativeTargetComparisonStatus": (
                 (result.get("nativeTargetComparison") or {}).get("status")
             ),
+            **({"targetLevelComparison": level} if level is not None else {}),
         })
     source_rows = [dict(merged_frames[seq]["sourceFrame"],
                         firstCapture=merged_frames[seq]["firstCapture"],
@@ -237,10 +241,51 @@ def combine(paths, *, replay=target_replay.replay):
     }
 
 
+def replay_series(path):
+    """Find the original window summaries beside a copied series result by hash."""
+    path = Path(path)
+    report, _ = load(path)
+    require(report.get("schema") == CAPTURE_SERIES_SCHEMA and report.get("inputSent") is False
+            and report.get("qualificationStatus") == "candidate-only", "capture-series-unqualified")
+    expected = report.get("continuity")
+    require(type(expected) is dict, "capture-series-continuity-invalid")
+    rows = expected.get("captures")
+    require(type(rows) is list and 2 <= len(rows) <= 6
+            and report.get("completedCaptureCount") == expected.get("captureCount") == len(rows),
+            "capture-series-window-count-invalid")
+    root = path.parent.resolve()
+    paths, hashes = [], []
+    for index, window in enumerate(rows, 1):
+        require(type(window) is dict and window.get("capture") == index, "capture-series-window-invalid")
+        sha = window.get("evidenceSummarySha256")
+        require(type(sha) is str and SHA.fullmatch(sha), "capture-series-window-sha-invalid")
+        candidates = []
+        for suffix in ("", "-rediscovery"):
+            directory = root / f"capture-{index:02d}{suffix}"
+            if directory.resolve() != directory or directory.is_symlink():
+                continue
+            summary = directory / "summary.json"
+            try:
+                load(summary, sha)
+            except (OSError, ValueError):
+                continue
+            candidates.append(summary)
+        require(len(candidates) == 1, f"capture-series-window-{index:02d}-missing-or-ambiguous")
+        paths.append(candidates[0])
+        hashes.append(sha)
+    result = combine(paths)
+    require([row["evidenceSummarySha256"] for row in result["captures"]] == hashes
+            and result["runtimeIdentity"] == expected["runtimeIdentity"]
+            and result["status"] == expected["status"], "capture-series-replay-result-mismatch")
+    return result
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--summary", required=True, action="append", type=Path,
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--summary", action="append", type=Path,
                         help="Source-hashed successful capture (repeat 2-16 times)")
+    source.add_argument("--series", type=Path, help="result.json beside the original capture windows")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
     try:
@@ -248,7 +293,7 @@ def main(argv=None):
             require(not args.output.exists() and not args.output.is_symlink()
                     and args.output.parent.is_dir(),
                     "output-exists-or-parent-unavailable")
-        result = combine(args.summary)
+        result = replay_series(args.series) if args.series is not None else combine(args.summary)
         if args.output is not None:
             with args.output.open("x", encoding="utf-8", newline="\n") as stream:
                 json.dump(result, stream, indent=2, allow_nan=False)

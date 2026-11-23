@@ -222,6 +222,17 @@ Use `--installed-telemetry-dir` to check a custom installation. The
 The dependency check requires no PID. Capture verifies the current process,
 build and advancing Lua publisher.
 
+Add `--include-native-target-levels` to the dependency check and capture to
+compare the selected unit's exact ID and level in each window. Copy the full
+series directory to replay from its `result.json`. The replayer verifies the
+original window summaries by hash, including any window that required a scope
+rediscovery.
+
+```powershell
+& $rr2Python -B scripts/capture_physical_telemetry_target_series.py --expected-host $rr2Host --physical-pid CURRENT_PID --include-native-target-levels --output-dir artifacts/NEW_TARGET_LEVEL_SERIES
+& $rr2Python -B scripts/replay_physical_telemetry_target_series.py --series artifacts/NEW_TARGET_LEVEL_SERIES/result.json
+```
+
 With the freshly verified `CURRENT_PID`, use a new output directory for each
 command. NPC survey preparation verifies the installed addon files and prints
 the bind and capture commands. It looks under the current user's Windows
