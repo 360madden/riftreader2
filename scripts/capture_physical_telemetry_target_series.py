@@ -10,6 +10,7 @@ import argparse
 import json
 from pathlib import Path
 import re
+import stat
 import sys
 import time
 
@@ -18,11 +19,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts import capture_physical_telemetry_zone as capture
-from scripts import physical_rift
+from scripts import observe_physical, physical_rift
 from scripts import replay_physical_telemetry_target as replay
 from scripts import replay_physical_telemetry_target_series as continuity
 
 SCHEMA = "physical-telemetry-target-series-capture/1"
+TELEMETRY_FILES = ("RiftAddon.toc", "main.lua", "telemetry.lua")
 ADDRESS = re.compile(r"0x[1-9A-F][0-9A-F]*\Z")
 
 
@@ -189,19 +191,51 @@ def run(pid, output, *, count=3, interval_ms=500, scope_count=4,
         raise
 
 
-def check_dependencies(expected_host=None, native_reader=None):
+def _check_installed_telemetry(addon_dir):
+    """Inspect the expected file metadata without reading or loading Lua."""
+    try:
+        folder = (observe_physical.local_rift_addons_root() / "Telemetry"
+                  if addon_dir is None else Path(addon_dir).absolute())
+        if folder.drive.startswith(("\\", "/")):
+            raise ValueError("telemetry-addon-directory-must-be-local")
+    except (OSError, ValueError) as exc:
+        return {"status": "blocked", "reason": str(exc)[:220]}
+
+    files = {}
+    for name in TELEMETRY_FILES:
+        try:
+            info = (folder / name).lstat()
+        except (FileNotFoundError, NotADirectoryError):
+            files[name] = "missing"
+        except OSError:
+            files[name] = "unreadable"
+        else:
+            files[name] = "present" if stat.S_ISREG(info.st_mode) and info.st_size > 0 else "invalid"
+    return {"status": "files-present" if all(state == "present" for state in files.values()) else "blocked",
+            "directory": str(folder), "files": files}
+
+
+def check_dependencies(expected_host=None, native_reader=None, installed_telemetry_dir=None):
     """Check local startup prerequisites without selecting a game process."""
     reader = physical_rift.check_native_reader(
         expected_host, native_reader, kind=("zone-context", "player-context"))
     platform_ready = capture.supports_readonly_windows_process()
+    if reader.get("reason") == "host-mismatch":
+        addon = {"status": "not-checked", "reason": "host-mismatch"}
+    elif not platform_ready:
+        addon = {"status": "not-checked", "reason": "requires-64-bit-windows-python"}
+    else:
+        addon = _check_installed_telemetry(installed_telemetry_dir)
+    ready = platform_ready and reader["status"] == "ready" and addon["status"] == "files-present"
     return {
-        "status": "ready" if platform_ready and reader["status"] == "ready" else "blocked",
+        "status": "ready" if ready else "blocked",
         "ownerHost": reader["ownerHost"],
         "python": {
             "status": "ready" if platform_ready else "requires-64-bit-windows-python",
             "executable": sys.executable,
         },
         "nativeReader": reader,
+        "installedAddon": addon,
         "telemetryPublisher": "unverified",
         "inputSent": False,
     }
@@ -211,11 +245,14 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--check-dependencies", action="store_true",
-                      help="check Windows Python and the native reader without selecting RIFT")
+                      help="check Windows Python, the native reader, and installed Telemetry files "
+                           "without selecting RIFT")
     mode.add_argument("--physical-pid", type=int)
     parser.add_argument("--expected-host", help="require this local Windows hostname")
     parser.add_argument("--native-reader", type=Path,
                         help="absolute local path to a published RiftReader2.Live.exe")
+    parser.add_argument("--installed-telemetry-dir", type=Path,
+                        help="Telemetry addon directory for --check-dependencies")
     parser.add_argument("--output-dir", type=Path, default=argparse.SUPPRESS)
     parser.add_argument("--count", type=int, default=argparse.SUPPRESS)
     parser.add_argument("--interval-ms", type=int, default=argparse.SUPPRESS)
@@ -231,12 +268,15 @@ def main(argv=None):
     pid = options.pop("physical_pid")
     expected_host = options.pop("expected_host")
     native_reader = options.pop("native_reader")
+    installed_telemetry_dir = options.pop("installed_telemetry_dir")
     if dependency_check:
         if options:
-            parser.error("--check-dependencies accepts only --expected-host and --native-reader")
-        result = check_dependencies(expected_host, native_reader)
+            parser.error("--check-dependencies accepts only --expected-host, --native-reader and --installed-telemetry-dir")
+        result = check_dependencies(expected_host, native_reader, installed_telemetry_dir)
         print(json.dumps(result))
         return 0 if result["status"] == "ready" else 2
+    if installed_telemetry_dir is not None:
+        parser.error("--installed-telemetry-dir requires --check-dependencies")
     if "output_dir" not in options:
         parser.error("--physical-pid requires --output-dir")
     output = options.pop("output_dir")

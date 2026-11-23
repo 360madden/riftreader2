@@ -185,16 +185,18 @@ keys and leaves focus alone. Replay can run on another analysis machine after
 copying the directory. It checks both raw report hashes and recomputes the delta.
 
 Before selecting RIFT for a Telemetry target series, check the local 64-bit
-Windows Python and both native reader commands.
+Windows Python, both native reader commands, and the installed Telemetry files.
 
 ```powershell
 & $rr2Python -B scripts/capture_physical_telemetry_target_series.py --check-dependencies --expected-host $rr2Host --native-reader $rr2PublishedReader
 ```
 
-The dependency check requires no PID and writes no capture files. To confirm the
-separately installed Telemetry package is present, run the [addon inventory](addon-sync.md#inspect-addon-metadata)
-with `--detail-addon Telemetry`. Capture verifies the current process, build and
-advancing Lua publisher.
+The check reads the metadata of `RiftAddon.toc`, `main.lua`, and `telemetry.lua`
+in the Telemetry folder under the local Windows Documents addon directory.
+Use `--installed-telemetry-dir` to check a custom installation. The
+[addon inventory](addon-sync.md#inspect-addon-metadata) reports residency details.
+The dependency check requires no PID. Capture verifies the current process,
+build and advancing Lua publisher.
 
 With the freshly verified `CURRENT_PID`, use a new output directory for each
 command. NPC survey preparation verifies the installed addon files and prints

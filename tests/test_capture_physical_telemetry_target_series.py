@@ -207,11 +207,17 @@ class SeriesCaptureTests(unittest.TestCase):
     def test_dependency_check_accepts_another_local_host_and_exact_native_commands(self):
         reader = self.output.parent / "Reader With Spaces.exe"
         reader.touch()
+        addons = self.output.parent / "Local Documents" / "AddOns"
+        telemetry = addons / "Telemetry"
+        telemetry.mkdir(parents=True)
+        for name in ("RiftAddon.toc", "main.lua", "telemetry.lua"):
+            (telemetry / name).write_text("metadata fixture", encoding="utf-8")
         help_text = ("RiftReader2.Live native tools\n"
                      "sample-current-player-context <arguments>\n"
                      "sample-current-zone-seed <arguments>\n")
         with patch.object(capture.physical_rift.socket, "gethostname", return_value="RIFT-STATION"), \
                 patch.object(capture.capture, "supports_readonly_windows_process", return_value=True), \
+                patch.object(capture.observe_physical, "local_rift_addons_root", return_value=addons), \
                 patch.object(capture.physical_rift.observe_physical, "_run",
                              return_value=(0, help_text)) as native_startup, \
                 patch.object(capture, "run") as run, \
@@ -225,8 +231,36 @@ class SeriesCaptureTests(unittest.TestCase):
         result = json.loads(stdout.getvalue())
         self.assertEqual(result["ownerHost"], "RIFT-STATION")
         self.assertEqual(result["nativeReader"]["nativeCommandsAdvertised"], 2)
+        self.assertEqual(result["installedAddon"], {
+            "status": "files-present", "directory": str(telemetry),
+            "files": {"RiftAddon.toc": "present", "main.lua": "present", "telemetry.lua": "present"},
+        })
         self.assertEqual(result["telemetryPublisher"], "unverified")
         self.assertFalse(result["inputSent"])
+        self.assertFalse(self.output.exists())
+
+    def test_dependency_check_reports_damaged_custom_installation(self):
+        addon_dir = self.output.parent / "custom addon folder"
+        addon_dir.mkdir()
+        (addon_dir / "RiftAddon.toc").write_text("metadata fixture", encoding="utf-8")
+        (addon_dir / "main.lua").mkdir()
+        reader = {"status": "ready", "ownerHost": "RIFT-STATION"}
+        with patch.object(capture.capture, "supports_readonly_windows_process", return_value=True), \
+                patch.object(capture.physical_rift, "check_native_reader", return_value=reader), \
+                patch.object(capture.observe_physical, "local_rift_addons_root") as documents, \
+                patch.object(capture, "run") as launched, redirect_stdout(StringIO()) as stdout:
+            self.assertEqual(capture.main([
+                "--check-dependencies", "--installed-telemetry-dir", str(addon_dir),
+            ]), 2)
+        result = json.loads(stdout.getvalue())
+        self.assertEqual(result["nativeReader"]["status"], "ready")
+        self.assertEqual(result["installedAddon"], {
+            "status": "blocked", "directory": str(addon_dir),
+            "files": {"RiftAddon.toc": "present", "main.lua": "invalid", "telemetry.lua": "missing"},
+        })
+        self.assertEqual(result["telemetryPublisher"], "unverified")
+        documents.assert_not_called()
+        launched.assert_not_called()
         self.assertFalse(self.output.exists())
 
     def test_dependency_check_reports_missing_native_command_and_unsupported_python(self):
@@ -241,15 +275,20 @@ class SeriesCaptureTests(unittest.TestCase):
         result = json.loads(stdout.getvalue())
         self.assertEqual(result["python"]["status"], "requires-64-bit-windows-python")
         self.assertEqual(result["nativeReader"]["missingCommands"], ["sample-current-player-context"])
+        self.assertEqual(result["installedAddon"]["status"], "not-checked")
 
     def test_wrong_host_blocks_before_native_startup_and_rejects_capture_options(self):
         with patch.object(capture.physical_rift.socket, "gethostname", return_value="RIFT-STATION"), \
                 patch.object(capture.physical_rift.observe_physical, "_run") as startup, \
+                patch.object(capture.observe_physical, "local_rift_addons_root") as documents, \
                 redirect_stdout(StringIO()) as stdout:
             code = capture.main(["--check-dependencies", "--expected-host", "OTHER-STATION"])
         self.assertEqual(code, 2)
-        self.assertEqual(json.loads(stdout.getvalue())["nativeReader"]["reason"], "host-mismatch")
+        result = json.loads(stdout.getvalue())
+        self.assertEqual(result["nativeReader"]["reason"], "host-mismatch")
+        self.assertEqual(result["installedAddon"]["status"], "not-checked")
         startup.assert_not_called()
+        documents.assert_not_called()
         for options in (["--physical-pid", str(PID)], ["--count", "3"],
                         ["--output-dir", str(self.output)], ["--stop-on-aba"]):
             with self.subTest(options=options), redirect_stderr(StringIO()), \
