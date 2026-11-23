@@ -5,6 +5,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import shutil
 import sys
 from tempfile import TemporaryDirectory
 import unittest
@@ -45,6 +46,7 @@ class NPCPreparationTests(unittest.TestCase):
         }
         self.native_call_count = 0
         self.included_levels = False
+        self.enterContext(patch.object(prep.physical_rift.socket, "gethostname", return_value="RIFT-STATION"))
 
     def collect(self, host, pid, directory, *, radius, limit, include_levels=False):
         self.native_call_count += 1
@@ -94,6 +96,61 @@ class NPCPreparationTests(unittest.TestCase):
         self.assertIn("18:02:00",result["nativeJoinDeadlineUtc"])
         self.assertEqual(json.loads(path.read_text()),result)
         self.assertEqual(self.native_call_count,1)
+
+    def replay(self, path):
+        with patch.object(prep.join, "original_native_nearby",
+                          return_value=(deepcopy(self.nearby), "B" * 64, (AT, AT))):
+            return prep.replay_plan(path)
+
+    def test_copied_plan_verifies_original_addon_bytes_without_a_local_install(self):
+        self.nearby["samples"][0]["numericLevelCandidate"] = 13
+        path, prepared = self.prepare()
+        moved = shutil.copytree(path.parent, self.dir / "copied plan")
+        with patch.object(prep, "installed_survey", side_effect=AssertionError("no installed addon access")), \
+             patch.object(prep.physical_rift, "select_physical", side_effect=AssertionError("no RIFT access")):
+            report = self.replay(moved / path.name)
+        self.assertEqual(report["addonEvidenceStatus"], "retained-bytes-verified")
+        self.assertEqual(report["host"], self.target["hostName"])
+        self.assertEqual(report["unitIds"], prepared["unitIds"])
+        self.assertEqual(report["nativeLevelCandidateCount"], 1)
+        self.assertFalse(report["addonActivated"])
+        self.assertNotIn("inGameBindCommand", report)
+        self.assertNotIn("captureCommand", report)
+
+    def test_replay_detects_edited_addon_evidence(self):
+        path, _ = self.prepare()
+        (path.parent / prep.ADDON_EVIDENCE / prep.MODULE_NAME).write_text("different bytes", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "plan-addon-evidence-mismatch"):
+            self.replay(path)
+
+    def test_replay_refuses_edited_unit_selection_even_with_matching_command(self):
+        path, report = self.prepare()
+        report["unitIds"] = ["u0000000000000005"]
+        report["inGameBindCommand"] = f"/rr2survey bind {report['nonce']} {report['unitIds'][0]}"
+        path.write_text(json.dumps(report), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "plan-unit-selection-mismatch"):
+            self.replay(path)
+
+    def test_legacy_plan_replays_native_selection_with_recorded_addon_metadata(self):
+        path, report = self.prepare()
+        report["schema"] = prep.LEGACY_SCHEMA
+        report["installedAddon"].pop("installedManifestSha256")
+        path.write_text(json.dumps(report), encoding="utf-8")
+        self.assertEqual(self.replay(path)["addonEvidenceStatus"], "recorded-only")
+
+    def test_replay_refuses_non_string_timestamps(self):
+        path, report = self.prepare()
+        for key in ("preparedAtUtc", "nativeJoinDeadlineUtc"):
+            with self.subTest(key=key):
+                path.write_text(json.dumps({**report, key: None}), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "plan-time-mismatch"):
+                    self.replay(path)
+
+    def test_wrong_local_host_fails_before_installed_file_reads(self):
+        with patch.object(prep, "installed_survey") as installed:
+            with self.assertRaisesRegex(ValueError, "wrong-host"):
+                prep.prepare("OTHER-PC", PID, self.dir / "plan")
+        installed.assert_not_called()
 
     def test_plan_can_capture_native_levels_with_the_nearby_report(self):
         self.prepare(include_levels=True)

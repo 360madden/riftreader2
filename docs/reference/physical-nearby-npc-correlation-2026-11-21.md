@@ -1,6 +1,6 @@
 # Physical nearby-unit and NPC API correlation — November 21, 2026
 
-**Owner machine:** AMD-DESKTOP. **Workflow:** source-hashed native retrieval, retained Lua 5.1 API observations, read-only offline joining. The existing native `unit-positions` and `unit-names` readers are reused; no new combat reader or game input is introduced.
+**Original evidence host:** AMD-DESKTOP. The workflow combines native reports, retained Lua 5.1 API observations and an offline join. Live readers require a verified local Windows host and current RIFT process. Saved evidence can replay on another machine.
 
 ## New working pieces
 
@@ -12,11 +12,12 @@ The join reports `apiLevelCandidate`, `apiRelationCandidate`, native distance an
 
 ## CLI use
 
-First acquire the native nearby inventory. In **PowerShell 7**, from `C:\work\riftreader2` on verified AMD-DESKTOP:
+From the repository root in **PowerShell 7**, verify the local host and current RIFT process. Then use that exact PID in the native nearby inventory command.
 
 ```powershell
-C:\Python314\python.exe -B scripts\physical_rift.py --expected-host AMD-DESKTOP
-C:\Python314\python.exe -B scripts\physical_nearby_units.py --expected-host AMD-DESKTOP --physical-pid CURRENT_VERIFIED_PID --radius 35 --max-names 12 --output-dir artifacts\NEW_NATIVE_NEARBY
+$rr2Host = [Environment]::MachineName
+python -B scripts\physical_rift.py --expected-host $rr2Host
+python -B scripts\physical_nearby_units.py --expected-host $rr2Host --physical-pid CURRENT_VERIFIED_PID --radius 35 --max-names 12 --output-dir artifacts\NEW_NATIVE_NEARBY
 ```
 
 The separate **RR2 NPC survey addon must actually be loaded and nonce-bound to the intended exact IDs** before `npc_survey_live.py` can produce an advancing survey. It has an existing `/rr2survey bind NONCE COMMA_SEPARATED_IDS` command. Use a fresh explicit nonce and up to 12 exact `u`-prefixed IDs taken from the native nearby report. The working addon installation and current nonce-bound source publication must be verified; repository source files or historical captures do not prove the addon is active in the running client.
@@ -24,14 +25,30 @@ The separate **RR2 NPC survey addon must actually be loaded and nonce-bound to t
 When those independently established prerequisites exist:
 
 ```powershell
-C:\Python314\python.exe -B scripts\npc_survey_live.py --expected-host AMD-DESKTOP --physical-pid CURRENT_VERIFIED_PID --session-id CURRENT_NONCE --unit-ids EXACT_COMMA_SEPARATED_IDS --auto-map --output artifacts\NEW_NPC_API_SURVEY
-C:\Python314\python.exe -B scripts\replay_npc_survey.py --summary artifacts\NEW_NPC_API_SURVEY\result.json
-C:\Python314\python.exe -B scripts\join_physical_nearby_npc_survey.py --nearby artifacts\NEW_NATIVE_NEARBY\nearby-report.json --npc-survey artifacts\NEW_NPC_API_SURVEY\result.json --max-gap-seconds 30 --position-tolerance 5 --output artifacts\NEW_NATIVE_API_JOIN.json
+python -B scripts\npc_survey_live.py --expected-host $rr2Host --physical-pid CURRENT_VERIFIED_PID --session-id CURRENT_NONCE --unit-ids EXACT_COMMA_SEPARATED_IDS --auto-map --output artifacts\NEW_NPC_API_SURVEY
+python -B scripts\replay_npc_survey.py --summary artifacts\NEW_NPC_API_SURVEY\result.json
+python -B scripts\join_physical_nearby_npc_survey.py --nearby artifacts\NEW_NATIVE_NEARBY\nearby-report.json --npc-survey artifacts\NEW_NPC_API_SURVEY\result.json --max-gap-seconds 30 --position-tolerance 5 --output artifacts\NEW_NATIVE_API_JOIN.json
 ```
 
 With `--auto-map`, the API survey searches a bounded 512 MiB of readable private process memory and does not require an earlier native scout seed; the older seeded mode remains available when the flag is omitted. Neither mode issues `/rr2survey bind` or controls the desktop.
 
 A successful join is a **research/candidate** result only. The default interval must encompass the two sequential acquisitions; a stale source or changed owner refuses correlation. Source files and result destinations are never silently overwritten.
+
+### Prepare and replay a saved bind plan
+
+Prepare a fresh plan for the current local RIFT process. The tool resolves the addon under the Windows Documents folder by default. Use `--installed-casting-dir` for a custom installation.
+
+```powershell
+python -B scripts\prepare_physical_npc_survey.py --expected-host $rr2Host --physical-pid CURRENT_VERIFIED_PID --include-levels --output-dir artifacts\NEW_NPC_BIND_PLAN
+```
+
+Copy the entire plan folder, including `plan.json`, `native/` and `addon-evidence/`, to run the offline check from any checkout. Replay verifies the original capture identity and times, reconstructs the selected IDs, checks the saved bind text and verifies the retained manifest and Lua file. Older plans still replay with addon evidence reported as `recorded-only`.
+
+```powershell
+python -B scripts/prepare_physical_npc_survey.py --replay-plan artifacts/COPIED_NPC_BIND_PLAN/plan.json
+```
+
+The replay describes the saved capture. A live API survey still requires a fresh plan, the in-game bind and advancing Lua frames from the active RIFT process.
 
 ## What was verified
 

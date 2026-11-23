@@ -29,7 +29,8 @@ def require(ok, reason):
 def _strict_file(path, max_bytes):
     path = Path(path)
     require(path.is_file() and not path.is_symlink(), "source-unavailable")
-    raw = path.read_bytes()
+    with path.open("rb") as stream:
+        raw = stream.read(max_bytes + 1)
     require(0 < len(raw) <= max_bytes, "source-size")
     doc = physical_rift._strict_native_json(raw.decode("utf-8-sig"))
     require(type(doc) is dict, "source-not-object")
