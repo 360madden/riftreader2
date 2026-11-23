@@ -48,11 +48,12 @@ client after setting any needed overrides above.
 
 Registration checks Node and uses read-only tool discovery against the active
 service. It saves the local paths in `.local/workbridge-client.json` for the
-verified host. Explicit environment settings take precedence. When you select
-a different deployment, its client and Node are selected independently of the
-saved client. After moving the toolchain or changing the service version, set
-the current paths and register again. The usual dependency check still reports
-runner files, WinApp, and desktop turn readiness separately.
+verified host. In a copied checkout, set `RR2_WORKBRIDGE_ROOT` to the active
+local deployment. Explicit client and Node settings take precedence, followed
+by a registration matching the current host and deployment, then the local
+defaults. After moving the toolchain or changing the service version, set the
+current paths and register again. The usual dependency check reports runner
+files, WinApp, and desktop turn readiness separately.
 
 ```powershell
 $rr2Host = [Environment]::MachineName

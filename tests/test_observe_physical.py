@@ -465,6 +465,32 @@ class PhysicalTests(unittest.TestCase):
         self.assertEqual(registration.read_bytes(), old)
         self.assertEqual(run.call_count, 2)
 
+    def test_explicit_deployment_uses_local_defaults_for_a_copied_registration(self):
+        deployment = self.alternate
+        settings = self.root / ".local/workbridge-client.json"
+        settings.parent.mkdir()
+        original = json.dumps({"schema": "rr2.workbridge-client/1", "host": "COPIED-PC",
+                               "deployment": str(deployment), "cliRoot": str(self.root / "foreign CLI"),
+                               "node": str(self.root / "foreign-node.exe")})
+        settings.write_text(original, encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "workbridge-registration-host-mismatch"):
+            physical.workbridge_root()
+        with patch.dict(physical.os.environ, RR2_WORKBRIDGE_ROOT=str(deployment)):
+            command = physical._workbridge_command(physical.workbridge_root())
+        self.assertEqual(command, [self.node, deployment / "scripts/workbridge-cli.mjs",
+                                    "--service-state", deployment / ".local"])
+        self.assertEqual(settings.read_text(encoding="utf-8"), original)
+
+    def test_complete_explicit_client_selection_bypasses_unused_settings(self):
+        settings = self.root / ".local/workbridge-client.json"
+        settings.parent.mkdir()
+        settings.write_text("invalid", encoding="utf-8")
+        with patch.dict(physical.os.environ, RR2_WORKBRIDGE_ROOT=str(physical.BRIDGE),
+                        RR2_WORKBRIDGE_CLI_ROOT=str(self.alternate), RR2_WORKBRIDGE_NODE=str(self.node)):
+            command = physical._workbridge_command(physical.workbridge_root())
+        self.assertEqual(command, [self.node, self.alternate / "scripts/workbridge-cli.mjs",
+                                    "--service-state", physical.BRIDGE / ".local"])
+
     def test_staged_cli_runners_do_not_replace_deployed_files(self):
         (physical.BRIDGE / "dist/desktop-capture.mjs").unlink()
         cli = self.alternate / "scripts/workbridge-cli.mjs"

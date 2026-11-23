@@ -78,7 +78,7 @@ def published_physical_tool(relative_path):
     return _local_absolute_path(Path(root) / relative_path, "invalid-physical-tools-root")
 
 
-def _registered_workbridge():
+def _registered_workbridge(*, for_deployment=None):
     path = ROOT / ".local" / "workbridge-client.json"
     if not path.exists() and not path.is_symlink():
         return {}
@@ -95,7 +95,10 @@ def _registered_workbridge():
     _require(isinstance(settings, dict) and settings.get("schema") == "rr2.workbridge-client/1"
              and valid_host_name(settings.get("host"))
              and all(isinstance(settings.get(key), str) for key in ("deployment", "cliRoot", "node")), reason)
-    _require(settings["host"].casefold() == socket.gethostname().casefold(), "workbridge-registration-host-mismatch")
+    local_host = settings["host"].casefold() == socket.gethostname().casefold()
+    if for_deployment is not None and (not local_host or Path(settings["deployment"]) != for_deployment):
+        return {}
+    _require(local_host, "workbridge-registration-host-mismatch")
     return settings
 
 
@@ -240,16 +243,19 @@ def _identity(physical_pid=None, *, require_window=True):
 
 
 def _workbridge_command(bridge, *, use_registered=True):
-    settings = _registered_workbridge() if use_registered else {}
-    if settings and Path(settings["deployment"]) != bridge:
-        settings = {}
-    override = os.environ.get("RR2_WORKBRIDGE_CLI_ROOT", settings.get("cliRoot"))
-    cli_root = bridge if override is None else _local_absolute_path(override, "invalid-workbridge-cli-root")
+    cli_root = os.environ.get("RR2_WORKBRIDGE_CLI_ROOT")
+    configured_node = os.environ.get("RR2_WORKBRIDGE_NODE")
+    if use_registered and (cli_root is None or configured_node is None):
+        settings = _registered_workbridge(for_deployment=bridge)
+        if cli_root is None:
+            cli_root = settings.get("cliRoot")
+        if configured_node is None:
+            configured_node = settings.get("node")
+    cli_root = bridge if cli_root is None else _local_absolute_path(cli_root, "invalid-workbridge-cli-root")
     cli = cli_root / "scripts" / "workbridge-cli.mjs"
     state = bridge / ".local"
     _plain_path(cli)
     _plain_path(state)
-    configured_node = os.environ.get("RR2_WORKBRIDGE_NODE", settings.get("node"))
     if configured_node is not None:
         node = _local_absolute_path(configured_node, "invalid-workbridge-node-path")
         _require(node.suffix.casefold() == ".exe", "invalid-workbridge-node-path")
