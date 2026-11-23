@@ -8,6 +8,7 @@ import tempfile
 import threading
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from scripts import hunt_mission as cli
 
@@ -40,6 +41,7 @@ class Runtime:
 
 class HuntMissionTests(unittest.TestCase):
     def setUp(self):
+        self.enterContext(patch.object(cli.physical_rift.socket, "gethostname", return_value="AMD-DESKTOP"))
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.route, self.profile, self.mission = (self.root/name for name in
@@ -120,14 +122,37 @@ class HuntMissionTests(unittest.TestCase):
         self.assertEqual([],self.adapters)
 
     def test_preflight_does_not_install_execution_stop_controls(self):
+        basis = self.root / "calibration.json"
         args=self.parse("preflight","--mission",str(self.mission),"--route",str(self.route),
-            "--profile",str(self.profile),"--expected-host","AMD-DESKTOP","--physical-pid","21672")
+            "--profile",str(self.profile),"--expected-host","rift-station","--physical-pid","21672",
+            "--basis", str(basis))
         adapter,runtime=self.factories()
         def controls(_stop): raise AssertionError("preflight installed execution controls")
-        code,result=cli.execute(args,adapter_factory=adapter,runtime_factory=runtime,
-            stop_controls=controls,emit=self.outputs.append)
+        with patch.object(cli.physical_rift.socket, "gethostname", return_value="RIFT-STATION"):
+            code,result=cli.execute(args,adapter_factory=adapter,runtime_factory=runtime,
+                stop_controls=controls,emit=self.outputs.append)
         self.assertEqual(0,code); self.assertEqual("ready",result["status"])
         self.assertFalse(result["inputSent"])
+        self.assertEqual(self.adapters, [("rift-station", 21672, basis)])
+
+    def test_preflight_rejects_wrong_host_and_foreign_recording(self):
+        args = self.parse("preflight", "--mission", str(self.mission), "--route", str(self.route),
+                          "--profile", str(self.profile), "--expected-host", "RIFT-STATION",
+                          "--physical-pid", "21672")
+        adapter, runtime = self.factories()
+        with self.assertRaisesRegex(cli.MissionError, "host-mismatch"):
+            cli.execute(args, adapter_factory=adapter, runtime_factory=runtime)
+        self.assertEqual(self.adapters, [])
+
+        route = json.loads(self.route.read_text(encoding="utf-8"))
+        route["recording"] = {"complete": True, "identity": {"runtimeIdentity": {
+            **Adapter.binding["runtimeIdentity"], "machine": "OTHER-HOST"}}}
+        self.route.write_text(json.dumps(route), encoding="utf-8")
+        self.write_mission()
+        with patch.object(cli.physical_rift.socket, "gethostname", return_value="RIFT-STATION"), \
+             self.assertRaisesRegex(cli.MissionError, "Recording belongs to another host"):
+            cli.execute(args, adapter_factory=adapter, runtime_factory=runtime)
+        self.assertEqual(self.runtimes, [])
 
     def test_target_end_without_death_credit_returns_safe_and_counts_zero(self):
         args=self.parse("run","--mission",str(self.mission),"--route",str(self.route),

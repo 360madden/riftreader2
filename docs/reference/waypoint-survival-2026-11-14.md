@@ -36,11 +36,16 @@ For Warrior Power set `resourceKind` to `absolute-power` and supply `thresholds.
 
 ### Standalone CLI
 
-Run the headless command from the repository with the current physical RIFT PID and your own profile, route and checkpoint paths. The CLI works with the Waypoints GUI closed. Preflight reads current state. Run and Resume require `--execute`. [Headless entry point](../../scripts/survival_waypoints.py)
+Run the headless command on the verified local Windows host with the current
+physical RIFT PID and your own profile, route and checkpoint paths. The CLI
+works with the Waypoints GUI closed. It loads the host's movement calibration
+from `config` or from `--basis PATH`. Preflight reads current state. Run and
+Resume require `--execute`. [Headless entry point](../../scripts/survival_waypoints.py)
 
 ```powershell
+$riftHost = [Environment]::MachineName
 $riftProcessId = Read-Host 'Current physical RIFT PID'
-$survivalArgs = @('--expected-host', 'AMD-DESKTOP', '--physical-pid', $riftProcessId, '--profile', 'C:\path\to\profile.json')
+$survivalArgs = @('--expected-host', $riftHost, '--physical-pid', $riftProcessId, '--profile', 'C:\path\to\profile.json')
 $routeArgs = @('--route', 'C:\path\to\route.json', '--checkpoint', 'C:\path\to\progress.json')
 python scripts/survival_waypoints.py preflight @survivalArgs
 python scripts/survival_waypoints.py run @survivalArgs @routeArgs --execute

@@ -894,6 +894,10 @@ $riftPid = (python scripts/launch_physical_waypoints.py --check | ConvertFrom-Js
 pythonw scripts/physical_waypoints.py --expected-host $rrHost --physical-pid $riftPid
 ```
 
+For an input-free standalone destination preview, pass the current host and PID
+to `scripts/continuous_move.py` with the desired `--x` and `--z`. It uses the
+same local movement calibration or a file supplied with `--basis PATH`.
+
 The window reads the current position and facing. **Save Current** adds a point;
 clicking the local route preview adds a waypoint, and **Add X / Z** adds entered
 coordinates. The preview faces forward, shows distance rings, selected points

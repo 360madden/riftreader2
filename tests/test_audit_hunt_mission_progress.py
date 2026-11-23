@@ -135,7 +135,7 @@ class HuntMissionAuditTests(unittest.TestCase):
             (("mission",), "wrong", "mission binding"),
             (("returnDocument", "provenance", "retainedPoints"), 99, "count"),
             (("returnDocument", "provenance", "runtimeIdentity", "machine"),
-             "OTHER-HOST", "AMD-DESKTOP"),
+             "invalid / host", "runtime identity is invalid"),
             (("returnDocument", "waypoints", 0, 1), 9000, "retreat"),
         ]
         for keys, value, expected in cases:
@@ -147,6 +147,16 @@ class HuntMissionAuditTests(unittest.TestCase):
                 node[keys[-1]] = value
                 with self.assertRaisesRegex(hunt_mission.MissionError, expected):
                     self.check(p)
+
+    def test_audit_accepts_another_recording_host_and_refuses_mixed_provenance(self):
+        p = deepcopy(self.progress)
+        recorded = p["returnDocument"]["provenance"]["runtimeIdentity"]
+        recorded["machine"] = "RIFT-STATION"
+        self.route["recording"] = {"complete": True, "identity": {"runtimeIdentity": deepcopy(recorded)}}
+        self.assertEqual(self.check(p)["runtimeIdentity"]["machine"], "RIFT-STATION")
+        recorded["machine"] = "OTHER-HOST"
+        with self.assertRaisesRegex(hunt_mission.MissionError, "outbound route identity is inconsistent"):
+            self.check(p)
 
     def test_bad_target_or_held_input_blocks_consistency(self):
         for update, expected in [

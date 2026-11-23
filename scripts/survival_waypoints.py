@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from scripts import physical_rift
 from scripts.survival_profile import SurvivalProfileError, load_survival_profile
 from scripts.waypoint_limits import MAX_WAYPOINTS
 from scripts.waypoint_progress import ProgressError, RouteProgress, write_json_atomic
@@ -55,10 +56,8 @@ def _profile_argument(parser):
 
 
 def _live_arguments(parser, *, route=False):
-    from scripts import physical_rift
     parser.add_argument("--expected-host", required=True,
-                        choices=physical_rift.SUPPORTED_HOSTS,
-                        help="exact current physical host")
+                        help="verified local Windows machine name")
     parser.add_argument("--physical-pid", required=True, type=int,
                         help="exact current rift_x64 PID")
     _profile_argument(parser)
@@ -274,6 +273,8 @@ def execute(args, *, adapter_factory=None, runtime_factory=None,
         raise UsageError("--physical-pid must be positive")
     if args.command in ("run", "resume") and not args.execute:
         raise UsageError(f"{args.command} requires --execute before an adapter or input owner is created")
+    if not physical_rift.is_local_host(args.expected_host):
+        raise UsageError("host-mismatch")
     document = _read_route(args.route, args.direction) if args.command in ("run", "resume") else None
     checkpoint = _checkpoint(args) if document is not None else None
 
@@ -288,8 +289,8 @@ def execute(args, *, adapter_factory=None, runtime_factory=None,
         playback = play_route
 
     shared_stop = stop or threading.Event()
-    runtime = runtime_factory()
     adapter = adapter_factory(args.expected_host, args.physical_pid, args.basis)
+    runtime = runtime_factory()
     receipt_directory = Path(receipt_root or ROOT / "artifacts")
     events = []
 

@@ -16,6 +16,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts import hunt_mission as mission_cli
+from scripts.observe_physical import valid_host_name
+from scripts.waypoint_playback import validate_playback_document
 from scripts.waypoint_progress import ProgressError, RouteProgress
 
 
@@ -77,12 +79,16 @@ def audit(mission, route, progress, *, outbound_receipt=None,
     provenance = document["provenance"]
     identity = provenance.get("runtimeIdentity")
     _required(isinstance(identity, dict)
-              and identity.get("machine") == "AMD-DESKTOP"
+              and valid_host_name(identity.get("machine"))
               and isinstance(identity.get("gameBuildSha256"), str)
               and len(identity["gameBuildSha256"]) == 64
               and all(c in "0123456789abcdefABCDEF" for c in identity["gameBuildSha256"])
               and isinstance(identity.get("unitKey"), str) and bool(identity["unitKey"]),
-              "return corridor runtime identity is not pinned to AMD-DESKTOP")
+              "return corridor runtime identity is invalid")
+    try:
+        validate_playback_document(route, identity)
+    except ProgressError as exc:
+        raise mission_cli.MissionError(f"outbound route identity is inconsistent: {exc}") from exc
     _required(type(provenance.get("retainedPoints")) is int
               and provenance["retainedPoints"] == len(document["waypoints"]),
               "retained return-corridor count is inconsistent")
@@ -170,7 +176,7 @@ def audit(mission, route, progress, *, outbound_receipt=None,
             "scope": ("checkpoint-and-route-progress-not-live-qualified"
                       if require_route_progress else "checkpoint-only-not-live-qualified"),
             "mission": mission["name"], "mode": mode, "killCount": count,
-            "safeReturnedClaimed": True}
+            "safeReturnedClaimed": True, "runtimeIdentity": identity}
 
 
 def main(argv=None):

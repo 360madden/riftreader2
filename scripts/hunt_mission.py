@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from scripts import physical_rift
 from scripts.survival_profile import load_survival_profile
 from scripts.survival_route_runner import _coalesce_retained_corridor
 from scripts.survival_waypoints import _read_route
@@ -479,7 +480,6 @@ def run_mission(*, mission, route_document, route_path, profile_path, checkpoint
 
 
 def build_parser():
-    from scripts import physical_rift
     parser=Parser(description=__doc__); parser.add_argument("--version",action="version",version="hunt-mission 1")
     commands=parser.add_subparsers(dest="command",required=True)
     for name in ("dry-run","preflight","run","resume"):
@@ -487,8 +487,9 @@ def build_parser():
         for option in ("mission","route","profile"):
             command.add_argument("--"+option,required=True,type=_path)
         if name!="dry-run":
-            command.add_argument("--expected-host",required=True,choices=physical_rift.SUPPORTED_HOSTS)
+            command.add_argument("--expected-host", required=True, help="verified local Windows machine name")
             command.add_argument("--physical-pid",required=True,type=int)
+            command.add_argument("--basis", type=_path, help="override the local host's movement calibration file")
         if name in {"run","resume"}:
             command.add_argument("--checkpoint",required=True,type=_path)
             command.add_argument("--execute",action="store_true")
@@ -504,6 +505,8 @@ def execute(args, *, adapter_factory=None, runtime_factory=None, playback=None,
     if args.physical_pid<1: raise MissionError("--physical-pid must be positive")
     if args.command in {"run","resume"} and not args.execute:
         raise MissionError(f"{args.command} requires --execute")
+    if not physical_rift.is_local_host(args.expected_host):
+        raise MissionError("host-mismatch")
     if adapter_factory is None:
         from scripts.physical_waypoints import PhysicalAdapter
         adapter_factory=PhysicalAdapter
@@ -516,14 +519,26 @@ def execute(args, *, adapter_factory=None, runtime_factory=None, playback=None,
     if stop_controls is None:
         from scripts.physical_waypoints import cli_stop_controls
         stop_controls=cli_stop_controls
-    adapter,runtime=adapter_factory(args.expected_host,args.physical_pid),runtime_factory()
+    adapter_args = (args.expected_host, args.physical_pid)
+    if getattr(args, "basis", None) is not None:
+        adapter_args += (args.basis,)
+    adapter = adapter_factory(*adapter_args)
     shared_stop=stop or threading.Event()
     if args.command=="preflight":
+        from scripts.waypoint_playback import validate_playback_document
+        from scripts.waypoint_progress import ProgressError
+
+        try:
+            validate_playback_document(route_document, adapter.binding["runtimeIdentity"])
+        except ProgressError as exc:
+            raise MissionError(str(exc)) from exc
+        runtime = runtime_factory()
         runtime.configure(args.profile,adapter)
         value=runtime.preflight(adapter,shared_stop)
         result={**summary,"status":"ready","preflight":value,
                 "encounterAdmission":"rechecked-at-execution","inputSent":False}
         emit(result); return 0,result
+    runtime = runtime_factory()
     try:
         # Own both Ctrl+C and F8 for the complete mission, including stationary
         # encounter/recovery intervals between movement children. The context

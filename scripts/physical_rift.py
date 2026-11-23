@@ -22,8 +22,6 @@ if str(ROOT) not in sys.path:
 from scripts import observe_physical, summarize_native_vitals_burst
 from scripts.observe_physical import valid_host_name
 
-# Existing control workflows still use their configured host list.
-SUPPORTED_HOSTS = ("AMD-DESKTOP", "LEGION")
 NATIVE_READS = {
     "position": "sample-current-position",
     "vitals": "sample-current-vitals",
@@ -60,6 +58,11 @@ NATIVE_RECEIPTS = {
 }
 NATIVE_EXE = (ROOT / "src" / "RiftReader2.Live" / "bin" / "Debug" /
               "net10.0-windows" / "win-x64" / "RiftReader2.Live.exe")
+
+
+def is_local_host(expected_host):
+    return (valid_host_name(expected_host)
+            and expected_host.casefold() == socket.gethostname().casefold())
 
 
 def select_physical(expected_host=None, physical_pid=None):

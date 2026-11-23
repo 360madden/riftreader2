@@ -1172,8 +1172,9 @@ def run_continuous_route(adapter, points, stop, emit=lambda event: None, *,
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--expected-host", required=True, choices=physical_rift.SUPPORTED_HOSTS)
+    parser.add_argument("--expected-host", required=True, help="verified local Windows machine name")
     parser.add_argument("--physical-pid", required=True, type=int)
+    parser.add_argument("--basis", type=Path, help="override the local host's movement calibration file")
     parser.add_argument("--x", required=True, type=float)
     parser.add_argument("--z", required=True, type=float)
     parser.add_argument("--execute", action="store_true")
@@ -1184,7 +1185,9 @@ def main(argv=None):
     stop = threading.Event()
     adapter = None
     try:
-        adapter = PhysicalAdapter(args.expected_host, args.physical_pid, None)
+        if not physical_rift.is_local_host(args.expected_host):
+            raise WaypointError("host-mismatch")
+        adapter = PhysicalAdapter(args.expected_host, args.physical_pid, args.basis)
         if args.execute:
             # Install the SIGINT latch before F8 registration and before the
             # native child can launch. Ctrl+C/F8 set the shared STOP event; the

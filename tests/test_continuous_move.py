@@ -97,6 +97,7 @@ class FakeProcess:
 
 class ContinuousMoveTests(unittest.TestCase):
     def setUp(self):
+        self.enterContext(patch.object(move.physical_rift.socket, "gethostname", return_value="AMD-DESKTOP"))
         self.temporary = __import__("tempfile").TemporaryDirectory()
         self.root = Path(self.temporary.name)
         self.adapter = Adapter(self.root)
@@ -883,17 +884,29 @@ class ContinuousMoveTests(unittest.TestCase):
     def test_standalone_cli_without_execute_returns_json_preview(self):
         preview = {"status": "preview-only", "distance": 100.0, "inputSent": False}
         output = io.StringIO()
-        with patch("scripts.physical_waypoints.PhysicalAdapter", return_value=self.adapter), \
+        basis = self.root / "local-basis.json"
+        with patch.object(move.physical_rift.socket, "gethostname", return_value="RIFT-STATION"), \
+             patch("scripts.physical_waypoints.PhysicalAdapter", return_value=self.adapter) as adapter, \
              patch("scripts.physical_waypoints.cli_stop_controls") as stop_controls, \
              patch.object(move, "preview_move", return_value=preview) as planned, \
              patch.object(move, "move_to") as executed, redirect_stdout(output):
-            code = move.main(["--expected-host", "AMD-DESKTOP", "--physical-pid", "123",
-                              "--x", "100", "--z", "0", "--json"])
+            code = move.main(["--expected-host", "rift-station", "--physical-pid", "123",
+                              "--basis", str(basis), "--x", "100", "--z", "0", "--json"])
         self.assertEqual(code, 0)
+        adapter.assert_called_once_with("rift-station", 123, basis)
         self.assertEqual(json.loads(output.getvalue()), preview)
         planned.assert_called_once()
         executed.assert_not_called()
         stop_controls.assert_not_called()
+
+    def test_wrong_host_returns_json_before_constructing_adapter(self):
+        output = io.StringIO()
+        with patch("scripts.physical_waypoints.PhysicalAdapter") as adapter, redirect_stdout(output):
+            self.assertEqual(move.main(["--expected-host", "RIFT-STATION", "--physical-pid", "123",
+                                        "--x", "100", "--z", "0", "--execute", "--json"]), 1)
+        self.assertEqual(json.loads(output.getvalue())["reason"], "host-mismatch")
+        self.assertFalse(json.loads(output.getvalue())["inputSent"])
+        adapter.assert_not_called()
 
     def test_standalone_execute_installs_stop_controls_around_move(self):
         result = {"status": "arrived", "distance": .1, "inputSent": True}

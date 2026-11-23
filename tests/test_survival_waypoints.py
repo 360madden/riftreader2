@@ -51,6 +51,7 @@ class Runtime:
 
 class SurvivalWaypointsTests(unittest.TestCase):
     def setUp(self):
+        self.enterContext(patch.object(cli.physical_rift.socket, "gethostname", return_value="AMD-DESKTOP"))
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
@@ -114,18 +115,28 @@ class SurvivalWaypointsTests(unittest.TestCase):
         self.assertEqual([], self.runtimes)
 
     def test_preflight_constructs_adapter_after_profile_validation_and_sends_no_input(self):
-        args = self.parse("preflight", "--expected-host", "AMD-DESKTOP",
+        args = self.parse("preflight", "--expected-host", "rift-station",
                           "--physical-pid", "21672", "--profile", str(self.profile))
         adapter, runtime = self.factories()
-        code, result = cli.execute(
-            args, adapter_factory=adapter, runtime_factory=runtime,
-            emit=self.outputs.append)
+        with patch.object(cli.physical_rift.socket, "gethostname", return_value="RIFT-STATION"):
+            code, result = cli.execute(
+                args, adapter_factory=adapter, runtime_factory=runtime,
+                emit=self.outputs.append)
         self.assertEqual(0, code)
         self.assertEqual("ready", result["preflight"]["status"])
         self.assertFalse(result["inputSent"])
-        self.assertEqual(1, len(self.adapters))
+        self.assertEqual([("rift-station", 21672, None)], self.adapters)
         self.assertEqual(["configure", "preflight"],
                          [call[0] for call in self.runtimes[0].calls])
+
+    def test_wrong_host_refuses_preflight_before_adapter_or_runtime(self):
+        args = self.parse("preflight", "--expected-host", "RIFT-STATION",
+                          "--physical-pid", "21672", "--profile", str(self.profile))
+        adapter, runtime = self.factories()
+        with self.assertRaisesRegex(cli.UsageError, "host-mismatch"):
+            cli.execute(args, adapter_factory=adapter, runtime_factory=runtime, emit=self.outputs.append)
+        self.assertEqual(self.adapters, [])
+        self.assertEqual(self.runtimes, [])
 
     def test_run_requires_execute_before_adapter_and_uses_shared_playback_contract(self):
         common = ("run", "--expected-host", "AMD-DESKTOP", "--physical-pid", "21672",

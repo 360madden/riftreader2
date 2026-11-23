@@ -22,6 +22,7 @@ $mission = 'C:\path\to\hunt-mission.json'
 $route = 'C:\path\to\verified-outbound-route.json'
 $profile = 'C:\path\to\survival-profile.json'
 $checkpoint = 'C:\path\to\hunt-progress.json'
+$riftHost = [Environment]::MachineName
 $riftProcessId = Read-Host 'Current physical RIFT PID'
 
 python scripts/hunt_mission.py dry-run `
@@ -29,23 +30,30 @@ python scripts/hunt_mission.py dry-run `
 
 python scripts/hunt_mission.py preflight `
   --mission $mission --route $route --profile $profile `
-  --expected-host AMD-DESKTOP --physical-pid $riftProcessId
+  --expected-host $riftHost --physical-pid $riftProcessId
 
 python scripts/hunt_mission.py run `
   --mission $mission --route $route --profile $profile `
-  --expected-host AMD-DESKTOP --physical-pid $riftProcessId `
+  --expected-host $riftHost --physical-pid $riftProcessId `
   --checkpoint $checkpoint --execute
 
 # Only after an operator has reviewed and resolved the prior halt:
 python scripts/hunt_mission.py resume `
   --mission $mission --route $route --profile $profile `
-  --expected-host AMD-DESKTOP --physical-pid $riftProcessId `
+  --expected-host $riftHost --physical-pid $riftProcessId `
   --checkpoint $checkpoint --execute
 ```
 
-The host is not intrinsically fixed to AMD-DESKTOP; the CLI accepts the physical
-hosts supported by the current build. Always bind the command to the host and
-PID of the intended current client.
+Run on the verified local Windows host that owns the selected RIFT PID.
+Preflight checks the movement calibration and compares recorded or measured
+route provenance against that host, build and player. The calibration defaults
+to the host's file in `config`. Use `--basis PATH` for a matching file stored
+elsewhere.
+
+`scripts/audit_hunt_mission_progress.py` can audit a saved checkpoint on a
+separate analysis machine. It uses the recorded corridor's runtime identity and
+checks the outbound route provenance. Pass `--require-route-progress` to also
+compare the separately retained route progress files.
 
 ## Mission document
 
