@@ -298,11 +298,18 @@ def _monitor_name(hwnd):
     return info.szDevice
 
 
-def _desktop_capture(host, pid, pinned, directory, result):
+def _desktop_capture(host, pid, pinned, directory, result, *, native_reader=None):
     observe_physical.require_clear_desktop_turn()
-    require(CAPTURE_PYTHON.is_file(), "desktop-capture-environment-unavailable")
+    configured_python = os.environ.get("RR2_DXCAM_PYTHON")
+    capture_python = Path(configured_python) if configured_python else CAPTURE_PYTHON
+    if configured_python:
+        require(capture_python.is_absolute() and not capture_python.anchor.startswith(("\\\\", "//")),
+                "invalid-dxcam-python-path")
+        observe_physical._plain_path(capture_python)
+    require(capture_python.is_file(), "desktop-capture-environment-unavailable")
+    executable = physical_rift._native_reader_path()
     result.update(focusRequested=True, focusMayChange=True, focusChanged=None)
-    command = [str(physical_rift._native_reader_path()), "move-key", "--focus-only", "--pid", str(pid),
+    command = [str(executable), "move-key", "--focus-only", "--pid", str(pid),
                "--expect-start-ticks", pinned["processStartUtcTicks"], "--expect-sha256", pinned["executableSha256"],
                "--expect-hwnd", hex(pinned["hwnd"]), "--json"]
     focused = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=10, check=False,
@@ -324,11 +331,13 @@ def _desktop_capture(host, pid, pinned, directory, result):
     result["focusChanged"] = focus.get("focusAttempt") is not None
     display = _monitor_name(pinned["hwnd"])
     capture = directory / "capture"
-    command = [str(CAPTURE_PYTHON), str(ROOT / "scripts/probe_dxcam_native_pair.py"),
+    command = [str(capture_python), str(ROOT / "scripts/probe_dxcam_native_pair.py"),
                "--expected-host", host, "--physical-pid", str(pid), "--display", display,
                "--output", str(capture), "--timeout", "10",
                "--expect-start-ticks", pinned["processStartUtcTicks"],
                "--expect-sha256", pinned["executableSha256"], "--expect-hwnd", hex(pinned["hwnd"])]
+    if native_reader is not None:
+        command.extend(("--native-reader", str(native_reader)))
     completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=30, check=False,
                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     pair_path = capture / "pair.json"
@@ -414,7 +423,8 @@ def save_route_view(expected_host, physical_pid, document, output, *, expected_t
         zone_before = _zone_context(selection, route, directory / "zone-before.json", native_reader=native_reader)
         try:
             if capture_backend == "desktop":
-                observation_path = _desktop_capture(expected_host, physical_pid, pinned, directory, result)
+                observation_path = _desktop_capture(expected_host, physical_pid, pinned, directory, result,
+                                                    native_reader=native_reader)
                 result["observation"] = str(observation_path)
             else:
                 observation = deepcopy(observe_target.observe("physical-" + expected_host.lower(), expected_host,

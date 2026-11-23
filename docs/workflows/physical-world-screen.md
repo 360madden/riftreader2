@@ -494,8 +494,11 @@ The waypoint window also has **Save view** and **Open view**. Save view snapshot
 the recorded route or independently measured points and defaults to focus-neutral WGC capture. Enable
 **Bring RIFT forward for capture** to explicitly choose the DXcam/native-bracket
 desktop path. That mode checks the shared Workbridge admission state before
-focusing the pinned RIFT window without keys. A successful
-`artifacts/waypoint-view-*` bundle contains route, original PNG, copied native
+focusing the pinned RIFT window without keys. Set `RR2_DXCAM_PYTHON` to an
+absolute local Python executable with the packages in
+[requirements-capture.txt](../../requirements-capture.txt) to use an environment
+outside the checkout. The desktop bracket uses the selected Save view reader.
+A successful `artifacts/waypoint-view-*` bundle contains route, original PNG, copied native
 before/after reports with hashes, projection PNG/JSON and `view.json`. If the
 optional visualization environment is available, it also saves `view.rrd` without
 starting a viewer. Open view opens only the last successfully saved projection.

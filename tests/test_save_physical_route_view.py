@@ -510,6 +510,8 @@ class DesktopSaveViewTests(unittest.TestCase):
         self.document = deepcopy(self.fixture.route)
         self.capture_python = self.root / "capture-python.exe"
         self.capture_python.write_bytes(b"not-executed")
+        self.view_reader = None
+        self.enterContext(patch.dict("os.environ", {"RR2_DXCAM_PYTHON": ""}))
         self.desktop_turn = self.enterContext(patch.object(saved.observe_physical, "require_clear_desktop_turn"))
         self.visualization_python = self.root / "visualization-python.exe"
         patch.object(saved, "CAPTURE_PYTHON", self.capture_python).start()
@@ -540,6 +542,14 @@ class DesktopSaveViewTests(unittest.TestCase):
         self.assertFalse(result["focusChanged"])
         self.process.assert_not_called()
 
+    def test_missing_configured_dxcam_python_refuses_before_focus(self):
+        with patch.dict("os.environ", {"RR2_DXCAM_PYTHON": str(self.root / "missing.exe")}):
+            result = self.save()
+        self.assertEqual(result["reason"], "desktop-capture-environment-unavailable")
+        self.assertFalse(result.get("focusRequested", False))
+        self.assertFalse(result["focusChanged"])
+        self.process.assert_not_called()
+
     def subprocess(self, command, **kwargs):
         self.assertEqual(kwargs["creationflags"], getattr(subprocess, "CREATE_NO_WINDOW", 0))
         if command[1] == "move-key":
@@ -549,11 +559,14 @@ class DesktopSaveViewTests(unittest.TestCase):
             self.assertEqual(kwargs["timeout"], 10)
             return types.SimpleNamespace(returncode=0, stdout=json.dumps(self.focus))
         if command[1].endswith("probe_dxcam_native_pair.py"):
-            self.assertEqual(command, [str(self.capture_python), str(saved.ROOT / "scripts/probe_dxcam_native_pair.py"),
+            expected = [str(self.capture_python), str(saved.ROOT / "scripts/probe_dxcam_native_pair.py"),
                 "--expected-host", "AMD-DESKTOP", "--physical-pid", str(self.target["processId"]),
                 "--display", self.fixture.pair["requestedDisplay"], "--output", str(self.output / "capture"),
                 "--timeout", "10", "--expect-start-ticks", self.target["processStartUtcTicks"],
-                "--expect-sha256", self.target["executableSha256"], "--expect-hwnd", hex(self.target["hwnd"])])
+                "--expect-sha256", self.target["executableSha256"], "--expect-hwnd", hex(self.target["hwnd"])]
+            if self.view_reader is not None:
+                expected.extend(("--native-reader", str(self.view_reader)))
+            self.assertEqual(command, expected)
             self.assertEqual(kwargs["timeout"], 30)
             capture = self.output / "capture"
             capture.mkdir()
@@ -575,7 +588,12 @@ class DesktopSaveViewTests(unittest.TestCase):
     def test_desktop_focus_only_copies_exact_sources_and_renders_real_bundle(self):
         original_pair = deepcopy(self.pair)
         sources = [Path(row["path"]).read_bytes() for row in self.pair["nativeSources"]]
-        result = self.save(export_rerun=False)
+        self.capture_python = self.root / "local dxcam python.exe"
+        self.capture_python.touch()
+        self.view_reader = self.root / "published native reader.exe"
+        self.view_reader.touch()
+        with patch.dict("os.environ", {"RR2_DXCAM_PYTHON": str(self.capture_python)}):
+            result = self.save(export_rerun=False, native_reader=self.view_reader)
         self.assertEqual(result["status"], "saved-route-view-candidate", result)
         self.assertEqual(result["sourceKind"], "desktop-composite-event-candidate")
         self.assertEqual(result["captureBackend"], "desktop")

@@ -82,11 +82,14 @@ class PairTests(unittest.TestCase):
 
     def test_fenced_pair_accepts_another_verified_local_host(self):
         self.target["hostName"] = "RIFT-STATION"
+        reader = self.root / "published reader.exe"
+        reader.touch()
         with patch.object(pair.socket, "gethostname", return_value=self.target["hostName"]):
-            result = self.run_pair(expected_host="rift-station")
+            result = self.run_pair(expected_host="rift-station", native_reader=reader)
         self.assertEqual(result["status"], "stable-native-composite-event-candidate")
         self.assertEqual(result["targetBefore"]["hostName"], self.target["hostName"])
         self.assertEqual(result["targetBefore"], result["targetAfter"])
+        self.assertEqual([options["native_reader"] for _, options in self.native_calls], [reader, reader])
 
     def test_fenced_event_order_age_calibration_pixels_hash_and_cleanup(self):
         result = self.run_pair()

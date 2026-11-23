@@ -85,7 +85,7 @@ def compare(reports, target):
 
 def probe(expected_host, physical_pid, display, output, *, timeout=10, select=None, snapshot=None,
           backend_loader=None, read_native=None, qpc=None, perf_ns=None, clock=None, sleep=None, clock_info=None,
-          expected_start_ticks=None, expected_sha256=None, expected_hwnd=None):
+          expected_start_ticks=None, expected_sha256=None, expected_hwnd=None, native_reader=None):
     require(native.valid_host_name(expected_host)
             and socket.gethostname().casefold() == expected_host.casefold(), "host-mismatch")
     require(type(physical_pid) is int and physical_pid > 0, "explicit-positive-pid-required")
@@ -95,7 +95,8 @@ def probe(expected_host, physical_pid, display, output, *, timeout=10, select=No
     output = Path(output).resolve()
     require(not output.exists() and output.parent.is_dir(), "fresh-output-required")
     select, snapshot = select or native.select_physical, snapshot or _snapshot
-    backend_loader, read_native = backend_loader or _DXcamBackend, read_native or native.read_native
+    backend_loader = backend_loader or _DXcamBackend
+    read_native = native.bind_native_reader(read_native or native.read_native, native_reader)
     clock, sleep, perf_ns = clock or time.perf_counter, sleep or time.sleep, perf_ns or time.perf_counter_ns
     started, camera, target, backend, geometry = clock(), None, None, None, None
     deadline, result = started + timeout, {"status": "withheld", "diagnosticKind": "dxcam-native-event-pair/1",
@@ -238,11 +239,13 @@ def main(argv=None):
     parser.add_argument("--expect-start-ticks")
     parser.add_argument("--expect-sha256")
     parser.add_argument("--expect-hwnd", type=_hwnd_argument)
+    parser.add_argument("--native-reader", type=Path,
+                        help="absolute local path to a published RiftReader2.Live.exe")
     args = parser.parse_args(argv)
     try:
         result = probe(args.expected_host, args.physical_pid, args.display, args.output, timeout=args.timeout,
                        expected_start_ticks=args.expect_start_ticks, expected_sha256=args.expect_sha256,
-                       expected_hwnd=args.expect_hwnd)
+                       expected_hwnd=args.expect_hwnd, native_reader=args.native_reader)
     except (ValueError, OSError) as error:
         print(json.dumps({"status": "withheld", "reason": str(error)}))
         return 2
