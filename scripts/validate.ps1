@@ -133,13 +133,19 @@ try {
     # Include untracked source files; git diff alone does not inspect new files.
     $repositoryFiles = @(git ls-files --cached --others --exclude-standard)
     if ($LASTEXITCODE -ne 0) { throw 'Git file enumeration failed.' }
+    # These copies of the original Waypoints recordings retain their exact bytes.
+    $retainedRouteFiles = @(
+        'docs/validation/passive-recorded-route-2026-11-12.json'
+        'docs/validation/recorded-route-2026-11-12.json'
+    )
     foreach ($file in $repositoryFiles) {
         if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
         if ([IO.Path]::GetExtension($file) -notin @('.cs', '.csproj', '.props', '.json', '.jsonl', '.slnx', '.ps1', '.md', '.Config', '.lua', '.toc', '.py', '.txt')) { continue }
         $content = [IO.File]::ReadAllText((Join-Path $repoRoot $file))
         if ($content -match '(?m)[ \t]+\r?$') { throw "Trailing whitespace: $file" }
         # NuGet owns lock-file formatting and emits these files without a final newline.
-        if ([IO.Path]::GetFileName($file) -ne 'packages.lock.json' -and $content.Length -gt 0 -and -not $content.EndsWith("`n")) {
+        if ($file -notin $retainedRouteFiles -and [IO.Path]::GetFileName($file) -ne 'packages.lock.json' -and
+            $content.Length -gt 0 -and -not $content.EndsWith("`n")) {
             throw "Missing final newline: $file"
         }
     }

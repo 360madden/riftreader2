@@ -1,7 +1,7 @@
 # RiftReader2 handoff — corridor evidence and optical bounds
 
-Updated: **2026-11-16 22:35 EST** (America/New_York)  
-Verified machine: **AMD-DESKTOP** via machine-local `[Environment]::MachineName`; never LEGION.  
+Updated: **2026-11-16 22:35 EST** (America/New_York)\
+Verified machine: **AMD-DESKTOP** via machine-local `[Environment]::MachineName`; never LEGION.\
 Repository: `C:\work\riftreader2`, branch `codex/modular-foundation`, last code HEAD `3ae0590` (pushed).
 
 ## Delivered in this continuation

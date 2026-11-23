@@ -1,8 +1,8 @@
 # RR2 post-patch recovery handoff — 2026-11-18
 
-**Checkpoint:** Wednesday 2026-11-18, approximately 08:45 EST (America/New_York)  
-**Repository:** `C:\work\riftreader2` on **AMD-DESKTOP** only  
-**Branch / verified remote HEAD before handoff:** `codex/modular-foundation` / `0d5b63be57e30bbe5e4fd303a441d77f21d85938` (synced with origin)  
+**Checkpoint:** Wednesday 2026-11-18, approximately 08:45 EST (America/New_York)\
+**Repository:** `C:\work\riftreader2` on **AMD-DESKTOP** only\
+**Branch / verified remote HEAD before handoff:** `codex/modular-foundation` / `0d5b63be57e30bbe5e4fd303a441d77f21d85938` (synced with origin)\
 **Priority:** P0 recovery following the RIFT 1177 → 1179 update. This handoff records completed work, remaining limits, and the smallest next useful tasks. Canonical detailed chronological evidence is in `docs/status.md`.
 
 ## Machine, target, and patch identity

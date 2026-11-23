@@ -1,9 +1,9 @@
 # Postmortem: RR2 move-key focus failure and recovery
 
-**Date:** November 11, 2026 (America/New_York)  
-**Project:** RiftReader2 (RR2), branch codex/modular-foundation  
-**Verified host:** AMD-DESKTOP only  
-**Severity:** High development blocker; repeated wasted effort, but no evidence of a stuck key or harmful game input during the failed focus runs  
+**Date:** November 11, 2026 (America/New_York)\
+**Project:** RiftReader2 (RR2), branch codex/modular-foundation\
+**Verified host:** AMD-DESKTOP only\
+**Severity:** High development blocker; repeated wasted effort, but no evidence of a stuck key or harmful game input during the failed focus runs\
 **Resolution:** Narrow focus fix committed and pushed as 6643a34dca81b2e1a33060ce4118d2ac43890def
 
 > **Direct accountability:** I repeatedly referenced the working legacy RiftReader helper yet failed to test its unchanged executable first or reproduce its critical focus sequence faithfully. I built and revised RR2's own code, committed plausible fallbacks, and relied on offline checks while the real foreground-focus blocker persisted. Joey's suggestion to run the known-good helper side by side finally separated an implementation problem from speculation about RIFT rejecting simulated keys. This failure in engineering approach should not recur.
@@ -116,9 +116,9 @@ The incorrect path returned "Could not execute" with exit code 1 and sent **no i
 
 **Final RR2 result, one run:** focusAttempt reported before HWND 0xC12E2 / PID59072; after HWND 0x911EC / PID44888; both thread attachments and SetForegroundWindow accepted. Windows input insertion succeeded, input was bounded, releaseSucceeded=true, targetLost=false, cancelled=false, observed duration **770.2 ms**.
 
-Native before: X 7439.9897, Y 863.58545, Z 2967.548.  
-Native after: X 7435.413, Y 863.58545, Z 2968.3796.  
-Same unit key: 239816685251645959.  
+Native before: X 7439.9897, Y 863.58545, Z 2967.548.\
+Native after: X 7435.413, Y 863.58545, Z 2968.3796.\
+Same unit key: 239816685251645959.\
 Delta X = -4.57666015625, delta Z = +0.83154296875, planar displacement = **4.651589179483055**. Capture gap = 1.0876566 seconds. The helper explicitly returned gameResponseVerified=false because the native positions are candidate data rather than independent gameplay confirmation.
 
 **Output distinctions that must never be collapsed:**

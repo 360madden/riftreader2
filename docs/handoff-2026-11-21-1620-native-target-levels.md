@@ -1,8 +1,8 @@
 # RR2 handoff — November 21, 2026, 16:20 EST
 
-**Machine verified:** **AMD-DESKTOP**, from machine-local Windows PowerShell `[Environment]::MachineName` (exit 0 at 16:20:19 EST); Workbridge **0.16.5-dev** rooted at `C:\work`.  
-**Repository:** `C:\work\riftreader2`; branch **`codex/modular-foundation`**.  
-**Git HEAD before this handoff:** `359109f43058fc310e76a2cd37a037141b90c7b4` (synchronized with `origin/codex/modular-foundation` at preflight). **After creating/pushing the handoff, reread `git log` and `git status`; never assume this pre-handoff HEAD remains current.**  
+**Machine verified:** **AMD-DESKTOP**, from machine-local Windows PowerShell `[Environment]::MachineName` (exit 0 at 16:20:19 EST); Workbridge **0.16.5-dev** rooted at `C:\work`.\
+**Repository:** `C:\work\riftreader2`; branch **`codex/modular-foundation`**.\
+**Git HEAD before this handoff:** `359109f43058fc310e76a2cd37a037141b90c7b4` (synchronized with `origin/codex/modular-foundation` at preflight). **After creating/pushing the handoff, reread `git log` and `git status`; never assume this pre-handoff HEAD remains current.**\
 **Scope:** Continue RR2 on **AMD-DESKTOP only**. Do **not** access LEGION or VMware from this session. Local physical RIFT only. Source of truth for current requirements: `AGENTS.md`; detailed chronological findings: `docs/status.md`.
 
 ## 1. Current physical process — important restart discovery
@@ -35,7 +35,7 @@ The previous physical session was **PID 37676**, start ticks **63930856555455908
 | **1179 actor matrix copy relationship** | Existing physical orientation/actor reader produced nine of nine float32 raw-bit matches on build 1179; bracketed no-input observations. | A copied matrix is not qualified actor heading, turn response or navigation authority. |
 | **Navigation, survival, hunt and target selection** | Existing helpers and tests are present, including partly uncommitted work. | Whole-route obstacle-aware navigation, selected-target behavior during change, and live autonomous combat/recovery remain unfinished; **do not overwrite dirty lane files**. |
 
-**Current-build source files:**  
+**Current-build source files:**\
 `scripts/physical_rift.py`, `scripts/physical_selected_target_profile.py`, `scripts/replay_physical_selected_target_profile.py`, `scripts/physical_nearby_units.py`, `scripts/native_unit_level_projection.py`, `scripts/capture_physical_telemetry_target_series.py`, `scripts/replay_physical_telemetry_target_series.py`, `scripts/npc_survey_live.py`, `scripts/prepare_physical_npc_survey.py`; native C# `src/RiftReader2.Live/CurrentBuildSelectedTargetCandidateReader.cs` and `CurrentBuildUnitLevelsSampleCommand.cs`.
 
 ## 3. Tests and builds actually completed November 21
@@ -81,7 +81,7 @@ Do **not** infer GitHub has these original process snapshots. They are in local 
 | NPC negative auto-map survey | `artifacts/npc-auto-map-unbound-20261121-1331-p37676/` | Receipts in individual `attempt-*.locator.json` |
 | Native keyed-unit-level source from new PID | **Not captured** | Physical acceptance pending |
 
-Detailed exact source paths, hashes and limits:  
+Detailed exact source paths, hashes and limits:
 - [Selected-target recovery](validation/physical-selected-target-1179-recovery-2026-11-21.md)
 - [Four-source selected target profile](validation/physical-selected-target-profile-2026-11-21.md)
 - [Keyed native levels](validation/native-keyed-unit-levels-2026-11-21.md)

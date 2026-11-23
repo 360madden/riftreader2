@@ -15,6 +15,6 @@
 3. Coordinator checks the shared repo for new commits/changes and integrates after each completed slice. If direct chat delivery is not possible, share a concise result in the chat itself and optionally put a short status note in an explicitly owned file.
 4. Only the coordinator owns one live RIFT/VM input queue at a time. Never bypass stale source/lease, controller owner, capture age, STOP/key-release, or machine-identity gates.
 
-**Current shared baseline when written:** HEAD `04ee53244c23982b2d4d7d7a22ada331a75bbb20`; GitHub synchronized; only untracked research script noted above. These are historical snapshots and must be rechecked before edits. Prior Lab1 1D/2D waypoint arrival is established, while Lab2 W calibration has not passed. 
+**Current shared baseline when written:** HEAD `04ee53244c23982b2d4d7d7a22ada331a75bbb20`; GitHub synchronized; only untracked research script noted above. These are historical snapshots and must be rechecked before edits. Prior Lab1 1D/2D waypoint arrival is established, while Lab2 W calibration has not passed.
 
 **Success this round:** one useful, independently tested change per lane, or a precise reproducer/blocker; no new framework or process overhead.

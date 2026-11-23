@@ -1,9 +1,9 @@
 # RR2 handoff — build-1179 native/Lua recovery and target qualification
 
-**Checkpoint:** Friday, **2026-11-20 ~07:09 EST** (America/New_York)  
-**Machine:** **AMD-DESKTOP** only — verified by machine-local PowerShell `[Environment]::MachineName` (exit 0).  
-**Repository:** `C:\work\riftreader2`; branch `codex/modular-foundation`.  
-**Latest confirmed Git HEAD *before this handoff*:** `f4c0d1b4433b6a98a6d2b0aa54b6b51f65d1cb47`, synced with `origin/codex/modular-foundation`. **Recheck HEAD and origin before resuming.**  
+**Checkpoint:** Friday, **2026-11-20 ~07:09 EST** (America/New_York)\
+**Machine:** **AMD-DESKTOP** only — verified by machine-local PowerShell `[Environment]::MachineName` (exit 0).\
+**Repository:** `C:\work\riftreader2`; branch `codex/modular-foundation`.\
+**Latest confirmed Git HEAD *before this handoff*:** `f4c0d1b4433b6a98a6d2b0aa54b6b51f65d1cb47`, synced with `origin/codex/modular-foundation`. **Recheck HEAD and origin before resuming.**\
 **Workbridge:** `0.16.5-dev`, root `C:\work`. Worker metadata at this checkpoint: **0 running**, 36 available, 12 queued assignments; these are **not evidence of actively executing AI subagents**.
 
 ## 1. Exact machine and game boundary

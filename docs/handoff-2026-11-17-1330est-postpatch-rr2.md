@@ -1,9 +1,9 @@
 # RiftReader2 handoff — RIFT 1179 post-update continuation
 
-**Created:** 2026-11-17 ~13:30 EST (America/New_York)  
-**Scope:** AMD-DESKTOP physical RIFT only; no LEGION or VMware.  
-**Verified host:** `C:\Windows\System32\hostname.exe` returned `AMD-DESKTOP` (exit 0) at 13:26 EST. Workbridge 0.16.5-dev.  
-**Repo:** `C:\work\riftreader2`, branch `codex/modular-foundation`, upstream `origin/codex/modular-foundation`. Latest pre-handoff HEAD `07500a01f0cd331ca6696eb67383cd84456edc03` (10:49 EST); no upstream divergence observed.  
+**Created:** 2026-11-17 ~13:30 EST (America/New_York)\
+**Scope:** AMD-DESKTOP physical RIFT only; no LEGION or VMware.\
+**Verified host:** `C:\Windows\System32\hostname.exe` returned `AMD-DESKTOP` (exit 0) at 13:26 EST. Workbridge 0.16.5-dev.\
+**Repo:** `C:\work\riftreader2`, branch `codex/modular-foundation`, upstream `origin/codex/modular-foundation`. Latest pre-handoff HEAD `07500a01f0cd331ca6696eb67383cd84456edc03` (10:49 EST); no upstream divergence observed.\
 **Purpose:** Resume useful RR2 functionality after the November 17 game patch. This document supplements, not replaces, `docs/handoff-2026-11-17-rift-1179-postpatch-recovery.md` and `docs/validation/physical-build1179-passive-reader-2026-11-17.md`.
 
 ## Confirmed recovery
