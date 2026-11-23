@@ -6,10 +6,19 @@ for the same unit, entity, player and process epoch. This covers the native
 comparison in P0. Independent RIFT UI or Lua evidence remains pending.
 [Replaying the native comparison](reference/physical-native-nearby-units-2026-11-21.md#numeric-level-candidates)
 
+The current Windows workflow verifies the local host before using physical
+tools. A fresh checkout can use a published native reader, a calibration
+verified for that host, and local Python environments. The fresh LEGION
+checkout passed the full gate, including the real Lua 5.1 producer checks,
+with the configured dependencies. Treat the AMD-DESKTOP process observations
+below as dated evidence. [Portable checkout setup](workflows/development.md#reuse-local-tools-from-a-fresh-checkout)
+
 **Machine verified:** **AMD-DESKTOP**, from machine-local Windows PowerShell `[Environment]::MachineName` (exit 0 at 16:20:19 EST); Workbridge **0.16.5-dev** rooted at `C:\work`.\
 **Repository:** `C:\work\riftreader2`; branch **`codex/modular-foundation`**.\
 **Git HEAD before this handoff:** `359109f43058fc310e76a2cd37a037141b90c7b4` (synchronized with `origin/codex/modular-foundation` at preflight). **After creating/pushing the handoff, reread `git log` and `git status`; never assume this pre-handoff HEAD remains current.**\
-**Scope:** Continue RR2 on **AMD-DESKTOP only**. Do **not** access LEGION or VMware from this session. Local physical RIFT only. Source of truth for current requirements: `AGENTS.md`; detailed chronological findings: `docs/status.md`.
+The original handoff covered local physical RIFT on **AMD-DESKTOP**. See
+`AGENTS.md` for current requirements and `docs/status.md` for chronological
+findings.
 
 ## 1. Current physical process — important restart discovery
 
