@@ -11,6 +11,7 @@ from collections import Counter
 import hashlib
 import json
 from pathlib import Path
+import re
 import socket
 import subprocess
 import sys
@@ -173,21 +174,24 @@ def checked_cursor(text, previous=None):
     return text
 
 
-def resume_cursor(path, selection, reader_sha):
-    """Resume only after checking saved C# receipts against this *live* epoch.
+def resume_cursor(path, selection, reader_sha, *, expected_summary_sha=None):
+    """Verify retained C# requests and receipts against the supplied identity.
 
-    A bare historical cursor or summary is not proof of process identity or scan
-    completion; reject changed readers, copied candidates and broken source chains.
+    Live resumption supplies a fresh process selection. Offline replay supplies
+    the identity recorded in the resumed run.
     """
     path = Path(path)
     raw = path.read_bytes()
     require(len(raw) <= 1_000_000, "resume-summary-too-large")
+    summary_sha = hashlib.sha256(raw).hexdigest().upper()
+    if expected_summary_sha is not None:
+        require(summary_sha == expected_summary_sha, "saved-resume-source-hash-mismatch")
     summary = json.loads(raw.decode("utf-8-sig"), object_pairs_hook=unique)
     target = selection["target"]
     expected = {"processId": target["processId"],
                 "processStartUtcTicks": int(target["processStartUtcTicks"]),
                 "executableSha256": str(target["executableSha256"]).upper()}
-    require(summary.get("schemaVersion") == 1 and
+    require(isinstance(summary, dict) and summary.get("schemaVersion") == 1 and
             summary.get("evidenceKind") == "amd-physical-rr2r1-prefix-scan/1" and
             physical_rift.valid_host_name(summary.get("ownerHost")) and
             summary["ownerHost"].casefold() == selection["ownerHost"].casefold()
@@ -221,11 +225,32 @@ def resume_cursor(path, selection, reader_sha):
                      "startAddress", "nextAddress", "scanStatus", "scanReason",
                      "examinedBytes")), "resume-receipt-mismatch")
         prior = checked_cursor(row.get("nextAddress"), row["startAddress"])
-    return prior, hashlib.sha256(raw).hexdigest().upper()
+    return prior, summary_sha
+
+
+def _saved_resume_source(summary, source_summary):
+    recorded_hash = summary.get("resumeSourceSha256")
+    if recorded_hash is None:
+        require(source_summary is None, "saved-scan-was-not-resumed")
+        return {"status": "not-resumed"}
+
+    require(isinstance(recorded_hash, str) and re.fullmatch(r"[0-9A-F]{64}", recorded_hash),
+            "invalid-saved-resume-source-hash")
+    if source_summary is None:
+        return {"status": "source-not-supplied", "summarySha256": recorded_hash}
+
+    reader_sha = summary.get("readerSha256")
+    require(isinstance(reader_sha, str) and re.fullmatch(r"[0-9A-F]{64}", reader_sha),
+            "invalid-saved-reader-hash")
+    selection = {"ownerHost": summary["ownerHost"], "target": summary["target"]}
+    cursor, verified_hash = resume_cursor(source_summary, selection, reader_sha,
+                                         expected_summary_sha=recorded_hash)
+    require(cursor == summary.get("initialCursor"), "saved-resume-source-cursor-mismatch")
+    return {"status": "verified", "summarySha256": verified_hash, "nextCursor": cursor}
 
 
 def assess_saved(summary_path, output_dir, session_id=None, *,
-                 decoder_cli=DECODER_CLI, dotnet="dotnet"):
+                 decoder_cli=DECODER_CLI, dotnet="dotnet", resume_source_summary=None):
     """Audit retained RR2R1 sources offline; decode only with an authentic nonce.
 
     The saved capture identity is historical, never a current-process pin.
@@ -292,6 +317,7 @@ def assess_saved(summary_path, output_dir, session_id=None, *,
             expected_cursor = (checked_cursor(following, expected_cursor)
                                if following is not None else None)
 
+    resume_source = _saved_resume_source(summary, resume_source_summary)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=False)
     reference = {"status": "insufficient-independent-copied-runs",
@@ -322,6 +348,7 @@ def assess_saved(summary_path, output_dir, session_id=None, *,
         "ownerHost": summary["ownerHost"],
         "historicalTarget": target,
         "sourceSummarySha256": hashlib.sha256(raw).hexdigest().upper(),
+        "resumeSource": resume_source,
         "sourceVerifiedRuns": len(rows),
         "runsWithCopiedSnapshots": len(copied),
         "runDiagnostics": run_diagnostics,
@@ -510,6 +537,8 @@ def main(argv=None):
     parser.add_argument("--max-scans", type=int, default=SCAN_COUNT)
     parser.add_argument("--resume-summary", type=Path,
                         help="Prior exact-epoch scanner summary; its requests/index files are reverified")
+    parser.add_argument("--resume-source-summary", type=Path,
+                        help="Verify the immediate preceding saved scan during offline replay")
     parser.add_argument("--session-id",
                         help="Exact already-bound RR2R1 reader nonce for offline pair assessment")
     parser.add_argument("--cli", type=Path, default=DECODER_CLI,
@@ -524,8 +553,10 @@ def main(argv=None):
             require(args.resume_summary is None, "replay-cannot-resume-scanning")
             require(args.start_address == "0x10000", "replay-cannot-select-start-address")
             path, result = assess_saved(args.replay_summary, args.output_dir,
-                                        args.session_id, decoder_cli=args.cli, dotnet=args.dotnet)
+                                        args.session_id, decoder_cli=args.cli, dotnet=args.dotnet,
+                                        resume_source_summary=args.resume_source_summary)
         else:
+            require(args.resume_source_summary is None, "resume-source-summary-requires-replay")
             path, result = collect(args.physical_pid, args.output_dir,
                                    scan_bytes=args.scan_bytes, scan_ms=args.scan_ms,
                                    max_scans=args.max_scans,
@@ -536,10 +567,11 @@ def main(argv=None):
     except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:220]}))
         return 2
+    runs = result.get("runs", result.get("runDiagnostics", []))
     print(json.dumps({"status": result["status"], "summary": str(path),
-                      "snapshots": [r["publishedSnapshots"] for r in result.get("runs", [])],
-                       "candidateStatusCounts": [r["candidateStatusCounts"] for r in
-                                                 result.get("runs", result.get("runDiagnostics", []))],
+                      **({"resumeSource": result["resumeSource"]} if args.replay_summary is not None else {}),
+                      "snapshots": [r["sourceVerifiedSnapshots"] for r in runs],
+                      "candidateStatusCounts": [r["candidateStatusCounts"] for r in runs],
                       "qualification": result["qualification"],
                       "referenceAssessment": result["referenceAssessment"],
                       "scanWork": result.get("scanWork")}))

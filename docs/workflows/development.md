@@ -255,6 +255,16 @@ python -B scripts/probe_physical_rr2r1.py --replay-summary artifacts/NEW_RR2R1_S
 # For nonce-bound replay, also pass --session-id ACTIVE_NONCE --cli $rr2DecoderCli --dotnet $rr2DotNet.
 ```
 
+For a resumed RR2R1 capture, keep the previous capture folder together with the
+resumed capture folder. Use `--resume-source-summary` to supply the immediate
+predecessor. Replay checks the saved summary hash, the original requests and
+receipts, the recorded host and process identity, the reader hash, and the
+resume cursor. These are offline checks and can run from a different checkout.
+
+```powershell
+python -B scripts/probe_physical_rr2r1.py --replay-summary artifacts/RESUMED_RR2R1_SCAN/summary.json --resume-source-summary artifacts/PREVIOUS_RR2R1_SCAN/summary.json --output-dir artifacts/NEW_RESUME_REPLAY
+```
+
 The facing result includes `nativeValues.opticalCamera` for the supported selected
 view mode. It reports optical yaw/pitch and world eye position, or a camera-specific
 unavailable reason. The gameplay camera/aim-point snapshot is retained separately.

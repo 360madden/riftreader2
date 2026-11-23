@@ -1,8 +1,10 @@
 """Offline tests for bounded physical RR2R1 reference discovery (no process access)."""
 from __future__ import annotations
 
+from contextlib import redirect_stdout
 from copy import deepcopy
 import hashlib
+from io import StringIO
 import json
 from pathlib import Path
 import subprocess
@@ -324,6 +326,49 @@ class ProbeTests(unittest.TestCase):
                 "candidateStatusCounts": {}, "nextResumeCursor": "0x40000",
             })
             self.assertEqual(json.loads(resumed.read_text()), result)
+
+            with patch.object(probe, "pinned_selection") as select, \
+                    patch.object(probe.subprocess, "run") as run, \
+                    redirect_stdout(StringIO()) as stdout:
+                self.assertEqual(probe.main([
+                    "--replay-summary", str(resumed), "--resume-source-summary", str(prior),
+                    "--output-dir", str(root / "replay"),
+                ]), 0)
+                select.assert_not_called()
+                run.assert_not_called()
+
+            verified = {"status": "verified", "summarySha256": probe.digest(prior),
+                        "nextCursor": "0x30000"}
+            cli_report = json.loads(stdout.getvalue())
+            self.assertEqual(cli_report["resumeSource"], verified)
+            self.assertEqual(cli_report["snapshots"], [0])
+            replay = json.loads((root / "replay/summary.json").read_text())
+            self.assertEqual(replay["resumeSource"], verified)
+            self.assertEqual(replay["status"], "insufficient-independent-copied-runs")
+            _, single = probe.assess_saved(resumed, root / "single")
+            self.assertEqual(single["resumeSource"], {"status": "source-not-supplied",
+                                                      "summarySha256": probe.digest(prior)})
+
+            with self.assertRaisesRegex(ValueError, "saved-resume-source-hash-mismatch"):
+                probe.assess_saved(resumed, root / "wrong-source", resume_source_summary=resumed)
+            self.assertFalse((root / "wrong-source").exists())
+
+            index = prior.parent / "run-02" / "index.json"
+            index.write_bytes(index.read_bytes() + b" ")
+            with self.assertRaisesRegex(ValueError, "resume-receipt-mismatch"):
+                probe.assess_saved(resumed, root / "changed-receipt", resume_source_summary=prior)
+            self.assertFalse((root / "changed-receipt").exists())
+
+            shorter = json.loads(prior.read_text())
+            shorter["runs"] = shorter["runs"][:1]
+            shorter["scanWork"].update(scansCompleted=1, examinedBytes=1048576,
+                                       nextResumeCursor="0x20000")
+            prior.write_text(json.dumps(shorter))
+            result["resumeSourceSha256"] = probe.digest(prior)
+            resumed.write_text(json.dumps(result))
+            with self.assertRaisesRegex(ValueError, "saved-resume-source-cursor-mismatch"):
+                probe.assess_saved(resumed, root / "wrong-cursor", resume_source_summary=prior)
+            self.assertFalse((root / "wrong-cursor").exists())
 
     def test_resume_rejects_tampered_receipt_changed_epoch_or_reader(self):
         with tempfile.TemporaryDirectory() as temp:
