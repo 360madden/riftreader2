@@ -53,6 +53,25 @@ def _create_environment(directory, requirements):
     return python
 
 
+def _check_environment(name, python):
+    command = [str(python), "-B"]
+    if name == "core":
+        _run([*command, "-c", "import tkinter; tkinter.Tcl(); from PIL import Image"],
+             "Check Waypoints and WGC imports")
+    elif name == "overlay":
+        _run([*command, "-c", "from scripts import qt_waypoint_overlay; import numpy; import comtypes"],
+             "Check Qt and capture environment imports")
+    elif name == "rerun":
+        env = dict(os.environ, CI="1")
+        env.pop("FORCE_RERUN_ANALYTICS", None)
+        version = _run([*command, "-m", "rerun", "--version"], "Check Rerun startup", env=env)
+        if not version.startswith("rerun-cli "):
+            raise ValueError("Rerun returned an unrecognized version response")
+    elif name == "validation":
+        _run([*command, str(ROOT / "scripts/check_validation_python.py")], "Check validation Python imports")
+        _run([*command, str(ROOT / "scripts/check_lua_runtime.py")], "Check validation Lua 5.1 runtime")
+
+
 def setup(output, *, extras=()):
     """Create local environments once and return the paths used by the app."""
     if sys.platform != "win32" or struct.calcsize("P") != 8:
@@ -65,23 +84,16 @@ def setup(output, *, extras=()):
     output.mkdir(parents=True, exist_ok=False)
 
     core = _create_environment(output / "core", ("requirements-physical.txt",))
-    _run([str(core), "-B", "-c", "import tkinter; tkinter.Tcl(); from PIL import Image"], "Check Waypoints and WGC imports")
+    _check_environment("core", core)
     if "overlay" in extras:
         overlay = _create_environment(output / "overlay", ("requirements-overlay.txt", "requirements-capture.txt"))
-        _run([str(overlay), "-B", "-c", "from scripts import qt_waypoint_overlay; import numpy; import comtypes"],
-             "Check Qt and capture environment imports")
+        _check_environment("overlay", overlay)
     if "rerun" in extras:
         rerun = _create_environment(output / "rerun", ("requirements-visualization.txt",))
-        env = dict(os.environ, CI="1")
-        env.pop("FORCE_RERUN_ANALYTICS", None)
-        version = _run([str(rerun), "-B", "-m", "rerun", "--version"], "Check Rerun startup", env=env)
-        if not version.startswith("rerun-cli "):
-            raise ValueError("Rerun returned an unrecognized version response")
+        _check_environment("rerun", rerun)
     if "validation" in extras:
         validation = _create_environment(output / "validation", ("requirements-validation.txt",))
-        _run([str(validation), "-B", str(ROOT / "scripts/check_validation_python.py")],
-             "Check validation Python imports")
-        _run([str(validation), "-B", str(ROOT / "scripts/check_lua_runtime.py")], "Check validation Lua 5.1 runtime")
+        _check_environment("validation", validation)
     settings = _interpreter_settings(output)
     (output / ".ready").touch(exist_ok=False)
     return settings
@@ -97,12 +109,17 @@ def use_existing(output):
         raise ValueError("existing-physical-python-setup-incomplete")
     link = ROOT / ".local/physical-python-link"
     observe_physical._plain_path(link.parent)
-    if link.exists() or link.is_symlink():
-        if link.resolve() == output:
-            return settings
+    existing = link.exists() or link.is_symlink()
+    if existing and link.resolve() != output:
         raise ValueError(f"Physical Python link already exists at {link}")
     if link.is_relative_to(output):
         raise ValueError("Physical Python link cannot be inside its target")
+    environments = {Path(INTERPRETERS[key]).parts[0] for key in settings}
+    for name in ("core", "overlay", "rerun", "validation"):
+        if name in environments:
+            _check_environment(name, output / name / "Scripts/python.exe")
+    if existing:
+        return settings
     link.parent.mkdir(parents=True, exist_ok=True)
     _run([observe_physical.POWERSHELL, "-NoProfile", "-NonInteractive", "-Command",
           "New-Item -ItemType Junction -Path $env:RR2_PYTHON_SETUP_LINK "

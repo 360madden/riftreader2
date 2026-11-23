@@ -177,9 +177,11 @@ that completed setup so a new shell or Explorer can find it.
 ```
 
 Registration creates `.local/physical-python-link` as a Windows directory
-junction. The interpreters stay at their installed path. Each tool checks the
-registered setup first, then the checkout's default setup, after any explicit
-interpreter override.
+junction after it runs the startup checks for the core interpreter and each
+installed optional environment. Use an environment prepared at its current
+location on this host. The interpreters stay at their installed path. Each tool
+uses an explicit interpreter override first, then the registered setup, then
+the checkout's default setup.
 
 ### Reuse local tools from a fresh checkout
 

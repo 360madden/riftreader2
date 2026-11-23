@@ -85,3 +85,27 @@ class PhysicalPythonSetupTests(unittest.TestCase):
                     tool.use_existing(setup)
                 self.assertTrue(existing.is_dir())
             run.assert_not_called()
+
+    def test_registration_checks_runtimes_before_creating_a_checkout_link(self):
+        with TemporaryDirectory() as temporary, patch.object(tool.sys, "platform", "win32"):
+            root = Path(temporary)
+            checkout = root / "checkout"
+            prepared = root / "copied environment"
+            core = prepared / tool.INTERPRETERS["RIFTREADER2_PYTHON"]
+            rerun = prepared / tool.INTERPRETERS["RR2_RERUN_PYTHON"]
+            for python in (core, rerun):
+                python.parent.mkdir(parents=True)
+                python.touch()
+            (prepared / ".ready").touch()
+            with patch.object(tool, "ROOT", checkout):
+                with patch.object(tool, "_run", side_effect=ValueError("core runtime unavailable")) as run:
+                    with self.assertRaisesRegex(ValueError, "core runtime unavailable"):
+                        tool.use_existing(prepared)
+                    run.assert_called_once()
+                    self.assertEqual(run.call_args.args[0][0], str(core))
+                    self.assertFalse((checkout / ".local").exists())
+                with patch.object(tool, "_run", side_effect=["", "unrecognized version"]) as run:
+                    with self.assertRaisesRegex(ValueError, "unrecognized version response"):
+                        tool.use_existing(prepared)
+                    self.assertEqual([call.args[0][0] for call in run.call_args_list], [str(core), str(rerun)])
+                    self.assertFalse((checkout / ".local").exists())
