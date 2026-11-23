@@ -255,6 +255,8 @@ class SeriesCaptureTests(unittest.TestCase):
 
     def test_opt_in_relocates_one_stale_scope_and_preserves_failed_evidence(self):
         moved = "0xC000000"
+        published = self.output.parent / "RiftReader2.Live.exe"
+        published.write_bytes(b"reader")
 
         def relocation(pid, destination, **options):
             path, report = self.collect(pid, destination, **options)
@@ -275,10 +277,12 @@ class SeriesCaptureTests(unittest.TestCase):
 
         path, result = self.execute_capture(
             collect=relocation, combine=merged, recover_stale_scope=True,
-            expected_host="RIFT-STATION")
+            expected_host="RIFT-STATION", native_reader=published)
         self.assertTrue(path.is_file())
         self.assertEqual(len(self.calls), 4)
         self.assertTrue(all(options["expected_host"] == "RIFT-STATION"
+                            for _, _, options in self.calls))
+        self.assertTrue(all(options["native_reader"] == published
                             for _, _, options in self.calls))
         self.assertTrue((self.output / "capture-02" / "summary.json").is_file())
         self.assertTrue((self.output / "capture-02-rediscovery" / "summary.json").is_file())

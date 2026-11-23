@@ -183,20 +183,23 @@ class NativeTargetSourceTests(unittest.TestCase):
         basic = CaptureTests("test_exact_1179_admission_and_wrong_build_refusal")
         basic.setUp()
         events = []
+        source, _, _, _ = fixture()
+        row = source["observation"]
+        row["identity"].update(
+            executableSha256=basic.target["executableSha256"],
+            processStartUtcTicks=int(basic.target["processStartUtcTicks"]),
+            processId=basic.target["processId"], executablePath=basic.target["executablePath"])
+        row["unitKey"] = SELF
 
-        def native(sel, kind, *, output):
+        def native(sel, kind, *, output, native_reader):
+            self.assertEqual(native_reader, published)
             events.append(kind + "-" + Path(output).name)
-            return basic._fake_native(sel, kind, output)
-
-        def selected_source(selection, folder, which):
-            events.append("target-" + which)
-            return {"unitKeyCandidate": str(SELF),
-                    "targetStatus": "raw-getter-zero-candidate",
-                    "targetUnitIdCandidate": None,
-                    "source": str(folder / f"native-target-{which}.json"),
-                    "sha256": "A" * 64,
-                    "startedAtUtc": "2026-11-20T10:50:10Z",
-                    "completedAtUtc": "2026-11-20T10:50:10.1Z"}
+            if kind == "zone-context":
+                return basic._fake_native(sel, kind, output)
+            Path(output).write_text(json.dumps(source), encoding="utf-8")
+            return {"status": "complete", "target": sel["target"],
+                    "nativeRead": kind, "nativeOutput": str(output),
+                    "nativeValues": zone.physical_rift._native_values(kind, source)}
 
         def scan(fake, path, **kwargs):
             events.append(path.name)
@@ -218,11 +221,12 @@ class NativeTargetSourceTests(unittest.TestCase):
 
         with TemporaryDirectory() as tmp:
             dest = Path(tmp) / "bundle"
+            published = Path(tmp) / "RiftReader2.Live.exe"
+            published.write_bytes(b"reader")
             with (patch.object(collect.socket, "gethostname", return_value=HOST),
                   patch.object(collect.physical_rift, "select_physical",
                                return_value=basic.selection),
                   patch.object(collect.physical_rift, "read_native", side_effect=native),
-                  patch.object(collect, "native_target", side_effect=selected_source),
                   patch.object(collect, "scan", side_effect=scan),
                   patch.object(collect.verify, "replay",
                                return_value={"status": "matching-candidates"}),
@@ -232,14 +236,16 @@ class NativeTargetSourceTests(unittest.TestCase):
                   patch.object(collect.time, "sleep")):
                 path, report = collect.collect(
                     123, dest, scan_bytes=collect.CHUNK, gap_ms=0,
-                    include_native_target=True, reader_factory=FakeProcess)
+                    include_native_target=True, reader_factory=FakeProcess,
+                    native_reader=published)
             self.assertTrue(path.is_file())
             self.assertEqual(report["nativeTargetBefore"]["targetStatus"],
                              "raw-getter-zero-candidate")
             self.assertEqual(report["nativeTargetAfter"]["targetUnitIdCandidate"], None)
             self.assertEqual(events, [
-                "zone-context-native-before.json", "target-before", "pass-01",
-                "pass-02", "target-after", "zone-context-native-after.json"
+                "zone-context-native-before.json", "player-context-native-target-before.json",
+                "pass-01", "pass-02", "player-context-native-target-after.json",
+                "zone-context-native-after.json"
             ])
             target_replay.assert_called_once_with(path)
 

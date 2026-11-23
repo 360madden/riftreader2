@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts import capture_physical_telemetry_zone as capture
+from scripts import physical_rift
 from scripts import replay_physical_telemetry_target as replay
 from scripts import replay_physical_telemetry_target_series as continuity
 
@@ -41,7 +42,7 @@ def _stale_scope_candidate(report, target):
 
 
 def run(pid, output, *, count=3, interval_ms=500, scope_count=4,
-        recover_stale_scope=False, stop_on_aba=False, expected_host=None,
+        recover_stale_scope=False, stop_on_aba=False, expected_host=None, native_reader=None,
         collect=capture.collect, replay_target=replay.replay,
         combine=continuity.combine, sleep=time.sleep):
     """Preserve all original captures; refuse cross-epoch changes and stale windows."""
@@ -52,6 +53,7 @@ def run(pid, output, *, count=3, interval_ms=500, scope_count=4,
             and type(recover_stale_scope) is bool
             and type(stop_on_aba) is bool,
             "invalid-bounds")
+    collect = physical_rift.bind_native_reader(collect, native_reader)
     output = Path(output)
     if not output.is_absolute():
         output = ROOT / output
@@ -191,6 +193,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--physical-pid", type=int, required=True)
     parser.add_argument("--expected-host", help="require this local Windows hostname")
+    parser.add_argument("--native-reader", type=Path,
+                        help="absolute local path to a published RiftReader2.Live.exe")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--count", type=int, default=3)
     parser.add_argument("--interval-ms", type=int, default=500)
@@ -208,7 +212,8 @@ def main(argv=None):
             count=args.count, interval_ms=args.interval_ms,
             scope_count=args.scope_count,
             recover_stale_scope=args.recover_stale_scope,
-            stop_on_aba=args.stop_on_aba, expected_host=args.expected_host)
+            stop_on_aba=args.stop_on_aba, expected_host=args.expected_host,
+            native_reader=args.native_reader)
     except (OSError, ValueError, TypeError, KeyError, IndexError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:220],
                           "inputSent": False}))

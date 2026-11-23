@@ -358,9 +358,9 @@ def survey_scopes(reader, *, start, scan_bytes, scope_count, expected_player,
                               "native owner brackets and replay still required.")}
 
 
-def native_zone(selection, directory, which):
+def native_zone(selection, directory, which, *, read):
     path = directory / f"native-{which}.json"
-    result = physical_rift.read_native(selection, "zone-context", output=path)
+    result = read(selection, "zone-context", output=path)
     require(result.get("status") == "complete"
             and result.get("target") == selection["target"]
             and result.get("nativeRead") == "zone-context"
@@ -375,10 +375,12 @@ def native_zone(selection, directory, which):
             "completedAtUtc": values["sampledAtUtc"]}
 
 
-def native_target(selection, directory, which):
+def native_target(selection, directory, which, *, read=None):
     """One exact-owner native target snapshot; raw zero stays unqualified."""
     path = directory / f"native-target-{which}.json"
-    result = physical_rift.read_native(selection, "player-context", output=path)
+    if read is None:
+        read = physical_rift.read_native
+    result = read(selection, "player-context", output=path)
     require(result.get("status") == "complete"
             and result.get("target") == selection["target"]
             and result.get("nativeRead") == "player-context"
@@ -419,12 +421,13 @@ def native_target(selection, directory, which):
 def collect(pid, output_dir, *, start_address="0x13000000",
             scan_bytes=64*1024*1024, gap_ms=600, reader_factory=ReadOnlyWindowsProcess,
             auto_scope=False, scope_count=4, include_native_target=False,
-            discover_scope=False, expected_host=None):
+            discover_scope=False, expected_host=None, native_reader=None):
     require(type(include_native_target) is bool, "invalid-native-target-option")
     require(type(auto_scope) is bool and type(scope_count) is int
             and 1 <= scope_count <= 8, "invalid-auto-scope-options")
     require(type(discover_scope) is bool and (not discover_scope or auto_scope),
             "invalid-scope-discovery-options")
+    read = physical_rift.bind_native_reader(physical_rift.read_native, native_reader)
     selection, start = admission(pid, start_address, scan_bytes, gap_ms,
                                  expected_host=expected_host)
     require(not auto_scope or start + scan_bytes * scope_count < 0x7FFF_FFFF_FFFF,
@@ -444,7 +447,7 @@ def collect(pid, output_dir, *, start_address="0x13000000",
     if auto_scope:
         # This owner read precedes the timed native->Lua->native bracket. It
         # supplies the player and zone only for selecting candidate scan scope.
-        preflight = native_zone(selection, root, "survey-owner")
+        preflight = native_zone(selection, root, "survey-owner", read=read)
         preflight_report, _ = verify.load(root / "native-survey-owner.json",
                                           preflight["sha256"])
         preflight_player = f"u{int(preflight_report['observation']['selfKey']):016X}"
@@ -512,12 +515,12 @@ def collect(pid, output_dir, *, start_address="0x13000000",
         generation = {"sessionId": selected[0]["topSession"],
                       "epoch": selected[0]["topEpoch"]}
     player = None
-    before = native_zone(selection, root, "before")
+    before = native_zone(selection, root, "before", read=read)
     native_data, _ = verify.load(root / "native-before.json", before["sha256"])
     player = f"u{int(native_data['observation']['selfKey']):016X}"
     require(preflight_player is None or preflight_player == player,
             "survey-versus-bracket-player-changed")
-    target_before = (native_target(selection, root, "before")
+    target_before = (native_target(selection, root, "before", read=read)
                      if include_native_target else None)
     require(target_before is None or
             target_before["unitKeyCandidate"] == str(int(player[1:], 16)),
@@ -537,12 +540,12 @@ def collect(pid, output_dir, *, start_address="0x13000000",
                       expected_player=player, **generation_arg)
     require(physical_rift.select_physical(host, pid).get("target") == target,
             "changed-process-after-second-scan")
-    target_after = (native_target(selection, root, "after")
+    target_after = (native_target(selection, root, "after", read=read)
                     if include_native_target else None)
     require(target_after is None or
             target_after["unitKeyCandidate"] == str(int(player[1:], 16)),
             "native-target-player-changed-after")
-    after = native_zone(selection, root, "after")
+    after = native_zone(selection, root, "after", read=read)
     same_epoch = physical_rift.select_physical(host, pid).get("target") == target
     report = {
         "schemaVersion":1,
@@ -602,6 +605,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--physical-pid",required=True,type=int)
     parser.add_argument("--expected-host", help="require this local Windows hostname")
+    parser.add_argument("--native-reader", type=Path,
+                        help="absolute local path to a published RiftReader2.Live.exe")
     parser.add_argument("--start-address",default="0x13000000")
     parser.add_argument("--scan-bytes",type=int,default=64*1024*1024)
     parser.add_argument("--gap-ms",type=int,default=600)
@@ -623,7 +628,8 @@ def main(argv=None):
                               scope_count=args.scope_count,
                               include_native_target=args.include_native_target,
                               discover_scope=args.discover_scope,
-                              expected_host=args.expected_host)
+                              expected_host=args.expected_host,
+                              native_reader=args.native_reader)
     except (OSError,ValueError,KeyError,TypeError,AttributeError,OverflowError) as exc:
         print(json.dumps({"status":"blocked","reason":str(exc)[:220]}))
         return 2
