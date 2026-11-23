@@ -33,6 +33,16 @@ def _near(a, b):
     return math.hypot(a[0] - b[0], a[2] - b[2]) <= .50 + 1e-9 and abs(a[1] - b[1]) <= 1.0
 
 
+def _frame_owner(transform, owner):
+    if transform.get("scope") == "watch-pillar-corridor":
+        pinned = transform.get("owner")
+        if not isinstance(pinned, dict) or any(
+            str(pinned.get(key, "")).casefold() != str(owner.get(key, "")).casefold()
+            for key in ("machine", "gameBuildSha256", "unitKey")
+        ):
+            raise ValueError("watch-coordinate-scope-owner-mismatch")
+
+
 def _polyline(points):
     lengths = [0.0]
     # Identical planar vertices with differing height cannot define a planar
@@ -75,6 +85,7 @@ def _compare_candidate(candidate, native, context, *, candidate_start, candidate
     if compare_context(context, native_context) != "matching" or compare_context(native_context, context) != "matching":
         raise ValueError("matching-zone-context-required")
     owner = evidence["identity"]
+    _frame_owner(candidate["coordinates"]["transformToRr2Native"], owner)
     for ctx in (context, native_context):
         if (not ctx.get("playerKey") or ctx["playerKey"] != owner["unitKey"]
             or ctx["target"]["hostName"].casefold() != owner["machine"].casefold()
@@ -149,6 +160,31 @@ def _compare_candidate(candidate, native, context, *, candidate_start, candidate
     return result
 
 
+def _settled_stops(receipt, samples):
+    records = receipt.get("controlPauseReceipts", [])
+    if records == []:
+        return set()
+    if not isinstance(records, list) or type(receipt.get("controlPauseVersion")) is not int or receipt["controlPauseVersion"] != 1:
+        raise ValueError("native-control-pause-protocol-invalid")
+    by_time = {row["observedAtUtc"]: row for row in samples}
+    stops = set()
+    for record in records:
+        before, after = record["stationaryBefore"], record["stationaryAfter"]
+        first, last = by_time.get(before["observedAtUtc"]), by_time.get(after["observedAtUtc"])
+        if (first is None or last is None or record["releaseSucceeded"] is not True
+                or record["desktopInputsDown"] != [] or record["observedAtUtc"] != last["observedAtUtc"]
+                or last["observedAtUtc"] in stops or record["position"] != after["position"]
+                or (last["observed"] - first["observed"]).total_seconds() < .150
+                or first["bearing"] != before["bearingDegrees"] or last["bearing"] != after["bearingDegrees"]
+                or abs((last["bearing"] - first["bearing"] + 180) % 360 - 180) > .5
+                or any(row[axis] != proof["position"][axis]
+                       for row, proof in ((first, before), (last, after)) for axis in "xyz")
+                or math.dist([first[a] for a in "xyz"], [last[a] for a in "xyz"]) > .05):
+            raise ValueError("native-control-pause-did-not-match-walked-samples")
+        stops.add(last["observedAtUtc"])
+    return stops
+
+
 def _full_native_route(receipt_paths, zone_path):
     """Validate and retain every native sample, including receipt junctions."""
     from scripts.export_continuous_route import export_route, _read, _native_receipts, _samples
@@ -158,9 +194,11 @@ def _full_native_route(receipt_paths, zone_path):
     native = export_route(receipt_paths, zone_path)
     identity = parse_projection_route(native)["identity"]
     rows = []
+    kinds = []
     for path in receipt_paths:
         for receipt in _native_receipts(_read(path)):
             samples = _samples(receipt, path, 0.0, False)
+            stops = _settled_stops(receipt, samples)
             for sample in samples:
                 if rows:
                     previous = rows[-1]
@@ -170,10 +208,12 @@ def _full_native_route(receipt_paths, zone_path):
                         or abs(sample["y"] - previous["y"]) > 1.0 or distance > 12.0 * dt + .20):
                         raise ValueError("native-evidence-discontinuity")
                 rows.append(sample)
+                kinds.append("stop" if sample["observedAtUtc"] in stops else "pass")
     if hashes != [hashlib.sha256(Path(path).read_bytes()).hexdigest() for path in receipt_paths] or zone_hash != hashlib.sha256(Path(zone_path).read_bytes()).hexdigest():
         raise ValueError("native-evidence-changed-during-read")
     native["waypoints"] = [["Observed " + str(i + 1), row["x"], row["z"]] for i, row in enumerate(rows)]
     native["heights"] = [row["y"] for row in rows]
+    native["pointKinds"] = kinds
     native["pointMeasurements"] = [measurement({a: row[a] for a in "xyz"}, {"runtimeIdentity": identity},
                                                row["source"], row["observedAtUtc"]) for row in rows]
     _validate(native)
@@ -287,6 +327,7 @@ def validate_adopted_route(document, identity, current_context, direction):
         or (owner[k].casefold() != identity[k].casefold() if k != "unitKey" else owner[k] != identity[k])
         for k in ("machine", "gameBuildSha256", "unitKey")):
         raise ValueError("candidate-adoption-owner-mismatch")
+    _frame_owner(metadata["frame"]["transformToRr2Native"], identity)
     if direction not in metadata.get("supportedDirections", []):
         raise ValueError("candidate-adoption-direction-unsupported")
     context = normalize_context(current_context)

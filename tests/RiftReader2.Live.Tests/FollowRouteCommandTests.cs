@@ -186,6 +186,26 @@ public sealed class FollowRouteCommandTests
     }
 
     [Theory]
+    [InlineData(7.052, "arrived")]
+    [InlineData(7.51, "blocked")]
+    public async Task AdmissionGuideAllowsSmallVerticalProjectionAndRejectsAnotherFloor(double guideHeight, string status)
+    {
+        var input = new Input();
+        var options = Options(z: 3) with { GoalY = 7, RoutePoints = [new("start", 0, 0, guideHeight)] };
+        var result = await FollowRouteCommand.FollowAsync(options,
+            Reader(Pose(0, 0), Pose(0, 2.8), Pose(0, 2.8), Pose(0, 2.8)),
+            input, () => null, NoDelay);
+
+        Assert.Equal(status, result.Status);
+        if (status == "arrived")
+        {
+            Assert.Single(result.PassedWaypoints!);
+            Assert.Equal(new[] { "down:w", "up:w" }, input.Events);
+        }
+        else Assert.Empty(input.Events);
+    }
+
+    [Theory]
     [InlineData(3.5, 90.0)]
     [InlineData(6.25, 25.0)]
     [InlineData(6.25, 90.0)]

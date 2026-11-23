@@ -2,11 +2,12 @@ import copy
 import unittest
 import json
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
 from scripts.waypoint_candidate_adoption import (_compare_candidate, _adoption_digest, validate_adopted_route,
-    _full_native_route, adopt_receipt_candidate, corroborate_reverse)
+    _full_native_route, _settled_stops, adopt_receipt_candidate, corroborate_reverse)
 from tests.test_waypoint_navigation_candidate import sample, sign
 
 CTX = {"version": 1, "zoneIdCandidate": "z1234567800000000", "rawZoneKey": 0x12345678,
@@ -28,6 +29,29 @@ def run(c=None, n=None, context=None, direction="forward"):
 
 
 class AdoptionTests(unittest.TestCase):
+    def test_control_pause_requires_released_stationary_samples_from_the_native_trace(self):
+        stamps = ("2026-11-14T00:00:00.200Z", "2026-11-14T00:00:00.351Z")
+        pos = {"x": 1.0, "y": 7.0, "z": 2.0}
+        pair = [{"position": pos, "bearingDegrees": 90, "observedAtUtc": stamp} for stamp in stamps]
+        samples = [{**pos, "bearing": 90, "observedAtUtc": stamp,
+                    "observed": datetime.fromisoformat(stamp)} for stamp in stamps]
+        record = {"position": pos, "releaseSucceeded": True, "desktopInputsDown": [],
+                  "stationaryBefore": pair[0], "stationaryAfter": pair[1], "observedAtUtc": stamps[1]}
+        receipt = {"controlPauseVersion": 1, "controlPauseReceipts": [record]}
+        self.assertEqual({stamps[1]}, _settled_stops(receipt, samples))
+        samples[1]["x"] += .1
+        with self.assertRaisesRegex(ValueError, "did-not-match-walked-samples"):
+            _settled_stops(receipt, samples)
+
+    def test_watch_coordinate_scope_refuses_a_different_native_owner(self):
+        c = sample()
+        c["coordinates"]["transformToRr2Native"].update(
+            scope="watch-pillar-corridor",
+            owner={"machine": "LEGION", "gameBuildSha256": "a" * 64, "unitKey": "player"})
+        sign(c)
+        with self.assertRaisesRegex(ValueError, "watch-coordinate-scope-owner-mismatch"):
+            run(c)
+
     def test_different_vertex_densities_and_reverse_preserve_stops(self):
         result = run()
         self.assertEqual(["pass", "pass"], result["pointKinds"])

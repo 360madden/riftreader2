@@ -230,18 +230,25 @@ internal static class FollowRouteCommand
     private static Options GuideLeg(Options options, RoutePoint guide) =>
         options with { X = guide.X, Z = guide.Z, GoalY = guide.Y };
 
+    private static bool AtAdmissionGuide(Pose pose, Options leg) =>
+        Distance(pose, leg.X, leg.Z) <= .50
+        && (leg.GoalY is not double y || Math.Abs(pose.Y - y) <= .50);
+
     private static void ValidateRoute(Options options, Pose start)
     {
         var guides = options.RoutePoints ?? [];
         if (guides.Length > 499)
             throw new InvalidDataException("A route supports at most 499 intermediate waypoints.");
         var length = 0.0;
-        foreach (var guide in guides)
+        for (var index = 0; index < guides.Length; index++)
         {
+            var guide = guides[index];
             if (guide is null || string.IsNullOrWhiteSpace(guide.Name)
                 || !double.IsFinite(guide.X) || !double.IsFinite(guide.Z))
                 throw new InvalidDataException("Intermediate waypoints require a name and finite coordinates.");
-            ValidateGoalHeight(GuideLeg(options, guide), start);
+            var leg = GuideLeg(options, guide);
+            if (index != 0 || !AtAdmissionGuide(start, leg))
+                ValidateGoalHeight(leg, start);
             length += Distance(start, guide.X, guide.Z);
             start = start with { X = guide.X, Y = guide.Y ?? start.Y, Z = guide.Z };
         }
@@ -641,7 +648,7 @@ internal static class FollowRouteCommand
                 while (index < guides.Length)
                 {
                     string source = "pose";
-                    var observation = admission && index == 0 && Distance(after, leg.X, leg.Z) <= .50
+                    var observation = admission && index == 0 && AtAdmissionGuide(after, leg)
                         ? after : WaypointObservation(before, after, travelStart, leg, out source);
                     if (observation is null) break;
                     if (!WithinHeightEnvelope(observation, heightStart, leg)

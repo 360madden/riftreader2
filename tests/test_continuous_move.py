@@ -628,6 +628,11 @@ class ContinuousMoveTests(unittest.TestCase):
         self.assertEqual([(0, 1, True), (2, 2, False)],
                          move.route_spans(rows, [None]*3, ["pass"]*3, observed_coast=.5))
 
+    def test_already_satisfied_entry_guide_is_not_an_automatic_stop(self):
+        rows = [("entry", 5.0, 6.0), ("goal", 6.0, 6.0)]
+        self.assertEqual([(0, 1, False)], move.route_spans(rows, [7.05, 7.2], ["pass", "stop"],
+                                                         origin=(5.0, 6.00001), origin_height=7))
+
     def test_sampled_feasible_curve_remains_continuous(self):
         rows = [(str(i), 4 * math.sin(i * .16), 4 * (1-math.cos(i * .16)))
                 for i in range(12)]

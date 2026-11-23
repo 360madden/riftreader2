@@ -961,7 +961,7 @@ def merge_response_seed(receipt, delay, turn_rate):
     return delay, turn_rate, estimate
 
 
-def route_spans(rows, heights, kinds, *, origin=None, speed=6.25, turn_rate=175.0,
+def route_spans(rows, heights, kinds, *, origin=None, origin_height=None, speed=6.25, turn_rate=175.0,
                 response_delay=.10, observed_coast=0.0):
     """Plan inclusive guide spans; automatic boundaries retain pass semantics.
 
@@ -993,6 +993,10 @@ def route_spans(rows, heights, kinds, *, origin=None, speed=6.25, turn_rate=175.
         ax, az = rows[i][1] - previous[0], rows[i][2] - previous[1]
         bx, bz = rows[i+1][1] - rows[i][1], rows[i+1][2] - rows[i][2]
         a, b = math.hypot(ax, az), math.hypot(bx, bz)
+        if (i == 0 and a <= .50 and b >= 1e-9
+                and (heights[i] is None or origin_height is not None and abs(heights[i] - origin_height) <= .50)):
+            # Native admission can credit this guide without any incoming travel.
+            continue
         if a < 1e-9 or b < 1e-9:
             # A duplicate cannot conceal a reversal. A guide at the fresh
             # origin needs no incoming tangent; native admission handles it.
@@ -1090,10 +1094,12 @@ def run_continuous_route(adapter, points, stop, emit=lambda event: None, *,
         response_delay, observed_coast = .10, 0.0
         batch_start = 0
         origin = (initial.position.x, initial.position.z)
+        origin_height = initial.position.y
         while batch_start < len(rows):
             planned_spans = route_spans(
                 rows[batch_start:], heights[batch_start:], kinds[batch_start:],
-                origin=origin, speed=speed, turn_rate=turn_rate, response_delay=response_delay,
+                origin=origin, origin_height=origin_height, speed=speed, turn_rate=turn_rate,
+                response_delay=response_delay,
                 observed_coast=observed_coast)
             automatic_indices = {batch_start + span_end for _, span_end, automatic in planned_spans
                                  if automatic}
@@ -1166,6 +1172,7 @@ def run_continuous_route(adapter, points, stop, emit=lambda event: None, *,
                 isinstance(leg.get("position"), dict) and
                 all(type(leg["position"].get(k)) in (int, float) and
                     math.isfinite(leg["position"][k]) for k in ("x", "z"))) else (x, z)
+            origin_height = leg["position"].get("y") if isinstance(leg.get("position"), dict) else goal_y
             batch_start = end + 1
         return legs
 
