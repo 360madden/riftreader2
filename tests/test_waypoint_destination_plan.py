@@ -102,6 +102,44 @@ class DestinationPlanTests(unittest.TestCase):
         self.assertEqual(result["riftWorldRuntime"]["checkout"], str(self.world.resolve()))
         self.assertEqual(result["riftWorldRuntime"]["python"], str(Path(sys.executable).resolve()))
 
+    def retained_build(self):
+        upstream = self.world / "matching upstream"
+        upstream.mkdir()
+        files = {}
+        for key, name in (("navmesh", "detour.bin"), ("preparedObj", "prepared.obj")):
+            path = self.root / name
+            path.write_bytes(key.encode())
+            files[key] = {"path": name, "sha256": bridge._hash(path)}
+        document = {"schema": "riftworld.navigation-build/1",
+                    "buildId": self.candidate["planner"]["buildId"],
+                    "pipelineCheckout": str(self.root / "unavailable original checkout"), "files": files}
+        self.save("navigation.json", document)
+        return upstream, document
+
+    def test_existing_build_can_use_a_local_copy_of_pinned_dependencies(self):
+        upstream, document = self.retained_build()
+        original = self.build.read_bytes()
+        result = self.plan(native=False, riftworld_upstream=upstream)
+        command, _ = self.calls[0]
+        copied = Path(command[command.index("--build") + 1])
+        self.assertEqual(copied, self.root / "plan" / "navigation-build" / "navigation.json")
+        self.assertEqual(json.loads(copied.read_bytes()), dict(document, pipelineCheckout=str(upstream)))
+        self.assertEqual(self.build.read_bytes(), original)
+        self.assertEqual(result["inputs"]["originalBuild"], bridge._reference(self.build))
+        self.assertEqual(result["inputs"]["build"], bridge._reference(copied))
+        self.assertFalse(result["inputSent"])
+        for file in document["files"].values():
+            self.assertEqual(bridge._hash(copied.parent / file["path"]), file["sha256"])
+
+    def test_changed_navigation_artifact_is_rejected_before_query(self):
+        upstream, _ = self.retained_build()
+        (self.root / "detour.bin").write_bytes(b"changed")
+        result = self.plan(native=False, riftworld_upstream=upstream)
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("navigation-build-artifact-hash-mismatch", result["blockers"][0])
+        self.assertFalse((self.root / "plan" / "navigation-build" / "navigation.json").exists())
+        self.assertEqual(self.calls, [])
+
     def test_missing_configured_world_python_does_not_prepare_a_plan(self):
         missing = self.root / "missing Python.exe"
         with patch.dict(bridge.os.environ, {"RR2_RIFTWORLD_ROOT": str(self.world),

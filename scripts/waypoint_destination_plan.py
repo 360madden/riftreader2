@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 import platform
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -28,6 +29,7 @@ if str(ROOT) not in sys.path:
 from scripts.waypoint_candidate_adoption import adopt_receipt_candidate, _adoption_digest
 from scripts.waypoint_navigation_candidate import _read_document, inspect_candidate, MAX_CANDIDATE_BYTES
 from scripts.waypoint_progress import write_json_atomic
+from scripts.waypoint_view_bundle import bundle_asset
 
 
 SCHEMA = "rr2.destination-plan/1"
@@ -53,6 +55,40 @@ def _identity(value):
 
 def _reference(path):
     return {"path": str(Path(path).resolve()), "sha256": _hash(path)}
+
+
+def _relocate_navigation_build(reference, output, upstream):
+    original = Path(reference["path"])
+    document, digest = _read(original)
+    if original.name != "navigation.json" or document.get("schema") != "riftworld.navigation-build/1":
+        raise ValueError("relocation-requires-canonical-navigation-build")
+    if digest.upper() != reference["sha256"]:
+        raise ValueError("planning-input-changed: build")
+    files = document.get("files")
+    if not isinstance(files, dict) or not {"navmesh", "preparedObj"} <= files.keys():
+        raise ValueError("navigation-build-files-unavailable")
+    output.mkdir()
+    descriptor = output / "navigation.json"
+    for entry in files.values():
+        if not isinstance(entry, dict) or not re.fullmatch(r"[0-9A-Fa-f]{64}", str(entry.get("sha256"))):
+            raise ValueError("invalid-navigation-build-file-reference")
+        try:
+            asset = bundle_asset(original.parent, entry.get("path"))
+            destination = bundle_asset(output, entry.get("path"))
+        except ValueError as error:
+            raise ValueError("invalid-navigation-build-file-reference") from error
+        if destination == descriptor or not asset.is_file():
+            raise ValueError("invalid-navigation-build-file-reference")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with asset.open("rb") as source, destination.open("xb") as copy:
+            shutil.copyfileobj(source, copy)
+        if _hash(destination) != entry["sha256"].upper():
+            raise ValueError("navigation-build-artifact-hash-mismatch: " + str(asset))
+    # RiftWorld validates the original build identity and dependency hashes when
+    # it opens the copy. Only the local checkout locator is replaced here.
+    document["pipelineCheckout"] = str(upstream)
+    write_json_atomic(descriptor, document)
+    return descriptor
 
 
 def _xyz(value):
@@ -615,7 +651,7 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
                      prepare_request=None, source_index=None, allow_partial_navigation=False,
                      prepare_profile=None, prepare_timeout_seconds=600,
                      start=None, from_current=False, recovery_plan=None,
-                     riftworld_root=None, riftworld_python=None,
+                     riftworld_root=None, riftworld_python=None, riftworld_upstream=None,
                      native_receipts=(), native_context=None, native_start=None,
                      native_end=None, candidate_start=0, candidate_end=None,
                      execute=False, session=None, search_extent=None,
@@ -643,6 +679,8 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
         raise ValueError("prepare timeout must be finite and within 0..3600 seconds")
     if prepare_profile is not None and not preparing:
         raise ValueError("prepare-profile requires preparation mode")
+    if preparing and riftworld_upstream is not None:
+        raise ValueError("riftworld-upstream requires an existing navigation build")
     if not isinstance(destination, str) or not destination.strip():
         raise ValueError("destination ID is required")
     if (execute or from_current) and (not isinstance(session, str) or not session.strip()):
@@ -720,6 +758,17 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
         prepared = None
         preparation_owner = None
         identity_hint = {}
+        if riftworld_upstream is not None:
+            upstream = Path(riftworld_upstream)
+            if upstream.anchor.startswith(("\\", "//")):
+                raise ValueError(f"Local RiftAssetDumper checkout is unavailable at {upstream}")
+            upstream = upstream.resolve()
+            if upstream.anchor.startswith(("\\", "//")) or not upstream.is_dir():
+                raise ValueError(f"Local RiftAssetDumper checkout is unavailable at {upstream}")
+            inputs["originalBuild"] = inputs["build"]
+            build = _relocate_navigation_build(inputs["originalBuild"], output / "navigation-build", upstream)
+            inputs["build"] = _reference(build)
+            plan["riftWorldRuntime"]["pipelineCheckout"] = str(upstream)
         if execute or from_current:
             admission = _session_state(session, runner, allow_latched=not execute,
                                        identity_out=identity_hint if preparing else None)
@@ -966,6 +1015,8 @@ def parser():
                         help="RiftWorld checkout (default: RR2_RIFTWORLD_ROOT or sibling RiftWorld)")
     result.add_argument("--riftworld-python", type=Path,
                         help="RiftWorld Python (default: RR2_RIFTWORLD_PYTHON or that checkout's .venv)")
+    result.add_argument("--riftworld-upstream", type=Path,
+                        help="Local pinned RiftAssetDumper checkout for a copied --build")
     result.add_argument("--native-receipt", dest="native_receipts", type=Path, action="append", default=[])
     result.add_argument("--native-context", type=Path)
     for name, default in (("native-start", None), ("native-end", None),

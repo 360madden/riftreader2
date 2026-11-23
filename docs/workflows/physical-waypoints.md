@@ -13,6 +13,15 @@ when using an environment outside that checkout's `.venv`. The explicit options
 `--riftworld-root` and `--riftworld-python` take precedence. Each plan records the
 checkout and Python it used.
 
+When a saved Detour build records a different machine's RiftAssetDumper path,
+pass `--riftworld-upstream` with the path to the local `cache\RiftAssetDumper`
+checkout and the normal `--build` arguments. Use the pinned dependency revision
+and matching Recast and Detour JARs. The planner verifies the saved mesh and
+prepared OBJ while copying the build into `navigation-build` under the new
+output directory. RiftWorld verifies the build identity and dependencies when
+it opens that copy. Bring the exact WorldPatch and its referenced files as well
+as the Detour build. The plan records hashes for both build manifests.
+
 From the RR2 checkout, reproduce the retained courtyard pilot with its saved
 inputs and a fresh output directory:
 
