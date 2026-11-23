@@ -150,7 +150,10 @@ class TargetRoutingTests(unittest.TestCase):
             probe = root / "probe.exe"
             probe.touch()
             for code, response, reason in (
-                    (2147516570, "", "gpu-probe-self-test-failed"),
+                    (0x80008083, "", "gpu-probe-dotnet-runtime-unavailable"),
+                    (-2147450730, "", "gpu-probe-dotnet-runtime-unavailable"),
+                    (0x8000809A, "", "gpu-probe-publish-incomplete"),
+                    (2, "", "gpu-probe-self-test-failed"),
                     (0, "", "gpu-probe-self-test-report-invalid"),
                     (0, json.dumps({**OFFLINE_PROBE_REPORT, "frameCaptured": True}),
                      "gpu-probe-self-test-report-invalid")):
@@ -228,6 +231,24 @@ class TargetRoutingTests(unittest.TestCase):
         self.assertEqual(command[0], probe)
         self.assertEqual(command[command.index("--host") + 1], "RIFT-STATION")
         self.assertEqual(command[command.index("--pid") + 1], 123)
+        self.assertEqual(runner.call_args.kwargs["env"]["DOTNET_DISABLE_GUI_ERRORS"], "1")
+
+    def test_capture_reports_runtime_startup_failure_without_reading_image(self):
+        target = {"hostName": "RIFT-STATION", "processId": 123, "hwnd": 456,
+                  "processStartUtcTicks": "638000000000000001", "executableSha256": "a" * 64}
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            probe = root / "probe.exe"
+            probe.touch()
+            with patch.dict("os.environ", {"RR2_WGC_PROBE": str(probe)}), \
+                 patch.object(observe_gpu.socket, "gethostname", return_value="RIFT-STATION"), \
+                 patch.object(observe_gpu, "_identity", return_value=target), \
+                 patch.object(observe_gpu, "_run", return_value=(0x80008083, "")), \
+                 patch.object(physical_turn_visual_pair, "read_frame") as read_frame:
+                result = observe_gpu.capture_gpu("rift-station", root / "output", physical_pid=123)
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["reason"], "gpu-probe-dotnet-runtime-unavailable")
+        read_frame.assert_not_called()
 
     def test_retired_vm_targets_are_denied_by_default_without_adapter_calls(self):
         for target in ("lab1", "lab2"):

@@ -28,12 +28,17 @@ $rr2Probe = 'tools\physical-wgc-probe\PhysicalWgcProbe.csproj'
 ```
 
 To use a published build, keep its companion files in the same directory and
-set `RR2_WGC_PROBE` in the shell that runs the observer.
+set `RR2_WGC_PROBE` in the shell that runs the observer. This framework-dependent
+build requires the x64 .NET 10 Desktop Runtime. If the selected SDK contains
+`Microsoft.WindowsDesktop.App` outside Windows' registered .NET installation,
+use that SDK's directory as the runtime root for the current shell.
 
 ```powershell
 $rr2PublishedProbe = Join-Path (Get-Location).Path 'artifacts\tools\wgc-published'
 & $rr2DotNet publish $rr2Probe -c Release --no-restore --self-contained false -o $rr2PublishedProbe
 $env:RR2_WGC_PROBE = Join-Path $rr2PublishedProbe 'PhysicalWgcProbe.exe'
+# For the private SDK installation described above:
+# $env:DOTNET_ROOT_X64 = Split-Path -Parent $rr2DotNet
 & $env:RR2_WGC_PROBE --self-test
 ```
 

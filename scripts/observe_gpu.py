@@ -9,6 +9,12 @@ import socket
 from scripts.observe_physical import ROOT, _identity, _plain_path, _require, _run, valid_host_name
 
 PROBE = ROOT / "tools/physical-wgc-probe/bin/Debug/net10.0-windows10.0.19041.0/win-x64/PhysicalWgcProbe.exe"
+# .NET apphost exit codes, independent of the host's display language.
+DOTNET_PROBE_ERRORS = {
+    0x80008083: "gpu-probe-dotnet-runtime-unavailable",
+    0x80008096: "gpu-probe-dotnet-runtime-unavailable",
+    0x8000809A: "gpu-probe-publish-incomplete",
+}
 
 
 def _probe_path():
@@ -37,7 +43,8 @@ def check_probe():
     except (OSError, ValueError):
         return {**result, "reason": "gpu-probe-self-test-unavailable"}
     if code != 0:
-        return {**result, "reason": "gpu-probe-self-test-failed", "exitCode": code}
+        reason = DOTNET_PROBE_ERRORS.get(code & 0xFFFFFFFF, "gpu-probe-self-test-failed")
+        return {**result, "reason": reason, "exitCode": code}
     try:
         report = json.loads(response)
     except json.JSONDecodeError:
@@ -85,8 +92,11 @@ def capture_gpu(expected_host, output, *, physical_pid=None):
             "--start-ticks", before["processStartUtcTicks"],
             "--sha256", before["executableSha256"],
             "--hwnd", hex(before["hwnd"]), "--backend", "wgc", "--out", image,
-        ], 20)
+        ], 20, env={**os.environ, "DOTNET_DISABLE_GUI_ERRORS": "1"})
         if code:
+            runtime_failure = DOTNET_PROBE_ERRORS.get(code & 0xFFFFFFFF)
+            if runtime_failure:
+                raise ValueError(runtime_failure)
             failure = json.loads(response) if response.strip() else {}
             reason = failure.get("reason") if isinstance(failure, dict) else None
             raise ValueError(reason or "gpu-capture-failed")

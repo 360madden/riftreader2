@@ -54,11 +54,13 @@ the probe's offline self-test and loads its Python image verifier. The self-test
 requires a runnable build, including the companion files and .NET desktop
 runtime. Set `RR2_WGC_PROBE` to the absolute path of a locally published
 `PhysicalWgcProbe.exe` to use it for dependency checks and captures. The output
-gives the probe exit code if it fails and identifies the
-Python interpreter to use for a capture or for installing Pillow. The Workbridge
-check looks for `dist/desktop-ui.mjs`, `dist/desktop-capture.mjs`, and
-`dist/desktop-turn-admission.mjs` in the active deployment and checks the local
-Node version. With those prerequisites present,
+includes the probe exit code and identifies the Python interpreter for Pillow.
+If the probe reports `gpu-probe-dotnet-runtime-unavailable`, use an installed
+x64 .NET 10 Desktop Runtime or set `DOTNET_ROOT_X64` to its private installation
+directory. For `gpu-probe-publish-incomplete`, use the complete published probe
+folder. The Workbridge check looks for `dist/desktop-ui.mjs`,
+`dist/desktop-capture.mjs`, and `dist/desktop-turn-admission.mjs` in the active
+deployment and checks the local Node version. With those prerequisites present,
 it checks registration of `desktop_windows` and `desktop_capture_window` on the
 running service. When the catalog advertises the version-only WinApp check,
 the owner checks WinApp in its own environment and reports the result in
