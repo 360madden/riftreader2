@@ -157,6 +157,7 @@ class CaptureReaderBridgeTests(unittest.TestCase):
         args = ["--expected-host", HOST, "--check-dependencies", "--native-reader", str(self.reader)]
         with patch.object(capture, "acquire") as acquire, \
                 patch.object(capture.physical_rift, "select_physical") as select, \
+                patch.object(capture, "check_installed_addon", return_value={"status": "files-present"}), \
                 patch.object(capture.physical_rift.observe_physical, "_run") as run:
             for missing in (None, *commands):
                 with self.subTest(missing=missing):
@@ -179,6 +180,43 @@ class CaptureReaderBridgeTests(unittest.TestCase):
                     self.assertEqual(run.call_args.args[0], [self.reader, "--help"])
         acquire.assert_not_called()
         select.assert_not_called()
+
+    def test_installed_addon_reports_matching_changed_and_missing_source_files(self):
+        folder = self.root / "Redirected AddOns" / "ReaderBridge"
+        folder.mkdir(parents=True)
+        manifest = folder / "RiftAddon.toc"
+        module = folder / "ReaderBridge.lua"
+        manifest.write_bytes(b'RunOnStartup = {"ReaderBridge.lua"}')
+        module.write_bytes(b'local version = "fixture"')
+        pins = {"startupManifestSha256": hashlib.sha256(manifest.read_bytes()).hexdigest().upper(),
+                "schemaSourceSha256": hashlib.sha256(module.read_bytes()).hexdigest().upper()}
+        with patch.object(capture.observe_physical, "local_rift_addons_root", return_value=folder.parent), \
+                patch.dict(capture.PRODUCER, pins):
+            result = capture.check_installed_addon()
+            self.assertEqual(result["status"], "files-present")
+            self.assertTrue(result["matchesDecoderReference"])
+            module.write_bytes(b'local version = "custom"')
+            result = capture.check_installed_addon()
+            self.assertEqual(result["status"], "files-present")
+            self.assertFalse(result["files"]["ReaderBridge.lua"]["matchesDecoderReference"])
+            manifest.unlink()
+            result = capture.check_installed_addon()
+            self.assertEqual(result["status"], "blocked")
+            self.assertEqual(result["files"]["RiftAddon.toc"]["status"], "missing")
+
+    def test_wrong_host_never_checks_installed_readerbridge_files(self):
+        with patch.object(capture, "check_installed_addon") as addon, redirect_stdout(StringIO()) as stdout:
+            self.assertEqual(capture.main(["--expected-host", "OTHER-PC", "--check-dependencies"]), 2)
+        self.assertEqual(json.loads(stdout.getvalue())["installedAddon"],
+                         {"status": "not-checked", "reason": "host-mismatch"})
+        addon.assert_not_called()
+
+    def test_addon_file_marked_offline_is_reported_without_opening_it(self):
+        path = Mock(spec=Path)
+        path.lstat.return_value = Mock(st_mode=capture.stat.S_IFREG, st_size=32,
+                                       st_file_attributes=capture.stat.FILE_ATTRIBUTE_OFFLINE)
+        self.assertEqual(capture._installed_addon_file(path, "A" * 64), {"status": "cloud-recall-required"})
+        path.open.assert_not_called()
 
     def test_dependency_check_rejects_capture_options(self):
         for option, value in (("--physical-pid", "1"), ("--seed-index", "seed.json"),

@@ -155,6 +155,12 @@ blocked. It uses the same Python selection as the Waypoints launchers. Repeat
 the viewer version without opening windows. Game process identity and live
 addon publishers are verified separately during acquisition.
 
+The ReaderBridge check looks for `ReaderBridge/RiftAddon.toc` and
+`ReaderBridge/ReaderBridge.lua` under the configured AddOns root. It reports
+missing or unreadable files and compares readable files with the decoder's
+ReaderBridge 0.3.2 reference. A local variant is reported by hash. Its packet
+decoding is checked during capture.
+
 ```powershell
 $rr2Host = [Environment]::MachineName
 .\rr2-check-dependencies.cmd --expected-host $rr2Host

@@ -25,7 +25,7 @@ def workflow_commands(host):
         "wgc": ("observe_target.py", *physical, "wgc", "--native-facing"),
         "workbridge": ("observe_target.py", *physical, "workbridge"),
         "dxcam": ("probe_dxcam_native_pair.py", *local),
-        "readerbridge": ("capture_readerbridge_v3.py", *local),
+        "readerbridge": ("capture_readerbridge_v3.py", *local, "--include-selected-target"),
         "npc-survey": ("prepare_physical_npc_survey.py", *local, "--include-levels"),
         "telemetry": ("capture_physical_telemetry_target_series.py", *local),
         "prepared-maps": ("waypoint_destination_plan.py", "--check-dependencies"),

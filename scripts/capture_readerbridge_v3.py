@@ -14,6 +14,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import stat
 import subprocess
 import sys
 import time
@@ -22,9 +23,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts import physical_rift, telemetry_scope_locator
+from scripts import observe_physical, physical_rift, telemetry_scope_locator
 from scripts.capture_physical_telemetry_zone import ReadOnlyWindowsProcess
-from scripts.readerbridge_v3 import CONTROL, MAGIC, PACKET_SIZE, decode_packet
+from scripts.readerbridge_v3 import CONTROL, MAGIC, PACKET_SIZE, PRODUCER, decode_packet
 
 MIB = 1024 * 1024
 SCOUT_COMMAND = "scout-values-native"
@@ -352,6 +353,47 @@ def _retain_selected_target(selection, reader, read_native, directory, keys):
     return sources
 
 
+def _installed_addon_file(path, expected_sha):
+    try:
+        metadata = path.lstat()
+        if not stat.S_ISREG(metadata.st_mode) or not 0 < metadata.st_size <= MIB:
+            return {"status": "invalid-file"}
+        # Windows marks files that would require a cloud recall before reading.
+        recall_flags = stat.FILE_ATTRIBUTE_OFFLINE | 0x00040000 | 0x00400000
+        if getattr(metadata, "st_file_attributes", 0) & recall_flags:
+            return {"status": "cloud-recall-required"}
+        with path.open("rb") as stream:
+            raw = stream.read(MIB + 1)
+        after = path.lstat()
+        if (len(raw) != metadata.st_size or after.st_size != metadata.st_size
+                or after.st_mtime_ns != metadata.st_mtime_ns):
+            return {"status": "changed-during-read"}
+    except (FileNotFoundError, NotADirectoryError):
+        return {"status": "missing"}
+    except OSError:
+        return {"status": "unreadable"}
+    sha = hashlib.sha256(raw).hexdigest().upper()
+    return {"status": "readable", "sha256": sha, "matchesDecoderReference": sha == expected_sha}
+
+
+def check_installed_addon():
+    """Compare the local startup files with the decoder's reference producer."""
+    try:
+        directory = observe_physical.local_rift_addons_root() / "ReaderBridge"
+        if directory.is_symlink():
+            raise ValueError("readerbridge-addon-directory-is-link")
+    except (OSError, ValueError) as exc:
+        return {"status": "blocked", "reason": str(exc)[:240]}
+    files = {
+        "RiftAddon.toc": _installed_addon_file(directory / "RiftAddon.toc", PRODUCER["startupManifestSha256"]),
+        "ReaderBridge.lua": _installed_addon_file(directory / "ReaderBridge.lua", PRODUCER["schemaSourceSha256"]),
+    }
+    readable = all(row["status"] == "readable" for row in files.values())
+    return {"status": "files-present" if readable else "blocked", "directory": str(directory), "files": files,
+            "referenceVersion": PRODUCER["schemaSourceVersion"],
+            "matchesDecoderReference": all(row.get("matchesDecoderReference") for row in files.values())}
+
+
 def acquire(expected_host: str, physical_pid: int, seed_index: Path | None, output: Path,
             *, scan_mib: int = 16, native_reader=None, include_selected_target=False, runner=subprocess.run, sleep=time.sleep,
             selector=physical_rift.select_physical, read_context=physical_rift.read_native,
@@ -511,7 +553,7 @@ def main(argv=None) -> int:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--physical-pid", type=int)
     mode.add_argument("--check-dependencies", action="store_true",
-                      help="check the local native reader without selecting RIFT")
+                      help="check the installed addon and native reader without selecting RIFT")
     parser.add_argument("--seed-index", type=Path)
     parser.add_argument("--auto-map", action="store_true",
                         help="find bounded scout windows in current readable private memory")
@@ -529,7 +571,11 @@ def main(argv=None) -> int:
         result = physical_rift.check_native_reader(
             args.expected_host, args.native_reader, kind=kinds,
             additional_commands=(SCOUT_COMMAND, CAPTURE_COMMAND))
-        print(json.dumps(dict(result, inputSent=False, readerBridgePublisher="unverified")))
+        addon = ({"status": "not-checked", "reason": "host-mismatch"} if result.get("reason") == "host-mismatch"
+                 else check_installed_addon())
+        if result["status"] == "ready" and addon["status"] != "files-present":
+            result.update(status="blocked", reason="readerbridge-installed-addon-unavailable")
+        print(json.dumps(dict(result, installedAddon=addon, inputSent=False, readerBridgePublisher="unverified")))
         return 0 if result["status"] == "ready" else 2
     if args.output is None or args.auto_map == (args.seed_index is not None):
         parser.error("--physical-pid requires --output and exactly one of --seed-index or --auto-map")
