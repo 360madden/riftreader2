@@ -42,7 +42,7 @@ def _capture_physical(expected_host, output, allow_foreground_change, physical_p
                             physical_pid=physical_pid)
 
 
-def _capture_with_native_facing(expected_host, output, physical_pid):
+def _capture_with_native_facing(expected_host, output, physical_pid, *, native_reader=None):
     """Bracket one focus-neutral frame with the existing exact-process readers."""
     from scripts import physical_rift
     from scripts.observe_gpu import capture_gpu
@@ -50,7 +50,8 @@ def _capture_with_native_facing(expected_host, output, physical_pid):
     if selection["status"] != "ready":
         return selection
     started = time.perf_counter()
-    before = physical_rift.read_native(selection, "facing", samples=1, include_target=True)
+    before = physical_rift.read_native(selection, "facing", samples=1, include_target=True,
+                                       native_reader=native_reader)
     directory = output or ROOT / "artifacts" / ("observe-wgc-" + uuid.uuid4().hex)
     result = capture_gpu(expected_host, directory, physical_pid=selection["target"]["processId"])
     if result.get("status") == "blocked":
@@ -62,7 +63,8 @@ def _capture_with_native_facing(expected_host, output, physical_pid):
         bracket["reason"] = "native-before-unavailable"
         bracket["nativeReason"] = before.get("reason")
         return result
-    after = physical_rift.read_native(selection, "facing", samples=1, include_target=True)
+    after = physical_rift.read_native(selection, "facing", samples=1, include_target=True,
+                                      native_reader=native_reader)
     bracket["afterOutput"] = after.get("nativeOutput")
     if after.get("status") != "complete":
         bracket["reason"] = "native-after-unavailable"
@@ -164,7 +166,7 @@ def _check_capture_dependencies(backend):
 def observe(target_id, expected_host, output=None, *, native_vitals=False,
             allow_foreground_change=False, with_preview=False, preview_width=840,
             preview_detail_crop=None, host_preview=False, physical_pid=None,
-            historical_vm=False, physical_capture_backend=None, native_facing=False,
+            historical_vm=False, physical_capture_backend=None, native_facing=False, native_reader=None,
             check_dependencies=False):
     started = time.perf_counter()
     if not isinstance(target_id, str):
@@ -190,13 +192,24 @@ def observe(target_id, expected_host, output=None, *, native_vitals=False,
     if physical_capture_backend is not None:
         if workflow != "physical" or physical_capture_backend not in ("wgc", "workbridge"):
             raise ValueError("invalid-physical-capture-backend")
+    if type(native_facing) is not bool or (native_facing and (workflow != "physical"
+            or physical_capture_backend == "workbridge" or allow_foreground_change or host_preview or native_vitals)):
+        raise ValueError("native-facing-requires-focus-neutral-physical-capture")
+    if native_reader is not None and not native_facing:
+        raise ValueError("native-reader-requires-native-facing")
     if check_dependencies:
-        if (workflow != "physical" or output is not None or native_vitals or native_facing
+        if (workflow != "physical" or output is not None or native_vitals
                 or allow_foreground_change or with_preview or preview_detail_crop is not None
                 or preview_width != 840 or host_preview or physical_pid is not None
                 or historical_vm):
             raise ValueError("capture-dependency-check-incompatible-options")
-        result = _check_capture_dependencies(physical_capture_backend)
+        result = _check_capture_dependencies("wgc" if native_facing else physical_capture_backend)
+        if native_facing:
+            from scripts import physical_rift
+
+            result["nativeReader"] = physical_rift.check_native_reader(owner_host, native_reader, kind="facing")
+            if result["nativeReader"]["status"] != "ready":
+                result["status"] = "blocked"
         if socket.gethostname().casefold() != actual_host.casefold():
             raise ValueError("host-changed")
         return dict(result, targetId=target_id, workflow=workflow, ownerHost=owner_host)
@@ -205,9 +218,6 @@ def observe(target_id, expected_host, output=None, *, native_vitals=False,
             raise ValueError("physical-pid-incompatible-target")
         if type(physical_pid) is not int or not 1 <= physical_pid <= 4294967295:
             raise ValueError("invalid-physical-pid")
-    if type(native_facing) is not bool or (native_facing and (workflow != "physical"
-            or physical_capture_backend == "workbridge" or allow_foreground_change or host_preview or native_vitals)):
-        raise ValueError("native-facing-requires-focus-neutral-physical-capture")
     if type(preview_width) is not int or not 500 <= preview_width <= 1600:
         raise ValueError("invalid-preview-width")
     if preview_detail_crop is not None:
@@ -245,7 +255,7 @@ def observe(target_id, expected_host, output=None, *, native_vitals=False,
         result = _capture_vmware(target_id, output, native_vitals)
     else:
         if native_facing:
-            result = _capture_with_native_facing(owner_host, output, physical_pid)
+            result = _capture_with_native_facing(owner_host, output, physical_pid, native_reader=native_reader)
         elif physical_capture_backend == "wgc":
             from scripts.observe_gpu import capture_gpu
             directory = output or ROOT / "artifacts" / ("observe-wgc-" + uuid.uuid4().hex)
@@ -283,6 +293,8 @@ def main(argv=None):
     parser.add_argument("--native-vitals", action="store_true", help="historical Lab 2 only; retain existing candidate qualifications")
     parser.add_argument("--native-facing", action="store_true",
                         help="physical only: bracket a focus-neutral WGC frame with native facing and target reads")
+    parser.add_argument("--native-reader", type=Path,
+                        help="absolute path to a local RiftReader2.Live executable for --native-facing")
     parser.add_argument("--allow-historical-vm", action="store_true",
                         help="explicit archival diagnostic opt-in for retired VMware lab targets")
     parser.add_argument("--host-preview", action="store_true",
@@ -310,6 +322,7 @@ def main(argv=None):
                           historical_vm=args.allow_historical_vm,
                           physical_capture_backend=args.physical_capture_backend,
                          native_facing=args.native_facing,
+                         native_reader=args.native_reader,
                          check_dependencies=args.check_dependencies)
     except Exception as error:
         result = {"status": "blocked", "targetId": args.target,

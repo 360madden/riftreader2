@@ -629,11 +629,14 @@ Use the exact local host/process and a stationary camera. Capture through the
 existing guarded observation path, saving its returned JSON in UTF-8:
 
 ```powershell
-python scripts/observe_target.py --target physical-amd-desktop --expected-host AMD-DESKTOP --physical-pid PID --physical-capture-backend wgc --native-facing | Set-Content -Encoding utf8 artifacts/projection-observation.json
-python scripts/plot_physical_waypoints.py --observation artifacts/projection-observation.json --route artifacts/waypoint-ready-route-69312.json --output artifacts/projection-preview
+$rr2Host = [Environment]::MachineName
+python scripts/observe_target.py --target physical --expected-host $rr2Host --physical-pid $rr2Pid --physical-capture-backend wgc --native-facing | Set-Content -Encoding utf8 artifacts/projection-observation.json
+python scripts/plot_physical_waypoints.py --observation artifacts/projection-observation.json --route $rr2Route --output artifacts/projection-preview
 ```
 
-Replace PID with the freshly admitted process. The output directory must be new.
+Set `$rr2Pid` to the freshly admitted PID and `$rr2Route` to the saved route.
+The output directory must be new. For a published reader, add `--native-reader`
+to the observation command. [Check the observation dependencies](target-observation.md#active-workflow-on-the-local-windows-host).
 The renderer accepts only a stable native/frame bracket, verified image/geometry,
 full native camera projection and complete recorded XYZ/height provenance matching
 the snapshot's host, build and player. A historical recording process epoch is

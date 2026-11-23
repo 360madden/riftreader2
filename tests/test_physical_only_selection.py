@@ -102,8 +102,11 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
 
             with patch.object(physical.observe_physical, "_run", return_value=(0, help_text.rsplit("\n", 1)[0])):
                 incomplete = physical.check_native_reader("AMD-DESKTOP", published)
+                facing = physical.check_native_reader("AMD-DESKTOP", published, kind="facing")
             self.assertEqual(incomplete["reason"], "native-reader-commands-not-advertised")
             self.assertEqual(incomplete["missingCommands"], [commands[-1]])
+            self.assertEqual(facing["status"], "ready")
+            self.assertEqual(facing["nativeCommandsAdvertised"], 1)
             with patch.object(physical.observe_physical, "_run") as run:
                 self.assertEqual(physical.check_native_reader("LEGION", published)["reason"], "host-mismatch")
             run.assert_not_called()

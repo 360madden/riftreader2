@@ -57,6 +57,15 @@ The checks use read-only discovery and require no RIFT PID. Exit code `2` means
 a dependency in the selected scope is blocked. Run the capture separately with
 a freshly verified PID after its checks pass.
 
+Add `--native-facing` to check the WGC capture and the facing reader together.
+Use `--native-reader` with an absolute published executable path to select a
+reader. Pass the same option on the capture command to use that executable
+for both reads around the frame.
+
+```powershell
+python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies --native-facing --native-reader $rr2PublishedReader
+```
+
 The historical VMware material below is **archived**. The observation CLI now
 rejects `lab1`/`lab2` by default with `vmware-retired-use-physical-rift`;
 `--allow-historical-vm` is an explicit diagnostic-only opt-in for reproducing

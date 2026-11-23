@@ -15,7 +15,7 @@ from tests.test_physical_only_selection import IDENTITY
 
 
 class NativeFacingObservationTests(unittest.TestCase):
-    def run_bracket(self, fault=None):
+    def run_bracket(self, fault=None, *, use_published_reader=False):
         source = report_with_target()
         row = deepcopy(source['observations'][0])
         source.update(observation=row, observations=[row], requestedSamples=1, completedSamples=1)
@@ -75,13 +75,15 @@ class NativeFacingObservationTests(unittest.TestCase):
                      'image': str(root / 'image.png'), 'receipt': str(receipt), 'imageSha256': 'A' * 64}
             if fault == 'identity':
                 frame['target']['processStartUtcTicks'] = '999'
+            reader = root / 'published' / 'RiftReader2.Live.exe' if use_published_reader else None
             with patch.object(physical_rift, 'select_physical', return_value=selection), \
                  patch.object(physical_rift, 'read_native', side_effect=snapshots) as native, \
                  patch('scripts.observe_gpu.capture_gpu', return_value=frame) as gpu, \
                  patch.object(tool.time, 'perf_counter', side_effect=[0, 6] if fault == 'slow' else [0, 1]):
-                result = tool._capture_with_native_facing('AMD-DESKTOP', root / 'frame', 123)
+                result = tool._capture_with_native_facing('AMD-DESKTOP', root / 'frame', 123, native_reader=reader)
             gpu.assert_called_once_with('AMD-DESKTOP', root / 'frame', physical_pid=123)
             self.assertEqual(1 if fault == 'before-failure' else 2, native.call_count)
+            self.assertTrue(all(call.kwargs['native_reader'] == reader for call in native.call_args_list))
             self.assertEqual('verified-awaiting-visual-review', result['status'])
             return result['nativeFacing']
 
@@ -98,6 +100,10 @@ class NativeFacingObservationTests(unittest.TestCase):
         bracket = self.run_bracket('legacy-geometry')
         self.assertEqual('stable-bracket-candidate', bracket['status'])
         self.assertEqual('unavailable', bracket['values']['playerFramePointCandidate']['status'])
+
+    def test_published_reader_is_used_on_both_sides_of_the_frame(self):
+        bracket = self.run_bracket(use_published_reader=True)
+        self.assertEqual('stable-bracket-candidate', bracket['status'])
 
     def test_drift_and_bad_order_withhold_values_but_retain_image(self):
         cases = {'owner': 'player-changed', 'camera': 'camera-unavailable-or-changed',
@@ -120,8 +126,29 @@ class NativeFacingObservationTests(unittest.TestCase):
              patch.object(tool, '_capture_physical') as desktop, redirect_stdout(io.StringIO()):
             self.assertEqual(0, tool.main(['--target', 'physical-amd-desktop', '--expected-host',
                                           'AMD-DESKTOP', '--physical-pid', '123', '--native-facing']))
-            capture.assert_called_once_with('AMD-DESKTOP', None, 123)
+            capture.assert_called_once_with('AMD-DESKTOP', None, 123, native_reader=None)
             desktop.assert_not_called()
             for target, kwargs in (('lab1', {}), ('physical-amd-desktop', {'allow_foreground_change': True})):
                 with self.assertRaisesRegex(ValueError, 'focus-neutral-physical'):
                     tool.observe(target, 'AMD-DESKTOP', native_facing=True, **kwargs)
+
+    def test_wgc_bracket_dependency_check_uses_only_its_backend_and_reader(self):
+        reader = Path('published') / 'RiftReader2.Live.exe'
+        args = ['--target', 'physical', '--expected-host', 'LEGION', '--check-dependencies',
+                '--native-facing', '--native-reader', str(reader)]
+        for native_status, expected_exit in (('ready', 0), ('blocked', 2)):
+            with self.subTest(native_status=native_status), \
+                 patch.object(tool.socket, 'gethostname', return_value='LEGION'), \
+                 patch.object(tool, '_check_capture_dependencies', return_value={
+                     'status': 'capture-dependencies-ready', 'captureAttempted': False}) as dependencies, \
+                 patch.object(physical_rift, 'check_native_reader', return_value={'status': native_status}) as check, \
+                 patch.object(tool, '_capture_with_native_facing') as capture, redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(tool.main(args), expected_exit)
+            dependencies.assert_called_once_with('wgc')
+            check.assert_called_once_with('LEGION', reader, kind='facing')
+            capture.assert_not_called()
+            self.assertFalse(json.loads(output.getvalue())['captureAttempted'])
+
+        with patch.object(tool.socket, 'gethostname', return_value='LEGION'):
+            with self.assertRaisesRegex(ValueError, 'native-reader-requires-native-facing'):
+                tool.observe('physical', 'LEGION', check_dependencies=True, native_reader=reader)

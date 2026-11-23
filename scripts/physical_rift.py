@@ -71,11 +71,14 @@ def _native_reader_path(override):
     return path
 
 
-def check_native_reader(expected_host=None, native_reader=None):
+def check_native_reader(expected_host=None, native_reader=None, *, kind=None):
     host = socket.gethostname()
     result = {"status": "blocked", "workflow": "physical", "ownerHost": host}
     if not valid_host_name(host) or (expected_host is not None and not is_local_host(expected_host)):
         return dict(result, reason="host-mismatch")
+    if kind is not None and kind not in NATIVE_READS:
+        return dict(result, reason="unknown-native-read")
+    required = set(NATIVE_READS.values()) if kind is None else {NATIVE_READS[kind]}
     try:
         reader = _native_reader_path(native_reader)
         result["nativeReaderPath"] = str(reader)
@@ -94,10 +97,10 @@ def check_native_reader(expected_host=None, native_reader=None):
     if not lines or lines[0] != "RiftReader2.Live native tools":
         return dict(result, reason="unrecognized-native-reader-help")
     advertised = {line.split(maxsplit=1)[0] for line in lines[1:] if line.strip()}
-    missing = sorted(set(NATIVE_READS.values()) - advertised)
+    missing = sorted(required - advertised)
     if missing:
         return dict(result, reason="native-reader-commands-not-advertised", missingCommands=missing)
-    return dict(result, status="ready", nativeCommandsAdvertised=len(NATIVE_READS))
+    return dict(result, status="ready", nativeCommandsAdvertised=len(required))
 
 
 def is_local_host(expected_host):
