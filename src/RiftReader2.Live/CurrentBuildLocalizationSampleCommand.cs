@@ -3,6 +3,7 @@ using System.Text.Json;
 using RiftReader2.Infrastructure;
 using RiftReader2.Application;
 namespace RiftReader2.Live;
+
 internal sealed record CurrentBuildLocalizationReport(CurrentBuildLocalizationObservation Observation)
 {
     public int SchemaVersion => 1;
@@ -12,17 +13,17 @@ internal sealed record CurrentBuildLocalizationReport(CurrentBuildLocalizationOb
 }
 internal static class CurrentBuildLocalizationSampleCommand
 {
-    internal static Task<int> RunAsync(IReadOnlyDictionary<string,string> options, TextWriter output, CancellationToken cancellationToken) =>
+    internal static Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken cancellationToken) =>
         RunAsync(options, output, cancellationToken,
             async (pid, ticks, ct) => await WindowsNativeMemorySession.OpenAsync(pid, ticks, CurrentBuildPlayerLookup.GameSha256, ct),
             CurrentBuildLocalizationCandidateReader.Read,
             async (pid, ticks, sha, ct) => await NativeReadFileLease.AcquireAsync(pid, ticks, sha, TimeSpan.FromSeconds(1), ct));
 
     // Explicit offline lifecycle seam; production always uses the shared lease.
-    internal static async Task<int> RunAsync(IReadOnlyDictionary<string,string> options, TextWriter output, CancellationToken cancellationToken,
-        Func<int,long,CancellationToken,Task<IReadOnlyNativeMemorySession>> openSession,
-        Func<IReadOnlyNativeMemorySession,IReadOnlyList<uint>,CurrentBuildLocalizationObservation> read,
-        Func<int,long,string,CancellationToken,Task<IAsyncDisposable>> acquireLease)
+    internal static async Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken cancellationToken,
+        Func<int, long, CancellationToken, Task<IReadOnlyNativeMemorySession>> openSession,
+        Func<IReadOnlyNativeMemorySession, IReadOnlyList<uint>, CurrentBuildLocalizationObservation> read,
+        Func<int, long, string, CancellationToken, Task<IAsyncDisposable>> acquireLease)
     {
         if (!options.TryGetValue("--pid", out var p) || !int.TryParse(p, NumberStyles.None, CultureInfo.InvariantCulture, out var pid) || pid <= 0 ||
             !options.TryGetValue("--start-ticks", out var t) || !long.TryParse(t, NumberStyles.None, CultureInfo.InvariantCulture, out var ticks) || ticks <= 0 ||

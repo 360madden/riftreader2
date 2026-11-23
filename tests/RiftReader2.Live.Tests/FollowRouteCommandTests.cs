@@ -112,8 +112,13 @@ public sealed class FollowRouteCommandTests
     {
         var input = new Input();
         var pose = Pose(0, 0, 0);
-        var options = Options() with { ExpectedX = 0, ExpectedZ = 0,
-            ExpectedBearing = 0, ExpectedY = pose.Y + 1 };
+        var options = Options() with
+        {
+            ExpectedX = 0,
+            ExpectedZ = 0,
+            ExpectedBearing = 0,
+            ExpectedY = pose.Y + 1
+        };
         var result = await FollowRouteCommand.FollowAsync(options,
             Reader(pose), input, () => null, NoDelay);
         Assert.Equal("blocked", result.Status);
@@ -126,8 +131,8 @@ public sealed class FollowRouteCommandTests
     {
         var input = new Input();
         var result = await FollowRouteCommand.FollowAsync(Options(),
-            Reader(Pose(0,0), Pose(0,3), Pose(0,7), Pose(0,9.8),
-                Pose(0,9.8), Pose(0,9.8)),
+            Reader(Pose(0, 0), Pose(0, 3), Pose(0, 7), Pose(0, 9.8),
+                Pose(0, 9.8), Pose(0, 9.8)),
             input, () => null, NoDelay);
         Assert.Equal("arrived", result.Status);
         Assert.True(result.ReleaseSucceeded);
@@ -144,8 +149,11 @@ public sealed class FollowRouteCommandTests
     {
         var input = new Input();
         var streamed = new List<FollowRouteCommand.WaypointPass>();
-        var options = Options(z: 3) with { RoutePoints = [
-            new("start", 0, .1), new("one", 0, .45), new("two", 0, .8), new("three", 0, 1.1)] };
+        var options = Options(z: 3) with
+        {
+            RoutePoints = [
+            new("start", 0, .1), new("one", 0, .45), new("two", 0, .8), new("three", 0, 1.1)]
+        };
         var result = await FollowRouteCommand.FollowAsync(options,
             Reader(Pose(0, 0), Pose(0, .4), Pose(0, .75), Pose(0, 1.06),
                 Pose(0, 2.8), Pose(0, 2.8), Pose(0, 2.8)),
@@ -172,8 +180,11 @@ public sealed class FollowRouteCommandTests
         var turnAngle = angle * Math.PI / 180;
         var bendX = 5 * Math.Sin(turnAngle);
         var bendZ = 5 + 5 * Math.Cos(turnAngle);
-        var options = Options(bendX, bendZ + 5) with { RoutePoints = [
-            new("north", 0, 5), new("bend", bendX, bendZ)] };
+        var options = Options(bendX, bendZ + 5) with
+        {
+            RoutePoints = [
+            new("north", 0, 5), new("bend", bendX, bendZ)]
+        };
         double x = 0, z = 0, bearing = 0;
         var count = 0;
         var lastTurn = 0;
@@ -204,8 +215,11 @@ public sealed class FollowRouteCommandTests
         Task<FollowRouteCommand.Pose> Read(CancellationToken _)
         {
             if (++count > 500) throw new InvalidOperationException("Simulation read bound.");
-            return Task.FromResult(Pose(x, z, bearing) with { StartedAtUtc = simulatedTime,
-                CompletedAtUtc = simulatedTime });
+            return Task.FromResult(Pose(x, z, bearing) with
+            {
+                StartedAtUtc = simulatedTime,
+                CompletedAtUtc = simulatedTime
+            });
         }
         var result = await FollowRouteCommand.FollowAsync(options, Read, input, () => null, Delay,
             onWaypointPassed: _ =>
@@ -239,8 +253,11 @@ public sealed class FollowRouteCommandTests
         Task<FollowRouteCommand.Pose> Read(CancellationToken _)
         {
             var (z, ms) = samples.Dequeue();
-            return Task.FromResult(Pose(0, z) with { StartedAtUtc = at.AddMilliseconds(ms),
-                CompletedAtUtc = at.AddMilliseconds(ms) });
+            return Task.FromResult(Pose(0, z) with
+            {
+                StartedAtUtc = at.AddMilliseconds(ms),
+                CompletedAtUtc = at.AddMilliseconds(ms)
+            });
         }
         var result = await FollowRouteCommand.FollowAsync(options, Read, input, () => null, NoDelay);
         Assert.Equal("arrived", result.Status);
@@ -260,7 +277,7 @@ public sealed class FollowRouteCommandTests
         bool stop = false;
         var read = Reader(Pose(0, 0), Pose(0, 1));
         var result = await FollowRouteCommand.FollowAsync(Options() with
-            { RoutePoints = [new("one", 0, 1), new("two", 0, 3)] }, read, input,
+        { RoutePoints = [new("one", 0, 1), new("two", 0, 3)] }, read, input,
             () => stop ? "stop-file-requested" : null,
             (delay, ct) => stop ? Task.Delay(Timeout.InfiniteTimeSpan, ct) : Task.CompletedTask,
             onWaypointPassed: _ => stop = true);
@@ -303,10 +320,10 @@ public sealed class FollowRouteCommandTests
     public async Task AlignmentObservesTurnInertiaBeforeStartingForward()
     {
         var input = new Input();
-        var result = await FollowRouteCommand.FollowAsync(Options(10,0),
-            Reader(Pose(0,0,0), Pose(0,0,80), Pose(0,0,88), Pose(0,0,92), Pose(0,0,91.5),
-                Pose(5,0,95), Pose(9.8,0,90),
-                Pose(9.8,0,90), Pose(9.8,0,90)),
+        var result = await FollowRouteCommand.FollowAsync(Options(10, 0),
+            Reader(Pose(0, 0, 0), Pose(0, 0, 80), Pose(0, 0, 88), Pose(0, 0, 92), Pose(0, 0, 91.5),
+                Pose(5, 0, 95), Pose(9.8, 0, 90),
+                Pose(9.8, 0, 90), Pose(9.8, 0, 90)),
             input, () => null, NoDelay);
         Assert.Equal("arrived", result.Status);
         Assert.Contains("down:a", input.Events);
@@ -324,12 +341,12 @@ public sealed class FollowRouteCommandTests
         const double goalX = 1.039558454;
         const double goalZ = 4.890738004;
         var result = await FollowRouteCommand.FollowAsync(Options(goalX, goalZ),
-            Reader(Pose(0,0,-168), Pose(0,0,-138), Pose(0,0,-108), Pose(0,0,-78),
-                Pose(0,0,-48), Pose(0,0,-18), Pose(0,0,0),
-                Pose(0,0,10.8), Pose(0,0,18.9), Pose(0,0,21.6), Pose(0,0,21.6),
-                Pose(0,0,18), Pose(0,0,14), Pose(0,0,12.5), Pose(0,0,12.2),
-                Pose(.52,2.45,12.2), Pose(1.0,4.7,12.2),
-                Pose(1.0,4.7,12.2), Pose(1.0,4.7,12.2)),
+            Reader(Pose(0, 0, -168), Pose(0, 0, -138), Pose(0, 0, -108), Pose(0, 0, -78),
+                Pose(0, 0, -48), Pose(0, 0, -18), Pose(0, 0, 0),
+                Pose(0, 0, 10.8), Pose(0, 0, 18.9), Pose(0, 0, 21.6), Pose(0, 0, 21.6),
+                Pose(0, 0, 18), Pose(0, 0, 14), Pose(0, 0, 12.5), Pose(0, 0, 12.2),
+                Pose(.52, 2.45, 12.2), Pose(1.0, 4.7, 12.2),
+                Pose(1.0, 4.7, 12.2), Pose(1.0, 4.7, 12.2)),
             input, () => null, NoDelay);
         Assert.Equal("arrived", result.Status);
         Assert.Equal(1, input.Events.Count(x => x == "down:a"));
@@ -633,7 +650,7 @@ public sealed class FollowRouteCommandTests
             await Task.Delay(Timeout.InfiniteTimeSpan, __);
         }
         var result = await FollowRouteCommand.FollowAsync(Options(),
-            Reader(Pose(0,0)), input, () => stop ? "stop-file-requested" : null, Delay);
+            Reader(Pose(0, 0)), input, () => stop ? "stop-file-requested" : null, Delay);
         Assert.Equal("stopped", result.Status);
         Assert.Equal("stop-file-requested", result.Reason);
         Assert.Contains("up:w", input.Events);
@@ -647,8 +664,8 @@ public sealed class FollowRouteCommandTests
         var delays = new List<TimeSpan>();
         Task Delay(TimeSpan duration, CancellationToken _) { delays.Add(duration); return Task.CompletedTask; }
         var result = await FollowRouteCommand.FollowAsync(Options(),
-            Reader(Pose(0,0), Pose(.3,3,8), Pose(.15,4,-12),
-                Pose(.1,5,8), Pose(0,9.8), Pose(0,9.8), Pose(0,9.8)),
+            Reader(Pose(0, 0), Pose(.3, 3, 8), Pose(.15, 4, -12),
+                Pose(.1, 5, 8), Pose(0, 9.8), Pose(0, 9.8), Pose(0, 9.8)),
             input, () => null, Delay);
         Assert.Equal("arrived", result.Status);
         Assert.Equal(1, input.Events.Count(x => x == "down:d"));
@@ -663,8 +680,8 @@ public sealed class FollowRouteCommandTests
     {
         var input = new Input();
         var result = await FollowRouteCommand.FollowAsync(Options(),
-            Reader(Pose(0,0), Pose(.15,8.5,-12), Pose(.15,9.3,12),
-                Pose(.15,9.8), Pose(.15,9.8), Pose(.15,9.8)),
+            Reader(Pose(0, 0), Pose(.15, 8.5, -12), Pose(.15, 9.3, 12),
+                Pose(.15, 9.8), Pose(.15, 9.8), Pose(.15, 9.8)),
             input, () => null, NoDelay);
         Assert.Equal("arrived", result.Status);
         Assert.DoesNotContain("down:a", input.Events);
@@ -677,8 +694,8 @@ public sealed class FollowRouteCommandTests
     {
         var input = new Input();
         var result = await FollowRouteCommand.FollowAsync(Options(),
-            Reader(Pose(0,0), Pose(.1,1,-8), Pose(.1,3,8), Pose(.1,5,-8),
-                Pose(.1,9.8), Pose(.1,9.8), Pose(.1,9.8)),
+            Reader(Pose(0, 0), Pose(.1, 1, -8), Pose(.1, 3, 8), Pose(.1, 5, -8),
+                Pose(.1, 9.8), Pose(.1, 9.8), Pose(.1, 9.8)),
             input, () => null, NoDelay);
         Assert.Equal("arrived", result.Status);
         Assert.DoesNotContain("down:a", input.Events);
@@ -698,7 +715,7 @@ public sealed class FollowRouteCommandTests
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellation);
         }
         var result = await FollowRouteCommand.FollowAsync(Options(),
-            Reader(Pose(0,0), Pose(.3,3,8)), input,
+            Reader(Pose(0, 0), Pose(.3, 3, 8)), input,
             () => stop ? "stop-file-requested" : null, Delay);
         Assert.Equal("stopped", result.Status);
         Assert.Contains("up:w", input.Events);
@@ -714,7 +731,7 @@ public sealed class FollowRouteCommandTests
         var never = new TaskCompletionSource<FollowRouteCommand.Pose>();
         Task<FollowRouteCommand.Pose> Read(CancellationToken _)
         {
-            if (first) { first = false; return Task.FromResult(Pose(0,0)); }
+            if (first) { first = false; return Task.FromResult(Pose(0, 0)); }
             return never.Task;
         }
         var task = FollowRouteCommand.FollowAsync(Options(), Read, input, () => null);
@@ -737,14 +754,14 @@ public sealed class FollowRouteCommandTests
             failed = true;
             await Task.Delay(40);
         }
-        var result = await FollowRouteCommand.FollowAsync(Options(0,999),
-            Reader(Pose(0,0)), input, () => failed ? "owner-process-lost" : null, Delay);
+        var result = await FollowRouteCommand.FollowAsync(Options(0, 999),
+            Reader(Pose(0, 0)), input, () => failed ? "owner-process-lost" : null, Delay);
         Assert.Equal("halted", result.Status);
         Assert.Equal(999, result.InitialDistance);
         Assert.Contains("up:w", input.Events);
 
-        var blocked = await FollowRouteCommand.FollowAsync(Options(0,1000.01),
-            Reader(Pose(0,0)), new Input(), () => null, NoDelay);
+        var blocked = await FollowRouteCommand.FollowAsync(Options(0, 1000.01),
+            Reader(Pose(0, 0)), new Input(), () => null, NoDelay);
         Assert.Equal("blocked", blocked.Status);
         Assert.False(blocked.InputSent);
     }
@@ -754,7 +771,7 @@ public sealed class FollowRouteCommandTests
     {
         var input = new Input();
         var result = await FollowRouteCommand.FollowAsync(Options(),
-            Reader(Pose(0,0), Pose(0,1,player:99)), input, () => null, NoDelay);
+            Reader(Pose(0, 0), Pose(0, 1, player: 99)), input, () => null, NoDelay);
         Assert.Equal("halted", result.Status);
         Assert.Contains("up:w", input.Events);
         Assert.True(result.ReleaseSucceeded);
@@ -765,7 +782,7 @@ public sealed class FollowRouteCommandTests
     {
         var input = new Input { ThrowCurrent = true };
         var result = await FollowRouteCommand.FollowAsync(Options(),
-            Reader(Pose(0,0)), input, () => null,
+            Reader(Pose(0, 0)), input, () => null,
             (_, cancellation) => Task.Delay(Timeout.InfiniteTimeSpan, cancellation));
         Assert.Equal("blocked", result.Status);
         // Either independent watchdog or synchronous pre-input guard may win.
@@ -779,7 +796,7 @@ public sealed class FollowRouteCommandTests
     {
         var input = new Input { ThrowDown = true };
         var result = await FollowRouteCommand.FollowAsync(Options(),
-            Reader(Pose(0,0)), input, () => null, NoDelay);
+            Reader(Pose(0, 0)), input, () => null, NoDelay);
         Assert.Equal("halted", result.Status);
         Assert.True(result.InputSent);
         Assert.Contains("up:w", input.Events);
@@ -790,7 +807,7 @@ public sealed class FollowRouteCommandTests
     {
         var input = new Input { ThrowUp = true };
         var result = await FollowRouteCommand.FollowAsync(Options(),
-            Reader(Pose(0,0), Pose(0,9.8)), input, () => null, NoDelay);
+            Reader(Pose(0, 0), Pose(0, 9.8)), input, () => null, NoDelay);
         Assert.Equal("halted", result.Status);
         Assert.Equal("key-release-failed", result.Reason);
         Assert.False(result.ReleaseSucceeded);
@@ -802,7 +819,7 @@ public sealed class FollowRouteCommandTests
     {
         var input = new Input();
         var result = await FollowRouteCommand.FollowAsync(Options(),
-            Reader(Pose(0,0), Pose(0,9.8), Pose(0,9.9), Pose(0,10.01)),
+            Reader(Pose(0, 0), Pose(0, 9.8), Pose(0, 9.9), Pose(0, 10.01)),
             input, () => null, NoDelay);
         Assert.Equal("halted", result.Status);
         Assert.Equal("post-release-arrival-not-settled", result.Reason);
@@ -853,15 +870,15 @@ public sealed class FollowRouteCommandTests
     public async Task DirectPathAndTurnGuardsHaltAndRelease()
     {
         var turnInput = new Input();
-        var turn = await FollowRouteCommand.FollowAsync(Options(10,0),
-            Reader(Pose(0,0,0), Pose(0,0,0), Pose(0,0,0), Pose(0,0,0)),
+        var turn = await FollowRouteCommand.FollowAsync(Options(10, 0),
+            Reader(Pose(0, 0, 0), Pose(0, 0, 0), Pose(0, 0, 0), Pose(0, 0, 0)),
             turnInput, () => null, NoDelay);
         Assert.Equal("halted", turn.Status);
         Assert.Contains("up:a", turnInput.Events);
 
         var pathInput = new Input();
         var path = await FollowRouteCommand.FollowAsync(Options(),
-            Reader(Pose(0,0), Pose(.51,1)), pathInput, () => null, NoDelay);
+            Reader(Pose(0, 0), Pose(.51, 1)), pathInput, () => null, NoDelay);
         Assert.Equal("halted", path.Status);
         Assert.Contains("up:w", pathInput.Events);
     }
@@ -869,12 +886,12 @@ public sealed class FollowRouteCommandTests
     [Fact]
     public async Task PoseOwnerOrderAndFutureTimeAreCheckedAtCoreSeam()
     {
-        var changed = Pose(0,1) with { PlayerEntity = 1001 };
+        var changed = Pose(0, 1) with { PlayerEntity = 1001 };
         var owner = await FollowRouteCommand.FollowAsync(Options(),
-            Reader(Pose(0,0), changed), new Input(), () => null, NoDelay);
+            Reader(Pose(0, 0), changed), new Input(), () => null, NoDelay);
         Assert.Equal("halted", owner.Status);
 
-        var future = Pose(0,0) with
+        var future = Pose(0, 0) with
         {
             StartedAtUtc = DateTimeOffset.UtcNow.AddSeconds(1),
             CompletedAtUtc = DateTimeOffset.UtcNow.AddSeconds(1)
@@ -928,18 +945,18 @@ public sealed class FollowRouteCommandTests
         var delays = new List<TimeSpan>();
         // Rotate actual 24.56u leg into route coordinates. At <1 degree
         // residual the path passes beside the .30u disk at about .40u.
-        var result = await FollowRouteCommand.FollowAsync(Options(z:24.56),
-            Reader(Pose(0,0,.924), Pose(.36,22.40,.924), Pose(.386,24.10,.924),
-                Pose(.394,24.30,.924), Pose(.396,24.48,.924),
-                Pose(.398,24.53,.924), Pose(.398,24.53,.924),
-                Pose(.398,24.53,-30), Pose(.398,24.53,-61),
-                Pose(.398,24.53,-78), Pose(.398,24.53,-85.7), Pose(.398,24.53,-85.7),
-                Pose(.18,24.55,-85.7), Pose(.18,24.55,-85.7)), input, () => null,
+        var result = await FollowRouteCommand.FollowAsync(Options(z: 24.56),
+            Reader(Pose(0, 0, .924), Pose(.36, 22.40, .924), Pose(.386, 24.10, .924),
+                Pose(.394, 24.30, .924), Pose(.396, 24.48, .924),
+                Pose(.398, 24.53, .924), Pose(.398, 24.53, .924),
+                Pose(.398, 24.53, -30), Pose(.398, 24.53, -61),
+                Pose(.398, 24.53, -78), Pose(.398, 24.53, -85.7), Pose(.398, 24.53, -85.7),
+                Pose(.18, 24.55, -85.7), Pose(.18, 24.55, -85.7)), input, () => null,
             (duration, token) => { delays.Add(duration); return Task.CompletedTask; });
         Assert.Equal("arrived", result.Status);
         Assert.Equal(2, input.Events.Count(e => e == "down:w"));
         Assert.True(input.Events.IndexOf("down:d") > input.Events.IndexOf("up:w"));
-        Assert.DoesNotContain("down:a",input.Events);
+        Assert.DoesNotContain("down:a", input.Events);
         Assert.Contains(TimeSpan.FromMilliseconds(180), delays);
         Assert.True(result.FinalDistance <= FollowRouteCommand.ArrivalRadius && result.ReleaseSucceeded);
     }
@@ -1017,7 +1034,7 @@ public sealed class FollowRouteCommandTests
             Pose(0, i * .5, y: startY + sign * i * .5 * .355)).ToList();
         poses.AddRange(Enumerable.Repeat(poses[^1], 2));
         var result = await FollowRouteCommand.FollowAsync(Options(z: length) with
-            { GoalY = startY + sign * length * .355 }, Reader(poses.ToArray()), input, () => null, NoDelay);
+        { GoalY = startY + sign * length * .355 }, Reader(poses.ToArray()), input, () => null, NoDelay);
         Assert.Equal("arrived", result.Status);
         Assert.Equal(new[] { "down:w", "up:w" }, input.Events);
         Assert.True(result.ReleaseSucceeded);
@@ -1054,7 +1071,7 @@ public sealed class FollowRouteCommandTests
             var at = start.AddMilliseconds(beforeRelease ? z * 1000 / 6 : 335 + (post + 1) * 10);
             index++;
             return Task.FromResult(Pose(0, z, y: 7 - z * .29) with
-                { StartedAtUtc = at, CompletedAtUtc = at });
+            { StartedAtUtc = at, CompletedAtUtc = at });
         }
         var result = await FollowRouteCommand.FollowAsync(Options(z: 3.5) with { GoalY = 7 - 3.5 * .29 },
             Read, input, () => null, NoDelay);
@@ -1096,7 +1113,7 @@ public sealed class FollowRouteCommandTests
         {
             var (z, bearing, ms) = samples[index++];
             return Task.FromResult(Pose(0, z, bearing, y: 7 - z * .30) with
-                { StartedAtUtc = at.AddMilliseconds(ms), CompletedAtUtc = at.AddMilliseconds(ms) });
+            { StartedAtUtc = at.AddMilliseconds(ms), CompletedAtUtc = at.AddMilliseconds(ms) });
         }
         var result = await FollowRouteCommand.FollowAsync(Options(z: goal) with { GoalY = 7 - goal * .30 },
             Read, input, () => null, NoDelay);
@@ -1122,9 +1139,9 @@ public sealed class FollowRouteCommandTests
     {
         var input = new Input();
         var result = await FollowRouteCommand.FollowAsync(Options(z: z) with { GoalY = 7 + rise },
-            Reader(Pose(0,0)), input, () => null, NoDelay);
-        Assert.Equal("blocked",result.Status);
-        Assert.Contains("height bound",result.Reason);
+            Reader(Pose(0, 0)), input, () => null, NoDelay);
+        Assert.Equal("blocked", result.Status);
+        Assert.Contains("height bound", result.Reason);
         Assert.Empty(input.Events);
     }
 
@@ -1132,24 +1149,24 @@ public sealed class FollowRouteCommandTests
     public async Task ExpectedHeightStillHaltsAbruptFallWithinInterpolatedEnvelope()
     {
         var input = new Input();
-        var result = await FollowRouteCommand.FollowAsync(Options(z:10) with { GoalY=9 },
-            Reader(Pose(0,0),Pose(0,.2,y:6.1)),input,() => null,NoDelay);
-        Assert.Equal("halted",result.Status);
-        Assert.Contains("Abrupt vertical step",result.Reason);
+        var result = await FollowRouteCommand.FollowAsync(Options(z: 10) with { GoalY = 9 },
+            Reader(Pose(0, 0), Pose(0, .2, y: 6.1)), input, () => null, NoDelay);
+        Assert.Equal("halted", result.Status);
+        Assert.Contains("Abrupt vertical step", result.Reason);
         Assert.True(result.ReleaseSucceeded);
     }
 
     [Fact]
     public async Task ExpectedHeightRejectsWrongGradualFloorAndOffHeightSettledArrival()
     {
-        var floor = await FollowRouteCommand.FollowAsync(Options(z:10) with { GoalY=10 },
-            Reader(Pose(0,0),Pose(0,2),Pose(0,4),Pose(0,6)),new Input(),() => null,NoDelay);
-        Assert.Contains("Vertical drift",floor.Reason);
-        var finish = await FollowRouteCommand.FollowAsync(Options(z:5) with { GoalY=8 },
-            Reader(Pose(0,0),Pose(0,2),Pose(0,4.9),Pose(0,4.9),Pose(0,4.9)),
-            new Input(),() => null,NoDelay);
-        Assert.Equal("halted",finish.Status);
-        Assert.Equal("post-release-arrival-not-settled",finish.Reason);
+        var floor = await FollowRouteCommand.FollowAsync(Options(z: 10) with { GoalY = 10 },
+            Reader(Pose(0, 0), Pose(0, 2), Pose(0, 4), Pose(0, 6)), new Input(), () => null, NoDelay);
+        Assert.Contains("Vertical drift", floor.Reason);
+        var finish = await FollowRouteCommand.FollowAsync(Options(z: 5) with { GoalY = 8 },
+            Reader(Pose(0, 0), Pose(0, 2), Pose(0, 4.9), Pose(0, 4.9), Pose(0, 4.9)),
+            new Input(), () => null, NoDelay);
+        Assert.Equal("halted", finish.Status);
+        Assert.Equal("post-release-arrival-not-settled", finish.Reason);
         Assert.True(finish.ReleaseSucceeded);
     }
 
@@ -1189,11 +1206,14 @@ public sealed class FollowRouteCommandTests
     public async Task ControlPauseRequiresReleasedStationaryPairBeforeNextSpan()
     {
         var input = new Input();
-        var options = Options(z: 4) with { ControlPauses = true,
-            RoutePoints = [new("turn", 0, 2, 7, true)] };
+        var options = Options(z: 4) with
+        {
+            ControlPauses = true,
+            RoutePoints = [new("turn", 0, 2, 7, true)]
+        };
         var result = await FollowRouteCommand.FollowWithPausesAsync(options,
-            Reader(Pose(0,0), Pose(0,1.9), Pose(0,1.9), Pose(0,1.9),
-                Pose(0,1.9), Pose(0,1.9), Pose(0,1.9), Pose(0,3.9), Pose(0,3.9), Pose(0,3.9)),
+            Reader(Pose(0, 0), Pose(0, 1.9), Pose(0, 1.9), Pose(0, 1.9),
+                Pose(0, 1.9), Pose(0, 1.9), Pose(0, 1.9), Pose(0, 3.9), Pose(0, 3.9), Pose(0, 3.9)),
             input, () => null);
         Assert.Equal("arrived", result.Status);
         var pause = Assert.Single(result.ControlPauseReceipts!);
@@ -1208,15 +1228,18 @@ public sealed class FollowRouteCommandTests
     {
         var input = new Input();
         var stop = false;
-        var options = Options(z: 4) with { ControlPauses = true,
-            RoutePoints = [new("turn", 0, 2, 7, true)] };
+        var options = Options(z: 4) with
+        {
+            ControlPauses = true,
+            RoutePoints = [new("turn", 0, 2, 7, true)]
+        };
         async Task Delay(TimeSpan duration, CancellationToken token)
         {
             if (duration == TimeSpan.FromMilliseconds(150)) stop = true;
             await Task.Delay(duration, token);
         }
         var result = await FollowRouteCommand.FollowWithPausesAsync(options,
-            Reader(Pose(0,0), Pose(0,1.9), Pose(0,1.9), Pose(0,1.9), Pose(0,1.9), Pose(0,1.9)),
+            Reader(Pose(0, 0), Pose(0, 1.9), Pose(0, 1.9), Pose(0, 1.9), Pose(0, 1.9), Pose(0, 1.9)),
             input, () => stop ? "stop-file-requested" : null, Delay);
         Assert.Equal("stopped", result.Status);
         Assert.Empty(result.ControlPauseReceipts!);
@@ -1228,11 +1251,14 @@ public sealed class FollowRouteCommandTests
     public async Task PauseAnchorRejectsDisplacementBeforeNextInput()
     {
         var input = new Input();
-        var options = Options(z: 4) with { ControlPauses = true,
-            RoutePoints = [new("turn", 0, 2, 7, true)] };
+        var options = Options(z: 4) with
+        {
+            ControlPauses = true,
+            RoutePoints = [new("turn", 0, 2, 7, true)]
+        };
         var result = await FollowRouteCommand.FollowWithPausesAsync(options,
-            Reader(Pose(0,0), Pose(0,1.9), Pose(0,1.9), Pose(0,1.9),
-                Pose(0,1.9), Pose(0,1.9), Pose(0,2.1)), input, () => null);
+            Reader(Pose(0, 0), Pose(0, 1.9), Pose(0, 1.9), Pose(0, 1.9),
+                Pose(0, 1.9), Pose(0, 1.9), Pose(0, 2.1)), input, () => null);
         Assert.Equal("halted", result.Status);
         Assert.Contains("differs", result.Reason);
         Assert.Equal(new[] { "down:w", "up:w" }, input.Events);
@@ -1243,11 +1269,15 @@ public sealed class FollowRouteCommandTests
     public async Task SparseSurvivalSamplesShareBaselineAndRetainInterruptPose()
     {
         var input = new Input();
-        var options = Options(z: 4) with { ControlPauses = true, SurvivalInterrupt = true,
-            RoutePoints = [new("turn", 0, 2, 7, true)] };
+        var options = Options(z: 4) with
+        {
+            ControlPauses = true,
+            SurvivalInterrupt = true,
+            RoutePoints = [new("turn", 0, 2, 7, true)]
+        };
         var result = await FollowRouteCommand.FollowWithPausesAsync(options,
-            Reader(Pose(0,0) with { Survival = Survival() }, Pose(0,1.9), Pose(0,1.9), Pose(0,1.9),
-                Pose(0,1.9), Pose(0,1.9), Pose(0,1.9) with { Survival = Survival(health: 99) }),
+            Reader(Pose(0, 0) with { Survival = Survival() }, Pose(0, 1.9), Pose(0, 1.9), Pose(0, 1.9),
+                Pose(0, 1.9), Pose(0, 1.9), Pose(0, 1.9) with { Survival = Survival(health: 99) }),
             input, () => null);
         Assert.Equal("halted", result.Status);
         Assert.Equal("survival-hp-drop", result.Reason);

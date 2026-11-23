@@ -29,28 +29,28 @@ public sealed class TargetCycleCommandTests
     public void OptionalOldSelectionDistinguishesAbsentZeroAndPositive()
     {
         var now = DateTimeOffset.UtcNow;
-        var zero = TargetCycleCommand.Parse(Args("--expect-target-key","0"));
-        TargetCycleCommand.ValidatePins(zero, new(42,0,now,now), now);
-        TargetCycleCommand.ValidatePins(TargetCycleCommand.Parse(Args()), new(42,89,now,now), now);
-        Assert.Throws<InvalidDataException>(() => TargetCycleCommand.ValidatePins(zero, new(42,89,now,now), now));
-        Assert.Throws<InvalidDataException>(() => TargetCycleCommand.ValidatePins(zero, new(41,0,now,now), now));
-        Assert.Throws<InvalidDataException>(() => TargetCycleCommand.ValidatePins(zero, new(42,0,now.AddSeconds(-2),now), now));
-        Assert.Throws<InvalidDataException>(() => TargetCycleCommand.ValidatePins(zero, new(42,0,now,now.AddSeconds(1)), now));
+        var zero = TargetCycleCommand.Parse(Args("--expect-target-key", "0"));
+        TargetCycleCommand.ValidatePins(zero, new(42, 0, now, now), now);
+        TargetCycleCommand.ValidatePins(TargetCycleCommand.Parse(Args()), new(42, 89, now, now), now);
+        Assert.Throws<InvalidDataException>(() => TargetCycleCommand.ValidatePins(zero, new(42, 89, now, now), now));
+        Assert.Throws<InvalidDataException>(() => TargetCycleCommand.ValidatePins(zero, new(41, 0, now, now), now));
+        Assert.Throws<InvalidDataException>(() => TargetCycleCommand.ValidatePins(zero, new(42, 0, now.AddSeconds(-2), now), now));
+        Assert.Throws<InvalidDataException>(() => TargetCycleCommand.ValidatePins(zero, new(42, 0, now, now.AddSeconds(1)), now));
     }
 
     [Theory]
-    [InlineData("--hold-ms","900")]
-    [InlineData("--key","w")]
-    [InlineData("--expect-target-key","-1")]
+    [InlineData("--hold-ms", "900")]
+    [InlineData("--key", "w")]
+    [InlineData("--expect-target-key", "-1")]
     public void RejectsArbitraryKeyDurationOrMalformedOldSelection(string flag, string value) =>
-        Assert.Throws<InvalidDataException>(() => TargetCycleCommand.Parse(Args(flag,value)));
+        Assert.Throws<InvalidDataException>(() => TargetCycleCommand.Parse(Args(flag, value)));
 
     [Fact]
     public void DedicatedTabHasCorrectScanCodeAndNeverEntersGenericActionAllowlist()
     {
         Assert.Equal(0x0F, WindowsControlDesktop.ScanCodeFor('\t'));
         Assert.Equal(0xC00F0001u, WindowsControlDesktop.KeyUpMessageParameters('\t'));
-        Assert.Throws<InvalidDataException>(() => BoundedControlExecutor.Validate(new(["tab"],40)));
+        Assert.Throws<InvalidDataException>(() => BoundedControlExecutor.Validate(new(["tab"], 40)));
     }
 
     [Fact]
@@ -63,7 +63,7 @@ public sealed class TargetCycleCommandTests
         var result = await new BoundedControlExecutor(input).TapTargetCycleAsync();
         Assert.True(result.DeliverySucceeded, result.Error);
         Assert.True(input.Released);
-        Assert.Equal(new[]{"down","up"},events);
+        Assert.Equal(new[] { "down", "up" }, events);
     }
 
     [Theory]
@@ -80,7 +80,7 @@ public sealed class TargetCycleCommandTests
         Assert.False(result.DeliverySucceeded);
         Assert.True(result.ReleaseSucceeded);
         Assert.True(input.Released);
-        Assert.Equal(1,count);
+        Assert.Equal(1, count);
     }
 
     [Theory]
@@ -113,7 +113,7 @@ public sealed class TargetCycleCommandTests
     {
         int attempts = 0;
         var input = new TargetCycleCommand.PulseInput(() => null, () => [],
-            () => {}, () => { ++attempts; throw new IOException("failed key-up"); });
+            () => { }, () => { ++attempts; throw new IOException("failed key-up"); });
         var result = await new BoundedControlExecutor(input).TapTargetCycleAsync();
         Assert.False(result.ReleaseSucceeded);
         Assert.False(input.Released);

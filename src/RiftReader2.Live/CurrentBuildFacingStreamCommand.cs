@@ -138,9 +138,14 @@ internal static class CurrentBuildFacingStreamCommand
                 if (DeadlineReached()) break;
                 var observation = JsonSerializer.SerializeToElement(sample, Compact);
                 var captureElapsedMilliseconds = captureTimer.Elapsed.TotalMilliseconds;
-                await output.WriteLineAsync(JsonSerializer.Serialize(new {
-                    recordType = "native-current-facing-stream-row/1", sequence = completed,
-                    status = "candidate", identity = currentIdentity, observation, captureElapsedMilliseconds,
+                await output.WriteLineAsync(JsonSerializer.Serialize(new
+                {
+                    recordType = "native-current-facing-stream-row/1",
+                    sequence = completed,
+                    status = "candidate",
+                    identity = currentIdentity,
+                    observation,
+                    captureElapsedMilliseconds,
                     queueWaitMilliseconds = queueTimer.Elapsed.TotalMilliseconds,
                     emittedAtUtc = DateTimeOffset.UtcNow
                 }, Compact));
@@ -155,9 +160,12 @@ internal static class CurrentBuildFacingStreamCommand
         ct.ThrowIfCancellationRequested();
         if (continuous)
             throw new InvalidOperationException("Continuous facing stream ended without cancellation or failure.");
-        await output.WriteLineAsync(JsonSerializer.Serialize(new {
-            recordType = "native-current-facing-stream-end/1", status = completed == count ? "complete" : "duration-limit",
-            requestedSamples = count, completedSamples = completed
+        await output.WriteLineAsync(JsonSerializer.Serialize(new
+        {
+            recordType = "native-current-facing-stream-end/1",
+            status = completed == count ? "complete" : "duration-limit",
+            requestedSamples = count,
+            completedSamples = completed
         }, Compact));
         await output.FlushAsync(ct);
         return 0;

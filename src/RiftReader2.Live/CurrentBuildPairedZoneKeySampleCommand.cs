@@ -97,10 +97,14 @@ internal static class CurrentBuildPairedZoneKeySampleCommand
         await output.WriteLineAsync(JsonSerializer.Serialize(new
         {
             recordType = "native-current-paired-zone-key-candidate-summary/1",
-            report.Status, report.Qualification,
-            observationStatus = observation.Status, observation.ZoneKeyRelation,
-            targetZoneStatus = observation.TargetZone.Status, observation.SameWorldStatus,
-            observation.AcquisitionMilliseconds, output = path
+            report.Status,
+            report.Qualification,
+            observationStatus = observation.Status,
+            observation.ZoneKeyRelation,
+            targetZoneStatus = observation.TargetZone.Status,
+            observation.SameWorldStatus,
+            observation.AcquisitionMilliseconds,
+            output = path
         }, new JsonSerializerOptions(JsonFormat.Options) { WriteIndented = false }));
         return 0;
     }

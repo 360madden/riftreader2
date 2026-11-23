@@ -158,7 +158,7 @@ internal static class CurrentBuildBuffSeedCandidateReader
                 catch (InvalidDataException) when (budget <= 2 * 1024 * 1024) { }
                 raw = new("raw-candidate", Rva(vt), d08, q10, q20, q28, d3c, q48, descriptor38, descriptorVtableRva,
                     descriptorStatus, stateStatus, state88, clockStatus, clock, clockVt, slot30, slot38, slot48)
-                    { StateDword80 = state80, StateDword80Status = state80Status };
+                { StateDword80 = state80, StateDword80Status = state80Status };
             }
             catch (InvalidDataException) when (budget <= 2 * 1024 * 1024) { raw = new("unavailable"); }
             BuffTimingCandidate? timing = null;
@@ -249,6 +249,6 @@ internal static class CurrentBuildBuffSeedCandidateReader
         verifyOwner();
         if (session.Identity != id) throw new InvalidDataException("Buff seed process identity changed.");
         return new(id, started, DateTimeOffset.UtcNow, key, context, sentinel, nodes)
-            { ClockBefore = clockBefore, ClockAfter = clockAfter };
+        { ClockBefore = clockBefore, ClockAfter = clockAfter };
     }
 }

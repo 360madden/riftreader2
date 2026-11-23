@@ -239,13 +239,23 @@ internal static class CombatClickCommand
             catch { down = ["input-state-unavailable"]; }
             MoveKeyCommand.Report(json, new
             {
-                status = inputSent ? "halted" : "blocked", reason = error.Message,
-                errorType = error.GetType().Name, target = receiptTarget,
-                actionId = options?.ActionId, nonce = options?.Nonce,
-                cleanup = options?.Cleanup ?? false, inputSent, releaseSucceeded,
-                desktopInputsDown = down, stopFile = options?.StopFile,
-                owner = options is null ? null : new { processId = options.OwnerPid,
-                    processStartUtcTicks = options.OwnerStartTicks }, responseVerified = false
+                status = inputSent ? "halted" : "blocked",
+                reason = error.Message,
+                errorType = error.GetType().Name,
+                target = receiptTarget,
+                actionId = options?.ActionId,
+                nonce = options?.Nonce,
+                cleanup = options?.Cleanup ?? false,
+                inputSent,
+                releaseSucceeded,
+                desktopInputsDown = down,
+                stopFile = options?.StopFile,
+                owner = options is null ? null : new
+                {
+                    processId = options.OwnerPid,
+                    processStartUtcTicks = options.OwnerStartTicks
+                },
+                responseVerified = false
             });
             return inputSent ? 3 : 2;
         }
@@ -254,23 +264,36 @@ internal static class CombatClickCommand
     private static object Receipt(string status, string? reason, DesktopTarget target, Options options,
         TargetPins pins, CursorPreparation? preparation, IReadOnlyList<object> events,
         bool inputSent, bool releaseSucceeded, IReadOnlyList<string>? desktopInputs) => new
-    {
-        status, reason, target, actionId = options.ActionId, nonce = options.Nonce,
-        cleanup = options.Cleanup,
-        cleanupSemantics = options.Cleanup
+        {
+            status,
+            reason,
+            target,
+            actionId = options.ActionId,
+            nonce = options.Nonce,
+            cleanup = options.Cleanup,
+            cleanupSemantics = options.Cleanup
             ? "explicit controls.cancel secure button; producer asserts idempotence; native game response unverified"
             : null,
-        playerKey = pins.PlayerKey.ToString(CultureInfo.InvariantCulture),
-        targetKey = pins.TargetKey.ToString(CultureInfo.InvariantCulture),
-        reviewedClientGeometry = new { x = options.ClientX, y = options.ClientY,
-            width = options.ClientWidth, height = options.ClientHeight },
-        rectangle = options.Rectangle, cursorPreparation = preparation,
-        holdMilliseconds = options.HoldMilliseconds, inputEvents = events,
-        inputSent, releaseSucceeded, desktopInputsDown = desktopInputs ?? [],
-        stopFile = options.StopFile,
-        owner = new { processId = options.OwnerPid, processStartUtcTicks = options.OwnerStartTicks },
-        responseVerified = false
-    };
+            playerKey = pins.PlayerKey.ToString(CultureInfo.InvariantCulture),
+            targetKey = pins.TargetKey.ToString(CultureInfo.InvariantCulture),
+            reviewedClientGeometry = new
+            {
+                x = options.ClientX,
+                y = options.ClientY,
+                width = options.ClientWidth,
+                height = options.ClientHeight
+            },
+            rectangle = options.Rectangle,
+            cursorPreparation = preparation,
+            holdMilliseconds = options.HoldMilliseconds,
+            inputEvents = events,
+            inputSent,
+            releaseSucceeded,
+            desktopInputsDown = desktopInputs ?? [],
+            stopFile = options.StopFile,
+            owner = new { processId = options.OwnerPid, processStartUtcTicks = options.OwnerStartTicks },
+            responseVerified = false
+        };
 
     private static void ValidateStopPath(Options options)
     {

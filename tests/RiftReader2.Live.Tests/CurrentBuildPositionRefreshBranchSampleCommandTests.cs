@@ -10,7 +10,9 @@ public sealed class CurrentBuildPositionRefreshBranchSampleCommandTests : IDispo
     string PathForReport => Path.Combine(directory, "report.json");
     Dictionary<string, string> Options() => new()
     {
-        ["--pid"] = "123", ["--start-ticks"] = "456", ["--output"] = PathForReport
+        ["--pid"] = "123",
+        ["--start-ticks"] = "456",
+        ["--output"] = PathForReport
     };
 
     [Fact]
@@ -53,9 +55,12 @@ public sealed class CurrentBuildPositionRefreshBranchSampleCommandTests : IDispo
         var s = new Fake();
         await Run(s, Options(), read: session => Candidate(session.Identity) with
         {
-            ReferencedHandle = 0x800000010000002B, ReferencedEntity = 0x21005000,
-            SourceSelector = 7, Status = "handle-branch-referenced-source-present-candidate",
-            SourceComponent = 0x20030000, SourceGuardStatus = "not-applicable-handle-branch"
+            ReferencedHandle = 0x800000010000002B,
+            ReferencedEntity = 0x21005000,
+            SourceSelector = 7,
+            Status = "handle-branch-referenced-source-present-candidate",
+            SourceComponent = 0x20030000,
+            SourceGuardStatus = "not-applicable-handle-branch"
         });
         using var json = JsonDocument.Parse(await File.ReadAllTextAsync(PathForReport));
         var o = json.RootElement.GetProperty("observation");
@@ -100,8 +105,12 @@ public sealed class CurrentBuildPositionRefreshBranchSampleCommandTests : IDispo
         var s = new Fake();
         await Run(s, Options(), read: session => Candidate(session.Identity) with
         {
-            ReferencedHandle = null, Flag = null, SourceSelector = null,
-            Status = "unavailable", SourceComponent = null, SourceGuardStatus = "unavailable"
+            ReferencedHandle = null,
+            Flag = null,
+            SourceSelector = null,
+            Status = "unavailable",
+            SourceComponent = null,
+            SourceGuardStatus = "unavailable"
         });
         using var json = JsonDocument.Parse(await File.ReadAllTextAsync(PathForReport));
         var o = json.RootElement.GetProperty("observation");

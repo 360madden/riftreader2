@@ -21,8 +21,8 @@ internal static class CurrentBuildPlayerContextSampleCommand
     {
         var expectedSha = ExpectedSha(options);
         return RunAsync(options, output, cancellationToken,
-            async (pid,ticks,ct)=>await NativeReadFileLease.AcquireAsync(pid,ticks,expectedSha,TimeSpan.FromSeconds(1),ct),
-            async (pid,ticks,ct)=>await WindowsNativeMemorySession.OpenAsync(pid,ticks,expectedSha,ct),
+            async (pid, ticks, ct) => await NativeReadFileLease.AcquireAsync(pid, ticks, expectedSha, TimeSpan.FromSeconds(1), ct),
+            async (pid, ticks, ct) => await WindowsNativeMemorySession.OpenAsync(pid, ticks, expectedSha, ct),
             CurrentBuildPlayerContextCandidateReader.Read);
     }
 
@@ -35,9 +35,9 @@ internal static class CurrentBuildPlayerContextSampleCommand
         return sha;
     }
     internal static async Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken cancellationToken,
-        Func<int,long,CancellationToken,Task<IAsyncDisposable>> acquire,
-        Func<int,long,CancellationToken,Task<IReadOnlyNativeMemorySession>> open,
-        Func<IReadOnlyNativeMemorySession,CurrentBuildPlayerContextObservation> read)
+        Func<int, long, CancellationToken, Task<IAsyncDisposable>> acquire,
+        Func<int, long, CancellationToken, Task<IReadOnlyNativeMemorySession>> open,
+        Func<IReadOnlyNativeMemorySession, CurrentBuildPlayerContextObservation> read)
     {
         if (!options.TryGetValue("--pid", out var rawPid) || !int.TryParse(rawPid, NumberStyles.None, CultureInfo.InvariantCulture, out var pid) || pid <= 0 ||
             !options.TryGetValue("--start-ticks", out var rawTicks) || !long.TryParse(rawTicks, NumberStyles.None, CultureInfo.InvariantCulture, out var ticks) || ticks <= 0 ||
@@ -47,9 +47,9 @@ internal static class CurrentBuildPlayerContextSampleCommand
         var intervalMilliseconds = BoundedInt(options, "--interval-ms", 500, 0, 2000);
         var expectedSha = ExpectedSha(options);
         if (File.Exists(path)) throw new IOException("Output exists; never overwrite an earlier observation.");
-        await using var lease = await acquire(pid,ticks,cancellationToken);
+        await using var lease = await acquire(pid, ticks, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
-        await using var session = await open(pid,ticks,cancellationToken);
+        await using var session = await open(pid, ticks, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         if (session.Identity.ProcessId != pid || session.Identity.ProcessStartUtcTicks != ticks ||
             !string.Equals(session.Identity.ExecutableSha256, expectedSha, StringComparison.OrdinalIgnoreCase))
@@ -104,9 +104,12 @@ internal static class CurrentBuildPlayerContextSampleCommand
             }
         };
         await JsonReportWriter.WriteNewAsync(path, burst, cancellationToken);
-        await output.WriteLineAsync(JsonSerializer.Serialize(new {
+        await output.WriteLineAsync(JsonSerializer.Serialize(new
+        {
             recordType = "native-current-player-context-candidate-summary/1",
-            burst.status, burst.qualification, burst.completedSamples,
+            burst.status,
+            burst.qualification,
+            burst.completedSamples,
             output = Path.GetFullPath(path)
         }, new JsonSerializerOptions(JsonFormat.Options) { WriteIndented = false }));
         return 0;

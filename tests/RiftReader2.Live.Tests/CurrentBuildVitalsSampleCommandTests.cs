@@ -156,8 +156,13 @@ public sealed class CurrentBuildVitalsSampleCommandTests
     public async Task InvalidBurstScheduleFailsBeforeOpeningProcess(string option, string value)
     {
         await Assert.ThrowsAsync<ArgumentException>(() => CurrentBuildVitalsSampleCommand.RunAsync(
-            new Dictionary<string, string> {
-                ["--pid"] = "123", ["--start-ticks"] = "456", ["--output"] = NewPath(), [option] = value },
+            new Dictionary<string, string>
+            {
+                ["--pid"] = "123",
+                ["--start-ticks"] = "456",
+                ["--output"] = NewPath(),
+                [option] = value
+            },
             new StringWriter(), default));
     }
 

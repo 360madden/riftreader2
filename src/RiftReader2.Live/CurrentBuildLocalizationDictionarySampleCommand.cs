@@ -3,6 +3,7 @@ using System.Text.Json;
 using RiftReader2.Infrastructure;
 using RiftReader2.Application;
 namespace RiftReader2.Live;
+
 internal sealed record CurrentBuildLocalizationDictionaryReport(CurrentBuildLocalizationDictionaryObservation Observation)
 {
     public int SchemaVersion => 1;
@@ -12,21 +13,21 @@ internal sealed record CurrentBuildLocalizationDictionaryReport(CurrentBuildLoca
 }
 internal static class CurrentBuildLocalizationDictionarySampleCommand
 {
-    internal static Task<int> RunAsync(IReadOnlyDictionary<string,string> options, TextWriter output, CancellationToken cancellationToken) =>
+    internal static Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken cancellationToken) =>
         RunAsync(options, output, cancellationToken,
             async (pid, ticks, ct) => await WindowsNativeMemorySession.OpenAsync(pid, ticks, CurrentBuildPlayerLookup.GameSha256, ct),
             CurrentBuildLocalizationDictionaryCandidateReader.Read,
             async (pid, ticks, sha, ct) => await NativeReadFileLease.AcquireAsync(pid, ticks, sha, TimeSpan.FromSeconds(1), ct));
 
     // Explicit offline lifecycle seam; production always uses the shared lease.
-    internal static async Task<int> RunAsync(IReadOnlyDictionary<string,string> options, TextWriter output, CancellationToken cancellationToken,
-        Func<int,long,CancellationToken,Task<IReadOnlyNativeMemorySession>> openSession,
-        Func<IReadOnlyNativeMemorySession,IReadOnlyList<uint>,CurrentBuildLocalizationDictionaryObservation> read,
-        Func<int,long,string,CancellationToken,Task<IAsyncDisposable>> acquireLease)
+    internal static async Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken cancellationToken,
+        Func<int, long, CancellationToken, Task<IReadOnlyNativeMemorySession>> openSession,
+        Func<IReadOnlyNativeMemorySession, IReadOnlyList<uint>, CurrentBuildLocalizationDictionaryObservation> read,
+        Func<int, long, string, CancellationToken, Task<IAsyncDisposable>> acquireLease)
     {
-        if (!options.TryGetValue("--pid",out var p) || !int.TryParse(p,NumberStyles.None,CultureInfo.InvariantCulture,out var pid) || pid <= 0 || !options.TryGetValue("--start-ticks",out var t) || !long.TryParse(t,NumberStyles.None,CultureInfo.InvariantCulture,out var ticks) || ticks <= 0 || !options.TryGetValue("--keys",out var k) || !options.TryGetValue("--output",out var path) || string.IsNullOrWhiteSpace(path)) throw new ArgumentException("--pid, --start-ticks, --keys and --output are required.");
+        if (!options.TryGetValue("--pid", out var p) || !int.TryParse(p, NumberStyles.None, CultureInfo.InvariantCulture, out var pid) || pid <= 0 || !options.TryGetValue("--start-ticks", out var t) || !long.TryParse(t, NumberStyles.None, CultureInfo.InvariantCulture, out var ticks) || ticks <= 0 || !options.TryGetValue("--keys", out var k) || !options.TryGetValue("--output", out var path) || string.IsNullOrWhiteSpace(path)) throw new ArgumentException("--pid, --start-ticks, --keys and --output are required.");
         var parts = k.Split(','); var keys = new List<uint>(); if (parts.Length is < 1 or > 128) throw new ArgumentException("Provide 1..128 distinct decimal DWORD keys.");
-        foreach (var part in parts) { if (!uint.TryParse(part,NumberStyles.None,CultureInfo.InvariantCulture,out var key) || keys.Contains(key)) throw new ArgumentException("Provide 1..128 distinct decimal DWORD keys."); keys.Add(key); }
+        foreach (var part in parts) { if (!uint.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out var key) || keys.Contains(key)) throw new ArgumentException("Provide 1..128 distinct decimal DWORD keys."); keys.Add(key); }
         if (File.Exists(path)) throw new IOException("Output exists; never overwrite an earlier observation.");
         cancellationToken.ThrowIfCancellationRequested();
         await using var lease = await acquireLease(pid, ticks, CurrentBuildPlayerLookup.GameSha256, cancellationToken);
@@ -36,9 +37,9 @@ internal static class CurrentBuildLocalizationDictionarySampleCommand
         if (session.Identity.ProcessId != pid || session.Identity.ProcessStartUtcTicks != ticks ||
             !string.Equals(session.Identity.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Localization session does not match requested epoch/build.");
-        cancellationToken.ThrowIfCancellationRequested(); var observation = read(session,keys);
+        cancellationToken.ThrowIfCancellationRequested(); var observation = read(session, keys);
         if (await session.RevalidateAsync(cancellationToken) is not null) throw new InvalidDataException("Process identity invalidated; no report published.");
-        cancellationToken.ThrowIfCancellationRequested(); var report = new CurrentBuildLocalizationDictionaryReport(observation); await JsonReportWriter.WriteNewAsync(path,report,cancellationToken);
-        await output.WriteLineAsync(JsonSerializer.Serialize(new { recordType = "native-current-localization-dictionary-candidate-summary/1", report.Status, observation.Qualification, output = Path.GetFullPath(path) },new JsonSerializerOptions(JsonFormat.Options) { WriteIndented = false })); return 0;
+        cancellationToken.ThrowIfCancellationRequested(); var report = new CurrentBuildLocalizationDictionaryReport(observation); await JsonReportWriter.WriteNewAsync(path, report, cancellationToken);
+        await output.WriteLineAsync(JsonSerializer.Serialize(new { recordType = "native-current-localization-dictionary-candidate-summary/1", report.Status, observation.Qualification, output = Path.GetFullPath(path) }, new JsonSerializerOptions(JsonFormat.Options) { WriteIndented = false })); return 0;
     }
 }

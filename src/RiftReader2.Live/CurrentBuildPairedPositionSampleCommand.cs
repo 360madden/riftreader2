@@ -94,9 +94,12 @@ internal static class CurrentBuildPairedPositionSampleCommand
         await output.WriteLineAsync(JsonSerializer.Serialize(new
         {
             recordType = "native-current-paired-position-candidate-summary/1",
-            report.Status, report.Qualification,
-            observationStatus = observation.Status, observation.TargetStatus,
-            observation.AcquisitionSpanMilliseconds, output = path
+            report.Status,
+            report.Qualification,
+            observationStatus = observation.Status,
+            observation.TargetStatus,
+            observation.AcquisitionSpanMilliseconds,
+            output = path
         }, new JsonSerializerOptions(JsonFormat.Options) { WriteIndented = false }));
         return 0;
     }

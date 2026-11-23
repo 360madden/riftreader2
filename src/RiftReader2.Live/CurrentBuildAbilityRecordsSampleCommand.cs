@@ -3,6 +3,7 @@ using System.Text.Json;
 using RiftReader2.Infrastructure;
 using RiftReader2.Application;
 namespace RiftReader2.Live;
+
 internal sealed record CurrentBuildAbilityRecordsReport(CurrentBuildAbilityRecordsObservation Observation)
 {
     public int SchemaVersion => 1;

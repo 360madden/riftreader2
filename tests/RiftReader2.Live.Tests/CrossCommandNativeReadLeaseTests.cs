@@ -30,7 +30,8 @@ public sealed class CrossCommandNativeReadLeaseTests
         try
         {
             first = CurrentBuildPositionSampleCommand.RunAsync(positionOptions, TextWriter.Null, default, Lease,
-                async (_, _, _) => {
+                async (_, _, _) =>
+                {
                     firstEntered.SetResult();
                     await proceed.Task.WaitAsync(TimeSpan.FromSeconds(5));
                     return positionSession;
@@ -63,7 +64,7 @@ public sealed class CrossCommandNativeReadLeaseTests
         }
     }
 
-    static Dictionary<string,string> Options(string path) =>
+    static Dictionary<string, string> Options(string path) =>
         new() { ["--pid"] = "123", ["--start-ticks"] = "456", ["--output"] = path };
 
     sealed class FakeSession : IReadOnlyNativeMemorySession

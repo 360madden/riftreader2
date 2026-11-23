@@ -7,7 +7,8 @@ namespace RiftReader2.Live.Tests;
 public sealed class CurrentBuildAbilityMapsCandidateReaderTests
 {
     const ulong Module = 0x140000000, SystemAddress = 0x20000000, Context = 0x20010000, Clock = 0x20020000, Buckets = 0x20030000, Entity = 0x20040000;
-    [Fact] public void ReadsObservedLayoutAndAdvancingClock()
+    [Fact]
+    public void ReadsObservedLayoutAndAdvancingClock()
     {
         var s = Fixture(); s.Change(Clock + 0x18, F(101));
         var result = Read(s);
@@ -16,7 +17,12 @@ public sealed class CurrentBuildAbilityMapsCandidateReaderTests
         Assert.Equal("0000803f", result.Maps[0].Entries[0].ValueRawHex);
     }
     [Theory]
-    [InlineData("owner")][InlineData("stride")][InlineData("count")][InlineData("clock")][InlineData("bytes")][InlineData("root")]
+    [InlineData("owner")]
+    [InlineData("stride")]
+    [InlineData("count")]
+    [InlineData("clock")]
+    [InlineData("bytes")]
+    [InlineData("root")]
     public void RejectsChangedOrInvalidSnapshot(string defect)
     {
         var s = Fixture();
@@ -28,12 +34,14 @@ public sealed class CurrentBuildAbilityMapsCandidateReaderTests
         if (defect == "root") s.Change(Module + 0x33623E0, Q(SystemAddress + 8));
         Assert.Throws<InvalidDataException>(() => Read(s));
     }
-    [Fact] public void RejectsCyclicChain()
+    [Fact]
+    public void RejectsCyclicChain()
     {
         var s = Fixture(); var node = Node(0); Q(Buckets).CopyTo(node, 0); s.Put(Buckets, node);
         Assert.Throws<InvalidDataException>(() => Read(s));
     }
-    [Fact] public void VerifiesOriginalOwner()
+    [Fact]
+    public void VerifiesOriginalOwner()
     {
         var s = Fixture();
         Assert.Throws<InvalidDataException>(() => CurrentBuildAbilityMapsCandidateReader.ReadResolved(s, s.Identity, DateTimeOffset.UtcNow, 123, Entity, Context, () => throw new InvalidDataException("owner changed")));

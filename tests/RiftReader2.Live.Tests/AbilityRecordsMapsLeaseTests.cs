@@ -84,7 +84,7 @@ public sealed class AbilityRecordsMapsLeaseTests
         Assert.True(released); Assert.False(opened); Assert.False(File.Exists(path));
     }
 
-    static Dictionary<string,string> Options(string path) =>
+    static Dictionary<string, string> Options(string path) =>
         new() { ["--pid"] = "123", ["--start-ticks"] = "456", ["--output"] = path, ["--keys"] = "42" };
 
     sealed class FakeLease(Action release) : IAsyncDisposable
@@ -92,11 +92,11 @@ public sealed class AbilityRecordsMapsLeaseTests
 
     sealed class FakeSession : IReadOnlyNativeMemorySession
     {
-        public NativeProcessIdentity Identity { get; } = new(123,456,"rift_x64.exe",
-            CurrentBuildPlayerLookup.GameSha256,0x140000000,64*1024*1024);
+        public NativeProcessIdentity Identity { get; } = new(123, 456, "rift_x64.exe",
+            CurrentBuildPlayerLookup.GameSha256, 0x140000000, 64 * 1024 * 1024);
         public bool Revalidated { get; private set; }
         public bool Disposed { get; private set; }
-        public NativeReadResult Read(ulong _,int __) => throw new InvalidOperationException("Synthetic only");
+        public NativeReadResult Read(ulong _, int __) => throw new InvalidOperationException("Synthetic only");
         public ValueTask<string?> RevalidateAsync(CancellationToken _) { Revalidated = true; return ValueTask.FromResult<string?>(null); }
         public ValueTask DisposeAsync() { Disposed = true; return ValueTask.CompletedTask; }
     }

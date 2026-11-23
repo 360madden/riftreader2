@@ -11,7 +11,8 @@ public sealed class CurrentBuildPositionRefreshBranchCandidateReaderTests
     const ulong Module = 0x140000000, Entity = 0x20010000, Position = 0x20020000, Source = 0x20030000, GuardContext = 0x20040000, Provider = 0x20050000;
     const ulong Selector = Module + CurrentBuildPositionRefreshBranchCandidateReader.SourceSelectorRva;
 
-    [Fact] public void BothGuardsZeroAreIneligibleWithoutInvokingSource()
+    [Fact]
+    public void BothGuardsZeroAreIneligibleWithoutInvokingSource()
     {
         var s = Fixture(0, 0, 7);
         var result = Read(s, () => throw new Exception("must not resolve"));
@@ -22,7 +23,8 @@ public sealed class CurrentBuildPositionRefreshBranchCandidateReaderTests
         Assert.Null(result.SourceComponent);
     }
 
-    [Fact] public void NonzeroHandleNeverUsesSelfLookup()
+    [Fact]
+    public void NonzeroHandleNeverUsesSelfLookup()
     {
         var s = Fixture(123, 1, 7);
         var result = Read(s, () => throw new Exception("wrong entity"));
@@ -31,7 +33,8 @@ public sealed class CurrentBuildPositionRefreshBranchCandidateReaderTests
         Assert.Null(result.SourceComponent);
     }
 
-    [Fact] public void UnusedFlagAndSelectorAreNotRequired()
+    [Fact]
+    public void UnusedFlagAndSelectorAreNotRequired()
     {
         var active = Fixture(123, 1, 7);
         active.Remove(Position + 0x108, 1); active.Remove(Selector, 4);
@@ -44,7 +47,8 @@ public sealed class CurrentBuildPositionRefreshBranchCandidateReaderTests
         Assert.Null(result.SourceSelector);
     }
 
-    [Fact] public void PlayerKeyJsonIsLosslessForUint64()
+    [Fact]
+    public void PlayerKeyJsonIsLosslessForUint64()
     {
         var s = Fixture(0, 0, 7);
         const ulong key = 9223372036854775850UL;
@@ -58,7 +62,8 @@ public sealed class CurrentBuildPositionRefreshBranchCandidateReaderTests
         Assert.Contains("lose precision", root.GetProperty("qualification").GetString());
     }
 
-    [Fact] public void FlagBranchReportsExact6136B0PredicateCandidate()
+    [Fact]
+    public void FlagBranchReportsExact6136B0PredicateCandidate()
     {
         var s = Fixture(0, 1, 7);
         var result = Read(s, () => Source);
@@ -73,7 +78,8 @@ public sealed class CurrentBuildPositionRefreshBranchCandidateReaderTests
         Assert.Contains("freshness unverified", result.Qualification);
     }
 
-    [Fact] public void NegativeNestedPredicateValueIsIneligible()
+    [Fact]
+    public void NegativeNestedPredicateValueIsIneligible()
     {
         var s = Fixture(0, 1, 7);
         s.Put(GuardContext + 0x24, BitConverter.GetBytes(-1));
@@ -85,7 +91,8 @@ public sealed class CurrentBuildPositionRefreshBranchCandidateReaderTests
         Assert.Null(result.SourceProviderPresent);
     }
 
-    [Fact] public void NullProviderIsIneligibleAfterNonnegativeNestedValue()
+    [Fact]
+    public void NullProviderIsIneligibleAfterNonnegativeNestedValue()
     {
         var s = Fixture(0, 1, 7);
         s.Q(Source + 0x58, 0);
@@ -97,7 +104,8 @@ public sealed class CurrentBuildPositionRefreshBranchCandidateReaderTests
         Assert.False(result.SourceProviderPresent);
     }
 
-    [Fact] public void MissingNestedGuardOperandRemainsUnavailableNotZero()
+    [Fact]
+    public void MissingNestedGuardOperandRemainsUnavailableNotZero()
     {
         var s = Fixture(0, 1, 7);
         s.Remove(GuardContext + 0x24, 4);
@@ -108,7 +116,8 @@ public sealed class CurrentBuildPositionRefreshBranchCandidateReaderTests
         Assert.Null(result.SourceGuardValue);
     }
 
-    [Fact] public void NullGuardContextRemainsUnavailableNotZero()
+    [Fact]
+    public void NullGuardContextRemainsUnavailableNotZero()
     {
         var s = Fixture(0, 1, 7);
         s.Q(Source + 0x48, 0);
@@ -118,7 +127,8 @@ public sealed class CurrentBuildPositionRefreshBranchCandidateReaderTests
         Assert.Null(result.SourceGuardEligible);
     }
 
-    [Fact] public void SelfSourceBackownerMustMatchPlayerEntity()
+    [Fact]
+    public void SelfSourceBackownerMustMatchPlayerEntity()
     {
         var s = Fixture(0, 1, 7);
         s.Q(Source + 0x10, Entity + 0x1000);
@@ -141,7 +151,8 @@ public sealed class CurrentBuildPositionRefreshBranchCandidateReaderTests
         Assert.Null(result.SourceComponent);
     }
 
-    [Fact] public void MissingSourceAndGuardNeverBecomeZero()
+    [Fact]
+    public void MissingSourceAndGuardNeverBecomeZero()
     {
         var result = Read(Fixture(0, 1, 7), () => throw new InvalidDataException("unavailable"));
         Assert.Equal("flag-branch-self-source-unavailable", result.Status);
@@ -152,7 +163,8 @@ public sealed class CurrentBuildPositionRefreshBranchCandidateReaderTests
         Assert.Null(result.ReferencedHandle);
     }
 
-    [Fact] public void WrongOwnerDoesNotResolveSource()
+    [Fact]
+    public void WrongOwnerDoesNotResolveSource()
     {
         var s = Fixture(0, 1, 7); s.Q(Position + 0x10, Entity + 0x1000);
         var result = Read(s, () => throw new Exception("wrong owner"));
@@ -175,7 +187,8 @@ public sealed class CurrentBuildPositionRefreshBranchCandidateReaderTests
         Assert.Throws<InvalidDataException>(() => Read(s, () => Source));
     }
 
-    [Fact] public void OwnerVerificationFailureRejectsObservation()
+    [Fact]
+    public void OwnerVerificationFailureRejectsObservation()
     {
         var s = Fixture(0, 1, 7);
         Assert.Throws<InvalidDataException>(() => CurrentBuildPositionRefreshBranchCandidateReader.ReadResolved(
@@ -188,7 +201,8 @@ public sealed class CurrentBuildPositionRefreshBranchCandidateReaderTests
         SelfComponents = 0x21006000, ReferencedComponents = 0x21007000;
     const ulong Handle = 0x800000010000002B; // Deliberately unaligned, not an address.
 
-    [Fact] public void FullKeyCollisionResolvesReferencedEntityNotSelf()
+    [Fact]
+    public void FullKeyCollisionResolvesReferencedEntityNotSelf()
     {
         var result = CurrentBuildPositionRefreshBranchCandidateReader.Read(FullFixture());
         Assert.Equal("handle-branch-referenced-source-present-candidate", result.Status);
@@ -201,7 +215,8 @@ public sealed class CurrentBuildPositionRefreshBranchCandidateReaderTests
         Assert.Null(result.Flag);
     }
 
-    [Fact] public void FullKeyMismatchNeverFallsBackToSelf()
+    [Fact]
+    public void FullKeyMismatchNeverFallsBackToSelf()
     {
         var s = FullFixture(); s.Put(Node, NodeBytes(0, Handle ^ (1UL << 32), ReferencedEntity));
         var result = CurrentBuildPositionRefreshBranchCandidateReader.Read(s);
@@ -210,7 +225,8 @@ public sealed class CurrentBuildPositionRefreshBranchCandidateReaderTests
         Assert.Null(result.ReferencedEntity);
     }
 
-    [Fact] public void ReferencedSourceBackownerMustMatchReferencedEntity()
+    [Fact]
+    public void ReferencedSourceBackownerMustMatchReferencedEntity()
     {
         var s = FullFixture(); s.Q(Source + 0x10, Entity);
         var result = CurrentBuildPositionRefreshBranchCandidateReader.Read(s);
@@ -219,7 +235,8 @@ public sealed class CurrentBuildPositionRefreshBranchCandidateReaderTests
         Assert.Null(result.ReferencedEntity);
     }
 
-    [Fact] public void ChangedReferencedNodeRejectsEvenOnMiss()
+    [Fact]
+    public void ChangedReferencedNodeRejectsEvenOnMiss()
     {
         var s = FullFixture(); s.Put(Node, NodeBytes(0, Handle ^ (1UL << 32), ReferencedEntity));
         s.Changed = (Node, 24);
@@ -238,7 +255,8 @@ public sealed class CurrentBuildPositionRefreshBranchCandidateReaderTests
         Assert.Throws<InvalidDataException>(() => CurrentBuildPositionRefreshBranchCandidateReader.Read(s));
     }
 
-    [Fact] public void InvalidReferencedSourceRangeIsUnavailable()
+    [Fact]
+    public void InvalidReferencedSourceRangeIsUnavailable()
     {
         var s = FullFixture(); s.Q(ReferencedComponents + 8, 0x7FFF_FFFF_FFF8);
         var result = CurrentBuildPositionRefreshBranchCandidateReader.Read(s);

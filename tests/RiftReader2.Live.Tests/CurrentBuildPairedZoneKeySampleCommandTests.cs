@@ -10,7 +10,8 @@ public sealed class CurrentBuildPairedZoneKeySampleCommandTests : IDisposable
     string ReportPath => Path.Combine(directory, "report.json");
     Dictionary<string, string> Options() => new() { ["--pid"] = "123", ["--start-ticks"] = "456", ["--output"] = ReportPath };
 
-    [Fact] public async Task OneSessionRevalidatedBeforeAtomicCandidatePublication()
+    [Fact]
+    public async Task OneSessionRevalidatedBeforeAtomicCandidatePublication()
     {
         var s = new Fake(); var opens = 0; var reads = 0; var output = new StringWriter();
         s.Check = () => Assert.False(File.Exists(ReportPath));
@@ -33,7 +34,8 @@ public sealed class CurrentBuildPairedZoneKeySampleCommandTests : IDisposable
         Assert.Contains("native-current-paired-zone-key-candidate-summary/1", output.ToString());
     }
 
-    [Fact] public async Task MissingHealthPreservesTargetXyzAndUnavailableZone()
+    [Fact]
+    public async Task MissingHealthPreservesTargetXyzAndUnavailableZone()
     {
         var s = new Fake(); var options = Options(); options["--max-acquisition-ms"] = "500";
         await Run(s, options, read: (_, max) =>
@@ -50,14 +52,18 @@ public sealed class CurrentBuildPairedZoneKeySampleCommandTests : IDisposable
         Assert.Equal("unavailable", o.GetProperty("sameWorldStatus").GetString());
     }
 
-    [Fact] public async Task NoSelectedTargetRemainsExplicitlyUnavailable()
+    [Fact]
+    public async Task NoSelectedTargetRemainsExplicitlyUnavailable()
     {
         var s = new Fake();
         await Run(s, read: (_, _) =>
         {
             var o = Observation(s);
-            return o with { Positions = o.Positions with { Target = null, TargetStatus = "unavailable" },
-                TargetZone = new("unavailable", null, null, null, null, null, null, "guarded-target-unavailable") };
+            return o with
+            {
+                Positions = o.Positions with { Target = null, TargetStatus = "unavailable" },
+                TargetZone = new("unavailable", null, null, null, null, null, null, "guarded-target-unavailable")
+            };
         });
         using var json = JsonDocument.Parse(await File.ReadAllTextAsync(ReportPath));
         var o = json.RootElement.GetProperty("observation");
@@ -66,7 +72,8 @@ public sealed class CurrentBuildPairedZoneKeySampleCommandTests : IDisposable
         Assert.Equal("unavailable", o.GetProperty("zoneKeyRelation").GetString());
     }
 
-    [Fact] public async Task InvalidOptionsAndExistingEvidenceDoNotOpen()
+    [Fact]
+    public async Task InvalidOptionsAndExistingEvidenceDoNotOpen()
     {
         foreach (var (key, value) in new[] { ("--pid", "0"), ("--start-ticks", "-1"), ("--output", " "),
             ("--max-acquisition-ms", "0"), ("--max-acquisition-ms", "5001"), ("--unknown", "x") })
@@ -81,7 +88,8 @@ public sealed class CurrentBuildPairedZoneKeySampleCommandTests : IDisposable
         Assert.False(didOpen); Assert.Equal("original", await File.ReadAllTextAsync(ReportPath));
     }
 
-    [Fact] public async Task WrongOpenedIdentityNeverPublishes()
+    [Fact]
+    public async Task WrongOpenedIdentityNeverPublishes()
     {
         foreach (var kind in new[] { "pid", "start", "sha", "module" })
         {
@@ -98,7 +106,8 @@ public sealed class CurrentBuildPairedZoneKeySampleCommandTests : IDisposable
         }
     }
 
-    [Fact] public async Task ForeignNestedIdentityAndUnitJoinsRejectBeforeRevalidation()
+    [Fact]
+    public async Task ForeignNestedIdentityAndUnitJoinsRejectBeforeRevalidation()
     {
         foreach (var kind in new[] { "outer", "positions", "self", "target" })
         {
@@ -118,7 +127,8 @@ public sealed class CurrentBuildPairedZoneKeySampleCommandTests : IDisposable
         }
     }
 
-    [Fact] public async Task RevalidationFailureOrChangedModuleNeverPublishes()
+    [Fact]
+    public async Task RevalidationFailureOrChangedModuleNeverPublishes()
     {
         foreach (var changed in new[] { false, true })
         {
@@ -129,7 +139,8 @@ public sealed class CurrentBuildPairedZoneKeySampleCommandTests : IDisposable
         }
     }
 
-    [Fact] public async Task CancellationAndAcquisitionFailureNeverPublishes()
+    [Fact]
+    public async Task CancellationAndAcquisitionFailureNeverPublishes()
     {
         using var canceled = new CancellationTokenSource(); canceled.Cancel(); bool opened = false;
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Run(new Fake(), token: canceled.Token, opened: (_, _) => opened = true));
@@ -143,7 +154,8 @@ public sealed class CurrentBuildPairedZoneKeySampleCommandTests : IDisposable
         Assert.True(s.Disposed); Assert.False(File.Exists(ReportPath));
     }
 
-    [Fact] public async Task AtomicPublicationRacePreservesWinnerAndCleansTemporary()
+    [Fact]
+    public async Task AtomicPublicationRacePreservesWinnerAndCleansTemporary()
     {
         var s = new Fake();
         s.Check = () => { Directory.CreateDirectory(directory); File.WriteAllText(ReportPath, "race-winner"); };
@@ -152,7 +164,8 @@ public sealed class CurrentBuildPairedZoneKeySampleCommandTests : IDisposable
         Assert.Single(Directory.GetFiles(directory)); Assert.True(s.Disposed);
     }
 
-    [Fact] public async Task LeaseCoversOpenReadRevalidationAndAwaitedSessionDisposal()
+    [Fact]
+    public async Task LeaseCoversOpenReadRevalidationAndAwaitedSessionDisposal()
     {
         var s = new Fake(); var output = new StringWriter(); var events = new List<string>();
         var lease = new TestLease { OnDispose = () => { Assert.True(s.Disposed); events.Add("lease-dispose"); } };
@@ -174,7 +187,9 @@ public sealed class CurrentBuildPairedZoneKeySampleCommandTests : IDisposable
         Assert.Equal(new[] { "lease-acquire", "open", "read", "revalidate", "session-dispose-start", "session-dispose-end", "lease-dispose" }, events);
     }
 
-    [Theory] [InlineData(false)] [InlineData(true)]
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task LeaseTimeoutOrCancellationCannotOpenOrPublish(bool cancellation)
     {
         var s = new Fake(); var output = new StringWriter(); var opened = false;
@@ -188,7 +203,8 @@ public sealed class CurrentBuildPairedZoneKeySampleCommandTests : IDisposable
         Assert.Equal("", output.ToString());
     }
 
-    [Fact] public async Task CancellationAfterLeaseAndReadFailureBothReleaseWithoutEarlyUnlock()
+    [Fact]
+    public async Task CancellationAfterLeaseAndReadFailureBothReleaseWithoutEarlyUnlock()
     {
         var s = new Fake(); var output = new StringWriter(); var lease = new TestLease();
         using var cancel = new CancellationTokenSource(); var opened = false;
@@ -202,7 +218,9 @@ public sealed class CurrentBuildPairedZoneKeySampleCommandTests : IDisposable
         Assert.True(lease.Disposed); Assert.True(s.Disposed); Assert.False(File.Exists(ReportPath));
     }
 
-    [Theory] [InlineData(false)] [InlineData(true)]
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task OpenOrRevalidationFailureReleasesLease(bool failedRevalidation)
     {
         var s = new Fake(); var lease = new TestLease(); var output = new StringWriter();

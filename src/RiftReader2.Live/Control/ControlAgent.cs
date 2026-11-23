@@ -111,7 +111,8 @@ public sealed class ControlAgent
         Func<ControlAgentConfiguration, ControlIdentityRequest, CancellationToken,
             Task<ControlNativeXyzResponse>> nativeXyzCapture)
         : this(configuration, nativeVitalsCapture, nativeXyzCapture,
-            ControlNativeOrientation.CaptureAsync, AcquireNativeReadLeaseAsync) { }
+            ControlNativeOrientation.CaptureAsync, AcquireNativeReadLeaseAsync)
+    { }
 
     // Injectable lease is an explicit offline test seam; production uses the shared file lease.
     internal ControlAgent(ControlAgentConfiguration configuration,
@@ -121,7 +122,8 @@ public sealed class ControlAgent
             Task<ControlNativeXyzResponse>> nativeXyzCapture,
         Func<ControlIdentityRequest, CancellationToken, Task<IAsyncDisposable>> nativeReadLease)
         : this(configuration, nativeVitalsCapture, nativeXyzCapture,
-            ControlNativeOrientation.CaptureAsync, nativeReadLease) { }
+            ControlNativeOrientation.CaptureAsync, nativeReadLease)
+    { }
 
     internal ControlAgent(ControlAgentConfiguration configuration,
         Func<ControlAgentConfiguration, ControlIdentityRequest, CancellationToken,

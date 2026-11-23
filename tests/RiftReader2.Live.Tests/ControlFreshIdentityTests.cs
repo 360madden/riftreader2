@@ -157,9 +157,15 @@ public sealed class ControlFreshIdentityTests
         config.Validate(); // Backward-compatible unpinned lab/single-process configuration.
         var legacyJson = JsonSerializer.Serialize(new
         {
-            config.SchemaVersion, config.HostAddress, config.Port, config.Token,
-            config.ExpectedMachineName, config.ProcessName, config.ExecutablePath,
-            config.ExecutableSha256, config.OutputDirectory
+            config.SchemaVersion,
+            config.HostAddress,
+            config.Port,
+            config.Token,
+            config.ExpectedMachineName,
+            config.ProcessName,
+            config.ExecutablePath,
+            config.ExecutableSha256,
+            config.OutputDirectory
         }, JsonFormat.Options);
         var legacy = JsonSerializer.Deserialize<ControlAgentConfiguration>(legacyJson, JsonFormat.Options)!;
         legacy.Validate();

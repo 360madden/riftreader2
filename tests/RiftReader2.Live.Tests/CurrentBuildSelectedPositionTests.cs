@@ -75,17 +75,24 @@ public sealed class CurrentBuildSelectedPositionTests
         {
             StartedAtUtc = first.CompletedAtUtc.AddMilliseconds(1),
             CompletedAtUtc = first.CompletedAtUtc.AddMilliseconds(3),
-            Status = "no-target", RawFallbackKey = "0", TargetKey = null,
-            TargetUnitIdCandidate = null, TargetEntityDecimal = null,
-            TargetPositionCandidate = null, TargetPositionRawBits = null
+            Status = "no-target",
+            RawFallbackKey = "0",
+            TargetKey = null,
+            TargetUnitIdCandidate = null,
+            TargetEntityDecimal = null,
+            TargetPositionCandidate = null,
+            TargetPositionRawBits = null
         };
         var queue = new Queue<CurrentBuildSelectedPositionObservation>([first, second]);
         var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + "-target-burst.json");
         var options = new Dictionary<string, string>
         {
-            ["--pid"] = "123", ["--start-ticks"] = "456",
+            ["--pid"] = "123",
+            ["--start-ticks"] = "456",
             ["--sha256"] = CurrentBuildPlayerLookup.UpdatedGameSha256,
-            ["--output"] = path, ["--samples"] = "2", ["--interval-ms"] = "0"
+            ["--output"] = path,
+            ["--samples"] = "2",
+            ["--interval-ms"] = "0"
         };
         try
         {
@@ -126,9 +133,12 @@ public sealed class CurrentBuildSelectedPositionTests
         var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + "-target-burst.json");
         var options = new Dictionary<string, string>
         {
-            ["--pid"] = "123", ["--start-ticks"] = "456",
+            ["--pid"] = "123",
+            ["--start-ticks"] = "456",
             ["--sha256"] = CurrentBuildPlayerLookup.UpdatedGameSha256,
-            ["--output"] = path, ["--samples"] = "2", ["--interval-ms"] = "0"
+            ["--output"] = path,
+            ["--samples"] = "2",
+            ["--interval-ms"] = "0"
         };
         await Assert.ThrowsAsync<InvalidDataException>(() =>
             CurrentBuildSelectedPositionSampleCommand.RunAsync(

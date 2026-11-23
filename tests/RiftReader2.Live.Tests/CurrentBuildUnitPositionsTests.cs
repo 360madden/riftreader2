@@ -128,7 +128,9 @@ public sealed class CurrentBuildUnitPositionsTests
             var session = new Fake(updated: true);
             var options = new Dictionary<string, string>
             {
-                ["--pid"] = "123", ["--start-ticks"] = "456", ["--output"] = path,
+                ["--pid"] = "123",
+                ["--start-ticks"] = "456",
+                ["--output"] = path,
                 ["--sha256"] = CurrentBuildPlayerLookup.GameSha256
             };
             Task<int> Run() => CurrentBuildUnitPositionsSampleCommand.RunAsync(

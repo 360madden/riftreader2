@@ -95,7 +95,8 @@ public sealed class CurrentBuildSmoothedScalarCandidateReaderTests
             [(Component, 8)] = vtableBytes,
             [(Component + 0x10, 8)] = ownerBytes,
             [(Component + 0x88, 16)] = scalarBytes
-        }) { MutateScalar = mutateScalar };
+        })
+        { MutateScalar = mutateScalar };
     }
 
     private sealed class Fake(Dictionary<(ulong, int), byte[]> blocks) : IReadOnlyNativeMemorySession

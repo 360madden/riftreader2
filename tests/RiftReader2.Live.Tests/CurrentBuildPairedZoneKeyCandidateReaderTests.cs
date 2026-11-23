@@ -13,7 +13,8 @@ public sealed class CurrentBuildPairedZoneKeyCandidateReaderTests
         Key = 0x80000002CD0034D1;
     static readonly DateTimeOffset Utc = new(2026, 11, 8, 0, 0, 0, TimeSpan.Zero);
 
-    [Fact] public void IndependentEqualKeysAreOnlyMatchingCandidates()
+    [Fact]
+    public void IndependentEqualKeysAreOnlyMatchingCandidates()
     {
         var s = Fixture();
         var result = Read(s);
@@ -30,7 +31,8 @@ public sealed class CurrentBuildPairedZoneKeyCandidateReaderTests
         Assert.Equal("paired-candidate", result.Positions.Status);
     }
 
-    [Fact] public void DifferentTargetKeyIsNotReplacedBySelf()
+    [Fact]
+    public void DifferentTargetKeyIsNotReplacedBySelf()
     {
         var s = Fixture(); s.Put(TargetOwner + 0x150, BitConverter.GetBytes(999U));
         var result = Read(s);
@@ -38,7 +40,8 @@ public sealed class CurrentBuildPairedZoneKeyCandidateReaderTests
         Assert.Equal(123U, result.SelfZone.RawZoneKey); Assert.Equal(999U, result.TargetZone.RawZoneKey);
     }
 
-    [Fact] public void MissingTargetHealthKeepsXyzAndUnavailableZone()
+    [Fact]
+    public void MissingTargetHealthKeepsXyzAndUnavailableZone()
     {
         var s = Fixture(); s.Put(TargetEntity + 0x18, [255]);
         var result = Read(s);
@@ -48,7 +51,8 @@ public sealed class CurrentBuildPairedZoneKeyCandidateReaderTests
         Assert.Equal(123U, result.SelfZone.RawZoneKey);
     }
 
-    [Fact] public void NoGuardedTargetAndUnknownOwnerRemainUnavailable()
+    [Fact]
+    public void NoGuardedTargetAndUnknownOwnerRemainUnavailable()
     {
         var s = Fixture();
         var result = Read(s, context: _ => Context(s, null), pair: _ => Pair(s, null));
@@ -61,7 +65,8 @@ public sealed class CurrentBuildPairedZoneKeyCandidateReaderTests
         Assert.Equal("unavailable", result.ZoneKeyRelation);
     }
 
-    [Fact] public void ZeroIsPreservedAsRawCandidateNotInventedMissingZone()
+    [Fact]
+    public void ZeroIsPreservedAsRawCandidateNotInventedMissingZone()
     {
         var s = Fixture(); s.Put(SelfOwner + 0x150, BitConverter.GetBytes(0U));
         s.Put(TargetOwner + 0x150, BitConverter.GetBytes(0U));
@@ -72,7 +77,8 @@ public sealed class CurrentBuildPairedZoneKeyCandidateReaderTests
         Assert.Equal("unavailable", result.SameWorldStatus);
     }
 
-    [Fact] public void ChangedZoneOwnerLookupAndSelectorAnchorsRejectAcrossPair()
+    [Fact]
+    public void ChangedZoneOwnerLookupAndSelectorAnchorsRejectAcrossPair()
     {
         foreach (var address in new[] { SelfOwner + 0x150, TargetOwner + 0x150,
             TargetHealth + 0x40, TargetHealth + 0x10, TargetEntity + 0x18,
@@ -87,7 +93,8 @@ public sealed class CurrentBuildPairedZoneKeyCandidateReaderTests
         }
     }
 
-    [Fact] public void SelectionChangeAndForeignPairReject()
+    [Fact]
+    public void SelectionChangeAndForeignPairReject()
     {
         var s = Fixture(); int calls = 0;
         Assert.Throws<InvalidDataException>(() => Read(s, context: _ => Context(s, ++calls == 1 ? Key : Key + 1)));
@@ -97,7 +104,8 @@ public sealed class CurrentBuildPairedZoneKeyCandidateReaderTests
         Assert.Throws<InvalidDataException>(() => Read(s, pair: _ => Pair(s) with { Target = Pair(s).Target! with { UnitKey = "44" } }));
     }
 
-    [Fact] public void WrongHighBitsAndBacklinkCannotJoin()
+    [Fact]
+    public void WrongHighBitsAndBacklinkCannotJoin()
     {
         var s = Fixture(); s.Put(Bucket, Node(0x10000002CD0034D1, TargetEntity));
         Assert.Throws<InvalidDataException>(() => Read(s));
@@ -107,7 +115,8 @@ public sealed class CurrentBuildPairedZoneKeyCandidateReaderTests
         Assert.Throws<InvalidDataException>(() => Read(s));
     }
 
-    [Fact] public void WrongBuildAndBoundedClockReject()
+    [Fact]
+    public void WrongBuildAndBoundedClockReject()
     {
         var s = Fixture(); s.Identity = s.Identity with { ExecutableSha256 = new string('A', 64) };
         Assert.Throws<InvalidDataException>(() => Read(s));

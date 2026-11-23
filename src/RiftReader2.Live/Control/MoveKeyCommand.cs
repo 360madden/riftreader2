@@ -367,12 +367,17 @@ internal static class MoveKeyCommand
             {
                 Report(options.Json, new
                 {
-                    status = "preview-only", machine = Environment.MachineName,
-                    processId = options.Pid, keys = options.Keys, holdMilliseconds = options.HoldMilliseconds,
-                    focusRequested = options.Focus, measureXyzRequested = options.MeasureXyz,
+                    status = "preview-only",
+                    machine = Environment.MachineName,
+                    processId = options.Pid,
+                    keys = options.Keys,
+                    holdMilliseconds = options.HoldMilliseconds,
+                    focusRequested = options.Focus,
+                    measureXyzRequested = options.MeasureXyz,
                     measureActorPoseRequested = options.MeasureActorPose,
                     xyzSettleMilliseconds = options.XyzSettleMilliseconds,
-                    actorPoseSettleMilliseconds = options.ActorPoseSettleMilliseconds, inputSent = false,
+                    actorPoseSettleMilliseconds = options.ActorPoseSettleMilliseconds,
+                    inputSent = false,
                     releaseOnly = options.ReleaseOnly,
                     instruction = "Add --execute to send the requested pulse or key-up-only recovery."
                 });
@@ -394,8 +399,13 @@ internal static class MoveKeyCommand
         catch (Exception exception)
         {
             if (json)
-                Report(true, new { status = "blocked", inputSent = false,
-                    reason = exception.Message, errorType = exception.GetType().Name });
+                Report(true, new
+                {
+                    status = "blocked",
+                    inputSent = false,
+                    reason = exception.Message,
+                    errorType = exception.GetType().Name
+                });
             else
                 Console.Error.WriteLine($"move-key blocked: {exception.Message}\nUsage: {Usage}");
             return 2;
@@ -440,8 +450,11 @@ internal static class MoveKeyCommand
                 cancellation => WaitForForegroundAsync(Inspect, 600, cancellation), token);
             Report(options.Json, new
             {
-                status = "focused-target", target = focused.Target, inputSent = false,
-                focusRequested = true, focusAttempt = focused.Attempt,
+                status = "focused-target",
+                target = focused.Target,
+                inputSent = false,
+                focusRequested = true,
+                focusAttempt = focused.Attempt,
                 desktopInputsDown = focused.DesktopInputsDown
             });
             return 0;
@@ -450,7 +463,10 @@ internal static class MoveKeyCommand
         {
             Report(options.Json, new
             {
-                status = "inspected-target", target, inputSent = false, focusRequested = false,
+                status = "inspected-target",
+                target,
+                inputSent = false,
+                focusRequested = false,
                 desktopInputsDown = WindowsControlDesktop.ReadPressedInputs()
             });
             return 0;
@@ -495,10 +511,14 @@ internal static class MoveKeyCommand
             Report(options.Json, new
             {
                 status = "windows-keyup-inserted-game-state-unverified",
-                machine = ready.MachineName, processId = ready.ProcessId,
+                machine = ready.MachineName,
+                processId = ready.ProcessId,
                 processStartUtcTicks = ready.ProcessStartUtcTicks,
-                executableSha256 = ready.ExecutableSha256, focusAttempt,
-                keys = options.Keys, releaseOnly = true, keyDownAttempts = 0,
+                executableSha256 = ready.ExecutableSha256,
+                focusAttempt,
+                keys = options.Keys,
+                releaseOnly = true,
+                keyDownAttempts = 0,
                 keySendEvents = recoveryTimeline.Snapshot(),
                 desktopInputsDown = WindowsControlDesktop.ReadPressedInputs(),
                 gameResponseVerified = false
@@ -602,11 +622,13 @@ internal static class MoveKeyCommand
         Report(options.Json, new
         {
             status = success ? "input-inserted-game-response-unverified" : "input-uncertain",
-            machine = ready.MachineName, processId = ready.ProcessId,
+            machine = ready.MachineName,
+            processId = ready.ProcessId,
             processStartUtcTicks = ready.ProcessStartUtcTicks,
             executableSha256 = ready.ExecutableSha256,
             focusAttempt,
-            keys = options.Keys, holdMilliseconds = options.HoldMilliseconds,
+            keys = options.Keys,
+            holdMilliseconds = options.HoldMilliseconds,
             windowsInputInserted = insertion.WindowsInputInserted,
             windowsInputAttempted = insertion.WindowsInputAttempted,
             allRequestedKeyDownsInserted = insertion.AllRequestedKeyDownsInserted,
@@ -615,12 +637,21 @@ internal static class MoveKeyCommand
             insertionUncertain = insertion.InsertionUncertain,
             boundedActionCompleted = insertion.BoundedActionCompleted,
             releaseSucceeded = result.ReleaseSucceeded,
-            targetLost = result.TargetLost, cancelled = result.Cancelled,
+            targetLost = result.TargetLost,
+            cancelled = result.Cancelled,
             observedMilliseconds = Math.Round(result.ObservedDuration.TotalMilliseconds, 1),
-            inputCallTiming, keySendEvents, keyHoldWindows,
-            xyzSettleMilliseconds = options.XyzSettleMilliseconds, xyzSettleApplied,
-            actorPoseSettleMilliseconds = options.ActorPoseSettleMilliseconds, actorPoseSettleApplied,
-            gameResponseVerified = false, xyzFeedback, poseFeedback, turnRateCandidate, result.Error,
+            inputCallTiming,
+            keySendEvents,
+            keyHoldWindows,
+            xyzSettleMilliseconds = options.XyzSettleMilliseconds,
+            xyzSettleApplied,
+            actorPoseSettleMilliseconds = options.ActorPoseSettleMilliseconds,
+            actorPoseSettleApplied,
+            gameResponseVerified = false,
+            xyzFeedback,
+            poseFeedback,
+            turnRateCandidate,
+            result.Error,
             keyReleaseFallbacks = input.ReleaseFallbacks
         });
         return success ? 0 : 2;
@@ -832,7 +863,8 @@ internal static class MoveKeyCommand
     {
         var serialized = JsonSerializer.Serialize(result, new JsonSerializerOptions
         {
-            WriteIndented = !json, PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            WriteIndented = !json,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         });
         Console.WriteLine(serialized);
     }

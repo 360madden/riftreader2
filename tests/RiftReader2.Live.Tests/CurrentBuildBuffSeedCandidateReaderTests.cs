@@ -11,7 +11,8 @@ public sealed class CurrentBuildBuffSeedCandidateReaderTests
     const ulong Sentinel = Context + 0x310;
 
     [Fact] public void EmptyList() { var s = Fixture(); Assert.Empty(Read(s).Nodes); }
-    [Fact] public void TwoNodesPreserveRawObjectAndUnreadableObject()
+    [Fact]
+    public void TwoNodesPreserveRawObjectAndUnreadableObject()
     {
         var s = Fixture(); s.Q(Sentinel, Node1); s.Node(Node1, Node2, Object1, 0x23000000); s.Node(Node2, Sentinel, 0x24000000, 0);
         s.Q(Object1, Module + 0x2000); s.D(Object1 + 8, 17); s.Q(Object1 + 0x10, Descriptor);
@@ -58,14 +59,16 @@ public sealed class CurrentBuildBuffSeedCandidateReaderTests
         Assert.Null(raw.StateDword80); Assert.Equal(status, raw.StateDword80Status);
         Assert.Null(raw.StateDword88); Assert.Equal(status, raw.StateStatus);
     }
-    [Fact] public void UnreadableGroupingInputPreservesExistingStateAndTiming()
+    [Fact]
+    public void UnreadableGroupingInputPreservesExistingStateAndTiming()
     {
         var s = TimingFixture(12345678, 0); var node = ReadTiming(s).Nodes[0];
         Assert.Null(node.RawObject.StateDword80); Assert.Equal("unavailable", node.RawObject.StateDword80Status);
         Assert.Equal(0U, node.RawObject.StateDword88); Assert.Equal("raw-candidate", node.RawObject.StateStatus);
         Assert.Equal("raw-timing-candidate", node.Timing!.Status);
     }
-    [Fact] public void ReadableGroupingInputDoesNotRequireTimingState()
+    [Fact]
+    public void ReadableGroupingInputDoesNotRequireTimingState()
     {
         var s = TimingFixture(12345678, 0); s.Q(Object1 + 0x20, 0x200C0000); s.D(0x200C0080, 1);
         var node = ReadTiming(s).Nodes[0];
@@ -81,7 +84,8 @@ public sealed class CurrentBuildBuffSeedCandidateReaderTests
         var s = TimingFixture(12345678, 0); s.D(0x20080080, 1); s.Changed = (address, count);
         Assert.Throws<InvalidDataException>(() => Read(s));
     }
-    [Fact] public void RejectsCycleAndChangedNode()
+    [Fact]
+    public void RejectsCycleAndChangedNode()
     {
         var s = Fixture(); s.Q(Sentinel, Node1); s.Node(Node1, Node1, 0, 0);
         Assert.Throws<InvalidDataException>(() => Read(s));
@@ -101,7 +105,8 @@ public sealed class CurrentBuildBuffSeedCandidateReaderTests
         Assert.Equal(expected - 5f, timing.Remaining!.Value, 5);
         Assert.Equal(0x2220UL, timing.ReferenceSlot48Rva);
     }
-    [Fact] public void SentinelAndChangedTimerAreNotNumeric()
+    [Fact]
+    public void SentinelAndChangedTimerAreNotNumeric()
     {
         var s = TimingFixture(12345678, 5);
         var timing = ReadTiming(s).Nodes[0].Timing!;
@@ -110,7 +115,8 @@ public sealed class CurrentBuildBuffSeedCandidateReaderTests
         s = TimingFixture(12345678, 0); s.Changed = (0x200A0018, 8);
         Assert.Throws<InvalidDataException>(() => ReadTiming(s));
     }
-    [Fact] public void DynamicFloatRequiresExactPropertyMetadata()
+    [Fact]
+    public void DynamicFloatRequiresExactPropertyMetadata()
     {
         var s = DynamicFixture(); var timing = ReadTiming(s).Nodes[0].Timing!;
         Assert.Equal("raw-timing-candidate", timing.Status);
@@ -175,16 +181,16 @@ public sealed class CurrentBuildBuffSeedCandidateReaderTests
             for (int i = 0; i < values.Length; i++) BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(i * 8), Module + values[i]);
             Bytes(Module + 0x303E8A8, b);
         }
-        public void Bytes(ulong a, byte[] b) => data[(a,b.Length)] = b.ToArray();
-        public void Q(ulong a, ulong v) { var b = new byte[8]; BinaryPrimitives.WriteUInt64LittleEndian(b, v); data[(a,8)] = b; }
-        public void D(ulong a, uint v) { var b = new byte[4]; BinaryPrimitives.WriteUInt32LittleEndian(b, v); data[(a,4)] = b; }
-        public void Node(ulong a, ulong next, ulong obj, ulong control) { Q(a,next); Q(a+0x10,obj); Q(a+0x18,control); }
+        public void Bytes(ulong a, byte[] b) => data[(a, b.Length)] = b.ToArray();
+        public void Q(ulong a, ulong v) { var b = new byte[8]; BinaryPrimitives.WriteUInt64LittleEndian(b, v); data[(a, 8)] = b; }
+        public void D(ulong a, uint v) { var b = new byte[4]; BinaryPrimitives.WriteUInt32LittleEndian(b, v); data[(a, 4)] = b; }
+        public void Node(ulong a, ulong next, ulong obj, ulong control) { Q(a, next); Q(a + 0x10, obj); Q(a + 0x18, control); }
         public NativeReadResult Read(ulong a, int n)
         {
-            var k=(a,n); var seen=reads.GetValueOrDefault(k); reads[k]=seen+1;
-            if (!data.TryGetValue(k,out var b)) return new("unavailable", [], null, "missing");
-            var copy=b.ToArray(); if (Changed == k && seen > 0) copy[0]^=1;
-            return new("success",copy,null,null);
+            var k = (a, n); var seen = reads.GetValueOrDefault(k); reads[k] = seen + 1;
+            if (!data.TryGetValue(k, out var b)) return new("unavailable", [], null, "missing");
+            var copy = b.ToArray(); if (Changed == k && seen > 0) copy[0] ^= 1;
+            return new("success", copy, null, null);
         }
         public ValueTask<string?> RevalidateAsync(CancellationToken _) => ValueTask.FromResult<string?>(null);
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;

@@ -58,12 +58,20 @@ internal static class CurrentBuildUnitLevelsSampleCommand
         if (await source.RevalidateAsync(ct) is not null)
             throw new InvalidDataException("Process identity invalidated.");
         ct.ThrowIfCancellationRequested();
-        await JsonReportWriter.WriteNewAsync(path, new {
-            schemaVersion = 1, contractVersion = "native-current-unit-levels-candidate/1",
-            status = "complete", observation = report }, ct);
+        await JsonReportWriter.WriteNewAsync(path, new
+        {
+            schemaVersion = 1,
+            contractVersion = "native-current-unit-levels-candidate/1",
+            status = "complete",
+            observation = report
+        }, ct);
         await output.WriteLineAsync(JsonSerializer.Serialize(
-            new { recordType = "native-current-unit-levels-summary/1",
-                  status = "complete", output = Path.GetFullPath(path) },
+            new
+            {
+                recordType = "native-current-unit-levels-summary/1",
+                status = "complete",
+                output = Path.GetFullPath(path)
+            },
             new JsonSerializerOptions(JsonFormat.Options) { WriteIndented = false }));
         return 0;
     }

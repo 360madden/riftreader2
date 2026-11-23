@@ -7,8 +7,13 @@ namespace RiftReader2.Live.Tests;
 
 public sealed class CurrentBuildFacingStreamTests
 {
-    private static readonly Dictionary<string, string> Options = new() {
-        ["--pid"] = "123", ["--start-ticks"] = "456", ["--samples"] = "2", ["--interval-ms"] = "20" };
+    private static readonly Dictionary<string, string> Options = new()
+    {
+        ["--pid"] = "123",
+        ["--start-ticks"] = "456",
+        ["--samples"] = "2",
+        ["--interval-ms"] = "20"
+    };
     private sealed class Session : IReadOnlyNativeMemorySession
     {
         public NativeProcessIdentity Identity { get; set; } = new(123, 456, "rift_x64.exe",
@@ -49,26 +54,37 @@ public sealed class CurrentBuildFacingStreamTests
         public Dictionary<string, string> OptionsOverride = new(Options);
         public Task<int> Run(TextWriter writer, CancellationToken ct = default) =>
             CurrentBuildFacingStreamCommand.RunAsync(OptionsOverride, writer, ct,
-                async (_, _, remaining, token) => { Assert.InRange(remaining.TotalMilliseconds, 0.001, 30_000);
+                async (_, _, remaining, token) =>
+                {
+                    Assert.InRange(remaining.TotalMilliseconds, 0.001, 30_000);
                     LeaseWaits.Add(remaining);
                     await Gate.WaitAsync(token); Assert.False(Held); Held = true; Acquires++;
-                    return new Lease(() => {
+                    return new Lease(() =>
+                    {
                         if (Sessions.Count > Releases) Assert.True(Sessions[^1].Disposed);
                         Held = false; Releases++; Gate.Release();
-                    }); },
-                (_, _, _) => { RegularOpens++; var session = Create?.Invoke(Sessions.Count) ?? new Session(); Sessions.Add(session);
-                    return Task.FromResult<IReadOnlyNativeMemorySession>(session); },
+                    });
+                },
+                (_, _, _) =>
+                {
+                    RegularOpens++; var session = Create?.Invoke(Sessions.Count) ?? new Session(); Sessions.Add(session);
+                    return Task.FromResult<IReadOnlyNativeMemorySession>(session);
+                },
                 (session, _) => Read?.Invoke((Session)session) ?? Sample((Session)session), Elapsed, ReadTarget,
-                UseExecutablePin ? (_, _) => {
+                UseExecutablePin ? (_, _) =>
+                {
                     PinCreates++;
                     return Task.FromResult<IAsyncDisposable>(new ExecutablePin(() => PinReleases++));
-                } : null,
-                UseExecutablePin ? (_, _, _, _) => {
+                }
+        : null,
+                UseExecutablePin ? (_, _, _, _) =>
+                {
                     PinnedOpens++;
                     var session = Create?.Invoke(Sessions.Count) ?? new Session();
                     Sessions.Add(session);
                     return Task.FromResult<IReadOnlyNativeMemorySession>(session);
-                } : null);
+                }
+        : null);
     }
     private sealed class CheckingWriter(Harness harness) : StringWriter
     {
@@ -219,13 +235,15 @@ public sealed class CurrentBuildFacingStreamTests
     {
         using var cts = new CancellationTokenSource();
         var reads = 0;
-        var h = new Harness {
+        var h = new Harness
+        {
             UseExecutablePin = true,
             Elapsed = () => TimeSpan.FromSeconds(700)
         };
         h.OptionsOverride["--duration-ms"] = "0";
         h.OptionsOverride["--samples"] = "0";
-        h.Read = session => {
+        h.Read = session =>
+        {
             reads++;
             if (reads == 3) cts.Cancel();
             return Sample(session);
@@ -301,7 +319,8 @@ public sealed class CurrentBuildFacingStreamTests
     public async Task OptionalTargetAbsentAndUnstableCameraRemainExplicit()
     {
         var h = new Harness(); h.OptionsOverride["--include-target"] = "true"; var targetReads = 0;
-        h.ReadTarget = source => {
+        h.ReadTarget = source =>
+        {
             targetReads++; var now = DateTimeOffset.UtcNow;
             var self = new PairedPositionCandidateSample("candidate", "42", "u000000000000002A", new(0, 0, 0), now, now, 0, 0);
             return new(source.Identity, now, now, "test", self, null, "unavailable", "same", "same", 0, null, null);
@@ -318,14 +337,16 @@ public sealed class CurrentBuildFacingStreamTests
     public async Task MovingCameraMarksTargetProjectionUnstable()
     {
         var h = new Harness(); h.OptionsOverride["--include-target"] = "true"; var reads = 0;
-        h.Read = session => {
+        h.Read = session =>
+        {
             reads++;
             var camera = new CurrentBuildOpticalCameraCandidate("available-candidate", null, "300000",
                 new float[9], new float[3], new float[3], Enumerable.Repeat((uint)reads, 15).ToArray(), 0, 0, new double[3])
-                { ProjectionRowMajor = new float[16], ViewportLeftRightTopBottom = new float[4], ProjectionRawBits = new uint[20] };
+            { ProjectionRowMajor = new float[16], ViewportLeftRightTopBottom = new float[4], ProjectionRawBits = new uint[20] };
             return Sample(session) with { OpticalCameraCandidate = camera };
         };
-        h.ReadTarget = source => {
+        h.ReadTarget = source =>
+        {
             var now = DateTimeOffset.UtcNow;
             var self = new PairedPositionCandidateSample("candidate", "42", "u000000000000002A", new(0, 0, 0), now, now, 0, 0);
             var target = new PairedPositionCandidateSample("candidate", "99", "u0000000000000063", new(1, 0, 1), now, now, 0, 0);
@@ -345,7 +366,8 @@ public sealed class CurrentBuildFacingStreamTests
         h.ReadTarget = _ => throw new Exception("target read must not occur");
         Assert.Equal(0, await h.Run(new StringWriter()));
         h = new Harness(); h.OptionsOverride["--include-target"] = "true";
-        h.ReadTarget = source => {
+        h.ReadTarget = source =>
+        {
             var now = DateTimeOffset.UtcNow;
             var self = new PairedPositionCandidateSample("candidate", "99", "u0000000000000063", new(0, 0, 0), now, now, 0, 0);
             return new(source.Identity, now, now, "test", self, null, "unavailable", "same", "same", 0, null, null);

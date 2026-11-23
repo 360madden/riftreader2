@@ -120,7 +120,8 @@ public sealed class TurnProbeCliTests : IDisposable
                 moduleBaseAddress = 0x140000000UL,
                 moduleSize = 50_000_000L
             },
-            startedAtUtc = start, completedAtUtc = end,
+            startedAtUtc = start,
+            completedAtUtc = end,
             playerKeyDecimal = "123456",
             actorComponentDecimal = "305419896",
             actorHeadingQualified = false,

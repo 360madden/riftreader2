@@ -7,7 +7,8 @@ public sealed class NativeReadFileLeaseTests
     const string Sha = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
     static readonly TimeSpan Short = TimeSpan.FromMilliseconds(100);
 
-    [Fact] public async Task SameEpochContendsAndDifferentEpochDoesNot()
+    [Fact]
+    public async Task SameEpochContendsAndDifferentEpochDoesNot()
     {
         using var dir = new TestDirectory();
         await using var first = await Open(dir.Path, 123, 456);
@@ -16,7 +17,8 @@ public sealed class NativeReadFileLeaseTests
         await using var third = await Open(dir.Path, 124, 456);
     }
 
-    [Fact] public async Task AsyncDisposeReleasesWithoutDeletingAndIsIdempotent()
+    [Fact]
+    public async Task AsyncDisposeReleasesWithoutDeletingAndIsIdempotent()
     {
         using var dir = new TestDirectory();
         var first = await Open(dir.Path, 1, 2);
@@ -26,7 +28,8 @@ public sealed class NativeReadFileLeaseTests
         await using var second = await Open(dir.Path, 1, 2);
     }
 
-    [Fact] public async Task WaitingCancellationDoesNotReleaseCurrentOwner()
+    [Fact]
+    public async Task WaitingCancellationDoesNotReleaseCurrentOwner()
     {
         using var dir = new TestDirectory();
         await using var first = await Open(dir.Path, 1, 2);
@@ -36,7 +39,8 @@ public sealed class NativeReadFileLeaseTests
         await Assert.ThrowsAsync<TimeoutException>(() => Open(dir.Path, 1, 2, Short));
     }
 
-    [Fact] public async Task InvalidIdentityAndBoundsFailBeforeAcquisition()
+    [Fact]
+    public async Task InvalidIdentityAndBoundsFailBeforeAcquisition()
     {
         using var dir = new TestDirectory();
         await Assert.ThrowsAsync<ArgumentException>(() => NativeReadFileLease.AcquireAsync(0, 2, Sha, Short, default, dir.Path));
@@ -45,7 +49,8 @@ public sealed class NativeReadFileLeaseTests
         Assert.Empty(Directory.GetFiles(dir.Path));
     }
 
-    [Fact] public async Task StableLockFileSymlinkIsRejectedWhenSupported()
+    [Fact]
+    public async Task StableLockFileSymlinkIsRejectedWhenSupported()
     {
         if (!OperatingSystem.IsWindows()) return;
         using var dir = new TestDirectory();
@@ -57,20 +62,27 @@ public sealed class NativeReadFileLeaseTests
         await File.WriteAllTextAsync(target, "untouched");
         try { File.CreateSymbolicLink(path, target); }
         catch (Exception e) when (e is UnauthorizedAccessException or PlatformNotSupportedException
-            || e is IOException io && (io.HResult & 0xFFFF) == 1314) { return; }
+            || e is IOException io && (io.HResult & 0xFFFF) == 1314)
+        { return; }
         await Assert.ThrowsAsync<IOException>(() => Open(dir.Path, 1, 2));
         Assert.Equal("untouched", await File.ReadAllTextAsync(target));
     }
 
-    [Fact] public async Task OtherProcessCrashReleasesKernelHandle()
+    [Fact]
+    public async Task OtherProcessCrashReleasesKernelHandle()
     {
         if (!OperatingSystem.IsWindows()) return;
         using var dir = new TestDirectory();
         var seed = await Open(dir.Path, 1, 2);
         seed.Dispose();
         var path = Assert.Single(Directory.GetFiles(dir.Path, "*.lock"));
-        var ps = new ProcessStartInfo("powershell.exe") { UseShellExecute = false,
-            RedirectStandardOutput = true, RedirectStandardInput = true, CreateNoWindow = true };
+        var ps = new ProcessStartInfo("powershell.exe")
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardInput = true,
+            CreateNoWindow = true
+        };
         ps.ArgumentList.Add("-NoProfile"); ps.ArgumentList.Add("-NonInteractive"); ps.ArgumentList.Add("-Command");
         var literal = path.Replace("'", "''");
         ps.ArgumentList.Add("$f=[IO.File]::Open('" + literal + "',[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None);[Console]::WriteLine('HELD');[Console]::In.ReadLine()|Out-Null;$f.Dispose()");

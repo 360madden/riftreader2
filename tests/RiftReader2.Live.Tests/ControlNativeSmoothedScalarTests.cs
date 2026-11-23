@@ -32,8 +32,11 @@ public sealed class ControlNativeSmoothedScalarTests
     [Fact]
     public async Task WrongEpochOrInvalidatedSessionRefusesReport()
     {
-        var changedEpoch = new Fake { Identity = new(123, 457, Config.ExecutablePath,
-            CurrentBuildPlayerLookup.GameSha256, 0x140000000, 0x4000000) };
+        var changedEpoch = new Fake
+        {
+            Identity = new(123, 457, Config.ExecutablePath,
+            CurrentBuildPlayerLookup.GameSha256, 0x140000000, 0x4000000)
+        };
         await Assert.ThrowsAsync<InvalidOperationException>(() => Capture(changedEpoch));
         Assert.True(changedEpoch.Disposed);
         Assert.False(changedEpoch.Revalidated);

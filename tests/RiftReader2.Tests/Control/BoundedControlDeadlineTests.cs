@@ -249,7 +249,8 @@ public sealed class BoundedControlDeadlineTests
         {
             try { completion.SetResult(execute().GetAwaiter().GetResult()); }
             catch (Exception exception) { completion.SetException(exception); }
-        }) { IsBackground = true }.Start();
+        })
+        { IsBackground = true }.Start();
         return completion.Task;
     }
 

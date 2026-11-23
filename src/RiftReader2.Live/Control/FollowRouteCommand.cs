@@ -366,7 +366,8 @@ internal static class FollowRouteCommand
             || seconds > .20 || Distance(after, before.X, before.Z) > Math.Min(2, 15 * seconds + .1))
             return null;
         var fraction = 1 - afterPlane / motion;
-        var crossing = after with {
+        var crossing = after with
+        {
             X = before.X + fraction * (after.X - before.X),
             Y = before.Y + fraction * (after.Y - before.Y),
             Z = before.Z + fraction * (after.Z - before.Z),
@@ -1210,10 +1211,13 @@ internal static class FollowRouteCommand
                 var nextPause = Array.FindIndex(allGuides, offset, p => p.ControlPause);
                 var end = nextPause < 0 ? allGuides.Length : nextPause;
                 var target = nextPause < 0 ? null : allGuides[end];
-                var span = options with {
-                    X = target?.X ?? options.X, Z = target?.Z ?? options.Z,
+                var span = options with
+                {
+                    X = target?.X ?? options.X,
+                    Z = target?.Z ?? options.Z,
                     GoalY = target is null ? options.GoalY : target.Y,
-                    RoutePoints = allGuides[offset..end], ControlPauses = false,
+                    RoutePoints = allGuides[offset..end],
+                    ControlPauses = false,
                     ExpectedX = offset == 0 ? options.ExpectedX : pauseAnchor!.X,
                     ExpectedZ = offset == 0 ? options.ExpectedZ : pauseAnchor!.Z,
                     ExpectedBearing = offset == 0 ? options.ExpectedBearing : pauseAnchor!.Bearing,
@@ -1273,10 +1277,10 @@ internal static class FollowRouteCommand
                 down = input.ReadPressedInputs().ToArray();
                 if (!input.IsTargetCurrent() || down.Length != 0
                     || second.CompletedAtUtc - first.CompletedAtUtc < TimeSpan.FromMilliseconds(150)
-                    || Math.Sqrt(Math.Pow(first.X-second.X, 2) + Math.Pow(first.Y-second.Y, 2) + Math.Pow(first.Z-second.Z, 2)) > .05
+                    || Math.Sqrt(Math.Pow(first.X - second.X, 2) + Math.Pow(first.Y - second.Y, 2) + Math.Pow(first.Z - second.Z, 2)) > .05
                     || Math.Abs(HeadingError(first.Bearing, second.Bearing)) > .5
                     || Distance(first, target.X, target.Z) > ArrivalRadius || Distance(second, target.X, target.Z) > ArrivalRadius
-                    || target.Y is double y && (Math.Abs(first.Y-y) > .5 || Math.Abs(second.Y-y) > .5))
+                    || target.Y is double y && (Math.Abs(first.Y - y) > .5 || Math.Abs(second.Y - y) > .5))
                     throw new InvalidOperationException("control-pause-not-settled");
                 if (truncated && options.SurvivalInterrupt) throw new InvalidOperationException("path-truncated");
                 var a = Sample(first); var b = Sample(second);
@@ -1356,7 +1360,8 @@ internal static class FollowRouteCommand
             {
                 MoveKeyCommand.Report(options.Json, new
                 {
-                    status = "preview-only", target,
+                    status = "preview-only",
+                    target,
                     playerKey = options.ExpectedPlayerKey.ToString(CultureInfo.InvariantCulture),
                     goal = ReceiptGoal(options),
                     position = new { x = preFocusPose.X, y = preFocusPose.Y, z = preFocusPose.Z },
@@ -1373,7 +1378,8 @@ internal static class FollowRouteCommand
                     finalDistance = Distance(preFocusPose, options.X, options.Z),
                     stopFile = options.StopFile,
                     owner = new { processId = options.OwnerPid, processStartUtcTicks = options.OwnerStartTicks },
-                    inputSent = false, releaseSucceeded = true
+                    inputSent = false,
+                    releaseSucceeded = true
                 });
                 return 0;
             }
@@ -1402,9 +1408,17 @@ internal static class FollowRouteCommand
                 var result = await FollowWithPausesAsync(options, reader.ReadAsync,
                     new KeyInputAdapter(keyInput), Safety, token: token, onWaypointPassed: pass =>
                     {
-                        MoveKeyCommand.Report(true, new { status = "waypoint-passed",
-                            pass.Index, pass.Name, pass.Position, pass.ObservedAtUtc, pass.Source,
-                            pass.CrossingBefore, pass.CrossingAfter });
+                        MoveKeyCommand.Report(true, new
+                        {
+                            status = "waypoint-passed",
+                            pass.Index,
+                            pass.Name,
+                            pass.Position,
+                            pass.ObservedAtUtc,
+                            pass.Source,
+                            pass.CrossingBefore,
+                            pass.CrossingAfter
+                        });
                         Console.Out.Flush();
                     });
                 completedResult = result;
@@ -1412,9 +1426,12 @@ internal static class FollowRouteCommand
                 var receipt = ProjectResult(result);
                 MoveKeyCommand.Report(options.Json, new
                 {
-                    result.Status, result.Reason, target = ready,
+                    result.Status,
+                    result.Reason,
+                    target = ready,
                     playerKey = options.ExpectedPlayerKey.ToString(CultureInfo.InvariantCulture),
-                    goal = ReceiptGoal(options), receipt.Position,
+                    goal = ReceiptGoal(options),
+                    receipt.Position,
                     receipt.BodyBearingDegreesCandidate,
                     receipt.OpticalCameraBearingDegreesCandidate,
                     receipt.OpticalCameraPitchDegreesCandidate,
@@ -1423,16 +1440,28 @@ internal static class FollowRouteCommand
                     survivalInterrupt = options.SurvivalInterrupt,
                     survivalMode = SurvivalMode(options),
                     receipt.SurvivalSnapshot,
-                    receipt.InitialDistance, receipt.FinalDistance, receipt.ReadCount, receipt.Path, receipt.PassedWaypoints,
+                    receipt.InitialDistance,
+                    receipt.FinalDistance,
+                    receipt.ReadCount,
+                    receipt.Path,
+                    receipt.PassedWaypoints,
                     controlPauseVersion = options.ControlPauses ? 1 : (int?)null,
-                    controlPauseReceipts = result.ControlPauseReceipts ?? [], pathTruncated = result.PathTruncated,
-                    receipt.ElapsedMilliseconds, receipt.InputSent, receipt.ReleaseSucceeded,
-                    keySendEvents = timeline.Snapshot(), releaseFallbacks = keyInput.ReleaseFallbacks,
+                    controlPauseReceipts = result.ControlPauseReceipts ?? [],
+                    pathTruncated = result.PathTruncated,
+                    receipt.ElapsedMilliseconds,
+                    receipt.InputSent,
+                    receipt.ReleaseSucceeded,
+                    keySendEvents = timeline.Snapshot(),
+                    releaseFallbacks = keyInput.ReleaseFallbacks,
                     desktopInputsDown = WindowsControlDesktop.ReadPressedInputs(),
                     stopFile = options.StopFile,
                     owner = new { processId = options.OwnerPid, processStartUtcTicks = options.OwnerStartTicks },
-                    watchdog = new { poseTimeoutMilliseconds = PoseTimeoutMilliseconds,
-                        pollMilliseconds = WatchdogPollMilliseconds, maxSeconds = options.MaxSeconds }
+                    watchdog = new
+                    {
+                        poseTimeoutMilliseconds = PoseTimeoutMilliseconds,
+                        pollMilliseconds = WatchdogPollMilliseconds,
+                        maxSeconds = options.MaxSeconds
+                    }
                 });
                 return ResultExitCode(result.Status);
             }
@@ -1448,7 +1477,8 @@ internal static class FollowRouteCommand
             MoveKeyCommand.Report(json, new
             {
                 status = executionStarted ? "halted" : "blocked",
-                reason = error.Message, errorType = error.GetType().Name,
+                reason = error.Message,
+                errorType = error.GetType().Name,
                 target = completedTarget,
                 playerKey = completedTarget is null ? null
                     : options?.ExpectedPlayerKey.ToString(CultureInfo.InvariantCulture),
@@ -1479,8 +1509,12 @@ internal static class FollowRouteCommand
                 { processId = options.OwnerPid, processStartUtcTicks = options.OwnerStartTicks },
                 inputSent = executionStarted,
                 receipt.ReleaseSucceeded,
-                watchdog = options is null ? null : new { poseTimeoutMilliseconds = PoseTimeoutMilliseconds,
-                    pollMilliseconds = WatchdogPollMilliseconds, maxSeconds = options.MaxSeconds }
+                watchdog = options is null ? null : new
+                {
+                    poseTimeoutMilliseconds = PoseTimeoutMilliseconds,
+                    pollMilliseconds = WatchdogPollMilliseconds,
+                    maxSeconds = options.MaxSeconds
+                }
             });
             return executionStarted ? 3 : 2;
         }

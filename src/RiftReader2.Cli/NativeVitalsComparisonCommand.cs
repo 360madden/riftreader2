@@ -61,18 +61,31 @@ internal static class NativeVitalsComparisonCommand
             identity = new { executableSha256 = before.Build, unitKey = before.PlayerKey, sameProcessEpoch = sameEpoch },
             resourceKindCandidates = new
             {
-                before = before.ResourceKindCandidate, after = after.ResourceKindCandidate,
+                before = before.ResourceKindCandidate,
+                after = after.ResourceKindCandidate,
                 same = before.ResourceKindCandidate.HasValue && after.ResourceKindCandidate.HasValue
                     ? before.ResourceKindCandidate == after.ResourceKindCandidate : (bool?)null
             },
             source = new
             {
-                before = new { path = before.Path, sha256 = before.Sha256, processId = before.Pid,
-                    processStartUtcTicks = before.StartTicks, startedAtUtc = before.Started,
-                    completedAtUtc = before.Completed },
-                after = new { path = after.Path, sha256 = after.Sha256, processId = after.Pid,
-                    processStartUtcTicks = after.StartTicks, startedAtUtc = after.Started,
-                    completedAtUtc = after.Completed }
+                before = new
+                {
+                    path = before.Path,
+                    sha256 = before.Sha256,
+                    processId = before.Pid,
+                    processStartUtcTicks = before.StartTicks,
+                    startedAtUtc = before.Started,
+                    completedAtUtc = before.Completed
+                },
+                after = new
+                {
+                    path = after.Path,
+                    sha256 = after.Sha256,
+                    processId = after.Pid,
+                    processStartUtcTicks = after.StartTicks,
+                    startedAtUtc = after.Started,
+                    completedAtUtc = after.Completed
+                }
             },
             intervalSeconds = seconds,
             summary = new

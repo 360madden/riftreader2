@@ -12,7 +12,8 @@ public sealed class CurrentBuildPairedPositionCandidateReaderTests
         SelfEntity = 0x20090000, TargetKey = 0x80000002CD0034D1;
     static readonly DateTimeOffset Epoch = new(2026, 11, 8, 0, 0, 0, TimeSpan.Zero);
 
-    [Fact] public void SameSessionMissingTargetHealthHasOwnedPairAndLocalClock()
+    [Fact]
+    public void SameSessionMissingTargetHealthHasOwnedPairAndLocalClock()
     {
         var s = Fixture(); var calls = 0;
         var result = Read(s, _ => { calls++; return Context(s); });
@@ -33,7 +34,8 @@ public sealed class CurrentBuildPairedPositionCandidateReaderTests
         Assert.Contains("candidate-only", result.Qualification);
     }
 
-    [Fact] public void PresentHealthCannotBypassRealVitalsReader()
+    [Fact]
+    public void PresentHealthCannotBypassRealVitalsReader()
     {
         var s = Fixture(); s.Put(Entity + 0x18, [0]);
         s.Put(Components, Q(Health)); s.Put(Health + 0x10, Q(Entity));
@@ -42,7 +44,8 @@ public sealed class CurrentBuildPairedPositionCandidateReaderTests
         Assert.Throws<InvalidDataException>(() => Read(s));
     }
 
-    [Fact] public void MissingTargetAndPositionStayExplicit()
+    [Fact]
+    public void MissingTargetAndPositionStayExplicit()
     {
         var s = Fixture(); var noTarget = Read(s, _ => Context(s, null));
         Assert.Equal("target-unavailable", noTarget.Status);
@@ -56,7 +59,8 @@ public sealed class CurrentBuildPairedPositionCandidateReaderTests
         Assert.NotNull(noPosition.Self.Position);
     }
 
-    [Fact] public void SelectionSelfAndProcessIdentityChangesReject()
+    [Fact]
+    public void SelectionSelfAndProcessIdentityChangesReject()
     {
         foreach (var change in new[] { "target", "self", "entity", "build", "module" })
         {
@@ -77,7 +81,8 @@ public sealed class CurrentBuildPairedPositionCandidateReaderTests
         }
     }
 
-    [Fact] public void SelfMutationDuringTargetAcquisitionRejects()
+    [Fact]
+    public void SelfMutationDuringTargetAcquisitionRejects()
     {
         var s = Fixture();
         s.OnRead = (address, _) =>
@@ -87,7 +92,8 @@ public sealed class CurrentBuildPairedPositionCandidateReaderTests
         Assert.Throws<InvalidDataException>(() => Read(s));
     }
 
-    [Fact] public void SourceOwnerAndBacklinksReject()
+    [Fact]
+    public void SourceOwnerAndBacklinksReject()
     {
         var s = Fixture(); s.Put(SelfPosition + 0x10, Q(SelfEntity + 8));
         Assert.Throws<InvalidDataException>(() => Read(s));
@@ -97,7 +103,8 @@ public sealed class CurrentBuildPairedPositionCandidateReaderTests
         Assert.Throws<InvalidDataException>(() => Read(s, verify: () => throw new InvalidDataException("owner changed")));
     }
 
-    [Fact] public void ClockSkewBudgetAndUtcRegressionReject()
+    [Fact]
+    public void ClockSkewBudgetAndUtcRegressionReject()
     {
         var s = Fixture(); int n = 0;
         Assert.Throws<InvalidDataException>(() => Read(s, clock: () => (Epoch.AddMilliseconds(++n * 300), n * 300), maxSpan: 1000));
@@ -107,7 +114,8 @@ public sealed class CurrentBuildPairedPositionCandidateReaderTests
         Assert.Throws<ArgumentOutOfRangeException>(() => Read(s, maxSpan: 0));
     }
 
-    [Fact] public void WrongFullTargetKeyAndInvalidBuildReject()
+    [Fact]
+    public void WrongFullTargetKeyAndInvalidBuildReject()
     {
         var s = Fixture(); s.Put(Bucket, Node(0x10000002CD0034D1, Entity));
         Assert.Throws<InvalidDataException>(() => Read(s));

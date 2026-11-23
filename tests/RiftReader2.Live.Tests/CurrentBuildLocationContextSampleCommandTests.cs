@@ -151,7 +151,9 @@ public sealed class CurrentBuildLocationContextSampleCommandTests
         Assert.Equal(new[] { "lease-acquire", "open", "read", "revalidate", "session-dispose-start", "session-dispose-end", "lease-dispose" }, events);
     }
 
-    [Theory] [InlineData(false)] [InlineData(true)]
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task LeaseTimeoutOrCancellationCannotOpenOrPublish(bool cancellation)
     {
         using var f = new Fixture(); var output = new StringWriter();
@@ -181,7 +183,9 @@ public sealed class CurrentBuildLocationContextSampleCommandTests
         Assert.True(failedLease.Disposed); Assert.False(File.Exists(failed.Path));
     }
 
-    [Theory] [InlineData(false)] [InlineData(true)]
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task OpenOrRevalidationFailureReleasesLease(bool failedRevalidation)
     {
         using var f = new Fixture(); var lease = new TestLease(); var output = new StringWriter();

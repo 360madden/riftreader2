@@ -46,10 +46,19 @@ internal static class CurrentBuildUnitTemplateNamesSampleCommand
         var observation = Read(source, keys, () => WindowsThreadTlsSnapshot.Capture(pid), ct);
         if (await source.RevalidateAsync(ct) is not null) throw new InvalidDataException("Process identity invalidated.");
         ct.ThrowIfCancellationRequested();
-        await JsonReportWriter.WriteNewAsync(path, new { schemaVersion = 1,
-            contractVersion = "native-unit-template-names-candidate/1", status = "complete", observation }, ct);
-        await output.WriteLineAsync(JsonSerializer.Serialize(new { recordType = "native-unit-template-names-summary/1",
-            status = "complete", output = Path.GetFullPath(path) }, new JsonSerializerOptions(JsonFormat.Options) { WriteIndented = false }));
+        await JsonReportWriter.WriteNewAsync(path, new
+        {
+            schemaVersion = 1,
+            contractVersion = "native-unit-template-names-candidate/1",
+            status = "complete",
+            observation
+        }, ct);
+        await output.WriteLineAsync(JsonSerializer.Serialize(new
+        {
+            recordType = "native-unit-template-names-summary/1",
+            status = "complete",
+            output = Path.GetFullPath(path)
+        }, new JsonSerializerOptions(JsonFormat.Options) { WriteIndented = false }));
         return 0;
     }
 

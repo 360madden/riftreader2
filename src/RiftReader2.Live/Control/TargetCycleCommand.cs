@@ -121,14 +121,24 @@ internal static class TargetCycleCommand
         {
             var release = input?.Attempted != true || input.Released && !pressed.Contains("tab")
                 && !pressed.Contains("input-state-unavailable");
-            MoveKeyCommand.Report(args.Contains("--json"), new { status, reason, target,
+            MoveKeyCommand.Report(args.Contains("--json"), new
+            {
+                status,
+                reason,
+                target,
                 playerKey = pins?.PlayerKey.ToString(CultureInfo.InvariantCulture),
                 selectedTargetKeyBefore = pins?.TargetKey.ToString(CultureInfo.InvariantCulture),
-                selectionReadAtUtc = pins?.CompletedAtUtc, stopFile = options?.StopFile,
+                selectionReadAtUtc = pins?.CompletedAtUtc,
+                stopFile = options?.StopFile,
                 owner = options is null ? null : new { processId = options.OwnerPid, processStartUtcTicks = options.OwnerStart },
-                inputSent = input?.Attempted == true, keyDownInserted = input?.Inserted == true,
-                releaseSucceeded = release, desktopInputsDown = pressed, releaseFallback = fallback,
-                holdMilliseconds = 40, responseVerified = false });
+                inputSent = input?.Attempted == true,
+                keyDownInserted = input?.Inserted == true,
+                releaseSucceeded = release,
+                desktopInputsDown = pressed,
+                releaseFallback = fallback,
+                holdMilliseconds = 40,
+                responseVerified = false
+            });
             return status is "ready" or "completed" ? 0 : status == "blocked" ? 2 : 3;
         }
         try

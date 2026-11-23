@@ -10,7 +10,8 @@ public sealed class CurrentBuildPairedPositionSampleCommandTests : IDisposable
     string PathFor(string file = "report.json") => Path.Combine(directory, file);
     Dictionary<string, string> Options() => new() { ["--pid"] = "123", ["--start-ticks"] = "456", ["--output"] = PathFor() };
 
-    [Fact] public async Task OneSessionRevalidatesBeforeAtomicMissingTargetPublication()
+    [Fact]
+    public async Task OneSessionRevalidatesBeforeAtomicMissingTargetPublication()
     {
         var s = new Fake(); var opened = 0; var read = 0; var output = new StringWriter();
         s.OnRevalidate = () => Assert.False(File.Exists(PathFor()));
@@ -39,15 +40,21 @@ public sealed class CurrentBuildPairedPositionSampleCommandTests : IDisposable
         Assert.Contains("native-current-paired-position-candidate-summary/1", output.ToString());
     }
 
-    [Fact] public async Task ExplicitTargetPositionAndBoundArePreserved()
+    [Fact]
+    public async Task ExplicitTargetPositionAndBoundArePreserved()
     {
         var s = new Fake(); var options = Options(); options["--max-pair-span-ms"] = "500";
         await Run(options, s, new StringWriter(), read: (source, span) =>
         {
             Assert.Equal(500, span);
             var o = Observation(s);
-            return o with { Target = o.Self with { UnitKey = "42", UnitIdCandidate = "u000000000000002A" }, TargetStatus = "candidate",
-                StartSkewMilliseconds = 2, MaximumSampleSeparationMilliseconds = 3 };
+            return o with
+            {
+                Target = o.Self with { UnitKey = "42", UnitIdCandidate = "u000000000000002A" },
+                TargetStatus = "candidate",
+                StartSkewMilliseconds = 2,
+                MaximumSampleSeparationMilliseconds = 3
+            };
         });
         using var json = JsonDocument.Parse(await File.ReadAllTextAsync(PathFor()));
         var o = json.RootElement.GetProperty("observation");
@@ -56,7 +63,8 @@ public sealed class CurrentBuildPairedPositionSampleCommandTests : IDisposable
         Assert.Equal(3, o.GetProperty("maximumSampleSeparationMilliseconds").GetDouble());
     }
 
-    [Fact] public async Task ExistingEvidenceRejectsBeforeSessionOpen()
+    [Fact]
+    public async Task ExistingEvidenceRejectsBeforeSessionOpen()
     {
         Directory.CreateDirectory(directory); await File.WriteAllTextAsync(PathFor(), "original");
         var opened = false;
@@ -64,7 +72,8 @@ public sealed class CurrentBuildPairedPositionSampleCommandTests : IDisposable
         Assert.False(opened); Assert.Equal("original", await File.ReadAllTextAsync(PathFor()));
     }
 
-    [Fact] public async Task InvalidArgumentsRejectBeforeOpening()
+    [Fact]
+    public async Task InvalidArgumentsRejectBeforeOpening()
     {
         foreach (var item in new[] { ("--pid", "0"), ("--start-ticks", "-1"), ("--max-pair-span-ms", "0"),
             ("--max-pair-span-ms", "5001"), ("--max-pair-span-ms", "true"), ("--output", " "), ("--unknown", "x") })
@@ -75,7 +84,8 @@ public sealed class CurrentBuildPairedPositionSampleCommandTests : IDisposable
         }
     }
 
-    [Fact] public async Task WrongOpenedOrObservationIdentityNeverPublishes()
+    [Fact]
+    public async Task WrongOpenedOrObservationIdentityNeverPublishes()
     {
         foreach (var field in new[] { "pid", "ticks", "sha", "module", "observation" })
         {
@@ -94,7 +104,8 @@ public sealed class CurrentBuildPairedPositionSampleCommandTests : IDisposable
         }
     }
 
-    [Fact] public async Task FailedRevalidationOrChangedModuleNeverPublishes()
+    [Fact]
+    public async Task FailedRevalidationOrChangedModuleNeverPublishes()
     {
         foreach (var changed in new[] { false, true })
         {
@@ -105,7 +116,8 @@ public sealed class CurrentBuildPairedPositionSampleCommandTests : IDisposable
         }
     }
 
-    [Fact] public async Task CancellationBeforeOpenAndAfterReadNeverPublishes()
+    [Fact]
+    public async Task CancellationBeforeOpenAndAfterReadNeverPublishes()
     {
         using var c = new CancellationTokenSource(); c.Cancel(); var opened = false;
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Run(Options(), new Fake(), new StringWriter(), (_, _) => opened = true, token: c.Token));
@@ -116,7 +128,8 @@ public sealed class CurrentBuildPairedPositionSampleCommandTests : IDisposable
         Assert.Equal(0, s.Revalidations); Assert.True(s.Disposed); Assert.False(File.Exists(PathFor()));
     }
 
-    [Fact] public async Task AcquisitionAndPublicationFailuresDisposeAndPreserveEvidence()
+    [Fact]
+    public async Task AcquisitionAndPublicationFailuresDisposeAndPreserveEvidence()
     {
         var s = new Fake();
         await Assert.ThrowsAsync<InvalidDataException>(() => Run(Options(), s, new StringWriter(), read: (_, _) => throw new InvalidDataException("source changed")));
@@ -128,7 +141,8 @@ public sealed class CurrentBuildPairedPositionSampleCommandTests : IDisposable
         Assert.Single(Directory.GetFiles(directory));
     }
 
-    [Fact] public async Task LeaseCoversOpenReadRevalidationAndAwaitedSessionDisposal()
+    [Fact]
+    public async Task LeaseCoversOpenReadRevalidationAndAwaitedSessionDisposal()
     {
         var s = new Fake(); var output = new StringWriter(); var events = new List<string>();
         var lease = new TestLease { OnDispose = () => { Assert.True(s.Disposed); events.Add("lease-dispose"); } };
@@ -150,7 +164,9 @@ public sealed class CurrentBuildPairedPositionSampleCommandTests : IDisposable
         Assert.Equal(new[] { "lease-acquire", "open", "read", "revalidate", "session-dispose-start", "session-dispose-end", "lease-dispose" }, events);
     }
 
-    [Theory] [InlineData(false)] [InlineData(true)]
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task LeaseTimeoutOrCancellationCannotOpenOrPublish(bool cancellation)
     {
         var s = new Fake(); var output = new StringWriter(); var opened = false;
@@ -164,7 +180,8 @@ public sealed class CurrentBuildPairedPositionSampleCommandTests : IDisposable
         Assert.Equal("", output.ToString());
     }
 
-    [Fact] public async Task CancellationAfterLeaseAndReadFailureBothReleaseWithoutEarlyUnlock()
+    [Fact]
+    public async Task CancellationAfterLeaseAndReadFailureBothReleaseWithoutEarlyUnlock()
     {
         var s = new Fake(); var output = new StringWriter(); var lease = new TestLease();
         using var cancel = new CancellationTokenSource(); var opened = false;
@@ -178,7 +195,9 @@ public sealed class CurrentBuildPairedPositionSampleCommandTests : IDisposable
         Assert.True(lease.Disposed); Assert.True(s.Disposed); Assert.False(File.Exists(PathFor()));
     }
 
-    [Theory] [InlineData(false)] [InlineData(true)]
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task OpenOrRevalidationFailureReleasesLease(bool failedRevalidation)
     {
         var s = new Fake(); var lease = new TestLease(); var output = new StringWriter();

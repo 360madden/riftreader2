@@ -127,8 +127,13 @@ public sealed class CurrentBuildFacingTests
         var attempts = 0;
         try
         {
-            var options = new Dictionary<string, string> { ["--pid"] = "123", ["--start-ticks"] = "456",
-                ["--samples"] = "1", ["--output"] = path };
+            var options = new Dictionary<string, string>
+            {
+                ["--pid"] = "123",
+                ["--start-ticks"] = "456",
+                ["--samples"] = "1",
+                ["--output"] = path
+            };
             var result = CurrentBuildFacingSampleCommand.RunAsync(options, new StringWriter(), default,
                 (_, _, _) => Task.FromResult<IAsyncDisposable>(new Lease(() => Assert.True(session.Disposed))),
                 (_, _, _) => Task.FromResult<IReadOnlyNativeMemorySession>(session),
@@ -205,9 +210,14 @@ public sealed class CurrentBuildFacingTests
             var path = Path.Combine(directory, "facing.json");
             var session = new Fake();
             var leaseReleased = false;
-            var options = new Dictionary<string, string> { ["--pid"] = "123",
-                ["--start-ticks"] = "456", ["--output"] = path,
-                ["--samples"] = "3", ["--interval-ms"] = "0" };
+            var options = new Dictionary<string, string>
+            {
+                ["--pid"] = "123",
+                ["--start-ticks"] = "456",
+                ["--output"] = path,
+                ["--samples"] = "3",
+                ["--interval-ms"] = "0"
+            };
             var reads = 0;
             Task<int> Run(Func<IReadOnlyNativeMemorySession, CurrentBuildFacingCandidate> read) =>
                 CurrentBuildFacingSampleCommand.RunAsync(options, new StringWriter(), CancellationToken.None,
@@ -250,8 +260,13 @@ public sealed class CurrentBuildFacingTests
         try
         {
             var session = new Fake { ComponentPosition = new(fault == 3 ? 110 : 100, 20, 200) };
-            var options = new Dictionary<string, string> { ["--pid"] = "123", ["--start-ticks"] = "456",
-                ["--output"] = path, ["--include-target"] = "true" };
+            var options = new Dictionary<string, string>
+            {
+                ["--pid"] = "123",
+                ["--start-ticks"] = "456",
+                ["--output"] = path,
+                ["--include-target"] = "true"
+            };
             var reads = 0;
             CurrentBuildFacingCandidate Facing(IReadOnlyNativeMemorySession source)
             {
@@ -263,7 +278,8 @@ public sealed class CurrentBuildFacingTests
                     transform[12..15], transform.Select(BitConverter.SingleToUInt32Bits).ToArray(),
                     0, 0, [7427, 871, 2936])
                 {
-                    ProjectionRowMajor = projection[..16], ViewportLeftRightTopBottom = projection[16..],
+                    ProjectionRowMajor = projection[..16],
+                    ViewportLeftRightTopBottom = projection[16..],
                     ProjectionRawBits = projection.Select(BitConverter.SingleToUInt32Bits).ToArray()
                 };
                 return Read((Fake)source) with { OpticalCameraCandidate = camera };
@@ -322,7 +338,7 @@ public sealed class CurrentBuildFacingTests
             fault == "guard" ? "override-unavailable" : guard, key, null, 1, "", 0, "", false);
         var camera = new CurrentBuildOpticalCameraCandidate("available-candidate", null, "300000",
             new float[9], new float[3], new float[3], new uint[15], 0, 0, new double[3])
-            { ProjectionRowMajor = new float[16], ViewportLeftRightTopBottom = new float[4], ProjectionRawBits = new uint[20] };
+        { ProjectionRowMajor = new float[16], ViewportLeftRightTopBottom = new float[4], ProjectionRawBits = new uint[20] };
         var selected = new CurrentBuildSelectedPositionObservation(
             fault == "epoch" ? id with { ProcessStartUtcTicks = 999 } : id, now, now, fault == "self" ? "41" : "42",
             status, "", key == 0 ? "0" : "99", fault == "key" ? "98" : key is > 0 ? "99" : null,

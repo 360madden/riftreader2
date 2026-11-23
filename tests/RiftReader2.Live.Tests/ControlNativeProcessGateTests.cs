@@ -18,8 +18,11 @@ public sealed class ControlNativeProcessGateTests
         GameSha, Path.GetTempPath());
 
     private static ControlAgentConfiguration Bound =>
-        Unbound with { BoundProcessId = Expected.ProcessId,
-                       BoundProcessStartUtcTicks = Expected.ProcessStartUtcTicks };
+        Unbound with
+        {
+            BoundProcessId = Expected.ProcessId,
+            BoundProcessStartUtcTicks = Expected.ProcessStartUtcTicks
+        };
 
     [Fact]
     public void UnboundSingleRiftSelectsExpectedProcess()

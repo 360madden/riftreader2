@@ -60,34 +60,35 @@ public sealed class ExperienceShardNativeLeaseTests
     }
 
     static Task<int> Run(int kind, string path, CancellationToken ct,
-        Func<int,long,CancellationToken,Task<IAsyncDisposable>> acquire,
-        Func<int,long,CancellationToken,Task<IReadOnlyNativeMemorySession>> open,
-        Func<IReadOnlyNativeMemorySession,ExperienceSeedObservation> seed,
-        Func<IReadOnlyNativeMemorySession,ExperienceValuesObservation> values,
-        Func<IReadOnlyNativeMemorySession,CurrentShardObservation> shard)
+        Func<int, long, CancellationToken, Task<IAsyncDisposable>> acquire,
+        Func<int, long, CancellationToken, Task<IReadOnlyNativeMemorySession>> open,
+        Func<IReadOnlyNativeMemorySession, ExperienceSeedObservation> seed,
+        Func<IReadOnlyNativeMemorySession, ExperienceValuesObservation> values,
+        Func<IReadOnlyNativeMemorySession, CurrentShardObservation> shard)
     {
-        var options = new Dictionary<string,string> { ["--pid"]="123", ["--start-ticks"]="456", ["--output"]=path };
-        return kind switch {
-            0 => CurrentBuildExperienceSeedSampleCommand.RunAsync(options,TextWriter.Null,ct,acquire,open,seed),
-            1 => CurrentBuildExperienceValuesSampleCommand.RunAsync(options,TextWriter.Null,ct,acquire,open,values),
-            _ => CurrentBuildCurrentShardSampleCommand.RunAsync(options,TextWriter.Null,ct,acquire,open,shard)
+        var options = new Dictionary<string, string> { ["--pid"] = "123", ["--start-ticks"] = "456", ["--output"] = path };
+        return kind switch
+        {
+            0 => CurrentBuildExperienceSeedSampleCommand.RunAsync(options, TextWriter.Null, ct, acquire, open, seed),
+            1 => CurrentBuildExperienceValuesSampleCommand.RunAsync(options, TextWriter.Null, ct, acquire, open, values),
+            _ => CurrentBuildCurrentShardSampleCommand.RunAsync(options, TextWriter.Null, ct, acquire, open, shard)
         };
     }
 
     static ExperienceSeedObservation Seed(NativeProcessIdentity id) =>
-        new(id,DateTimeOffset.UtcNow,DateTimeOffset.UtcNow,1,2,3,4,null,null,-1,0,0,0,0,[],"index-minus-one",null,null,null);
+        new(id, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, 1, 2, 3, 4, null, null, -1, 0, 0, 0, 0, [], "index-minus-one", null, null, null);
 
     sealed class FakeLease(Action release) : IAsyncDisposable
     { public ValueTask DisposeAsync() { release(); return ValueTask.CompletedTask; } }
 
     sealed class FakeSession : IReadOnlyNativeMemorySession
     {
-        public NativeProcessIdentity Identity { get; } = new(123,456,"rift_x64.exe",
-            CurrentBuildPlayerLookup.GameSha256,0x140000000,64*1024*1024);
+        public NativeProcessIdentity Identity { get; } = new(123, 456, "rift_x64.exe",
+            CurrentBuildPlayerLookup.GameSha256, 0x140000000, 64 * 1024 * 1024);
         public bool Revalidated { get; private set; }
         public bool Disposed { get; private set; }
-        public NativeReadResult Read(ulong _,int __) => throw new InvalidOperationException("Synthetic only");
-        public ValueTask<string?> RevalidateAsync(CancellationToken _) { Revalidated=true; return ValueTask.FromResult<string?>(null); }
-        public ValueTask DisposeAsync() { Disposed=true; return ValueTask.CompletedTask; }
+        public NativeReadResult Read(ulong _, int __) => throw new InvalidOperationException("Synthetic only");
+        public ValueTask<string?> RevalidateAsync(CancellationToken _) { Revalidated = true; return ValueTask.FromResult<string?>(null); }
+        public ValueTask DisposeAsync() { Disposed = true; return ValueTask.CompletedTask; }
     }
 }

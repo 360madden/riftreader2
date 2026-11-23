@@ -5,85 +5,86 @@ using System.Text.Json;
 using RiftReader2.Application;
 using RiftReader2.Infrastructure;
 namespace RiftReader2.Live;
-internal sealed record TargetTemplateNameObservation(object Identity,DateTimeOffset StartedAtUtc,DateTimeOffset CompletedAtUtc,ulong SelfKey,ulong TargetKey,ulong TargetEntity,uint TemplateKey,ushort Selector,uint TlsIndex,ulong Collection,int LocalizationMode,uint FormattingFlag,string Status,ulong? RecordAddress=null,uint? LocalizationKey=null,string? FallbackText=null,CurrentBuildLocalizationDictionaryObservation? Dictionary=null)
+
+internal sealed record TargetTemplateNameObservation(object Identity, DateTimeOffset StartedAtUtc, DateTimeOffset CompletedAtUtc, ulong SelfKey, ulong TargetKey, ulong TargetEntity, uint TemplateKey, ushort Selector, uint TlsIndex, ulong Collection, int LocalizationMode, uint FormattingFlag, string Status, ulong? RecordAddress = null, uint? LocalizationKey = null, string? FallbackText = null, CurrentBuildLocalizationDictionaryObservation? Dictionary = null)
 {
- [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
- public string? DictionaryStatus => Identity is RiftReader2.Domain.NativeProcessIdentity id && CurrentBuildPlayerLookup.IsUpdatedBuild(id.ExecutableSha256) ? "not-acquired-raw-only" : null;
- public string Qualification=>"cache-only raw candidate; name publication, freshness and restart unverified";
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? DictionaryStatus => Identity is RiftReader2.Domain.NativeProcessIdentity id && CurrentBuildPlayerLookup.IsUpdatedBuild(id.ExecutableSha256) ? "not-acquired-raw-only" : null;
+    public string Qualification => "cache-only raw candidate; name publication, freshness and restart unverified";
 }
 internal static class CurrentBuildTargetTemplateNameSampleCommand
 {
- internal static Task<int> RunAsync(IReadOnlyDictionary<string,string> options,TextWriter output,CancellationToken ct)
- {
-  var sha=ExpectedSha(options);
-  return RunAsync(options,output,ct,
-   async (pid,ticks,token)=>await NativeReadFileLease.AcquireAsync(pid,ticks,sha,TimeSpan.FromSeconds(1),token),
-   async (pid,ticks,token)=>await WindowsNativeMemorySession.OpenAsync(pid,ticks,sha,token),
-   (session,pid)=>Read(session,CurrentBuildPlayerContextCandidateReader.Read,()=>WindowsThreadTlsSnapshot.Capture(pid)));
- }
- internal static string ExpectedSha(IReadOnlyDictionary<string,string> options)
- {
-  var sha=options.TryGetValue("--sha256",out var requested)?requested:CurrentBuildPlayerLookup.GameSha256;
-  return CurrentBuildPlayerLookup.IsCoreBuild(sha)?sha:throw new ArgumentException("Unsupported template-name build SHA256.");
- }
- internal static async Task<int> RunAsync(IReadOnlyDictionary<string,string> options,TextWriter output,CancellationToken ct,
-  Func<int,long,CancellationToken,Task<IAsyncDisposable>> acquire,
-  Func<int,long,CancellationToken,Task<IReadOnlyNativeMemorySession>> open,
-  Func<IReadOnlyNativeMemorySession,int,TargetTemplateNameObservation> read)
- {
-  if(!options.TryGetValue("--pid",out var p)||!int.TryParse(p,NumberStyles.None,CultureInfo.InvariantCulture,out var pid)||pid<=0||!options.TryGetValue("--start-ticks",out var t)||!long.TryParse(t,NumberStyles.None,CultureInfo.InvariantCulture,out var ticks)||ticks<=0||!options.TryGetValue("--output",out var path)||string.IsNullOrWhiteSpace(path))throw new ArgumentException("--pid, --start-ticks, --output required.");
-  if(File.Exists(path))throw new IOException("Output exists.");await using var lease=await acquire(pid,ticks,ct);ct.ThrowIfCancellationRequested();await using var session=await open(pid,ticks,ct);ct.ThrowIfCancellationRequested();
-  if(session.Identity.ProcessId!=pid||session.Identity.ProcessStartUtcTicks!=ticks||!string.Equals(session.Identity.ExecutableSha256,ExpectedSha(options),StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Process/build identity mismatch.");
-  var observation=read(session,pid);if(await session.RevalidateAsync(ct) is not null)throw new InvalidDataException("Process identity invalidated.");ct.ThrowIfCancellationRequested();
-  var limitations=new List<string>{"Cache-only; misses do not establish name absence.","Sequential reads cannot exclude ABA; loaded module bytes are not independently hashed.","No getter, initialization, refcount or memory writes; API name and restart unverified."};
-  if(CurrentBuildPlayerLookup.IsUpdatedBuild(session.Identity.ExecutableSha256))limitations.Add("1179 raw template fallback only; localization dictionary not acquired.");
-  var report=new{schemaVersion=1,contractVersion="native-target-template-name-candidate/1",status="complete",observation,limitations};
-  await JsonReportWriter.WriteNewAsync(path,report,ct);await output.WriteLineAsync(JsonSerializer.Serialize(new{recordType="native-target-template-name-summary/1",observation.Status,output=Path.GetFullPath(path)},new JsonSerializerOptions(JsonFormat.Options){WriteIndented=false}));return 0;
- }
- internal static TargetTemplateNameObservation Read(IReadOnlyNativeMemorySession session,Func<IReadOnlyNativeMemorySession,CurrentBuildPlayerContextObservation> context,Func<IReadOnlyList<NativeThreadEpoch>> threads, ulong? explicitUnitKey = null, bool includeDictionary = true)
- {
-  var start=DateTimeOffset.UtcNow;var id=session.Identity;var updated=CurrentBuildPlayerLookup.IsUpdatedBuild(id.ExecutableSha256);
-  if(id.ProcessId<=0||id.ProcessStartUtcTicks<=0||!CurrentBuildPlayerLookup.IsCoreBuild(id.ExecutableSha256)||id.ModuleSize<(updated?0x34BEDC8UL:0x34AD258UL))throw new InvalidDataException("Unsupported process/build.");
-  var before=context(session);if(before is null||before.Identity!=id||(!explicitUnitKey.HasValue && before.TargetKeyCandidate is null or 0))throw new InvalidDataException("Gated target unavailable.");var key=explicitUnitKey ?? before.TargetKeyCandidate!.Value;if(key==0)throw new ArgumentException("Unit key missing.");
-  var anchors=new Dictionary<(ulong,int),byte[]>();int budget=0;byte[] Take(ulong a,int n,bool remember=true){budget=checked(budget+n);if(budget>2*1024*1024)throw new InvalidDataException("Read budget exceeded.");var b=CurrentBuildPlayerLookup.Exact(session,a,n);if(remember){if(anchors.TryGetValue((a,n),out var old)&&!old.AsSpan().SequenceEqual(b))throw new InvalidDataException("Bytes changed.");anchors[(a,n)]=b.ToArray();}return b;}
-  ulong Ptr(ulong p,int n=8)=>CurrentBuildPlayerLookup.Pointer(p,n);ulong Q(ulong a)=>U64(Take(a,8));
-  IReadOnlyList<NativeThreadEpoch>? epochs=null;
-  void Verify()
-  {
-   foreach(var x in anchors)CurrentBuildPlayerLookup.RequireSame(Take(x.Key.Item1,x.Key.Item2,false),x.Value);
-   if(epochs is not null && !epochs.OrderBy(x=>x.Id).SequenceEqual(threads().OrderBy(x=>x.Id)))throw new InvalidDataException("Thread epoch changed.");
-   var final=context(session);if(final is null||final.Identity!=id||final.UnitKey!=before.UnitKey||(explicitUnitKey.HasValue && (final.Entity!=before.Entity||final.HealthComponent!=before.HealthComponent||final.Owner!=before.Owner))||(!explicitUnitKey.HasValue && final.TargetKeyCandidate!=key)||session.Identity!=id)throw new InvalidDataException("Target or epoch changed.");
-  }
-  void Unavailable(string status, ulong? entityAddress=null)
-  {
-   if(!explicitUnitKey.HasValue)throw new InvalidDataException(status switch { "unit-missing" => "Target missing.", "unsupported-template-entity" => "Target virtual seed fingerprint mismatch.", "unsupported-template-branch" => "Template branch guard not met.", "template-key-absent" => "Template key absent.", "name-pointer-unavailable" => "Invalid name pointer.", "name-unterminated" => "Unterminated name.", "name-utf16-invalid" => "Invalid name UTF-16.", _ => status });
-   Verify();throw new UnitTemplateNameUnavailableException(status,entityAddress);
-  }
-  // 1179: 59EE70 -> 59F0F0 -> 137F670 binds template/provider/cache. The
-  // generated record and child getters lead to descriptor initializers 1BA2EB0 / 172A990.
-  ulong Rva(ulong legacy,ulong current)=>updated?current:legacy;
-  if(Q(id.ModuleBaseAddress+Rva(0x26AE608,0x26BCC08))!=id.ModuleBaseAddress+Rva(0x59E940,0x59EE70))throw new InvalidDataException("Target virtual seed fingerprint mismatch.");
-  var manager=Ptr(Q(id.ModuleBaseAddress+Rva(0x33624A8,0x3373C68)));var table=Ptr(Q(manager+0x50));var h=Take(table,24);var buckets=Ptr(U64(h));var stride=U64(h.AsSpan(8));var count=U64(h.AsSpan(16));if(stride is <24 or >4096||stride%8!=0||count is <1 or >(1<<24))throw new InvalidDataException("Invalid unit table.");
-  var a=Ptr(checked(buckets+CurrentBuildPlayerLookup.BucketIndex(key,count)*stride),24);var seen=new HashSet<ulong>();ulong entity=0;bool head=true;
-  for(int i=0;i<128;i++){if(!seen.Add(a))throw new InvalidDataException("Unit cycle.");var n=Take(a,24);var link=U64(n);if((!head||(link&1)==0)&&U64(n.AsSpan(8))==key){entity=Ptr(U64(n.AsSpan(16)),0x1D8);break;}var next=link&~1UL;if(next==0)break;a=Ptr(next,24);head=false;}
-  if(entity==0)Unavailable("unit-missing");if(Q(entity)!=id.ModuleBaseAddress+Rva(0x26AE5F0,0x26BCBF0))Unavailable("unsupported-template-entity",entity);if(Q(entity+0x1D0)!=0)Unavailable("unsupported-template-branch",entity);var template=BinaryPrimitives.ReadUInt32LittleEndian(Take(entity+0x1B8,4));if(template==0)Unavailable("template-key-absent",entity);
-  var provider=Ptr(Q(id.ModuleBaseAddress+Rva(0x33E3A98,0x33F5258)),0x42);var selector=BinaryPrimitives.ReadUInt16LittleEndian(Take(provider+0x40,2));var wrapper=Ptr(Q(id.ModuleBaseAddress+Rva(0x3372C18,0x33843D8)));var owner=Ptr(Q(wrapper),0x278);var index=BinaryPrimitives.ReadUInt32LittleEndian(Take(owner+0x274,4));if(index>1087)throw new InvalidDataException("Invalid TLS index.");
-  epochs=threads();if(epochs.Count is <1 or >256||epochs.Select(x=>x.Id).Distinct().Count()!=epochs.Count||epochs.Select(x=>x.Teb).Distinct().Count()!=epochs.Count)throw new InvalidDataException("Invalid thread set.");ulong? collection=null;
-  foreach(var t in epochs){Ptr(t.Teb,0x1788);var ti=Take(t.Teb+0x30,32);if(t.Id<=0||t.Created<=0||U64(ti)!=t.Teb||U64(ti.AsSpan(16))!=(ulong)id.ProcessId||U64(ti.AsSpan(24))!=(ulong)t.Id)throw new InvalidDataException("Invalid TEB identity.");ulong v;if(index<64)v=Q(t.Teb+0x1480+index*8UL);else{var expansion=Q(t.Teb+0x1780);v=expansion==0?0:Q(checked(Ptr(expansion)+(index-64)*8UL));}var c=v==0?checked(owner+0x200):Ptr(v);if(collection.HasValue&&collection!=c)throw new InvalidDataException("Thread collections disagree.");collection=c;}
-  var ch=Take(collection!.Value+0x20,32);var cb=Ptr(U64(ch));var cs=U64(ch.AsSpan(8));var cc=U64(ch.AsSpan(16));if(cs!=24||cc is <1 or >4096)throw new InvalidDataException("Invalid cache header.");Ptr(cb,checked((int)(cc*24)));
-  var hash=CurrentBuildAbilityRecordsCandidateReader.Hash(template);a=checked(cb+CurrentBuildAbilityRecordsCandidateReader.Hash(hash)%cc*24);seen.Clear();head=true;byte[]? found=null;
-  for(int i=0;i<=128;i++){if(!seen.Add(a))throw new InvalidDataException("Cache cycle.");var n=Take(a,24);var link=U64(n);if((!head||(link&1)==0)&&BinaryPrimitives.ReadUInt16LittleEndian(n.AsSpan(8))==selector&&BinaryPrimitives.ReadUInt32LittleEndian(n.AsSpan(12))==template){found=n;break;}var next=link&~1UL;if(next==0)break;if(i==128)throw new InvalidDataException("Cache chain budget.");a=Ptr(next,24);head=false;}
-  var localizationManager=Ptr(Q(id.ModuleBaseAddress+Rva(0x33623E8,0x3373BA8)),8);var localizationMode=BinaryPrimitives.ReadInt32LittleEndian(Take(localizationManager+4,4));var formattingFlag=BinaryPrimitives.ReadUInt32LittleEndian(Take(id.ModuleBaseAddress+Rva(0x3373784,0x3384F44),4));
-  string status="cache-miss";ulong? record=null;uint? loc=null;string? fallback=null;CurrentBuildLocalizationDictionaryObservation? dictionary=null;
-  bool Type(ulong obj,ulong vt,ulong getter,ulong desc,ulong descVt,ulong descGetter)
-  {
-   if(!explicitUnitKey.HasValue)return Q(obj)==id.ModuleBaseAddress+vt&&Q(id.ModuleBaseAddress+vt+0x40)==id.ModuleBaseAddress+getter&&Q(id.ModuleBaseAddress+desc)==id.ModuleBaseAddress+descVt&&Q(id.ModuleBaseAddress+descVt+8)==id.ModuleBaseAddress+descGetter;
-   if(Q(id.ModuleBaseAddress+vt+0x40)!=id.ModuleBaseAddress+getter||Q(id.ModuleBaseAddress+desc)!=id.ModuleBaseAddress+descVt||Q(id.ModuleBaseAddress+descVt+8)!=id.ModuleBaseAddress+descGetter)throw new InvalidDataException("Template-name global type fingerprint mismatch.");
-   return Q(obj)==id.ModuleBaseAddress+vt;
-  }
-  if(found is not null){var holder=U64(found.AsSpan(16));if(holder==0)status="null-holder";else{var obj=Q(Ptr(holder,0x20)+0x18);if(obj==0)status="null-record";else{record=Ptr(obj,0xB0);if(!Type(obj,Rva(0x29DB058,0x29EE3D8),Rva(0x1B81C10,0x1B87C60),Rva(0x34AD250,0x34BEDC0),Rva(0x29E8E00,0x29F7C30),Rva(0x1BADFA0,0x1BB0750)))status="unverified-record-type";else{var child=Q(obj+0xA8);if(child==0)status="null-name-child";else{Ptr(child,0x28);if(!Type(child,Rva(0x27F24F8,0x28067F8),Rva(0x170C5D0,0x1711C10),Rva(0x3417970,0x3428D50),Rva(0x2802E40,0x2810E50),Rva(0x17361E0,0x17360A0)))status="unverified-name-type";else{loc=BinaryPrimitives.ReadUInt32LittleEndian(Take(child+0x18,4));var ptr=Q(child+0x20);if(ptr<0x10000||ptr%2!=0||ptr>0x7FFFFFFFFFFFUL-2)throw new InvalidDataException("Invalid name pointer.");var length=(int)Math.Min(256UL,4096-(ptr&4095))&~1;var raw=Take(ptr,length,false);int end=-1;for(int i=0;i<length;i+=2)if(raw[i]==0&&raw[i+1]==0){end=i;break;}if(end<0){Unavailable("name-unterminated",entity);throw new InvalidDataException("Unterminated name.");}anchors[(ptr,end+2)]=raw[..(end+2)];try{fallback=new UnicodeEncoding(false,false,true).GetString(raw,0,end);}catch(DecoderFallbackException){Unavailable("name-utf16-invalid",entity);throw new InvalidDataException("Invalid name UTF-16.");}if(includeDictionary && !updated && loc>0)dictionary=CurrentBuildLocalizationDictionaryCandidateReader.Read(session,[loc.Value]);status="raw-candidate";}}}}}}
-  Verify();
-  return new(id,start,DateTimeOffset.UtcNow,before.UnitKey,key,entity,template,selector,index,collection.Value,localizationMode,formattingFlag,status,record,loc,fallback,dictionary);
- }
- static ulong U64(ReadOnlySpan<byte>b)=>BinaryPrimitives.ReadUInt64LittleEndian(b);
+    internal static Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken ct)
+    {
+        var sha = ExpectedSha(options);
+        return RunAsync(options, output, ct,
+         async (pid, ticks, token) => await NativeReadFileLease.AcquireAsync(pid, ticks, sha, TimeSpan.FromSeconds(1), token),
+         async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(pid, ticks, sha, token),
+         (session, pid) => Read(session, CurrentBuildPlayerContextCandidateReader.Read, () => WindowsThreadTlsSnapshot.Capture(pid)));
+    }
+    internal static string ExpectedSha(IReadOnlyDictionary<string, string> options)
+    {
+        var sha = options.TryGetValue("--sha256", out var requested) ? requested : CurrentBuildPlayerLookup.GameSha256;
+        return CurrentBuildPlayerLookup.IsCoreBuild(sha) ? sha : throw new ArgumentException("Unsupported template-name build SHA256.");
+    }
+    internal static async Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken ct,
+     Func<int, long, CancellationToken, Task<IAsyncDisposable>> acquire,
+     Func<int, long, CancellationToken, Task<IReadOnlyNativeMemorySession>> open,
+     Func<IReadOnlyNativeMemorySession, int, TargetTemplateNameObservation> read)
+    {
+        if (!options.TryGetValue("--pid", out var p) || !int.TryParse(p, NumberStyles.None, CultureInfo.InvariantCulture, out var pid) || pid <= 0 || !options.TryGetValue("--start-ticks", out var t) || !long.TryParse(t, NumberStyles.None, CultureInfo.InvariantCulture, out var ticks) || ticks <= 0 || !options.TryGetValue("--output", out var path) || string.IsNullOrWhiteSpace(path)) throw new ArgumentException("--pid, --start-ticks, --output required.");
+        if (File.Exists(path)) throw new IOException("Output exists."); await using var lease = await acquire(pid, ticks, ct); ct.ThrowIfCancellationRequested(); await using var session = await open(pid, ticks, ct); ct.ThrowIfCancellationRequested();
+        if (session.Identity.ProcessId != pid || session.Identity.ProcessStartUtcTicks != ticks || !string.Equals(session.Identity.ExecutableSha256, ExpectedSha(options), StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Process/build identity mismatch.");
+        var observation = read(session, pid); if (await session.RevalidateAsync(ct) is not null) throw new InvalidDataException("Process identity invalidated."); ct.ThrowIfCancellationRequested();
+        var limitations = new List<string> { "Cache-only; misses do not establish name absence.", "Sequential reads cannot exclude ABA; loaded module bytes are not independently hashed.", "No getter, initialization, refcount or memory writes; API name and restart unverified." };
+        if (CurrentBuildPlayerLookup.IsUpdatedBuild(session.Identity.ExecutableSha256)) limitations.Add("1179 raw template fallback only; localization dictionary not acquired.");
+        var report = new { schemaVersion = 1, contractVersion = "native-target-template-name-candidate/1", status = "complete", observation, limitations };
+        await JsonReportWriter.WriteNewAsync(path, report, ct); await output.WriteLineAsync(JsonSerializer.Serialize(new { recordType = "native-target-template-name-summary/1", observation.Status, output = Path.GetFullPath(path) }, new JsonSerializerOptions(JsonFormat.Options) { WriteIndented = false })); return 0;
+    }
+    internal static TargetTemplateNameObservation Read(IReadOnlyNativeMemorySession session, Func<IReadOnlyNativeMemorySession, CurrentBuildPlayerContextObservation> context, Func<IReadOnlyList<NativeThreadEpoch>> threads, ulong? explicitUnitKey = null, bool includeDictionary = true)
+    {
+        var start = DateTimeOffset.UtcNow; var id = session.Identity; var updated = CurrentBuildPlayerLookup.IsUpdatedBuild(id.ExecutableSha256);
+        if (id.ProcessId <= 0 || id.ProcessStartUtcTicks <= 0 || !CurrentBuildPlayerLookup.IsCoreBuild(id.ExecutableSha256) || id.ModuleSize < (updated ? 0x34BEDC8UL : 0x34AD258UL)) throw new InvalidDataException("Unsupported process/build.");
+        var before = context(session); if (before is null || before.Identity != id || (!explicitUnitKey.HasValue && before.TargetKeyCandidate is null or 0)) throw new InvalidDataException("Gated target unavailable."); var key = explicitUnitKey ?? before.TargetKeyCandidate!.Value; if (key == 0) throw new ArgumentException("Unit key missing.");
+        var anchors = new Dictionary<(ulong, int), byte[]>(); int budget = 0; byte[] Take(ulong a, int n, bool remember = true) { budget = checked(budget + n); if (budget > 2 * 1024 * 1024) throw new InvalidDataException("Read budget exceeded."); var b = CurrentBuildPlayerLookup.Exact(session, a, n); if (remember) { if (anchors.TryGetValue((a, n), out var old) && !old.AsSpan().SequenceEqual(b)) throw new InvalidDataException("Bytes changed."); anchors[(a, n)] = b.ToArray(); } return b; }
+        ulong Ptr(ulong p, int n = 8) => CurrentBuildPlayerLookup.Pointer(p, n); ulong Q(ulong a) => U64(Take(a, 8));
+        IReadOnlyList<NativeThreadEpoch>? epochs = null;
+        void Verify()
+        {
+            foreach (var x in anchors) CurrentBuildPlayerLookup.RequireSame(Take(x.Key.Item1, x.Key.Item2, false), x.Value);
+            if (epochs is not null && !epochs.OrderBy(x => x.Id).SequenceEqual(threads().OrderBy(x => x.Id))) throw new InvalidDataException("Thread epoch changed.");
+            var final = context(session); if (final is null || final.Identity != id || final.UnitKey != before.UnitKey || (explicitUnitKey.HasValue && (final.Entity != before.Entity || final.HealthComponent != before.HealthComponent || final.Owner != before.Owner)) || (!explicitUnitKey.HasValue && final.TargetKeyCandidate != key) || session.Identity != id) throw new InvalidDataException("Target or epoch changed.");
+        }
+        void Unavailable(string status, ulong? entityAddress = null)
+        {
+            if (!explicitUnitKey.HasValue) throw new InvalidDataException(status switch { "unit-missing" => "Target missing.", "unsupported-template-entity" => "Target virtual seed fingerprint mismatch.", "unsupported-template-branch" => "Template branch guard not met.", "template-key-absent" => "Template key absent.", "name-pointer-unavailable" => "Invalid name pointer.", "name-unterminated" => "Unterminated name.", "name-utf16-invalid" => "Invalid name UTF-16.", _ => status });
+            Verify(); throw new UnitTemplateNameUnavailableException(status, entityAddress);
+        }
+        // 1179: 59EE70 -> 59F0F0 -> 137F670 binds template/provider/cache. The
+        // generated record and child getters lead to descriptor initializers 1BA2EB0 / 172A990.
+        ulong Rva(ulong legacy, ulong current) => updated ? current : legacy;
+        if (Q(id.ModuleBaseAddress + Rva(0x26AE608, 0x26BCC08)) != id.ModuleBaseAddress + Rva(0x59E940, 0x59EE70)) throw new InvalidDataException("Target virtual seed fingerprint mismatch.");
+        var manager = Ptr(Q(id.ModuleBaseAddress + Rva(0x33624A8, 0x3373C68))); var table = Ptr(Q(manager + 0x50)); var h = Take(table, 24); var buckets = Ptr(U64(h)); var stride = U64(h.AsSpan(8)); var count = U64(h.AsSpan(16)); if (stride is < 24 or > 4096 || stride % 8 != 0 || count is < 1 or > (1 << 24)) throw new InvalidDataException("Invalid unit table.");
+        var a = Ptr(checked(buckets + CurrentBuildPlayerLookup.BucketIndex(key, count) * stride), 24); var seen = new HashSet<ulong>(); ulong entity = 0; bool head = true;
+        for (int i = 0; i < 128; i++) { if (!seen.Add(a)) throw new InvalidDataException("Unit cycle."); var n = Take(a, 24); var link = U64(n); if ((!head || (link & 1) == 0) && U64(n.AsSpan(8)) == key) { entity = Ptr(U64(n.AsSpan(16)), 0x1D8); break; } var next = link & ~1UL; if (next == 0) break; a = Ptr(next, 24); head = false; }
+        if (entity == 0) Unavailable("unit-missing"); if (Q(entity) != id.ModuleBaseAddress + Rva(0x26AE5F0, 0x26BCBF0)) Unavailable("unsupported-template-entity", entity); if (Q(entity + 0x1D0) != 0) Unavailable("unsupported-template-branch", entity); var template = BinaryPrimitives.ReadUInt32LittleEndian(Take(entity + 0x1B8, 4)); if (template == 0) Unavailable("template-key-absent", entity);
+        var provider = Ptr(Q(id.ModuleBaseAddress + Rva(0x33E3A98, 0x33F5258)), 0x42); var selector = BinaryPrimitives.ReadUInt16LittleEndian(Take(provider + 0x40, 2)); var wrapper = Ptr(Q(id.ModuleBaseAddress + Rva(0x3372C18, 0x33843D8))); var owner = Ptr(Q(wrapper), 0x278); var index = BinaryPrimitives.ReadUInt32LittleEndian(Take(owner + 0x274, 4)); if (index > 1087) throw new InvalidDataException("Invalid TLS index.");
+        epochs = threads(); if (epochs.Count is < 1 or > 256 || epochs.Select(x => x.Id).Distinct().Count() != epochs.Count || epochs.Select(x => x.Teb).Distinct().Count() != epochs.Count) throw new InvalidDataException("Invalid thread set."); ulong? collection = null;
+        foreach (var t in epochs) { Ptr(t.Teb, 0x1788); var ti = Take(t.Teb + 0x30, 32); if (t.Id <= 0 || t.Created <= 0 || U64(ti) != t.Teb || U64(ti.AsSpan(16)) != (ulong)id.ProcessId || U64(ti.AsSpan(24)) != (ulong)t.Id) throw new InvalidDataException("Invalid TEB identity."); ulong v; if (index < 64) v = Q(t.Teb + 0x1480 + index * 8UL); else { var expansion = Q(t.Teb + 0x1780); v = expansion == 0 ? 0 : Q(checked(Ptr(expansion) + (index - 64) * 8UL)); } var c = v == 0 ? checked(owner + 0x200) : Ptr(v); if (collection.HasValue && collection != c) throw new InvalidDataException("Thread collections disagree."); collection = c; }
+        var ch = Take(collection!.Value + 0x20, 32); var cb = Ptr(U64(ch)); var cs = U64(ch.AsSpan(8)); var cc = U64(ch.AsSpan(16)); if (cs != 24 || cc is < 1 or > 4096) throw new InvalidDataException("Invalid cache header."); Ptr(cb, checked((int)(cc * 24)));
+        var hash = CurrentBuildAbilityRecordsCandidateReader.Hash(template); a = checked(cb + CurrentBuildAbilityRecordsCandidateReader.Hash(hash) % cc * 24); seen.Clear(); head = true; byte[]? found = null;
+        for (int i = 0; i <= 128; i++) { if (!seen.Add(a)) throw new InvalidDataException("Cache cycle."); var n = Take(a, 24); var link = U64(n); if ((!head || (link & 1) == 0) && BinaryPrimitives.ReadUInt16LittleEndian(n.AsSpan(8)) == selector && BinaryPrimitives.ReadUInt32LittleEndian(n.AsSpan(12)) == template) { found = n; break; } var next = link & ~1UL; if (next == 0) break; if (i == 128) throw new InvalidDataException("Cache chain budget."); a = Ptr(next, 24); head = false; }
+        var localizationManager = Ptr(Q(id.ModuleBaseAddress + Rva(0x33623E8, 0x3373BA8)), 8); var localizationMode = BinaryPrimitives.ReadInt32LittleEndian(Take(localizationManager + 4, 4)); var formattingFlag = BinaryPrimitives.ReadUInt32LittleEndian(Take(id.ModuleBaseAddress + Rva(0x3373784, 0x3384F44), 4));
+        string status = "cache-miss"; ulong? record = null; uint? loc = null; string? fallback = null; CurrentBuildLocalizationDictionaryObservation? dictionary = null;
+        bool Type(ulong obj, ulong vt, ulong getter, ulong desc, ulong descVt, ulong descGetter)
+        {
+            if (!explicitUnitKey.HasValue) return Q(obj) == id.ModuleBaseAddress + vt && Q(id.ModuleBaseAddress + vt + 0x40) == id.ModuleBaseAddress + getter && Q(id.ModuleBaseAddress + desc) == id.ModuleBaseAddress + descVt && Q(id.ModuleBaseAddress + descVt + 8) == id.ModuleBaseAddress + descGetter;
+            if (Q(id.ModuleBaseAddress + vt + 0x40) != id.ModuleBaseAddress + getter || Q(id.ModuleBaseAddress + desc) != id.ModuleBaseAddress + descVt || Q(id.ModuleBaseAddress + descVt + 8) != id.ModuleBaseAddress + descGetter) throw new InvalidDataException("Template-name global type fingerprint mismatch.");
+            return Q(obj) == id.ModuleBaseAddress + vt;
+        }
+        if (found is not null) { var holder = U64(found.AsSpan(16)); if (holder == 0) status = "null-holder"; else { var obj = Q(Ptr(holder, 0x20) + 0x18); if (obj == 0) status = "null-record"; else { record = Ptr(obj, 0xB0); if (!Type(obj, Rva(0x29DB058, 0x29EE3D8), Rva(0x1B81C10, 0x1B87C60), Rva(0x34AD250, 0x34BEDC0), Rva(0x29E8E00, 0x29F7C30), Rva(0x1BADFA0, 0x1BB0750))) status = "unverified-record-type"; else { var child = Q(obj + 0xA8); if (child == 0) status = "null-name-child"; else { Ptr(child, 0x28); if (!Type(child, Rva(0x27F24F8, 0x28067F8), Rva(0x170C5D0, 0x1711C10), Rva(0x3417970, 0x3428D50), Rva(0x2802E40, 0x2810E50), Rva(0x17361E0, 0x17360A0))) status = "unverified-name-type"; else { loc = BinaryPrimitives.ReadUInt32LittleEndian(Take(child + 0x18, 4)); var ptr = Q(child + 0x20); if (ptr < 0x10000 || ptr % 2 != 0 || ptr > 0x7FFFFFFFFFFFUL - 2) throw new InvalidDataException("Invalid name pointer."); var length = (int)Math.Min(256UL, 4096 - (ptr & 4095)) & ~1; var raw = Take(ptr, length, false); int end = -1; for (int i = 0; i < length; i += 2) if (raw[i] == 0 && raw[i + 1] == 0) { end = i; break; } if (end < 0) { Unavailable("name-unterminated", entity); throw new InvalidDataException("Unterminated name."); } anchors[(ptr, end + 2)] = raw[..(end + 2)]; try { fallback = new UnicodeEncoding(false, false, true).GetString(raw, 0, end); } catch (DecoderFallbackException) { Unavailable("name-utf16-invalid", entity); throw new InvalidDataException("Invalid name UTF-16."); } if (includeDictionary && !updated && loc > 0) dictionary = CurrentBuildLocalizationDictionaryCandidateReader.Read(session, [loc.Value]); status = "raw-candidate"; } } } } } }
+        Verify();
+        return new(id, start, DateTimeOffset.UtcNow, before.UnitKey, key, entity, template, selector, index, collection.Value, localizationMode, formattingFlag, status, record, loc, fallback, dictionary);
+    }
+    static ulong U64(ReadOnlySpan<byte> b) => BinaryPrimitives.ReadUInt64LittleEndian(b);
 }

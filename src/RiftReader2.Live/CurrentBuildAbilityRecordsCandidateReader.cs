@@ -145,27 +145,28 @@ internal static class CurrentBuildAbilityRecordsCandidateReader
         }
         RawAbilityVariants Variants(ulong record)
         {
-            var h=ReadBytes(record+0x5F0,16);var begin=U64(h);var end=U64(h.AsSpan(8));
-            if(begin==0&&end==0)return new("primary-empty");
-            if(begin==0||end<begin||(end-begin)%8!=0||(end-begin)/8>64)throw new InvalidDataException("Invalid primary vector.");
-            Ptr(begin,end==begin?8:checked((int)(end-begin)));
-            if(end==begin)return new("primary-empty");
-            var source=Q(begin);if(source==0)return new("primary-null");Ptr(source,0x28);
-            if(!Fingerprint(source,0x283E6C0,0x17BD530,0x342C310,0x2845BD0,0x17DBA60))return new("primary-unverified-type",source);
-            var vh=ReadBytes(source+0x18,16);var vb=U64(vh);var ve=U64(vh.AsSpan(8));
-            if(vb==0&&ve==0)return new("empty",source,[]);
-            if(vb==0||ve<vb||(ve-vb)%8!=0||(ve-vb)/8>64)throw new InvalidDataException("Invalid variant vector.");
-            Ptr(vb,ve==vb?8:checked((int)(ve-vb)));
-            var entries=new List<RawVariantChild>();
-            for(var slot=vb;slot<ve;slot+=8)
+            var h = ReadBytes(record + 0x5F0, 16); var begin = U64(h); var end = U64(h.AsSpan(8));
+            if (begin == 0 && end == 0) return new("primary-empty");
+            if (begin == 0 || end < begin || (end - begin) % 8 != 0 || (end - begin) / 8 > 64) throw new InvalidDataException("Invalid primary vector.");
+            Ptr(begin, end == begin ? 8 : checked((int)(end - begin)));
+            if (end == begin) return new("primary-empty");
+            var source = Q(begin); if (source == 0) return new("primary-null"); Ptr(source, 0x28);
+            if (!Fingerprint(source, 0x283E6C0, 0x17BD530, 0x342C310, 0x2845BD0, 0x17DBA60)) return new("primary-unverified-type", source);
+            var vh = ReadBytes(source + 0x18, 16); var vb = U64(vh); var ve = U64(vh.AsSpan(8));
+            if (vb == 0 && ve == 0) return new("empty", source, []);
+            if (vb == 0 || ve < vb || (ve - vb) % 8 != 0 || (ve - vb) / 8 > 64) throw new InvalidDataException("Invalid variant vector.");
+            Ptr(vb, ve == vb ? 8 : checked((int)(ve - vb)));
+            var entries = new List<RawVariantChild>();
+            for (var slot = vb; slot < ve; slot += 8)
             {
-                var child=Q(slot);if(child==0){entries.Add(new("null",0));continue;}Ptr(child,0x1C);var vt=Q(child);ulong? getter=null;
-                if(vt>=id.ModuleBaseAddress&&vt<=id.ModuleBaseAddress+id.ModuleSize-0x48){var target=Q(vt+0x40);if(target>=id.ModuleBaseAddress&&target<id.ModuleBaseAddress+id.ModuleSize)getter=target-id.ModuleBaseAddress;}
-                if(vt!=id.ModuleBaseAddress+0x2CDE8F0){entries.Add(new("unknown-type",child,vt,getter));continue;}
-                if(!Fingerprint(child,0x2CDE8F0,0x229B4B0,0x359F390,0x2CE8820,0x22C1850)){entries.Add(new("unverified-type",child,vt,getter));continue;}
-                entries.Add(new("type-0061-raw-candidate",child,vt,getter,BinaryPrimitives.ReadUInt32LittleEndian(ReadBytes(child+0x18,4))));
+                var child = Q(slot); if (child == 0) { entries.Add(new("null", 0)); continue; }
+                Ptr(child, 0x1C); var vt = Q(child); ulong? getter = null;
+                if (vt >= id.ModuleBaseAddress && vt <= id.ModuleBaseAddress + id.ModuleSize - 0x48) { var target = Q(vt + 0x40); if (target >= id.ModuleBaseAddress && target < id.ModuleBaseAddress + id.ModuleSize) getter = target - id.ModuleBaseAddress; }
+                if (vt != id.ModuleBaseAddress + 0x2CDE8F0) { entries.Add(new("unknown-type", child, vt, getter)); continue; }
+                if (!Fingerprint(child, 0x2CDE8F0, 0x229B4B0, 0x359F390, 0x2CE8820, 0x22C1850)) { entries.Add(new("unverified-type", child, vt, getter)); continue; }
+                entries.Add(new("type-0061-raw-candidate", child, vt, getter, BinaryPrimitives.ReadUInt32LittleEndian(ReadBytes(child + 0x18, 4))));
             }
-            return new(entries.Count==0?"empty":"raw-candidates",source,entries);
+            return new(entries.Count == 0 ? "empty" : "raw-candidates", source, entries);
         }
         var rows = new List<AbilityRecordCandidate>();
         foreach (var key in keys)

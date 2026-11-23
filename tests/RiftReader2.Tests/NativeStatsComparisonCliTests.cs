@@ -236,7 +236,8 @@ public sealed class NativeStatsComparisonCliTests
     {
         var rows = Fields.Select((f, i) => new
         {
-            name = f.Name, selector = f.Selector,
+            name = f.Name,
+            selector = f.Selector,
             mappedIndex = i == 1 ? -1 : i == 0 && armorMappedIndex.HasValue ? armorMappedIndex.Value : i,
             ordinary = new
             {
@@ -259,18 +260,27 @@ public sealed class NativeStatsComparisonCliTests
         }
         return new
         {
-            schemaVersion = 1, contractVersion = "native-current-stats-candidate/1", status = "complete",
+            schemaVersion = 1,
+            contractVersion = "native-current-stats-candidate/1",
+            status = "complete",
             observation = new
             {
-                identity = new { processId = pid, processStartUtcTicks = ticks,
-                    executableSha256 = new string('A', 64) },
-                startedAtUtc = observedAt, completedAtUtc = completedAt ?? observedAt, unitKey,
+                identity = new
+                {
+                    processId = pid,
+                    processStartUtcTicks = ticks,
+                    executableSha256 = new string('A', 64)
+                },
+                startedAtUtc = observedAt,
+                completedAtUtc = completedAt ?? observedAt,
+                unitKey,
                 entity = ownerOffset.HasValue ? (ulong?)0x20000000UL : null,
                 health = ownerOffset.HasValue ? (ulong?)0x20010000UL : null,
                 owner = ownerOffset.HasValue ? (ulong?)(0x20020000UL + (ulong)ownerOffset.Value) : null,
                 record = ownerOffset.HasValue ? (ulong?)0x20030000UL : null,
                 mapping = ownerOffset.HasValue ? (ulong?)0x20040000UL : null,
-                stats = rows, selectorMapCandidate = fullMap
+                stats = rows,
+                selectorMapCandidate = fullMap
             }
         };
     }

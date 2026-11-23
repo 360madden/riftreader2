@@ -63,10 +63,16 @@ internal static class CurrentBuildSurvivalSampleCommand
             var nativeValues = Project(selfContext, selfVitals, selected);
             var payload = new
             {
-                status = "complete", identity,
-                requested = new { host = options.Host, pid = options.Pid,
-                    processStartUtcTicks = options.StartTicks, executableSha256 = options.Sha256,
-                    playerKey = options.PlayerKey.ToString(CultureInfo.InvariantCulture) },
+                status = "complete",
+                identity,
+                requested = new
+                {
+                    host = options.Host,
+                    pid = options.Pid,
+                    processStartUtcTicks = options.StartTicks,
+                    executableSha256 = options.Sha256,
+                    playerKey = options.PlayerKey.ToString(CultureInfo.InvariantCulture)
+                },
                 acquisitionElapsedMilliseconds = elapsed.Elapsed.TotalMilliseconds,
                 nativeValues,
                 qualification = "candidate-only exact-build native survival snapshot; independently compare API values; relation unavailable",
@@ -80,7 +86,9 @@ internal static class CurrentBuildSurvivalSampleCommand
         {
             await output.WriteLineAsync(JsonSerializer.Serialize(new
             {
-                status = "blocked", reason = error.Message, errorType = error.GetType().Name,
+                status = "blocked",
+                reason = error.Message,
+                errorType = error.GetType().Name,
                 inputSent = false
             }, new JsonSerializerOptions(JsonFormat.Options) { WriteIndented = !json }));
             return 2;

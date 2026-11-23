@@ -60,17 +60,28 @@ internal static class CurrentBuildUnitPositionsSampleCommand
             await session.RevalidateAsync(ct) is not null)
             throw new InvalidDataException("Unit-position process revalidation failed; no report published.");
         ct.ThrowIfCancellationRequested();
-        var report = new { schemaVersion = 1, contractVersion = "native-current-unit-positions-candidate-sample/1",
-            status = "complete", observation, limitations = new[]
+        var report = new
+        {
+            schemaVersion = 1,
+            contractVersion = "native-current-unit-positions-candidate-sample/1",
+            status = "complete",
+            observation,
+            limitations = new[]
             {
                 "The bounded unit-manager subset is not a complete world inventory.",
                 "Each row is owner/type checked, but acquisitions are sequential and cannot exclude ABA.",
                 "Camera stability and projected screen bounds cannot establish occlusion or renderer freshness.",
                 "No game method, memory write, input or foreground change is performed."
-            } };
+            }
+        };
         await JsonReportWriter.WriteNewAsync(path, report, ct);
-        await output.WriteLineAsync(JsonSerializer.Serialize(new { recordType = "native-current-unit-positions-summary/1",
-            status = "complete", positions = observation.Rows.Count, output = Path.GetFullPath(path) },
+        await output.WriteLineAsync(JsonSerializer.Serialize(new
+        {
+            recordType = "native-current-unit-positions-summary/1",
+            status = "complete",
+            positions = observation.Rows.Count,
+            output = Path.GetFullPath(path)
+        },
             new JsonSerializerOptions(JsonFormat.Options) { WriteIndented = false }));
         return 0;
     }

@@ -130,7 +130,8 @@ internal static class CurrentBuildFacingSampleCommand
             pair.StartedAtUtc < sample.CompletedAtUtc || pair.CompletedAtUtc > after.StartedAtUtc ||
             elapsed.TotalMilliseconds > 2000)
             throw new InvalidDataException("Facing/target identity, position or acquisition interval changed.");
-        return sample with {
+        return sample with
+        {
             CompletedAtUtc = after.CompletedAtUtc,
             TargetPositionPairCandidate = pair,
             OpticalCameraAfterTargetCandidate = after.OpticalCameraCandidate,

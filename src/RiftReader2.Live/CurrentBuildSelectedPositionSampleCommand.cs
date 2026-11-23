@@ -115,7 +115,8 @@ internal static class CurrentBuildSelectedPositionSampleCommand
         await output.WriteLineAsync(JsonSerializer.Serialize(new
         {
             recordType = "native-current-selected-position-summary/1",
-            status = "complete", selectionStatus = observation.Status,
+            status = "complete",
+            selectionStatus = observation.Status,
             completedSamples = observations.Count,
             output = Path.GetFullPath(path)
         }, new JsonSerializerOptions(JsonFormat.Options) { WriteIndented = false }));

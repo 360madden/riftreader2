@@ -114,7 +114,7 @@ public sealed class CurrentBuildUnitLevelsTests
                      new[] { TargetKey, TargetKey },
                      Enumerable.Range(1,13).Select(n=>(ulong)n).ToArray() })
         {
-            Assert.Throws<ArgumentException>(()=>
+            Assert.Throws<ArgumentException>(() =>
                 CurrentBuildUnitLevelsSampleCommand.Read(fixture, keys));
         }
         Assert.Equal(0, fixture.ReadCount);
@@ -215,7 +215,7 @@ public sealed class CurrentBuildUnitLevelsTests
                 if (address >= start &&
                     address + (ulong)length <= start + (ulong)bytes.Length)
                     return new("success",
-                        bytes.AsSpan((int)(address-start), length).ToArray(), null, null);
+                        bytes.AsSpan((int)(address - start), length).ToArray(), null, null);
             return new("unavailable", [], null, null);
         }
         public ValueTask<string?> RevalidateAsync(CancellationToken ct)

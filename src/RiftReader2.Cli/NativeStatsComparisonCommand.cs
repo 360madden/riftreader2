@@ -87,10 +87,24 @@ internal static class NativeStatsComparisonCommand
             identity = new { executableSha256 = before.Build, unitKey = before.PlayerKey, sameProcessEpoch = sameEpoch },
             source = new
             {
-                before = new { path = before.Path, sha256 = before.Sha256, processId = before.Pid,
-                    processStartUtcTicks = before.StartTicks, startedAtUtc = before.Started, completedAtUtc = before.Completed },
-                after = new { path = after.Path, sha256 = after.Sha256, processId = after.Pid,
-                    processStartUtcTicks = after.StartTicks, startedAtUtc = after.Started, completedAtUtc = after.Completed }
+                before = new
+                {
+                    path = before.Path,
+                    sha256 = before.Sha256,
+                    processId = before.Pid,
+                    processStartUtcTicks = before.StartTicks,
+                    startedAtUtc = before.Started,
+                    completedAtUtc = before.Completed
+                },
+                after = new
+                {
+                    path = after.Path,
+                    sha256 = after.Sha256,
+                    processId = after.Pid,
+                    processStartUtcTicks = after.StartTicks,
+                    startedAtUtc = after.Started,
+                    completedAtUtc = after.Completed
+                }
             },
             selectorMapComparison = new
             {
@@ -103,7 +117,8 @@ internal static class NativeStatsComparisonCommand
             {
                 status = beforeOwnerPath is null || afterOwnerPath is null ? "unavailable" :
                     sameEpoch ? "same-process-epoch" : "cross-epoch-unqualified",
-                before = beforeOwnerPath, after = afterOwnerPath,
+                before = beforeOwnerPath,
+                after = afterOwnerPath,
                 sameAddresses = comparableOwnerPath ? beforeOwnerPath == afterOwnerPath : (bool?)null,
                 matchingAnchors
             },

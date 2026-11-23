@@ -200,35 +200,62 @@ public sealed class NativeVitalsComparisonCliTests
         double? healthRate = null, double? energyRate = null, double? unavailableEnergyRate = null)
     {
         object present(long value, long maximum, string? type = null, double? rate = null) =>
-            new { status = "calculated-candidate", unavailableReason = (string?)null,
-                current = (long?)value, maximum = (long?)maximum,
+            new
+            {
+                status = "calculated-candidate",
+                unavailableReason = (string?)null,
+                current = (long?)value,
+                maximum = (long?)maximum,
                 inputs = type is null ? (object)new { baseRaw = value, unclampedRatePerClockUnitCandidate = rate } :
-                    new { verifiedTypeCode = type, unclampedRatePerClockUnitCandidate = rate } };
+                    new { verifiedTypeCode = type, unclampedRatePerClockUnitCandidate = rate }
+            };
         object missing(string reason) =>
-            new { status = "unavailable", unavailableReason = (string?)reason,
-                current = (long?)null, maximum = (long?)null, inputs = (object?)null };
+            new
+            {
+                status = "unavailable",
+                unavailableReason = (string?)reason,
+                current = (long?)null,
+                maximum = (long?)null,
+                inputs = (object?)null
+            };
         return new
         {
-            schemaVersion = 1, contractVersion = "native-current-vitals-candidate-sample/2",
-            status = "complete", sourceBuildSha256 = new string('A', 64),
+            schemaVersion = 1,
+            contractVersion = "native-current-vitals-candidate-sample/2",
+            status = "complete",
+            sourceBuildSha256 = new string('A', 64),
             source = "native-process-memory",
             qualification = "candidate-only; semantics/passive-freshness/restart-unverified",
             observation = new
             {
-                identity = new { processId = 123, processStartUtcTicks = 456L,
-                    executableSha256 = new string('A', 64) },
-                startedAtUtc = instant, completedAtUtc = instant, unitKey,
+                identity = new
+                {
+                    processId = 123,
+                    processStartUtcTicks = 456L,
+                    executableSha256 = new string('A', 64)
+                },
+                startedAtUtc = instant,
+                completedAtUtc = instant,
+                unitKey,
                 resourceKindCandidate = resourceKind,
                 source = "native-process-memory",
                 qualification = "candidate-only; semantics/passive-freshness/restart-unverified",
-                health = present(health, 150, rate: healthRate), mana = missing("not-mana-kind-three"),
+                health = present(health, 150, rate: healthRate),
+                mana = missing("not-mana-kind-three"),
                 energy = energy.HasValue ? present(energy.Value, 100, "0x072B", energyRate) :
                     diagnosticUnavailable ? new
                     {
-                        status = "unavailable", unavailableReason = "revision-mismatch-needs-native-cache-write",
-                        current = (long?)null, maximum = (long?)null,
-                        inputs = (object?)new { baseRaw = 90, recordRevision = 1, wrapperRevision = 2,
-                            unclampedRatePerClockUnitCandidate = unavailableEnergyRate }
+                        status = "unavailable",
+                        unavailableReason = "revision-mismatch-needs-native-cache-write",
+                        current = (long?)null,
+                        maximum = (long?)null,
+                        inputs = (object?)new
+                        {
+                            baseRaw = 90,
+                            recordRevision = 1,
+                            wrapperRevision = 2,
+                            unclampedRatePerClockUnitCandidate = unavailableEnergyRate
+                        }
                     } : missing("not-energy-kind-four")
             }
         };
