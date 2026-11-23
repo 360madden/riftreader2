@@ -27,20 +27,44 @@ $rr2Probe = 'tools\physical-wgc-probe\PhysicalWgcProbe.csproj'
 & $rr2DotNet run --project $rr2Probe -c Debug --no-build -- --self-test
 ```
 
-To use a published build, keep its companion files in the same directory and
-set `RR2_WGC_PROBE` in the shell that runs the observer. This framework-dependent
-build requires the x64 .NET 10 Desktop Runtime. If the selected SDK contains
-`Microsoft.WindowsDesktop.App` outside Windows' registered .NET installation,
-use that SDK's directory as the runtime root for the current shell.
+### Publish with the runtime included
+
+Use a self-contained build to carry the x64 .NET Desktop Runtime with the
+probe. Copy the complete publish folder and set `RR2_WGC_PROBE` to its local
+executable path. The observer still uses Python with Pillow and the local
+desktop-evidence directory.
+
+```powershell
+$rr2PublishedProbe = Join-Path (Get-Location).Path 'artifacts\tools\wgc-self-contained'
+& $rr2DotNet restore $rr2Probe --locked-mode -p:SelfContained=true
+if ($LASTEXITCODE -ne 0) { throw 'WGC restore failed.' }
+& $rr2DotNet publish $rr2Probe -c Release --no-restore --self-contained true -o $rr2PublishedProbe
+if ($LASTEXITCODE -ne 0) { throw 'WGC publish failed.' }
+$env:RR2_WGC_PROBE = Join-Path $rr2PublishedProbe 'PhysicalWgcProbe.exe'
+& $env:RR2_WGC_PROBE --self-test
+```
+
+### Publish for a host with the runtime installed
+
+A framework-dependent build has a smaller publish folder and uses the host's
+x64 .NET 10 Desktop Runtime. If the selected SDK contains
+`Microsoft.WindowsDesktop.App` in a private installation, its directory can
+serve as the runtime root for the current shell. Keep the complete publish
+folder together and set `RR2_WGC_PROBE` in the shell that runs the observer.
 
 ```powershell
 $rr2PublishedProbe = Join-Path (Get-Location).Path 'artifacts\tools\wgc-published'
+& $rr2DotNet restore $rr2Probe --locked-mode -p:SelfContained=false
+if ($LASTEXITCODE -ne 0) { throw 'WGC restore failed.' }
 & $rr2DotNet publish $rr2Probe -c Release --no-restore --self-contained false -o $rr2PublishedProbe
+if ($LASTEXITCODE -ne 0) { throw 'WGC publish failed.' }
 $env:RR2_WGC_PROBE = Join-Path $rr2PublishedProbe 'PhysicalWgcProbe.exe'
 # For the private SDK installation described above:
 # $env:DOTNET_ROOT_X64 = Split-Path -Parent $rr2DotNet
 & $env:RR2_WGC_PROBE --self-test
 ```
+
+### Capture or inspect a verified local window
 
 For a single local WGC capture, run the following from the repository root with Python and Pillow installed. Choose the current PID from the process listing. The observer writes a new artifact directory and returns the image and receipt paths.
 

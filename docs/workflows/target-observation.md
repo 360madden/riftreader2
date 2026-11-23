@@ -50,9 +50,9 @@ $rr2Host = [Environment]::MachineName
 
 The check covers both backends by default. Choose a backend to check its
 requirements and the shared desktop-turn directory and guard files. WGC runs
-the probe's offline self-test and loads its Python image verifier. The self-test
-requires a runnable build, including the companion files and .NET desktop
-runtime. Set `RR2_WGC_PROBE` to the absolute path of a locally published
+the probe's offline self-test and loads its Python image verifier. Use the
+complete published folder. A self-contained publish includes its .NET Desktop
+Runtime. Set `RR2_WGC_PROBE` to the absolute path of a locally published
 `PhysicalWgcProbe.exe` to use it for dependency checks and captures. The output
 includes the probe exit code and identifies the Python interpreter for Pillow.
 If the probe reports `gpu-probe-dotnet-runtime-unavailable`, use an installed

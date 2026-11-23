@@ -34,8 +34,9 @@ Workbridge capture reports missing `dist/desktop-ui.mjs`,
 `dist/desktop-capture.mjs`, and `dist/desktop-turn-admission.mjs` on LEGION.
 The staged Workbridge owner returned a version-only WinApp probe to RR2.
 The probe uses the service's executable selection. [LEGION WinApp probe](../artifacts/workbridge-winapp-service-legion-20261123.json)
-WGC passed its dependency checks using the x64 .NET Desktop Runtime from the
-private SDK installation. [WGC setup](../tools/physical-wgc-probe/README.md#commands)
+WGC passed its dependency checks with both a private x64 Desktop Runtime and
+a copied self-contained publish. The copied build passed all 31 self-checks
+with the runtime overrides cleared. [Self-contained WGC setup](../tools/physical-wgc-probe/README.md#publish-with-the-runtime-included)
 The AMD-DESKTOP process observations below are dated evidence.
 [Portable checkout setup](workflows/development.md#reuse-local-tools-from-a-fresh-checkout)
 · [LEGION validation log](../artifacts/validation-legion-6c21976.log)
