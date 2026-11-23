@@ -1,5 +1,12 @@
 # RR2 handoff — November 21, 2026, 16:20 EST
 
+**November 23 exact-ID level follow-up on LEGION:** On build 1179, PID 424, two
+native selected-target samples and four advancing Telemetry Lua frames agreed
+on unit `u800000009A0644FF`, Tira Marlas, at level **14**. The two-pass capture
+retained 54 distinct frames. Replay from the copied directory checked the exact
+target ID, stable native entity, player, process and source hashes. No input was
+sent. [Exact-ID level replay](../artifacts/telemetry-exact-target-level-legion-c1f1c6be/independent-exact-level-replay.json)
+
 **November 23 selected-target follow-up on LEGION:** Two advancing ReaderBridge
 packets reported **Tira Marlas, level 14** on build 1179, PID 424. The surrounding
 native reads agreed on the name and level and retained a stable native unit and

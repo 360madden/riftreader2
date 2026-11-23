@@ -1,4 +1,4 @@
-"""Offline-only Telemetry selected-target audit from a verified zone capture.
+"""Replay Telemetry target selections and optional exact-ID level evidence offline.
 
 Reuses the independently source-hashed, host-bracketed native/Lua zone replay,
 then projects the Lua publisher's observed selected-target state. A->B->A is
@@ -48,6 +48,18 @@ def selection_state(frame, *, player):
     return target_id
 
 
+def native_target_projection(kind, source, values):
+    record = source["observation"]
+    if kind == "selected-target":
+        return {"nativeRead": kind, "unitKeyCandidate": values["selfUnitKey"],
+                "targetStatus": values["status"], "targetUnitIdCandidate": values["unitId"],
+                "targetEntity": record.get("targetEntity"), "targetLevelCandidate": values["numericLevelCandidate"],
+                "startedAtUtc": record["startedAtUtc"], "completedAtUtc": record["completedAtUtc"]}
+    return {"unitKeyCandidate": values["unitKey"], "targetStatus": values["target"]["status"],
+            "targetUnitIdCandidate": values["target"]["unitIdCandidate"],
+            "startedAtUtc": record["startedAtUtc"], "completedAtUtc": record["completedAtUtc"]}
+
+
 def native_target_bracket(path, report, verified, first_lua, last_lua):
     """Source-replay optional one-shot native target endpoints without claiming atomicity."""
     exists = [key in report for key in ("nativeTargetBefore", "nativeTargetAfter")]
@@ -63,7 +75,9 @@ def native_target_bracket(path, report, verified, first_lua, last_lua):
                 "native-target-source-path")
         source, digest = load(path.parent / f"native-target-{suffix}.json",
                               meta.get("sha256"))
-        value = zone.physical_rift._native_values("player-context", source)
+        kind = meta.get("nativeRead", "player-context")
+        require(kind in ("player-context", "selected-target"), "native-target-source-kind")
+        value = zone.physical_rift._native_values(kind, source)
         record = source["observation"]
         identity = record["identity"]
         native_zone, _ = load(
@@ -71,17 +85,15 @@ def native_target_bracket(path, report, verified, first_lua, last_lua):
             report["nativeBefore" if suffix == "before" else "nativeAfter"]["sha256"])
         require(identity == native_zone["observation"]["identity"],
                 "native-target-process-module-mismatch")
-        require(value["unitKey"] == str(int(verified["playerUnitId"][1:], 16))
-                and meta.get("unitKeyCandidate") == value["unitKey"]
-                and meta.get("targetStatus") == value["target"]["status"]
-                and meta.get("targetUnitIdCandidate") == value["target"]["unitIdCandidate"]
-                and meta.get("startedAtUtc") == record["startedAtUtc"]
-                and meta.get("completedAtUtc") == record["completedAtUtc"],
+        projection = native_target_projection(kind, source, value)
+        require(projection["unitKeyCandidate"] == str(int(verified["playerUnitId"][1:], 16))
+                and all(key in meta and meta[key] == field for key, field in projection.items()),
                 "native-target-source-projection")
         begin, end = zone._stamp(record["startedAtUtc"]), zone._stamp(record["completedAtUtc"])
         require(begin <= end, "native-target-reversed-sampling")
         entries.append((meta, digest, begin, end))
     before, after = entries
+    require(before[0].get("nativeRead") == after[0].get("nativeRead"), "native-target-source-kind-changed")
     require(zone._stamp(report["nativeBefore"]["completedAtUtc"]) < before[2]
             and before[3] < zone._stamp(report["passes"][0]["startedAtUtc"])
             and zone._stamp(report["passes"][1]["completedAtUtc"]) < after[2]
@@ -91,7 +103,7 @@ def native_target_bracket(path, report, verified, first_lua, last_lua):
     observed = []
     for (meta, digest, _, _), lua in zip(entries, lua_endpoints):
         kind, native_id = meta["targetStatus"], meta["targetUnitIdCandidate"]
-        if kind == "fallback-key-candidate":
+        if kind in ("fallback-key-candidate", "candidate"):
             match = (type(native_id) is str and native_id == lua
                      and lua is not None)
             label = "matched-id-candidate" if match else "different-id-candidate"
@@ -100,11 +112,14 @@ def native_target_bracket(path, report, verified, first_lua, last_lua):
                      else "different-lua-selected-vs-native-zero")
         else:
             label = "native-target-unavailable"
-        observed.append({"nativeTargetStatus": kind,
+        endpoint = {"nativeTargetStatus": kind,
                          "nativeTargetUnitIdCandidate": native_id,
                          "luaTargetUnitIdCandidate": lua,
                          "comparison": label,
-                         "sourceSha256": digest})
+                         "sourceSha256": digest}
+        if meta.get("nativeRead") == "selected-target":
+            endpoint.update(nativeTargetEntity=meta["targetEntity"], nativeTargetLevelCandidate=meta["targetLevelCandidate"])
+        observed.append(endpoint)
     labels = [v["comparison"] for v in observed]
     status = ("matching-endpoint-candidates"
               if all(v in ("matched-id-candidate", "lua-none-vs-native-zero-candidate")
@@ -119,6 +134,31 @@ def native_target_bracket(path, report, verified, first_lua, last_lua):
                 "is only compatible with Lua none, not independent no-target proof; "
                 "endpoint agreement is not controlled A->B->A or navigation authority."
             )}
+
+
+def target_level_bracket(native_comparison, advancing):
+    """Compare the exact Lua target ID and its level on advancing frames."""
+    first, last = (native_comparison[key] for key in ("before", "after"))
+    unit = first["nativeTargetUnitIdCandidate"]
+    entity = first["nativeTargetEntity"]
+    native_levels = [row["nativeTargetLevelCandidate"] for row in (first, last)]
+    lua_levels = [row["targetLevelCandidate"] for row in advancing]
+    result = {"nativeUnitIdCandidate": unit, "nativeLevels": native_levels,
+              "luaLevels": sorted(set(lua_levels) - {None}), "advancingFrameCount": len(advancing),
+              "firstAdvancingSequence": advancing[0]["sequence"], "lastAdvancingSequence": advancing[-1]["sequence"]}
+    if (any(row["nativeTargetStatus"] != "candidate" for row in (first, last))
+            or unit is None or last["nativeTargetUnitIdCandidate"] != unit or type(entity) is not int or entity <= 0
+            or last["nativeTargetEntity"] != entity):
+        status = "native-target-unavailable-or-changed"
+    elif any(frame["targetUnitIdCandidate"] != unit for frame in advancing):
+        status = "different-lua-and-native-target-ids"
+    elif any(type(level) is not int or level <= 0 for level in native_levels + lua_levels):
+        status = "target-level-candidate-unavailable"
+    elif len(set(native_levels + lua_levels)) != 1:
+        status = "different-exact-id-target-level-candidates"
+    else:
+        status = "matching-exact-id-target-level-candidates"
+    return dict(result, status=status)
 
 
 def replay(source, *, include_frames=False):
@@ -147,11 +187,13 @@ def replay(source, *, include_frames=False):
             source_values = zone._frame(raw, row, expected)
             payload = zone.exact_json(raw[len(zone.PREFIX):-len(zone.SUFFIX)])
             selected = selection_state(payload, player=expected)
+            level = payload["target"].get("level") if selected is not None else None
             frames.append({
                 "sequence": source_values["seq"],
                 "sourceEpoch": source_values["epoch"],
                 "sourceClockCandidate": source_values["clock"],
                 "targetUnitIdCandidate": selected,
+                "targetLevelCandidate": level if type(level) is int and level > 0 else None,
                 "sourceSha256": zone.digest(raw),
             })
     unique = {}
@@ -207,6 +249,12 @@ def replay(source, *, include_frames=False):
     native_comparison = native_target_bracket(
         path, report, verified, ordered[0]["targetUnitIdCandidate"],
         ordered[-1]["targetUnitIdCandidate"])
+    level_comparison = None
+    if native_comparison is not None and "nativeTargetLevelCandidate" in native_comparison["before"]:
+        first_pass_latest = max(row["seq"] for row in report["passes"][0]["frames"] if "sha" in row)
+        advancing = [frame for frame in ordered if frame["sequence"] > first_pass_latest]
+        require(advancing, "target-level-advancing-frames-unavailable")
+        level_comparison = target_level_bracket(native_comparison, advancing)
     return {
         "schemaVersion": 1,
         "evidenceKind": "physical-telemetry-target-sequence-offline/1",
@@ -234,6 +282,8 @@ def replay(source, *, include_frames=False):
         "nativeSourceSha256": verified["nativeSourceSha256"],
         **({"nativeTargetComparison": native_comparison}
            if native_comparison is not None else {}),
+        **({"targetLevelComparison": level_comparison} if level_comparison is not None else {}),
+        "inputSent": False,
         "worldInstanceStatus": "unavailable",
         "qualification": (
             "Source-hashed, same-process, independent Lua publisher selection candidates "
@@ -278,6 +328,7 @@ def main(argv=None):
         "transitions": result["transitions"],
         "aBaCycles": result["aBaCycles"],
         "nativeTargetComparison": result.get("nativeTargetComparison"),
+        **({"targetLevelComparison": result["targetLevelComparison"]} if "targetLevelComparison" in result else {}),
         "output": str(args.output) if args.output else None,
     }, allow_nan=False))
     return 0

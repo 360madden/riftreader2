@@ -94,6 +94,29 @@ class TargetSequenceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid-include-frames-option"):
             target.replay(self.fx.summary, include_frames=1)
 
+    def test_level_comparison_uses_advancing_frames_and_exact_target_id(self):
+        def set_level(doc, unit, level):
+            selected(doc, unit)
+            doc["target"]["level"] = level
+
+        for pass_number, slot in ((1, 1), (1, 2), (2, 1)):
+            self.fx.edit_wire(pass_number, slot, lambda doc: set_level(doc, A, 5))
+        endpoints = {side: {"nativeTargetStatus": "candidate", "nativeTargetEntity": 0x20040000,
+                            "nativeTargetUnitIdCandidate": A, "nativeTargetLevelCandidate": 14}
+                     for side in ("before", "after")}
+        with patch.object(target, "native_target_bracket", return_value=endpoints):
+            for unit, level, expected in (
+                    (A, 14, "matching-exact-id-target-level-candidates"),
+                    (B, 14, "different-lua-and-native-target-ids"),
+                    (A, 15, "different-exact-id-target-level-candidates"),
+                    (A, True, "target-level-candidate-unavailable")):
+                with self.subTest(unit=unit, level=level):
+                    self.fx.edit_wire(2, 2, lambda doc: set_level(doc, unit, level))
+                    comparison = target.replay(self.fx.summary)["targetLevelComparison"]
+                    self.assertEqual(comparison["status"], expected)
+                    self.assertEqual(comparison["advancingFrameCount"], 1)
+                    self.assertEqual(comparison["firstAdvancingSequence"], 3)
+
     def test_selected_frames_without_return_are_not_a_b_a(self):
         self.change({(1,1): A, (1,2): B, (2,1): B, (2,2): B})
         result = target.replay(self.fx.summary)

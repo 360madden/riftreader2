@@ -61,6 +61,18 @@ python -B scripts/capture_readerbridge_v3.py --expected-host $rr2Host --physical
 python -B scripts/replay_readerbridge_v3.py --summary artifacts/NEW_TARGET_BRIDGE/result.json
 ```
 
+If the installed Telemetry addon publishes `target.id` and `target.level`,
+use `--include-native-target-levels` for an exact-ID comparison. The replay
+compares native samples at both ends with the Lua frames whose source sequence
+advanced beyond the first capture pass. It checks the same local process,
+player and native target entity. Copy the full capture folder to rerun it
+offline. The comparison covers the observed IDs and levels.
+
+```powershell
+python -B scripts/capture_physical_telemetry_zone.py --expected-host $rr2Host --physical-pid CURRENT_VERIFIED_PID --auto-scope --discover-scope --include-native-target-levels --output-dir artifacts/NEW_TARGET_LEVEL
+python -B scripts/replay_physical_telemetry_target.py --summary artifacts/NEW_TARGET_LEVEL/summary.json
+```
+
 ## Physical acceptance
 
 - Verified exact physical RIFT process: AMD-DESKTOP, PID `37676`, process-start ticks `639308565554559088`, executable SHA-256 `DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01`.

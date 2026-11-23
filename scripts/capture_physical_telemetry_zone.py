@@ -379,15 +379,15 @@ def native_zone(selection, directory, which, *, read):
             "completedAtUtc": values["sampledAtUtc"]}
 
 
-def native_target(selection, directory, which, *, read=None):
+def native_target(selection, directory, which, *, read=None, kind="player-context"):
     """One exact-owner native target snapshot; raw zero stays unqualified."""
     path = directory / f"native-target-{which}.json"
     if read is None:
         read = physical_rift.read_native
-    result = read(selection, "player-context", output=path)
+    result = read(selection, kind, output=path)
     require(result.get("status") == "complete"
             and result.get("target") == selection["target"]
-            and result.get("nativeRead") == "player-context"
+            and result.get("nativeRead") == kind
             and result.get("nativeOutput") == str(path)
             and path.is_file() and not path.is_symlink(),
             "native-target-read-unavailable")
@@ -399,7 +399,7 @@ def native_target(selection, directory, which, *, read=None):
             claimed_sha.casefold() == source_sha.casefold()),
             "native-target-source-hash-mismatch")
     native, digest = verify.load(path, source_sha)
-    values = physical_rift._native_values("player-context", native)
+    values = physical_rift._native_values(kind, native)
     require(values == result.get("nativeValues"),
             "native-target-source-projection-mismatch")
     record = native["observation"]
@@ -412,21 +412,20 @@ def native_target(selection, directory, which, *, read=None):
             and str(identity.get("executableSha256", "")).upper() ==
                 str(target["executableSha256"]).upper()
             and identity.get("executablePath") == target["executablePath"]
-            and record.get("completedAtUtc") == values["sampledAtUtc"],
+            and record.get("completedAtUtc") == (
+                values["completedAtUtc"] if kind == "selected-target" else values["sampledAtUtc"]),
             "native-target-owner-or-time-invalid")
-    return {"source": str(path), "sha256": digest,
-            "unitKeyCandidate": values["unitKey"],
-            "targetStatus": values["target"]["status"],
-            "targetUnitIdCandidate": values["target"]["unitIdCandidate"],
-            "startedAtUtc": record["startedAtUtc"],
-            "completedAtUtc": record["completedAtUtc"]}
+    return {"source": str(path), "sha256": digest, **target_audit.native_target_projection(kind, native, values)}
 
 
 def collect(pid, output_dir, *, start_address="0x13000000",
             scan_bytes=64*1024*1024, gap_ms=600, reader_factory=ReadOnlyWindowsProcess,
-            auto_scope=False, scope_count=4, include_native_target=False,
+            auto_scope=False, scope_count=4, include_native_target=False, include_native_target_levels=False,
             discover_scope=False, expected_host=None, native_reader=None):
-    require(type(include_native_target) is bool, "invalid-native-target-option")
+    require(type(include_native_target) is bool and type(include_native_target_levels) is bool,
+            "invalid-native-target-option")
+    include_native_target = include_native_target or include_native_target_levels
+    target_options = {"kind": "selected-target"} if include_native_target_levels else {}
     require(type(auto_scope) is bool and type(scope_count) is int
             and 1 <= scope_count <= 8, "invalid-auto-scope-options")
     require(type(discover_scope) is bool and (not discover_scope or auto_scope),
@@ -524,7 +523,7 @@ def collect(pid, output_dir, *, start_address="0x13000000",
     player = f"u{int(native_data['observation']['selfKey']):016X}"
     require(preflight_player is None or preflight_player == player,
             "survey-versus-bracket-player-changed")
-    target_before = (native_target(selection, root, "before", read=read)
+    target_before = (native_target(selection, root, "before", read=read, **target_options)
                      if include_native_target else None)
     require(target_before is None or
             target_before["unitKeyCandidate"] == str(int(player[1:], 16)),
@@ -544,7 +543,7 @@ def collect(pid, output_dir, *, start_address="0x13000000",
                       expected_player=player, **generation_arg)
     require(physical_rift.select_physical(host, pid).get("target") == target,
             "changed-process-after-second-scan")
-    target_after = (native_target(selection, root, "after", read=read)
+    target_after = (native_target(selection, root, "after", read=read, **target_options)
                     if include_native_target else None)
     require(target_after is None or
             target_after["unitKeyCandidate"] == str(int(player[1:], 16)),
@@ -602,6 +601,9 @@ def collect(pid, output_dir, *, start_address="0x13000000",
             target_result = target_audit.replay(path)
             require(isinstance(target_result.get("nativeTargetComparison"), dict),
                     "native-target-source-replay-refused")
+            if include_native_target_levels:
+                require(isinstance(target_result.get("targetLevelComparison"), dict),
+                        "native-target-level-source-replay-refused")
     return path, report
 
 
@@ -622,6 +624,8 @@ def main(argv=None):
                         help="locate publisher in bounded readable private memory with --auto-scope; ignores the address search origin")
     parser.add_argument("--include-native-target", action="store_true",
                         help="pin additional read-only native selected-target snapshots around both Lua passes")
+    parser.add_argument("--include-native-target-levels", action="store_true",
+                        help="retain native selected-target IDs and level candidates around both Lua passes")
     parser.add_argument("--output-dir",type=Path,
                         default=ROOT/"artifacts"/("physical-telemetry-zone-"+uuid.uuid4().hex))
     args=parser.parse_args(argv)
@@ -631,6 +635,7 @@ def main(argv=None):
                              gap_ms=args.gap_ms, auto_scope=args.auto_scope,
                               scope_count=args.scope_count,
                               include_native_target=args.include_native_target,
+                              include_native_target_levels=args.include_native_target_levels,
                               discover_scope=args.discover_scope,
                               expected_host=args.expected_host,
                               native_reader=args.native_reader)
