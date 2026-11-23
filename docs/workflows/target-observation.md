@@ -71,7 +71,7 @@ reader. Pass the same option on the capture command to use that executable
 for both reads around the frame.
 
 ```powershell
-python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies --native-facing --native-reader $rr2PublishedReader
+python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies --physical-capture-backend wgc --native-facing --native-reader $rr2PublishedReader
 ```
 
 Use the [native reader publish steps](development.md#publish-the-local-native-reader)

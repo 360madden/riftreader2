@@ -15,9 +15,11 @@ advancing nonce-bound survey. [NPC survey preparation](reference/physical-nearby
 The current Windows workflow verifies the local host before using physical
 tools. A fresh checkout can use a published native reader, a calibration
 verified for that host, and local Python environments. The fresh LEGION
-checkout passed the full gate, including the real Lua 5.1 producer checks,
-with the configured dependencies. Treat the AMD-DESKTOP process observations
-below as dated evidence. [Portable checkout setup](workflows/development.md#reuse-local-tools-from-a-fresh-checkout)
+checkout at `325170d` passed the full gate, including the real Lua 5.1 producer
+checks. WGC passed its offline dependency check. Workbridge capture reports two
+missing deployed runners. The AMD-DESKTOP process observations below are dated
+evidence. [Portable checkout setup](workflows/development.md#reuse-local-tools-from-a-fresh-checkout)
+· [LEGION validation log](../artifacts/validation-legion-325170d.log)
 
 **Machine verified:** **AMD-DESKTOP**, from machine-local Windows PowerShell `[Environment]::MachineName` (exit 0 at 16:20:19 EST); Workbridge **0.16.5-dev** rooted at `C:\work`.\
 **Repository:** `C:\work\riftreader2`; branch **`codex/modular-foundation`**.\
