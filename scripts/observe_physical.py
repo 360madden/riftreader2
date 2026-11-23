@@ -67,11 +67,11 @@ def require_clear_desktop_turn(*, bridge=None):
                  "desktop-turn-recovery-required")
 
 
-def _run(args, timeout=120):
+def _run(args, timeout=120, *, env=None):
     # File-backed bounded output avoids buffering base64 screenshots without a limit.
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
         proc = subprocess.Popen([str(arg) for arg in args], cwd=ROOT, stdin=subprocess.DEVNULL,
-                                stdout=stdout, stderr=stderr,
+                                stdout=stdout, stderr=stderr, env=env,
                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         deadline = time.monotonic() + timeout
         try:

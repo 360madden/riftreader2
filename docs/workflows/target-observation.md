@@ -41,9 +41,11 @@ python -B scripts/observe_target.py --target physical --expected-host $rr2Host -
 ```
 
 The check covers both backends by default. Choose a backend to check its
-requirements and the shared desktop-turn directory and guard files. WGC checks
-the probe executable and loads its Python image verifier. The output identifies
-the interpreter to use for a capture or for installing Pillow. Workbridge checks
+requirements and the shared desktop-turn directory and guard files. WGC runs
+the probe's offline self-test and loads its Python image verifier. The self-test
+requires a runnable build, including the companion files and .NET desktop
+runtime. The output gives the probe exit code if it fails and identifies the
+Python interpreter to use for a capture or for installing Pillow. Workbridge checks
 registration of `desktop_windows` and `desktop_capture_window` on the running
 service and checks `dist/desktop-ui.mjs` and `dist/desktop-capture.mjs` in its
 deployment. A `RUNTIME_MISMATCH` includes the versions expected and running.

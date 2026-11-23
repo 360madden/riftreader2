@@ -11,6 +11,10 @@ from scripts import observe_target as tool
 from scripts import observe_gpu, observe_physical, physical_turn_visual_pair
 
 
+OFFLINE_PROBE_REPORT = {"status": "offline-self-test-passed", "passed": 31,
+                        "inputSent": False, "frameCaptured": False}
+
+
 class TargetRoutingTests(unittest.TestCase):
     def setUp(self):
         self.hostname = patch.object(tool.socket, "gethostname", return_value="AMD-DESKTOP")
@@ -64,7 +68,8 @@ class TargetRoutingTests(unittest.TestCase):
              patch.object(observe_gpu, "capture_gpu") as capture_gpu, \
              patch.object(observe_physical, "capture_physical") as capture_physical, \
              patch.object(observe_physical, "workbridge_root", return_value=Path(temp) / "bridge"), \
-             patch.object(observe_physical, "check_workbridge_capture_service") as service:
+             patch.object(observe_physical, "check_workbridge_capture_service") as service, \
+             patch.object(observe_gpu, "_run", return_value=(0, json.dumps(OFFLINE_PROBE_REPORT))) as probe_runner:
             probe = Path(temp) / "wgc.exe"
             probe.touch()
             with patch.object(observe_gpu, "PROBE", probe), redirect_stdout(io.StringIO()) as output:
@@ -75,6 +80,9 @@ class TargetRoutingTests(unittest.TestCase):
             self.assertEqual(result["ownerHost"], "RIFT-STATION")
             self.assertEqual(result["backendScope"], "all")
             self.assertEqual(result["wgcProbe"]["status"], "available")
+            self.assertEqual(result["wgcProbe"]["checksPassed"], 31)
+            self.assertEqual(probe_runner.call_args.args[0], [probe, "--self-test"])
+            self.assertEqual(probe_runner.call_args.kwargs["env"]["DOTNET_DISABLE_GUI_ERRORS"], "1")
             self.assertEqual(result["desktopTurn"]["reason"], "shared-gui-evidence-directory-missing")
             self.assertEqual(result["workbridgeService"]["reason"], "RUNTIME_MISMATCH")
             self.assertFalse(result["captureAttempted"])
@@ -92,7 +100,8 @@ class TargetRoutingTests(unittest.TestCase):
         with TemporaryDirectory() as temp, \
              patch.object(tool.socket, "gethostname", return_value="RIFT-STATION"), \
              patch.object(observe_physical, "workbridge_root", return_value=Path(temp)), \
-             patch.object(observe_physical, "check_workbridge_capture_service") as service:
+             patch.object(observe_physical, "check_workbridge_capture_service") as service, \
+             patch.object(observe_gpu, "_run", return_value=(0, json.dumps(OFFLINE_PROBE_REPORT))) as probe_runner:
             (Path(temp) / ".tools" / "desktop-evidence").mkdir(parents=True)
             probe = Path(temp) / "wgc.exe"
             args = ["--target", "physical", "--expected-host", "RIFT-STATION",
@@ -104,6 +113,7 @@ class TargetRoutingTests(unittest.TestCase):
                 result = json.loads(output.getvalue())
                 self.assertEqual(result["backendScope"], "workbridge")
                 self.assertNotIn("wgcProbe", result)
+                probe_runner.assert_not_called()
 
             probe.touch()
             service.reset_mock()
@@ -113,6 +123,28 @@ class TargetRoutingTests(unittest.TestCase):
                 self.assertEqual(result["backendScope"], "wgc")
                 self.assertNotIn("workbridgeService", result)
             service.assert_not_called()
+
+    def test_present_wgc_executable_must_pass_offline_self_test(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / ".tools" / "desktop-evidence").mkdir(parents=True)
+            probe = root / "probe.exe"
+            probe.touch()
+            for code, response, reason in (
+                    (2147516570, "", "gpu-probe-self-test-failed"),
+                    (0, "", "gpu-probe-self-test-report-invalid"),
+                    (0, json.dumps({**OFFLINE_PROBE_REPORT, "frameCaptured": True}),
+                     "gpu-probe-self-test-report-invalid")):
+                with self.subTest(code=code, response=response), \
+                     patch.object(observe_physical, "workbridge_root", return_value=root), \
+                     patch.object(observe_gpu, "PROBE", probe), \
+                     patch.object(observe_gpu, "_run", return_value=(code, response)):
+                    result = tool.observe("physical", "AMD-DESKTOP", check_dependencies=True,
+                                          physical_capture_backend="wgc")
+                self.assertEqual(result["status"], "blocked")
+                self.assertEqual(result["wgcProbe"]["reason"], reason)
+                if code:
+                    self.assertEqual(result["wgcProbe"]["exitCode"], code)
 
     def test_explicit_workbridge_capture_keeps_the_foreground_admission_check(self):
         result = tool.observe("physical", "AMD-DESKTOP", physical_capture_backend="workbridge")
@@ -127,6 +159,7 @@ class TargetRoutingTests(unittest.TestCase):
              patch.object(observe_physical, "check_workbridge_capture_service", return_value={"status": "available"}), \
              patch.object(observe_gpu, "frame_tools", side_effect=ValueError("wgc-python-pillow-unavailable")), \
              patch.object(observe_gpu, "PROBE", Path(temp) / "probe.exe"), \
+             patch.object(observe_gpu, "_run", return_value=(0, json.dumps(OFFLINE_PROBE_REPORT))), \
              patch.object(observe_gpu, "_identity") as identity:
             observe_gpu.PROBE.touch()
             (Path(temp) / ".tools" / "desktop-evidence").mkdir(parents=True)

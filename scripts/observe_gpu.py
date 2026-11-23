@@ -2,12 +2,36 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import socket
 
 from scripts.observe_physical import ROOT, _identity, _plain_path, _require, _run, valid_host_name
 
 PROBE = ROOT / "tools/physical-wgc-probe/bin/Debug/net10.0-windows10.0.19041.0/win-x64/PhysicalWgcProbe.exe"
+
+
+def check_probe():
+    """Run the built probe's offline self-test without opening a target window."""
+    result = {"status": "blocked", "path": str(PROBE)}
+    if not PROBE.is_file():
+        return {**result, "reason": "gpu-probe-build-required"}
+    try:
+        code, response = _run([PROBE, "--self-test"], 10,
+                              env={**os.environ, "DOTNET_DISABLE_GUI_ERRORS": "1"})
+    except (OSError, ValueError):
+        return {**result, "reason": "gpu-probe-self-test-unavailable"}
+    if code != 0:
+        return {**result, "reason": "gpu-probe-self-test-failed", "exitCode": code}
+    try:
+        report = json.loads(response)
+    except json.JSONDecodeError:
+        report = None
+    if (not isinstance(report, dict) or report.get("status") != "offline-self-test-passed"
+            or report.get("inputSent") is not False or report.get("frameCaptured") is not False
+            or type(report.get("passed")) is not int or report["passed"] < 1):
+        return {**result, "reason": "gpu-probe-self-test-report-invalid"}
+    return {**result, "status": "available", "checksPassed": report["passed"]}
 
 
 def frame_tools():

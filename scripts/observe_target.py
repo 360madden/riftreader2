@@ -140,11 +140,7 @@ def _check_capture_dependencies(backend):
     if backend in (None, "wgc"):
         from scripts import observe_gpu
 
-        probe = observe_gpu.PROBE
-        wgc_probe = {"status": "available" if probe.is_file() else "blocked", "path": str(probe)}
-        if wgc_probe["status"] == "blocked":
-            wgc_probe["reason"] = "gpu-probe-build-required"
-        checks["wgcProbe"] = wgc_probe
+        checks["wgcProbe"] = observe_gpu.check_probe()
         verifier = {"status": "available", "pythonExecutable": sys.executable}
         try:
             observe_gpu.frame_tools()
