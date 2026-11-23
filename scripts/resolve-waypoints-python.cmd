@@ -4,6 +4,10 @@ set "_rr2_waypoints_python="
 set "_rr2_waypoints_python_args="
 if defined RIFTREADER2_PYTHON goto override
 
+if exist "%~dp0..\.local\physical-python\.ready" if exist "%~dp0..\.local\physical-python\core\Scripts\python.exe" (
+  set "_rr2_waypoints_python=%~dp0..\.local\physical-python\core\Scripts\python.exe"
+  exit /b 0
+)
 if exist "%~dp0..\.venv\Scripts\python.exe" (
   set "_rr2_waypoints_python=%~dp0..\.venv\Scripts\python.exe"
   exit /b 0

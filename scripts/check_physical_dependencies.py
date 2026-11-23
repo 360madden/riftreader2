@@ -44,9 +44,7 @@ def check_workflow(workflow, command):
             viewer, _, version = physical_view_tools.check_rerun_viewer()
             return {"status": "ready", "command": viewer, "version": version}
         if workflow == "qt":
-            python = physical_view_tools.local_python(os.environ.get("RR2_OVERLAY_PYTHON"),
-                                                      ROOT / ".local/overlay-venv/Scripts/pythonw.exe",
-                                                      "invalid-overlay-python-path")
+            python = physical_view_tools.overlay_python(ROOT)
             if not python.is_file():
                 return {"status": "blocked", "pythonExecutable": str(python), "reason": "overlay-python-unavailable"}
             probe = run_check(python, ("-c", "from scripts import qt_waypoint_overlay"), cwd=ROOT)
@@ -55,9 +53,7 @@ def check_workflow(workflow, command):
 
         python = sys.executable
         if workflow == "dxcam":
-            python = physical_view_tools.local_python(os.environ.get("RR2_DXCAM_PYTHON"),
-                                                      physical_view_tools.CAPTURE_PYTHON,
-                                                      "invalid-dxcam-python-path")
+            python = physical_view_tools.dxcam_python()
             if not python.is_file():
                 return {"status": "blocked", "pythonExecutable": str(python),
                         "reason": "desktop-capture-environment-unavailable"}

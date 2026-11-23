@@ -35,7 +35,11 @@ function Resolve-ValidationPython {
         return $command.Source
     }
 
+    $prepared = Join-Path $RepositoryRoot '.local/physical-python'
     $candidates = @(
+        if (Test-Path -LiteralPath (Join-Path $prepared '.ready') -PathType Leaf) {
+            Join-Path $prepared 'validation/Scripts/python.exe'
+        }
         Join-Path $RepositoryRoot 'artifacts/tools/lua-python/Scripts/python.exe'
         Join-Path $RepositoryRoot '.venv/Scripts/python.exe'
         if ($env:RIFTREADER2_PYTHON -and [IO.Path]::IsPathFullyQualified($env:RIFTREADER2_PYTHON)) {

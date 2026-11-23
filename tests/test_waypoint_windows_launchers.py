@@ -65,6 +65,21 @@ class WindowsLauncherTests(unittest.TestCase):
         self.assertEqual(Path(json.loads(result.stdout)["executable"]),
                          environment / "Scripts" / "python.exe")
 
+    def test_default_setup_is_selected_after_successful_completion(self):
+        setup = self.root / ".local" / "physical-python"
+        prepared = setup / "core"
+        fallback = self.root / ".venv"
+        for directory in (prepared, fallback):
+            venv.create(directory)
+        for expected in (fallback, prepared):
+            if expected == prepared:
+                (setup / ".ready").touch()
+            result = self.run_launcher("Waypoints.cmd", ["--check"])
+            self.assertEqual(result.returncode, 17, result.stderr)
+            self.assertEqual(Path(json.loads(result.stdout)["executable"]), expected / "Scripts" / "python.exe")
+        override = self.run_launcher("Waypoints.cmd", ["--check"], override=sys.executable)
+        self.assertEqual(Path(json.loads(override.stdout)["executable"]), Path(sys.executable))
+
     def test_invalid_explicit_interpreter_reports_failure(self):
         result = self.run_launcher("Waypoints.cmd", override=self.root / "missing.exe")
         self.assertEqual(result.returncode, 2)

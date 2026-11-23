@@ -140,18 +140,31 @@ With 64-bit Windows Python and Tcl/Tk installed, create a new environment for
 Waypoints and WGC. `--extra overlay` adds Qt and DXcam, `--extra rerun` adds
 Rerun, and `--extra validation` adds the development test dependencies with
 the pinned Lua 5.1 runtime. Each environment uses its own pinned requirements
-and is created at its final path on the local host. The command returns the
-interpreter settings for the current shell.
+and is created at its final path on the local host.
 
 ```powershell
 $rr2Host = [Environment]::MachineName
-$rr2PythonRoot = Join-Path (Get-Location).Path '.local/physical-python'
+.\rr2-setup-python.cmd --expected-host $rr2Host --extra overlay --extra rerun --extra validation
+```
+
+After setup succeeds, Waypoints, dependency checks, and development validation
+find the prepared interpreters under `.local/physical-python`, including from
+a new shell or when Waypoints starts from Explorer. Interpreter-specific
+overrides still take precedence. For a shared Python installation
+outside this checkout, run with `--output-root` and apply the returned settings.
+
+```powershell
+$rr2Host = [Environment]::MachineName
+$rr2PythonRoot = 'C:\path\to\new-rr2-python-environments'
 $rr2Setup = .\rr2-setup-python.cmd --expected-host $rr2Host --output-root $rr2PythonRoot --extra overlay --extra rerun | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) { throw $rr2Setup.reason }
 foreach ($setting in $rr2Setup.environment.PSObject.Properties) {
     Set-Item -LiteralPath "Env:$($setting.Name)" -Value $setting.Value
 }
 ```
+
+If pip reports a Windows path-length error while installing Qt in a deeply
+nested checkout, use `--output-root` with a shorter local path.
 
 ### Reuse local tools from a fresh checkout
 
@@ -670,9 +683,9 @@ these are starting roles, not fixed assignments or evidence of readiness.
 ## Restore, build, and test
 
 Use [the setup command](#prepare-local-physical-python-environments) with
-`--extra validation` and apply its `RIFTREADER2_LUA_PYTHON` setting in the
-shell that runs validation. You can also prepare a repository-local environment
-manually.
+`--extra validation`. For a custom output root, apply the returned
+`RIFTREADER2_LUA_PYTHON` setting in the shell that runs validation. You can
+also prepare a repository-local environment manually.
 
 ```powershell
 python -m venv artifacts/tools/lua-python
@@ -699,8 +712,9 @@ exact SDK from this checkout. An explicit `-DotNet PATH` or
 `RIFTREADER2_DOTNET` selects only that executable, so an incompatible override
 fails directly.
 
-Validation checks `artifacts/tools/lua-python/Scripts/python.exe`, the
-checkout's `.venv`, the absolute executable in `RIFTREADER2_PYTHON`, Python
+Validation checks the completed `.local/physical-python` setup,
+`artifacts/tools/lua-python/Scripts/python.exe`, the checkout's `.venv`,
+the absolute executable in `RIFTREADER2_PYTHON`, Python
 installations on `PATH`, then installations listed by the Windows `py` launcher.
 It selects the first interpreter that passes the Python package, Tcl and pinned
 Lua checks. Use `-LuaPython PATH` or `RIFTREADER2_LUA_PYTHON` to check and use one

@@ -72,13 +72,15 @@ def setup(output, *, extras=()):
              "Check validation Python imports")
         _run([str(validation), "-B", str(ROOT / "scripts/check_lua_runtime.py")], "Check validation Lua 5.1 runtime")
         settings["RIFTREADER2_LUA_PYTHON"] = str(validation)
+    (output / ".ready").touch(exist_ok=False)
     return settings
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--expected-host", required=True, help="verified local Windows machine name")
-    parser.add_argument("--output-root", required=True, type=Path, help="new directory for these environments")
+    parser.add_argument("--output-root", default=ROOT / ".local/physical-python", type=Path,
+                        help="new directory for these environments (default: .local/physical-python in the checkout)")
     parser.add_argument("--extra", choices=("overlay", "rerun", "validation"), action="append", default=[],
                         help="also prepare Qt/DXcam, Rerun, or the development test suite (repeatable)")
     args = parser.parse_args(argv)

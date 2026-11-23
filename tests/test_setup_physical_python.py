@@ -31,6 +31,7 @@ class PhysicalPythonSetupTests(unittest.TestCase):
                 patch.object(tool, "_create_environment", side_effect=lambda path, _: path / "Scripts/python.exe") as create:
             root = Path(temporary) / "new environments"
             result = tool.setup(root, extras=("overlay", "rerun", "validation"))
+            self.assertTrue((root / ".ready").is_file())
         self.assertEqual([call.args[1] for call in create.call_args_list], [
             ("requirements-physical.txt",),
             ("requirements-overlay.txt", "requirements-capture.txt"),
@@ -47,3 +48,12 @@ class PhysicalPythonSetupTests(unittest.TestCase):
             [validation, "-B", str(tool.ROOT / "scripts/check_validation_python.py")],
             [validation, "-B", str(tool.ROOT / "scripts/check_lua_runtime.py")],
         ])
+
+    def test_failed_optional_install_leaves_the_setup_unmarked(self):
+        with TemporaryDirectory() as temporary, patch.object(tool.sys, "platform", "win32"), \
+                patch.object(tool, "_run"), patch.object(tool, "_create_environment") as create:
+            root = Path(temporary) / "failed environments"
+            create.side_effect = [root / "core/Scripts/python.exe", ValueError("optional install error")]
+            with self.assertRaisesRegex(ValueError, "optional install error"):
+                tool.setup(root, extras=("overlay",))
+            self.assertFalse((root / ".ready").exists())

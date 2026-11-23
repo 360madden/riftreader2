@@ -87,10 +87,12 @@ class OwnedMarkerTests(unittest.TestCase):
         self.child.returncode = 0
         self.assertFalse(self.markers.running())
 
-    def test_qt_environment_selects_qt_presenter(self):
-        executable = self.root / ".local" / "overlay-venv" / "Scripts" / "pythonw.exe"
+    def test_completed_setup_selects_qt_presenter(self):
+        setup = self.root / ".local" / "physical-python"
+        executable = setup / "overlay" / "Scripts" / "pythonw.exe"
         executable.parent.mkdir(parents=True)
         executable.touch()
+        (setup / ".ready").touch()
         self.markers.start(self.route, self.adapter)
         command = self.popen.call_args.args[0]
         self.assertEqual(str(executable), command[0])

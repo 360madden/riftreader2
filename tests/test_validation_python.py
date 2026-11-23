@@ -104,6 +104,15 @@ class ValidationPythonTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(Path(result.stdout.strip()), environment / "Scripts" / "python.exe")
 
+    def test_completed_setup_provides_validation_python_without_an_override(self):
+        root = self.repository / ".local" / "physical-python"
+        environment = root / "validation"
+        venv.EnvBuilder(with_pip=False).create(environment)
+        (root / ".ready").touch()
+        result = self.resolve([self.python_stub("working PATH Python")])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(Path(result.stdout.strip()), environment / "Scripts" / "python.exe")
+
     def test_launcher_lists_installed_python_without_running_install_mode(self):
         launcher = self.folder / "launcher only" / "py.cmd"
         launcher.parent.mkdir()

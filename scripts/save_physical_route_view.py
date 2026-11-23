@@ -258,9 +258,7 @@ def _optional_rerun(route_path, observation_path, directory, enabled, *, desktop
     environment = dict(os.environ, CI="1")
     environment.pop("FORCE_RERUN_ANALYTICS", None)
     try:
-        python = physical_view_tools.local_python(os.environ.get("RR2_RERUN_PYTHON"),
-                                                 physical_view_tools.VISUALIZATION_PYTHON,
-                                                 "invalid-rerun-python-path")
+        python = physical_view_tools.rerun_python() or physical_view_tools.VISUALIZATION_PYTHON
         if not python.is_file():
             return {"status": "unavailable", "reason": "visualization-environment-unavailable"}
         command = [str(python), str(ROOT / "scripts/export_physical_rerun.py"),
@@ -297,9 +295,7 @@ def _monitor_name(hwnd):
 
 def _desktop_capture(host, pid, pinned, directory, result, *, native_reader=None):
     observe_physical.require_clear_desktop_turn()
-    capture_python = physical_view_tools.local_python(os.environ.get("RR2_DXCAM_PYTHON"),
-                                                       physical_view_tools.CAPTURE_PYTHON,
-                                                       "invalid-dxcam-python-path")
+    capture_python = physical_view_tools.dxcam_python()
     require(capture_python.is_file(), "desktop-capture-environment-unavailable")
     executable = physical_rift._native_reader_path(native_reader)
     probe_script = str(ROOT / "scripts/probe_dxcam_native_pair.py")

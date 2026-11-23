@@ -20,6 +20,7 @@ class SavedRerunViewerTests(unittest.TestCase):
         self.viewer = self.root / "rerun.exe"
         self.viewer.write_bytes(b"not-executed")
         self.enterContext(patch.object(os, "environ", dict(os.environ, RR2_RERUN_PYTHON="")))
+        self.enterContext(patch.object(physical_view_tools, "ROOT", self.root))
         self.addCleanup(patch.stopall)
         patch.object(physical_view_tools, "VISUALIZATION_PYTHON", self.python).start()
         self.probe = patch.object(saved.subprocess, "run", return_value=subprocess.CompletedProcess(
@@ -53,6 +54,15 @@ class SavedRerunViewerTests(unittest.TestCase):
         self.assertEqual(self.process.call_args.args[0],
                          [str(python), "-m", "rerun", "--bind", "127.0.0.1", "--port", "auto",
                           str(self.recording)])
+
+    def test_completed_setup_runs_its_viewer_module(self):
+        setup = self.root / ".local" / "physical-python"
+        python = setup / "rerun" / "Scripts" / "python.exe"
+        python.parent.mkdir(parents=True)
+        python.touch()
+        self.assertEqual(physical_view_tools.check_rerun_viewer()[0], [str(self.viewer)])
+        (setup / ".ready").touch()
+        self.assertEqual(physical_view_tools.check_rerun_viewer()[0], [str(python), "-m", "rerun"])
 
     def test_configured_python_without_rerun_reports_failure_before_launch(self):
         self.python.touch()

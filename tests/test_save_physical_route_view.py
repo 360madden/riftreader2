@@ -63,6 +63,7 @@ class SaveViewTests(unittest.TestCase):
         self.fixture.run_render()
         self.document = deepcopy(self.fixture.route)
         self.output = self.root / "saved-view"
+        self.enterContext(patch.object(physical_view_tools, "ROOT", self.root))
         self.selection = dict(status="ready", target=deepcopy(self.target))
         self.select = patch.object(saved.physical_rift, "select_physical", return_value=self.selection).start()
         self.context = patch.object(saved.physical_rift, "read_native", return_value=dict(
@@ -509,6 +510,7 @@ class DesktopSaveViewTests(unittest.TestCase):
         self.addCleanup(self.fixture.doCleanups)
         self.root = self.fixture.root
         self.output = self.root / "desktop-view"
+        self.enterContext(patch.object(physical_view_tools, "ROOT", self.root))
         self.target = deepcopy(self.fixture.pair["targetBefore"])
         self.document = deepcopy(self.fixture.route)
         self.capture_python = self.root / "capture-python.exe"

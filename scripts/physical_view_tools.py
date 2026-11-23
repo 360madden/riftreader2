@@ -11,6 +11,14 @@ VISUALIZATION_PYTHON = ROOT / ".local/visualization-venv/Scripts/python.exe"
 CAPTURE_PYTHON = ROOT / ".local/overlay-venv/Scripts/python.exe"
 
 
+def prepared_python(root, environment, executable="python.exe"):
+    setup = root / ".local/physical-python"
+    python = setup / environment / "Scripts" / executable
+    if (setup / ".ready").is_file() and python.is_file():
+        return python
+    return None
+
+
 def local_python(override, default, reason):
     if not override:
         return default
@@ -21,11 +29,25 @@ def local_python(override, default, reason):
     return executable
 
 
+def overlay_python(root):
+    default = prepared_python(root, "overlay", "pythonw.exe") or root / ".local/overlay-venv/Scripts/pythonw.exe"
+    return local_python(os.environ.get("RR2_OVERLAY_PYTHON"), default, "invalid-overlay-python-path")
+
+
+def dxcam_python():
+    default = prepared_python(ROOT, "overlay") or CAPTURE_PYTHON
+    return local_python(os.environ.get("RR2_DXCAM_PYTHON"), default, "invalid-dxcam-python-path")
+
+
+def rerun_python():
+    return local_python(os.environ.get("RR2_RERUN_PYTHON"), prepared_python(ROOT, "rerun"),
+                        "invalid-rerun-python-path")
+
+
 def check_rerun_viewer():
     """Probe the configured viewer in version mode without opening a window."""
-    configured = os.environ.get("RR2_RERUN_PYTHON")
-    if configured:
-        executable = local_python(configured, VISUALIZATION_PYTHON, "invalid-rerun-python-path")
+    executable = rerun_python()
+    if executable is not None:
         viewer = [str(executable), "-m", "rerun"]
     else:
         executable = VISUALIZATION_PYTHON.with_name("rerun.exe")

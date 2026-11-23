@@ -36,7 +36,7 @@ if str(ROOT) not in sys.path:
 if __name__ == "__main__":
     sys.modules["scripts.physical_waypoints"] = sys.modules[__name__]
 
-from scripts import physical_rift
+from scripts import physical_rift, physical_view_tools
 from scripts.movement_controller import Position, WaypointController, planar_distance
 from scripts.nav_physical_reservation import PhysicalClientIdentity, PhysicalClientReservation
 from scripts.observe_physical import _plain_path
@@ -95,17 +95,14 @@ class OwnedWaypointMarkers:
             raise WaypointError("Select one saved marker to guide to")
         if self.running():
             raise WaypointError("Markers are already open or closing")
-        configured_python = os.environ.get("RR2_OVERLAY_PYTHON")
-        if configured_python:
-            qt_executable = Path(configured_python)
-            if not qt_executable.is_absolute() or qt_executable.anchor.startswith(("\\\\", "//")):
-                raise WaypointError("invalid-overlay-python-path")
-            _plain_path(qt_executable)
-            if not qt_executable.is_file():
-                raise WaypointError("overlay-python-unavailable")
-        else:
-            qt_executable = self.root / ".local" / "overlay-venv" / "Scripts" / "pythonw.exe"
-        presenter = "qt" if configured_python or qt_executable.is_file() else "native"
+        try:
+            qt_executable = physical_view_tools.overlay_python(self.root)
+        except ValueError as error:
+            raise WaypointError(str(error)) from error
+        qt_available = qt_executable.is_file()
+        if not qt_available and os.environ.get("RR2_OVERLAY_PYTHON"):
+            raise WaypointError("overlay-python-unavailable")
+        presenter = "qt" if qt_available else "native"
         from scripts.live_physical_waypoints import load_route
         from scripts.waypoint_progress import write_json_atomic
         identity = adapter.binding["runtimeIdentity"]
