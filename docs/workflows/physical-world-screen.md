@@ -539,6 +539,11 @@ intact, including its recorded capture path. Replay checks its recorded hash,
 the image hash, and both retained native source hashes before rendering.
 The original host, process and build still identify the evidence.
 
+Older saved scenes can also open their existing projection and Rerun recording
+after a directory copy. Keep `view.json`, the `projection` subdirectory, and
+any `view.rrd` file together. Waypoints matches the old manifest's saved
+directory against its asset paths and opens the corresponding copied files.
+
 When opening a new Waypoints window, `--view-native-reader` selects an absolute
 local published reader path for the facing, zone, and nearby-unit reads performed
 by **Save view**.
@@ -556,8 +561,8 @@ python scripts/plot_physical_waypoints.py --observation "$bundle/observation.jso
 
 For a DXcam bundle, use `--desktop-pair "$bundle/desktop-pair.json"` in place of
 `--observation`. The Rerun exporter accepts the same source and route arguments,
-with `--output` pointing to a new `.rrd` file. Older manifests with absolute paths
-remain readable in their original location.
+with `--output` pointing to a new `.rrd` file. To regenerate a projection or
+recording from older absolute-path evidence, use its original source location.
 The explicit desktop Save view/Open view buttons passed on PID17212 after normal relaunch
 restored game rendering: seven markers, exact retained native copies, a 2.050 s
 capture and 0.790 s native bracket. The resulting `view.rrd` passed upstream verify,

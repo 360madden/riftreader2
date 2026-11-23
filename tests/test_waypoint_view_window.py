@@ -1,8 +1,9 @@
 """Withdrawn Tk save-view tests with fake backend and no native access."""
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import sys
+from tempfile import TemporaryDirectory
 import threading
 import time
 from types import SimpleNamespace
@@ -10,6 +11,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from scripts import physical_waypoints as app
+from scripts.waypoint_view_bundle import saved_scene_asset
 from tests import test_waypoint_playback_window_state as fixture
 
 
@@ -210,6 +212,47 @@ class ViewWindowTests(unittest.TestCase):
             self.button("Open 3D view").invoke()
         open_file.assert_called_once_with(str(image))
         launched.assert_called_once_with(str(rerun))
+
+
+    def test_open_copied_legacy_scene_uses_the_copied_image_and_recording(self):
+        self.prepare()
+        original = PureWindowsPath(r"D:\RIFT evidence\Old view")
+        copied = self.path / "Copied view"
+        image = copied / "projection" / "waypoints.png"
+        image.parent.mkdir(parents=True)
+        image.write_bytes(b"png")
+        rerun = copied / "view.rrd"
+        rerun.write_bytes(b"rrd")
+        manifest = copied / "view.json"
+        manifest.write_text(json.dumps({
+            "status": "saved-route-view-candidate", "directory": str(original),
+            "image": str(original / "projection" / "waypoints.png"),
+            "rerun": {"status": "saved", "path": str(original / "view.rrd")},
+        }), encoding="utf-8")
+        launched = Mock(return_value=SimpleNamespace(poll=Mock(return_value=None)))
+        with patch("tkinter.filedialog.askopenfilename", return_value=str(manifest)), \
+             patch.object(os, "startfile") as open_file, \
+             patch("scripts.save_physical_route_view.launch_saved_rerun", launched):
+            self.button("Open saved…").invoke()
+            open_file.assert_not_called()
+            launched.assert_not_called()
+            self.assertTrue(any("Saved scene loaded" in value for value in self.labels()))
+            self.button("Open view").invoke()
+            self.button("Open 3D view").invoke()
+        open_file.assert_called_once_with(str(image))
+        launched.assert_called_once_with(str(rerun))
+
+
+class SavedSceneAssetTests(unittest.TestCase):
+    def test_moved_legacy_manifest_uses_only_copies_of_internal_paths(self):
+        with TemporaryDirectory() as temporary:
+            copied = Path(temporary)
+            manifest = {"directory": r"D:\RIFT evidence\Old view"}
+            self.assertEqual(saved_scene_asset(copied, manifest, r"d:\rift evidence\old view\view.rrd"),
+                             copied.resolve() / "view.rrd")
+            self.assertIsNone(saved_scene_asset(copied, manifest, r"D:\RIFT evidence\Other view\view.rrd"))
+            with self.assertRaisesRegex(ValueError, "view-bundle-path-outside-directory"):
+                saved_scene_asset(copied, manifest, r"D:\RIFT evidence\Old view\..\view.rrd")
 
 
 if __name__ == "__main__":

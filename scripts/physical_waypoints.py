@@ -2625,11 +2625,10 @@ def launch_window(args):
     def scene_asset(path, manifest, value, suffix):
         if not value:
             return None
-        if manifest.get("bundleVersion") == 1:
-            from scripts.waypoint_view_bundle import bundle_asset
-            candidate = bundle_asset(path.parent, value)
-        else:
-            candidate = path.parent / value
+        from scripts.waypoint_view_bundle import saved_scene_asset
+        candidate = saved_scene_asset(path.parent, manifest, value)
+        if candidate is None:
+            return None
         resolved = cli_file(candidate)
         if resolved.suffix.casefold() != suffix:
             raise ValueError(f"Saved scene asset must be a {suffix} file")
