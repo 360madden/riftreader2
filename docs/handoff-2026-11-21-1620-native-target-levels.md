@@ -35,7 +35,11 @@ changed-target and nonce-bound NPC confirmation remain pending.
 
 Workbridge capture reports missing `dist/desktop-ui.mjs`,
 `dist/desktop-capture.mjs`, and `dist/desktop-turn-admission.mjs` on LEGION.
-The staged Workbridge owner returned a version-only WinApp probe to RR2.
+A same-version `0.16.4-dev` Workbridge repair candidate passed release validation
+and independent manifest verification. Its receipt is pending review. The live
+owner still has mixed package and runtime versions and an incomplete desktop bundle.
+[Repair candidate verification](../artifacts/workbridge-0164-repair-proof-legion-20261123.json)
+The separate staged `0.16.5-dev` owner returned a version-only WinApp probe to RR2.
 The probe uses the service's executable selection. [LEGION WinApp probe](../artifacts/workbridge-winapp-service-legion-20261123.json)
 WGC passed its dependency checks with both a private x64 Desktop Runtime and
 a copied self-contained publish. The copied build passed all 31 self-checks
