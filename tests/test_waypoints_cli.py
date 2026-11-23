@@ -35,7 +35,8 @@ class CliTests(unittest.TestCase):
             spawn.assert_not_called()
 
     def test_doctor_requires_local_scope_for_pid_or_basis_and_keeps_session_request(self):
-        for args in (("--pid", "41"), ("--basis", "local.json"), ("--local", "--session", "chosen")):
+        for args in (("--pid", "41"), ("--basis", "local.json"), ("--local", "--session", "chosen"),
+                     ("--dependencies-only",), ("--local", "--dependencies-only", "--pid", "41")):
             with self.subTest(args=args), patch.object(launcher, "check_local_setup") as check:
                 code, _, _ = self.call("doctor", *args, "--json")
                 self.assertEqual(code, 2)
@@ -44,6 +45,15 @@ class CliTests(unittest.TestCase):
              patch.object(protocol, "request", return_value=cli.result("doctor", data={})) as request:
             self.assertEqual(self.call("doctor", "--json")[0], 0)
             self.assertEqual(request.call_args.args[1:], ("doctor", {}))
+
+    def test_local_doctor_routes_dependency_only_mode(self):
+        data = {"scope": "local", "mode": "dependencies", "host": "RIFT-STATION", "target": None,
+                "checks": {"tkinter": {"status": "available"}}, "ready": True, "inputSent": False}
+        with patch.object(launcher, "check_local_setup", return_value=data) as check:
+            code, out, _ = self.call("doctor", "--local", "--dependencies-only")
+        self.assertEqual(code, 0)
+        self.assertIn("Dependency check", out)
+        check.assert_called_once_with(None, None, dependencies_only=True)
 
     def test_machine_json_survives_legacy_windows_output_encoding(self):
         raw = io.BytesIO()

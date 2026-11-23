@@ -33,15 +33,17 @@ def baseline(path, target):
             "positionCandidate": list(sample["position"])}
 
 
-def prepare(expected_host, pid, output_dir):
+def prepare(expected_host, pid, output_dir, *, native_reader=None):
     require(physical_rift.is_local_host(expected_host), "wrong-host")
     require(type(pid) is int and 0 < pid <= 2**31 - 1, "explicit-pid-required")
+    reader = physical_rift._native_reader_path(native_reader)
+    require(reader.is_file(), "native-reader-not-built")
+    reader_options = {"native_reader": reader} if native_reader is not None else {}
     selection = physical_rift.select_physical(expected_host, pid)
     require(selection.get("status") == "ready", selection.get("reason", "physical-target-unavailable"))
     target = selection["target"]
     require(target.get("processId") == pid, "calibration-target-pid-mismatch")
-    require(physical_rift.NATIVE_EXE.is_file(), "native-reader-not-built")
-    before = physical_rift.inspect_movement_target(target)
+    before = physical_rift.inspect_movement_target(target, **reader_options)
     require(before["desktopInputsDown"] == [], "desktop-inputs-held")
 
     output_dir = Path(os.path.abspath(ROOT / output_dir))
@@ -49,7 +51,8 @@ def prepare(expected_host, pid, output_dir):
     require(not output_dir.exists() and output_dir.parent.is_dir(), "new-output-directory-required")
     output_dir.mkdir()
     path = output_dir / FACING
-    capture = physical_rift.read_native(selection, "facing", path, samples=3, interval_ms=150)
+    capture = physical_rift.read_native(selection, "facing", path, samples=3, interval_ms=150,
+                                        **reader_options)
     require(capture.get("status") == "complete", capture.get("reason", "native-facing-unavailable"))
     require(capture.get("target") == target and capture.get("nativeRead") == "facing"
             and Path(capture.get("nativeOutput", "")) == path, "calibration-baseline-receipt-mismatch")
@@ -57,7 +60,7 @@ def prepare(expected_host, pid, output_dir):
     require(str(capture.get("nativeSourceSha256", "")).upper() == observed["sha256"], "calibration-baseline-sha-mismatch")
     current = physical_rift.select_physical(expected_host, pid)
     require(current.get("status") == "ready" and current.get("target") == target, "calibration-target-changed")
-    after = physical_rift.inspect_movement_target(target)
+    after = physical_rift.inspect_movement_target(target, **reader_options)
     require(after["desktopInputsDown"] == [], "desktop-inputs-held")
 
     report = {"schema": SCHEMA, "status": "calibration-baseline-ready", "target": target,
@@ -87,10 +90,13 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--expected-host", required=True)
     parser.add_argument("--physical-pid", type=int, required=True)
+    parser.add_argument("--native-reader", type=Path,
+                        help="absolute local path to a published RiftReader2.Live.exe")
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
-        summary, report = prepare(args.expected_host, args.physical_pid, args.output_dir)
+        summary, report = prepare(args.expected_host, args.physical_pid, args.output_dir,
+                                  native_reader=args.native_reader)
     except (OSError, ValueError, TypeError, KeyError, OverflowError) as error:
         print(json.dumps({"status": "blocked", "reason": str(error), "inputSent": False, "focusRequested": False}))
         return 2

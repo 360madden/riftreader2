@@ -8,7 +8,7 @@ import struct
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from scripts import physical_rift
 from scripts import prepare_physical_move_calibration as preflight
@@ -29,7 +29,7 @@ class CalibrationPreflightTests(unittest.TestCase):
         self.enterContext(patch.object(physical_rift.socket, "gethostname", return_value="RIFT-STATION"))
         self.enterContext(patch.object(physical_rift, "NATIVE_EXE", self.reader))
 
-    def capture(self, selection, kind, path, *, samples, interval_ms):
+    def capture(self, selection, kind, path, *, samples, interval_ms, native_reader=None):
         self.assertEqual((selection, kind, samples, interval_ms), (self.selection, "facing", 3, 150))
         report = facing_report()
         identity = {**report["identity"], "executablePath": self.target["executablePath"]}
@@ -46,14 +46,18 @@ class CalibrationPreflightTests(unittest.TestCase):
                 "nativeOutput": str(path), "nativeSourceSha256": hashlib.sha256(path.read_bytes()).hexdigest()}
 
     def test_pins_raw_facing_and_rechecks_window_without_input(self):
+        published = self.root / "published-reader.exe"
+        published.touch()
         inspection = {"target": {"isForeground": False}, "desktopInputsDown": []}
         with patch.object(physical_rift, "select_physical", return_value=self.selection) as select, \
              patch.object(physical_rift, "inspect_movement_target", return_value=inspection) as inspect, \
-             patch.object(physical_rift, "read_native", side_effect=self.capture):
-            path, report = preflight.prepare("rift-station", self.target["processId"], self.output)
+             patch.object(physical_rift, "read_native", side_effect=self.capture) as read:
+            path, report = preflight.prepare("rift-station", self.target["processId"], self.output,
+                                             native_reader=published)
         self.assertEqual(path, self.output / preflight.SUMMARY)
         self.assertEqual(select.call_count, 2)
-        self.assertEqual(inspect.call_count, 2)
+        self.assertEqual(inspect.call_args_list, [call(self.target, native_reader=published)] * 2)
+        self.assertEqual(read.call_args.kwargs["native_reader"], published)
         self.assertFalse(report["inputSent"])
         self.assertFalse(report["focusRequested"])
         self.assertEqual(preflight.verify_preflight(path)[:2], (self.target, report["baseline"]))
@@ -88,6 +92,7 @@ class CalibrationPreflightTests(unittest.TestCase):
 
     def test_identity_inspection_cli_has_no_action_or_focus_flags(self):
         target = self.target
+        published = self.root / "published-reader.exe"
         native_target = dict(machineName=target["hostName"], processId=target["processId"],
                              processStartUtcTicks=int(target["processStartUtcTicks"]),
                              executablePath=target["executablePath"], executableSha256=target["executableSha256"],
@@ -96,8 +101,8 @@ class CalibrationPreflightTests(unittest.TestCase):
                    "focusRequested": False, "desktopInputsDown": []}
         completed = SimpleNamespace(returncode=0, stdout=json.dumps(receipt))
         with patch.object(physical_rift.subprocess, "run", return_value=completed) as run:
-            self.assertEqual(physical_rift.inspect_movement_target(target), receipt)
-            self.assertEqual(run.call_args.args[0], [str(self.reader), "move-key", "--inspect", "--pid",
+            self.assertEqual(physical_rift.inspect_movement_target(target, native_reader=published), receipt)
+            self.assertEqual(run.call_args.args[0], [str(published), "move-key", "--inspect", "--pid",
                 str(target["processId"]), "--expect-start-ticks", target["processStartUtcTicks"],
                 "--expect-sha256", target["executableSha256"], "--expect-hwnd", hex(target["hwnd"]), "--json"])
             changed = deepcopy(receipt)

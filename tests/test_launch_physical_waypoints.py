@@ -21,6 +21,7 @@ class LauncherTests(unittest.TestCase):
         root_patcher = patch.object(launcher, "ROOT", self.root)
         root_patcher.start()
         self.addCleanup(root_patcher.stop)
+        self.enterContext(patch.dict("os.environ", {"RR2_WAYPOINTS_BASIS": ""}))
 
     def run_launcher(self, args):
         adapter = SimpleNamespace(read=lambda: SimpleNamespace(bearing=12), binding={"mode": "reused-seed"})
@@ -100,7 +101,8 @@ class LauncherTests(unittest.TestCase):
             adapter.return_value.target = target
             adapter.return_value.initial_pose.bearing = 12.0
             adapter.return_value.binding = {"mode": "measured-epoch"}
-            good = launcher.check_local_setup(7, basis_path)
+            with patch.dict("os.environ", {"RR2_WAYPOINTS_BASIS": str(basis_path)}):
+                good = launcher.check_local_setup(7)
             self.assertTrue(good["ready"])
             self.assertEqual(good["checks"]["pose"]["calibrationBinding"], {"mode": "measured-epoch"})
             select.assert_called_once_with("RIFT-STATION", 7)
@@ -110,6 +112,38 @@ class LauncherTests(unittest.TestCase):
             changed = launcher.check_local_setup(7, basis_path)
             self.assertFalse(changed["ready"])
             self.assertEqual(changed["checks"]["pose"]["reason"], "rift-identity-changed")
+
+    def test_dependency_doctor_checks_local_basis_and_starts_only_native_help(self):
+        host = "RIFT-STATION"
+        calibration = basis()
+        calibration["identity"]["machine"] = host
+        basis_path = self.root / "measured.json"
+        basis_path.write_text(json.dumps(calibration), encoding="utf-8")
+        reader = self.root / "reader.exe"
+        reader.touch()
+        with patch.object(launcher.socket, "gethostname", return_value=host), \
+             patch.object(launcher, "_check_tkinter", return_value={"status": "available"}), \
+             patch.object(launcher.physical_rift, "NATIVE_EXE", reader), \
+             patch.object(launcher.physical_rift.observe_physical, "_run",
+                          return_value=(0, "RiftReader2.Live native tools\nsample-current-facing --pid PID")) as run, \
+             patch.object(launcher.physical_rift, "select_physical") as select, \
+             patch.object(launcher, "PhysicalAdapter") as adapter:
+            good = launcher.check_local_setup(basis=basis_path, dependencies_only=True)
+            self.assertTrue(good["ready"])
+            self.assertEqual(good["mode"], "dependencies")
+            self.assertIsNone(good["target"])
+            self.assertFalse(good["inputSent"])
+            self.assertEqual(run.call_args.args[0], [reader, "--help"])
+
+            calibration["identity"]["machine"] = "AMD-DESKTOP"
+            basis_path.write_text(json.dumps(calibration), encoding="utf-8")
+            run.return_value = (2, "missing companion files")
+            blocked = launcher.check_local_setup(basis=basis_path, dependencies_only=True)
+            self.assertFalse(blocked["ready"])
+            self.assertEqual(blocked["checks"]["movementBasis"]["reason"], "movement-basis-host-mismatch")
+            self.assertEqual(blocked["checks"]["nativeReader"]["reason"], "native-reader-failed")
+            select.assert_not_called()
+            adapter.assert_not_called()
 
     def test_default_waits_when_absent_or_ambiguous(self):
         for reason in ("not found", "ambiguous"):
@@ -175,15 +209,23 @@ class LauncherTests(unittest.TestCase):
 
             identity["machine"] = host
             custom_basis = self.root / "custom-basis.json"
-            for path, args in ((custom_basis, ["--check", "--basis", str(custom_basis)]),
-                               (expected_basis, ["--check"])):
+            for path, configured, args in (
+                    (custom_basis, str(other_basis), ["--check", "--basis", str(custom_basis)]),
+                    (custom_basis, str(custom_basis), ["--check"]),
+                    (expected_basis, "", ["--check"])):
                 path.write_text(json.dumps(measurement), encoding="utf-8")
-                with contextlib.redirect_stdout(io.StringIO()) as output:
+                with patch.dict("os.environ", {"RR2_WAYPOINTS_BASIS": configured}), \
+                     contextlib.redirect_stdout(io.StringIO()) as output:
                     self.assertEqual(launcher.main(args), 0)
                 report = json.loads(output.getvalue())
                 self.assertEqual(report["calibrationBinding"]["runtimeIdentity"]["machine"], host)
                 self.assertIs(report["inputSent"], False)
             window.assert_not_called()
+
+    def test_relative_configured_calibration_path_is_refused(self):
+        with patch.dict("os.environ", {"RR2_WAYPOINTS_BASIS": "relative/basis.json"}):
+            with self.assertRaisesRegex(waypoints.WaypointError, "invalid-waypoints-basis-path"):
+                waypoints.movement_basis_path("RIFT-STATION")
 
     def test_explicit_pid_absent_stays_strict(self):
         with patch.object(launcher.socket, "gethostname", return_value="AMD-DESKTOP"), \

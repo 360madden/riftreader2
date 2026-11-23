@@ -146,15 +146,16 @@ def select_physical(expected_host=None, physical_pid=None):
                 "ownerHost": actual, "reason": str(exc)}
 
 
-def inspect_movement_target(target):
+def inspect_movement_target(target, *, native_reader=None):
     """Read the native input helper's exact-target inspection without taking ownership."""
     if (not isinstance(target, dict) or not is_local_host(target.get("hostName"))
             or type(target.get("processId")) is not int or target["processId"] <= 0
             or type(target.get("hwnd")) is not int or target["hwnd"] <= 0):
         raise ValueError("invalid-movement-inspection-target")
+    reader = _native_reader_path(native_reader)
     try:
         completed = subprocess.run([
-            str(NATIVE_EXE), "move-key", "--inspect", "--pid", str(target["processId"]),
+            str(reader), "move-key", "--inspect", "--pid", str(target["processId"]),
             "--expect-start-ticks", target["processStartUtcTicks"],
             "--expect-sha256", target["executableSha256"], "--expect-hwnd", hex(target["hwnd"]), "--json",
         ], cwd=ROOT, capture_output=True, text=True, timeout=10,

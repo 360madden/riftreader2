@@ -15,6 +15,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts import physical_rift
+from scripts.physical_move_basis_waypoint import read_basis
 from scripts.physical_waypoints import PhysicalAdapter, launch_window, movement_basis_path
 
 
@@ -37,13 +38,15 @@ def _check_tkinter():
     return {"status": "available", "tclVersion": version}
 
 
-def check_local_setup(physical_pid=None, basis=None):
+def check_local_setup(physical_pid=None, basis=None, *, dependencies_only=False):
     """Check local Waypoints setup without a GUI, control ownership or game input."""
     host = socket.gethostname().upper()
     if not physical_rift.valid_host_name(host):
         raise ValueError("invalid-local-host")
 
-    basis_path = movement_basis_path(host, basis).resolve()
+    if dependencies_only and physical_pid is not None:
+        raise ValueError("dependency-check-does-not-select-rift")
+    basis_path = movement_basis_path(host, basis).absolute()
     reader = physical_rift.NATIVE_EXE
     checks = {"tkinter": _check_tkinter(), "nativeReader": {"status": "available", "path": str(reader)},
               "movementBasis": {"status": "present", "path": str(basis_path)}}
@@ -51,6 +54,21 @@ def check_local_setup(physical_pid=None, basis=None):
         checks["nativeReader"].update(status="blocked", reason="native-reader-not-built")
     if not basis_path.is_file():
         checks["movementBasis"].update(status="blocked", reason="movement-basis-missing")
+
+    if dependencies_only:
+        probe = physical_rift.check_native_reader(host, kind="facing")
+        if probe["status"] != "ready":
+            checks["nativeReader"].update(status="blocked", reason=probe["reason"])
+        if checks["movementBasis"]["status"] == "present":
+            try:
+                calibration, _ = read_basis(basis_path)
+                if calibration["identity"]["machine"].casefold() != host.casefold():
+                    raise ValueError("movement-basis-host-mismatch")
+            except (OSError, ValueError) as error:
+                checks["movementBasis"].update(status="blocked", reason=str(error))
+        return {"scope": "local", "mode": "dependencies", "host": host, "target": None,
+                "ready": all(check["status"] != "blocked" for check in checks.values()),
+                "checks": checks, "inputSent": False}
 
     selection = physical_rift.select_physical(host, physical_pid)
     target = selection.get("target") if selection["status"] == "ready" else None

@@ -210,6 +210,8 @@ def build_parser():
         if name == "doctor":
             p.add_argument("--local", action="store_true", default=argparse.SUPPRESS,
                            help="check local prerequisites without a running helper")
+            p.add_argument("--dependencies-only", action="store_true", default=argparse.SUPPRESS,
+                           help="with --local: check Tk, reader and calibration file without selecting RIFT")
             p.add_argument("--pid", type=positive, default=argparse.SUPPRESS,
                            help="with --local: select one physical RIFT PID")
             p.add_argument("--basis", type=Path, default=argparse.SUPPRESS,
@@ -631,7 +633,9 @@ def human_data(command, data):
     if not isinstance(data, dict): return False
     if command == "doctor" and data.get("scope") == "local":
         target = data.get("target") or {}
-        print(f"Local Waypoints on {data['host']} | RIFT PID {target.get('processId', 'unavailable')}")
+        detail = ("Dependency check" if data.get("mode") == "dependencies"
+                  else f"RIFT PID {target.get('processId', 'unavailable')}")
+        print(f"Local Waypoints on {data['host']} | {detail}")
         labels = {"tkinter": "Tkinter", "nativeReader": "Native reader", "movementBasis": "Movement calibration",
                   "rift": "RIFT window", "pose": "Calibrated pose"}
         for key, check in data["checks"].items():
@@ -1089,8 +1093,9 @@ def main(argv=None):
             if not args.current and all(getattr(args,k) is None for k in ("name","x","z","kind")):
                 raise UsageError("route update requires --name, --current, or a manual --x/--z coordinate change")
         if command == "trail.save" and args.segment != "latest": args.segment = positive(args.segment)
-        if command == "doctor" and not getattr(args, "local", False) and (hasattr(args, "pid") or hasattr(args, "basis")):
-            raise UsageError("doctor --pid and --basis require --local")
+        if command == "doctor" and not getattr(args, "local", False) and any(
+                hasattr(args, key) for key in ("pid", "basis", "dependencies_only")):
+            raise UsageError("doctor --pid, --basis and --dependencies-only require --local")
         if command in {"route.list", "route.validate"} and args.file:
             envelope = offline_route(args.file, command)
         elif command == "receipt.show":
@@ -1104,8 +1109,13 @@ def main(argv=None):
         elif command == "doctor" and getattr(args, "local", False):
             if getattr(args, "session", None) is not None:
                 raise UsageError("doctor --local cannot select a helper session")
+            options = {}
+            if getattr(args, "dependencies_only", False):
+                if hasattr(args, "pid"):
+                    raise UsageError("doctor --dependencies-only cannot select a physical PID")
+                options["dependencies_only"] = True
             from scripts.launch_physical_waypoints import check_local_setup
-            data = check_local_setup(getattr(args, "pid", None), getattr(args, "basis", None))
+            data = check_local_setup(getattr(args, "pid", None), getattr(args, "basis", None), **options)
             error = None if data["ready"] else {
                 "code": "local-setup-blocked", "message": "Local Waypoints has missing or unavailable prerequisites.",
                 "exitCode": 2,

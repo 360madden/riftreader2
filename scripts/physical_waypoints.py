@@ -39,6 +39,7 @@ if __name__ == "__main__":
 from scripts import physical_rift
 from scripts.movement_controller import Position, WaypointController, planar_distance
 from scripts.nav_physical_reservation import PhysicalClientIdentity, PhysicalClientReservation
+from scripts.observe_physical import _plain_path
 from scripts.physical_move_basis_waypoint import read_basis, candidate_calibrations
 from scripts.waypoint_map import LocalMap, ZOOM_RADII, draw_route, fit_route_radius, route_length
 from scripts.waypoint_heading import choose_turn, heading_error
@@ -467,6 +468,13 @@ def read_stationary(adapter, stop):
 def movement_basis_path(host, basis_path=None):
     if basis_path is not None:
         return Path(basis_path)
+    configured = os.environ.get("RR2_WAYPOINTS_BASIS")
+    if configured:
+        path = Path(configured)
+        if not path.is_absolute() or path.anchor.startswith(("\\\\", "//")) or ".." in path.parts:
+            raise WaypointError("invalid-waypoints-basis-path")
+        _plain_path(path)
+        return path
     return ROOT / "config" / f"physical-movement-basis.{host.lower()}.json"
 
 
@@ -487,7 +495,7 @@ class PhysicalAdapter:
         basis_path = movement_basis_path(host, basis_path)
         if not basis_path.exists():
             raise WaypointError(f"Movement calibration for {host} is missing at {basis_path}. "
-                                "Supply --basis with a measured basis for this host, build and player.")
+                                "Supply --basis or RR2_WAYPOINTS_BASIS with a measured basis for this host, build and player.")
         self.basis, self.basis_sha = read_basis(basis_path)
         ident = self.basis["identity"]
         if (ident["machine"].casefold() != host.casefold()

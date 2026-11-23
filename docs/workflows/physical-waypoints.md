@@ -882,25 +882,34 @@ basis are present, it uses the same Waypoints adapter to verify the binding
 and read the current pose. Add `--pid PID` for multibox or `--basis PATH` for a
 specific measurement. The local check returns exit `2` when a prerequisite is
 blocked. Plain `doctor` reports the state of an existing helper session.
+Use `rr2-waypoints.cmd doctor --local --dependencies-only` before starting RIFT.
+It starts the reader's help command, checks Tcl and verifies the calibration
+file belongs to the local host. The regular local check verifies the build and
+player against a running client.
 
 Waypoints looks for `config/physical-movement-basis.<lowercase-host>.json` by
 default. The checkout includes the AMD-DESKTOP basis. On other Windows hosts,
-save the local movement basis under the matching name or supply `--basis PATH`.
-Use a basis measured for the current host, executable build and player. The
-offline `scripts/physical_move_basis.py` builder can consume saved move-key
+save the local movement basis under the matching name or set
+`RR2_WAYPOINTS_BASIS` to its absolute path to reuse it across checkouts.
+`--basis PATH` takes precedence. The launcher, idle reconnect and local doctor
+use the same selection rule. Use a basis measured for the current host,
+executable build and player. The offline `scripts/physical_move_basis.py`
+builder can consume saved move-key
 receipts from any Windows hostname and requires all samples from one host,
 process epoch, build and player.
 
 Before measuring a new basis, capture a local calibration preflight. It checks
 the exact native window and desktop input state, then saves a SHA-pinned settled
-facing burst. Keep the summary and its sibling `settled-facing.json` together.
+facing burst. Use `--native-reader` with the executable from the
+[local publish steps](development.md#publish-the-local-native-reader).
+Keep the summary and its sibling `settled-facing.json` together.
 The preflight sends no keys and requests no focus change. Live trials still
 require their own review, target checks and input ownership.
 
 ```powershell
 $rrHost = [Environment]::MachineName
 python -B scripts/prepare_physical_move_calibration.py --expected-host $rrHost --physical-pid CURRENT_PID `
-  --output-dir artifacts/NEW_CALIBRATION_PREFLIGHT
+  --native-reader $rr2PublishedReader --output-dir artifacts/NEW_CALIBRATION_PREFLIGHT
 ```
 
 Once the translation and turn measurements have been saved, build the basis
