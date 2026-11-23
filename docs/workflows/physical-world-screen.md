@@ -679,13 +679,16 @@ existing guarded observation path, saving its returned JSON in UTF-8:
 
 ```powershell
 $rr2Host = [Environment]::MachineName
-python scripts/observe_target.py --target physical --expected-host $rr2Host --physical-pid $rr2Pid --physical-capture-backend wgc --native-facing | Set-Content -Encoding utf8 artifacts/projection-observation.json
-python scripts/plot_physical_waypoints.py --observation artifacts/projection-observation.json --route $rr2Route --output artifacts/projection-preview
+$captureCheck = .\rr2-observe.cmd --target physical --expected-host $rr2Host --physical-capture-backend wgc --native-facing --check-dependencies | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) { throw ($captureCheck | ConvertTo-Json -Depth 8) }
+.\rr2-observe.cmd --target physical --expected-host $rr2Host --physical-pid $rr2Pid --physical-capture-backend wgc --native-facing | Set-Content -Encoding utf8 artifacts/projection-observation.json
+if ($LASTEXITCODE -ne 0) { throw 'Observation failed. See artifacts/projection-observation.json.' }
+& $captureCheck.wgcImageVerifier.pythonExecutable scripts/plot_physical_waypoints.py --observation artifacts/projection-observation.json --route $rr2Route --output artifacts/projection-preview
 ```
 
 Set `$rr2Pid` to the freshly admitted PID and `$rr2Route` to the saved route.
-The output directory must be new. For a published reader, add `--native-reader`
-to the observation command. [Check the observation dependencies](target-observation.md#active-workflow-on-the-local-windows-host).
+The output directory must be new. For a specific published reader, add
+`--native-reader` to both observer commands. [Check the observation dependencies](target-observation.md#active-workflow-on-the-local-windows-host).
 The renderer accepts only a stable native/frame bracket, verified image/geometry,
 full native camera projection and complete recorded XYZ/height provenance matching
 the snapshot's host, build and player. A historical recording process epoch is

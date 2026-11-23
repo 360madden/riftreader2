@@ -8,17 +8,15 @@ open, pass the chosen PID to both commands.
 
 ```powershell
 $rr2Host = [Environment]::MachineName
-$rr2Python = $env:RIFTREADER2_PYTHON
-if (!$rr2Python) { $rr2Python = 'python' }
-& $rr2Python scripts/physical_rift.py --expected-host $rr2Host
-& $rr2Python scripts/observe_target.py --target physical --expected-host $rr2Host --physical-pid CURRENT_PID --physical-capture-backend wgc
+Get-Process -Name rift_x64 | Select-Object Id, StartTime, Path
+.\rr2-observe.cmd --target physical --expected-host $rr2Host --physical-pid CURRENT_PID --physical-capture-backend wgc
 ```
 
-The second command is for a reviewed, focus-neutral WGC capture. It requires the
-local WGC probe build, Pillow in the selected Python environment, and the
-Workbridge desktop-evidence directory. Set `RIFTREADER2_PYTHON` to an absolute
-interpreter path if the Python on PATH lacks Pillow. The observer
-returns a receipt named for the verified host. You can also select it explicitly
+The second command is for a reviewed, focus-neutral WGC capture. The launcher
+uses the checkout's prepared Python, including Pillow. It also accepts
+`RIFTREADER2_PYTHON` for an explicit interpreter. WGC requires the published
+local probe and the Workbridge desktop-evidence directory. The observer returns
+a receipt named for the verified host. You can also select it explicitly
 with `--target physical-HOST`, using the local hostname in place of `HOST`.
 The existing `physical-amd-desktop` and `physical-legion` arguments remain valid.
 For the Workbridge window backend, the explicit `--allow-foreground-change`
@@ -45,7 +43,7 @@ To reuse the selected deployment, CLI, and Node from a new shell, register the
 client after setting any needed overrides above.
 
 ```powershell
-& $rr2Python -B scripts/observe_target.py --target physical --expected-host $rr2Host --register-workbridge
+.\rr2-observe.cmd --target physical --expected-host $rr2Host --register-workbridge
 ```
 
 Registration checks Node and uses read-only tool discovery against the active
@@ -58,9 +56,9 @@ runner files, WinApp, and desktop turn readiness separately.
 
 ```powershell
 $rr2Host = [Environment]::MachineName
-& $rr2Python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies
-& $rr2Python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies --physical-capture-backend wgc
-& $rr2Python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies --physical-capture-backend workbridge
+.\rr2-observe.cmd --target physical --expected-host $rr2Host --check-dependencies
+.\rr2-observe.cmd --target physical --expected-host $rr2Host --check-dependencies --physical-capture-backend wgc
+.\rr2-observe.cmd --target physical --expected-host $rr2Host --check-dependencies --physical-capture-backend workbridge
 ```
 
 The check covers both backends by default. Choose a backend to check its
@@ -97,7 +95,7 @@ reader. Pass the same option on the capture command to use that executable
 for both reads around the frame.
 
 ```powershell
-& $rr2Python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies --physical-capture-backend wgc --native-facing --native-reader $rr2PublishedReader
+.\rr2-observe.cmd --target physical --expected-host $rr2Host --check-dependencies --physical-capture-backend wgc --native-facing --native-reader $rr2PublishedReader
 ```
 
 Use the [native reader publish steps](development.md#publish-the-local-native-reader)
@@ -242,7 +240,8 @@ shared-desktop ownership and authority; omit it while Joey is using the PC
 unless that foreground change has been authorized.
 
 ```powershell
-& $rr2Python scripts/observe_target.py --target physical --expected-host $rr2Host --physical-pid CURRENT_PID --physical-capture-backend workbridge --allow-foreground-change --preview
+$rr2Host = [Environment]::MachineName
+.\rr2-observe.cmd --target physical --expected-host $rr2Host --physical-pid CURRENT_PID --physical-capture-backend workbridge --allow-foreground-change --preview
 ```
 
 The Workbridge backend requires `--allow-foreground-change` and retains its

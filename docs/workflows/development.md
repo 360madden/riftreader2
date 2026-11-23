@@ -414,7 +414,7 @@ For one reviewed screenshot with a matching native position, facing and target
 snapshot, use the observation entry point on the verified local host.
 
 ```powershell
-& $rr2Python scripts/observe_target.py --target physical --expected-host $rr2Host --physical-pid CURRENT_PID --native-facing
+.\rr2-observe.cmd --target physical --expected-host $rr2Host --physical-pid CURRENT_PID --native-facing
 ```
 
 This selects the WGC probe and brackets the image with native reads. It never

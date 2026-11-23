@@ -26,10 +26,11 @@ class WindowsLauncherTests(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name) / "cloned checkout"
         (self.root / "scripts").mkdir(parents=True)
-        for path in ("Waypoints.cmd", "rr2-waypoints.cmd", "rr2-check-dependencies.cmd",
+        for path in ("Waypoints.cmd", "rr2-waypoints.cmd", "rr2-check-dependencies.cmd", "rr2-observe.cmd",
                      "scripts/resolve-waypoints-python.cmd"):
             shutil.copyfile(ROOT / path, self.root / path)
-        for path in ("launch_physical_waypoints.py", "waypoints_cli.py", "check_physical_dependencies.py"):
+        for path in ("launch_physical_waypoints.py", "waypoints_cli.py", "check_physical_dependencies.py",
+                     "observe_target.py"):
             (self.root / "scripts" / path).write_text(ENTRY_POINT, encoding="utf-8")
 
     def run_launcher(self, launcher, args=(), *, override=None, environment=None):
@@ -48,7 +49,7 @@ class WindowsLauncherTests(unittest.TestCase):
     def test_launchers_preserve_arguments_and_explicit_interpreter(self):
         args = ["--route", "Example route with spaces.json", "--basis", "Calibration folder"]
         for launcher, prefix in (("rr2-waypoints.cmd", []), ("Waypoints.cmd", ["--detach-window"]),
-                                 ("rr2-check-dependencies.cmd", [])):
+                                 ("rr2-check-dependencies.cmd", []), ("rr2-observe.cmd", [])):
             with self.subTest(launcher=launcher):
                 result = self.run_launcher(launcher, args, override=sys.executable)
                 self.assertEqual(result.returncode, 17, result.stderr)
@@ -83,9 +84,12 @@ class WindowsLauncherTests(unittest.TestCase):
         registered = self.root / ".local" / "physical-python-link"
         venv.create(registered / "core")
         (registered / ".ready").touch()
-        result = self.run_launcher("Waypoints.cmd", ["--check"])
-        self.assertEqual(result.returncode, 17, result.stderr)
-        self.assertEqual(Path(json.loads(result.stdout)["executable"]), registered / "core/Scripts/python.exe")
+        for launcher, args in (("Waypoints.cmd", ["--check"]),
+                               ("rr2-observe.cmd", ["--target", "physical", "--check-dependencies"])):
+            with self.subTest(launcher=launcher):
+                result = self.run_launcher(launcher, args)
+                self.assertEqual(result.returncode, 17, result.stderr)
+                self.assertEqual(Path(json.loads(result.stdout)["executable"]), registered / "core/Scripts/python.exe")
 
     def test_invalid_explicit_interpreter_reports_failure(self):
         result = self.run_launcher("Waypoints.cmd", override=self.root / "missing.exe")
