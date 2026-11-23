@@ -43,7 +43,7 @@ def _plain_path(path):
                      "reparse-path")
 
 
-def _local_workbridge_path(value, reason):
+def _local_absolute_path(value, reason):
     path = Path(value)
     _require(path.is_absolute() and not path.drive.startswith(("\\", "/"))
              and ".." not in path.parts, reason)
@@ -51,9 +51,17 @@ def _local_workbridge_path(value, reason):
     return path
 
 
+def published_physical_tool(relative_path):
+    """Resolve one executable in the bundle produced by publish-physical-tools.ps1."""
+    root = os.environ.get("RR2_PHYSICAL_TOOLS_ROOT")
+    if not root:
+        return None
+    return _local_absolute_path(Path(root) / relative_path, "invalid-physical-tools-root")
+
+
 def workbridge_root():
     """Use the configured local deployment, or the standard installation path."""
-    return _local_workbridge_path(os.environ.get("RR2_WORKBRIDGE_ROOT", BRIDGE), "invalid-workbridge-root")
+    return _local_absolute_path(os.environ.get("RR2_WORKBRIDGE_ROOT", BRIDGE), "invalid-workbridge-root")
 
 
 def require_clear_desktop_turn(*, bridge=None):
@@ -156,14 +164,14 @@ def _identity(physical_pid=None, *, require_window=True):
 
 def _workbridge_command(bridge):
     override = os.environ.get("RR2_WORKBRIDGE_CLI_ROOT")
-    cli_root = bridge if override is None else _local_workbridge_path(override, "invalid-workbridge-cli-root")
+    cli_root = bridge if override is None else _local_absolute_path(override, "invalid-workbridge-cli-root")
     cli = cli_root / "scripts" / "workbridge-cli.mjs"
     state = bridge / ".local"
     _plain_path(cli)
     _plain_path(state)
     configured_node = os.environ.get("RR2_WORKBRIDGE_NODE")
     if configured_node is not None:
-        node = _local_workbridge_path(configured_node, "invalid-workbridge-node-path")
+        node = _local_absolute_path(configured_node, "invalid-workbridge-node-path")
         _require(node.suffix.casefold() == ".exe", "invalid-workbridge-node-path")
         _require(node.is_file(), "desktop-node-runtime-unavailable")
     else:

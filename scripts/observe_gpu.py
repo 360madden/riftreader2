@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import socket
 
-from scripts.observe_physical import ROOT, _identity, _plain_path, _require, _run, valid_host_name
+from scripts.observe_physical import ROOT, _identity, _plain_path, _require, _run, published_physical_tool, valid_host_name
 
 PROBE = ROOT / "tools/physical-wgc-probe/bin/Debug/net10.0-windows10.0.19041.0/win-x64/PhysicalWgcProbe.exe"
 # .NET apphost exit codes, independent of the host's display language.
@@ -20,7 +20,7 @@ DOTNET_PROBE_ERRORS = {
 def _probe_path():
     override = os.environ.get("RR2_WGC_PROBE")
     if not override:
-        return PROBE
+        return published_physical_tool("wgc-probe/PhysicalWgcProbe.exe") or PROBE
     probe = Path(override)
     _require(probe.is_absolute() and not probe.anchor.startswith(("\\\\", "//"))
              and ".." not in probe.parts, "invalid-gpu-probe-path")

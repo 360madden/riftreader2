@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts import observe_target as tool
-from scripts import observe_gpu, observe_physical, physical_turn_visual_pair
+from scripts import observe_gpu, observe_physical, physical_rift, physical_turn_visual_pair
 
 
 OFFLINE_PROBE_REPORT = {"status": "offline-self-test-passed", "passed": 31,
@@ -17,7 +17,7 @@ OFFLINE_PROBE_REPORT = {"status": "offline-self-test-passed", "passed": 31,
 
 class TargetRoutingTests(unittest.TestCase):
     def setUp(self):
-        self.enterContext(patch.dict("os.environ", {"RR2_WGC_PROBE": ""}))
+        self.enterContext(patch.dict("os.environ", {"RR2_WGC_PROBE": "", "RR2_PHYSICAL_TOOLS_ROOT": ""}))
         self.hostname = patch.object(tool.socket, "gethostname", return_value="AMD-DESKTOP")
         self.hostname.start()
         self.addCleanup(self.hostname.stop)
@@ -128,6 +128,53 @@ class TargetRoutingTests(unittest.TestCase):
             probe_runner.assert_called_once()
             self.assertEqual(probe_runner.call_args.args[0], [probe, "--self-test"])
             service.assert_not_called()
+
+    def test_wgc_startup_checks_use_both_tools_from_the_copied_bundle(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            bundle = root / "Copied physical tools"
+            reader = bundle / "native-reader" / "RiftReader2.Live.exe"
+            probe = bundle / "wgc-probe" / "PhysicalWgcProbe.exe"
+            for tool_path in (reader, probe):
+                tool_path.parent.mkdir(parents=True)
+                tool_path.touch()
+            (root / ".tools" / "desktop-evidence").mkdir(parents=True)
+            help_text = "RiftReader2.Live native tools\nsample-current-facing --pid N"
+            with patch.dict("os.environ", {"RR2_NATIVE_READER": "", "RR2_PHYSICAL_TOOLS_ROOT": str(bundle)}), \
+                 patch.object(observe_physical, "workbridge_root", return_value=root), \
+                 patch.object(observe_physical, "_run", return_value=(0, help_text)) as reader_runner, \
+                 patch.object(observe_gpu, "_run", return_value=(0, json.dumps(OFFLINE_PROBE_REPORT))) as probe_runner:
+                result = tool.observe("physical", "AMD-DESKTOP", check_dependencies=True, native_facing=True)
+                self.assertEqual(result["status"], "capture-dependencies-ready")
+                self.assertEqual(result["nativeReader"]["nativeReaderPath"], str(reader))
+                self.assertEqual(result["wgcProbe"]["path"], str(probe))
+                reader_runner.assert_called_once()
+                self.assertEqual(reader_runner.call_args.args[0], [reader, "--help"])
+                self.assertEqual(probe_runner.call_args.args[0], [probe, "--self-test"])
+                with patch.object(physical_rift, "read_native") as native:
+                    physical_rift.bind_native_reader(native, None)({}, "facing")
+                    native.assert_called_once_with({}, "facing", native_reader=reader)
+
+    def test_individual_overrides_take_precedence_over_bundle_root(self):
+        with TemporaryDirectory() as temp:
+            reader = Path(temp) / "RiftReader2.Live.exe"
+            probe = Path(temp) / "PhysicalWgcProbe.exe"
+            with patch.dict("os.environ", {"RR2_PHYSICAL_TOOLS_ROOT": "relative-bundle",
+                                           "RR2_NATIVE_READER": str(reader), "RR2_WGC_PROBE": str(probe)}):
+                self.assertEqual(physical_rift._native_reader_path(), reader)
+                self.assertEqual(observe_gpu._probe_path(), probe)
+
+    def test_incomplete_bundle_does_not_fall_back_to_a_default_probe(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            available_default = root / "default.exe"
+            available_default.touch()
+            with patch.dict("os.environ", {"RR2_PHYSICAL_TOOLS_ROOT": str(root / "incomplete")}), \
+                 patch.object(observe_gpu, "PROBE", available_default), patch.object(observe_gpu, "_run") as run:
+                result = observe_gpu.check_probe()
+            self.assertEqual(result["reason"], "gpu-probe-build-required")
+            self.assertEqual(result["path"], str(root / "incomplete" / "wgc-probe" / "PhysicalWgcProbe.exe"))
+            run.assert_not_called()
 
     def test_invalid_probe_override_refuses_preflight_and_capture(self):
         with TemporaryDirectory() as temp, \

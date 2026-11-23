@@ -91,12 +91,14 @@ try {
     $previousQtPlatform = $env:QT_QPA_PLATFORM
     $previousDotNet = $env:RIFTREADER2_DOTNET
     $previousNativeReader = $env:RR2_NATIVE_READER
+    $previousPhysicalTools = $env:RR2_PHYSICAL_TOOLS_ROOT
     $previousOverlayPython = $env:RR2_OVERLAY_PYTHON
     $previousRerunPython = $env:RR2_RERUN_PYTHON
     try {
         $env:QT_QPA_PLATFORM = 'offscreen'
         $env:RIFTREADER2_DOTNET = $DotNet
         $env:RR2_NATIVE_READER = $null
+        $env:RR2_PHYSICAL_TOOLS_ROOT = $null
         $env:RR2_OVERLAY_PYTHON = $null
         $env:RR2_RERUN_PYTHON = $null
         & $LuaPython -m pytest --disable-plugin-autoload -q tests
@@ -106,6 +108,7 @@ try {
         $env:QT_QPA_PLATFORM = $previousQtPlatform
         $env:RIFTREADER2_DOTNET = $previousDotNet
         $env:RR2_NATIVE_READER = $previousNativeReader
+        $env:RR2_PHYSICAL_TOOLS_ROOT = $previousPhysicalTools
         $env:RR2_OVERLAY_PYTHON = $previousOverlayPython
         $env:RR2_RERUN_PYTHON = $previousRerunPython
     }

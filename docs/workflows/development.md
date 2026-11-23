@@ -123,10 +123,13 @@ a new local directory, and keep both tool folders intact when copying them.
 ```powershell
 $rr2Host = [Environment]::MachineName
 $rr2Tools = .\scripts\publish-physical-tools.ps1 -ExpectedHost $rr2Host
-$env:RR2_NATIVE_READER = $rr2Tools.NativeReader
-$env:RR2_WGC_PROBE = $rr2Tools.WgcProbe
+$env:RR2_PHYSICAL_TOOLS_ROOT = $rr2Tools.Directory
 .\rr2-check-dependencies.cmd --expected-host $rr2Host --workflow wgc
 ```
+
+On another checkout or Windows host, set `RR2_PHYSICAL_TOOLS_ROOT` to the
+absolute local path of the copied bundle. `RR2_NATIVE_READER` and
+`RR2_WGC_PROBE` take precedence for their respective tools when set.
 
 ### Reuse local tools from a fresh checkout
 
@@ -139,6 +142,7 @@ movement calibration measured on the Windows host that will run Waypoints.
 | Full development validation | `RIFTREADER2_DOTNET`, `RIFTREADER2_LUA_PYTHON` or `RIFTREADER2_PYTHON` | [Pinned SDK and prepared Python](#restore-build-and-test) |
 | Physical workflows and Waypoints | `RIFTREADER2_PYTHON` | Python with Tcl/Tk for Waypoints and Pillow for WGC |
 | Waypoints prepared maps | `RR2_RIFTWORLD_ROOT`, `RR2_RIFTWORLD_PYTHON`, `JAVA_HOME` | Git on `PATH` and [local RiftWorld, JPype, Java and pinned navigation dependencies](physical-waypoints.md#prepared-map-destinations) |
+| Both native physical tools | `RR2_PHYSICAL_TOOLS_ROOT` | [Published or copied tools bundle](#publish-both-physical-tools-for-local-use) |
 | Native physical reads and Waypoints | `RR2_NATIVE_READER` | [Published Live reader](#publish-the-local-native-reader) |
 | Installed physical addons | `RR2_RIFT_ADDONS_ROOT` | Optional absolute local AddOns directory, with Windows Documents used by default |
 | Waypoints calibration | `RR2_WAYPOINTS_BASIS` | [Verified calibration folder](physical-waypoints.md#local-calibration-and-dependency-checks) |
