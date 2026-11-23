@@ -216,7 +216,7 @@ reviewed desktop image `overlay-pair/frame.png` in that directory. These are
 fixed candidate coordinates with no world-instance, terrain or clearance proof.
 
 Explicit native base-name retrieval is also available without selecting units:
-`python scripts/physical_rift.py --expected-host AMD-DESKTOP --physical-pid PID --read-native unit-names --unit-keys DECIMAL_KEY,DECIMAL_KEY`.
+`python scripts/physical_rift.py --expected-host ([Environment]::MachineName) --physical-pid PID --read-native unit-names --unit-keys DECIMAL_KEY,DECIMAL_KEY`.
 Supply 1–32 unique canonical nonzero uint64 decimal strings. The reader resolves
 only those exact keys through their existing bounded hash buckets, with a 2 MiB
 aggregate read budget and cooperative three-second wall budget. Readable mode-1,
@@ -771,14 +771,15 @@ request ended the run cleanly. Evidence:
 
 ## Remaining qualification
 
-The offline renderer above annotates a retained frame. A separate live desktop
-overlay is now available:
+The offline renderer above annotates a retained frame. The live overlay uses
+the configured `RR2_OVERLAY_PYTHON` interpreter and the locally saved route.
+Set `$rr2Route` to that route's path and `$rr2Pid` to the freshly verified PID.
 
 ```powershell
-.\.local\overlay-venv\Scripts\python.exe scripts/live_physical_waypoints.py --presenter qt --expected-host AMD-DESKTOP --physical-pid PID --route docs/validation/gui-taught-route-2026-11-12.json --reader stream --duration 60 --max-age 0.35 --output artifacts/new-overlay-summary.json
+& $env:RR2_OVERLAY_PYTHON scripts/live_physical_waypoints.py --presenter qt --expected-host ([Environment]::MachineName) --physical-pid $rr2Pid --route $rr2Route --reader stream --duration 60 --max-age 0.35 --output artifacts/new-overlay-summary.json
 ```
 
-Use a fresh explicit PID and a new summary path. Focus RIFT separately to display
+Use a new summary path. Focus RIFT separately to display
 markers; this command never activates it. The run is bounded (default 60 seconds,
 maximum 600) and Ctrl+C closes it. `--reader single` retains the slower existing
 reader. In either mode, changed foreground/identity/geometry, expired evidence or
@@ -1012,7 +1013,7 @@ geometry. Keep source intervals and candidate labels intact.
 The reusable physical wrapper now exposes this existing command directly:
 
 ```powershell
-python scripts/physical_rift.py --expected-host AMD-DESKTOP --physical-pid CURRENT_PID --read-native zone-context --output C:\work\riftreader2\artifacts\new-zone-context.json
+python scripts/physical_rift.py --expected-host ([Environment]::MachineName) --physical-pid CURRENT_PID --read-native zone-context --output artifacts/new-zone-context.json
 ```
 
 Use a freshly admitted PID and new output path. The wrapper retains the raw
