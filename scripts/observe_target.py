@@ -167,7 +167,7 @@ def observe(target_id, expected_host, output=None, *, native_vitals=False,
             allow_foreground_change=False, with_preview=False, preview_width=840,
             preview_detail_crop=None, host_preview=False, physical_pid=None,
             historical_vm=False, physical_capture_backend=None, native_facing=False, native_reader=None,
-            check_dependencies=False):
+            check_dependencies=False, register_workbridge=False):
     started = time.perf_counter()
     if not isinstance(target_id, str):
         raise ValueError("unknown-target")
@@ -197,12 +197,19 @@ def observe(target_id, expected_host, output=None, *, native_vitals=False,
         raise ValueError("native-facing-requires-focus-neutral-physical-capture")
     if native_reader is not None and not native_facing:
         raise ValueError("native-reader-requires-native-facing")
-    if check_dependencies:
+    if check_dependencies or register_workbridge:
         if (workflow != "physical" or output is not None or native_vitals
                 or allow_foreground_change or with_preview or preview_detail_crop is not None
                 or preview_width != 840 or host_preview or physical_pid is not None
                 or historical_vm):
             raise ValueError("capture-dependency-check-incompatible-options")
+        if register_workbridge:
+            if check_dependencies or physical_capture_backend is not None or native_facing:
+                raise ValueError("workbridge-registration-incompatible-options")
+            from scripts.observe_physical import register_workbridge_client
+
+            result = register_workbridge_client(actual_host)
+            return dict(result, targetId=target_id, workflow=workflow, ownerHost=owner_host)
         result = _check_capture_dependencies("wgc" if native_facing else physical_capture_backend)
         if native_facing:
             from scripts import physical_rift
@@ -287,8 +294,11 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", required=True, metavar="{physical,physical-HOST,lab1,lab2}")
     parser.add_argument("--expected-host", required=True)
-    parser.add_argument("--check-dependencies", action="store_true",
-                        help="physical only: check local capture dependencies without selecting or capturing a window")
+    offline = parser.add_mutually_exclusive_group()
+    offline.add_argument("--check-dependencies", action="store_true",
+                         help="physical only: check local capture dependencies without selecting or capturing a window")
+    offline.add_argument("--register-workbridge", action="store_true",
+                         help="physical only: verify and remember the configured local Workbridge client")
     parser.add_argument("--output", type=Path, help="fresh absolute directory; omitted creates a unique artifact path")
     parser.add_argument("--native-vitals", action="store_true", help="historical Lab 2 only; retain existing candidate qualifications")
     parser.add_argument("--native-facing", action="store_true",
@@ -323,7 +333,8 @@ def main(argv=None):
                           physical_capture_backend=args.physical_capture_backend,
                          native_facing=args.native_facing,
                          native_reader=args.native_reader,
-                         check_dependencies=args.check_dependencies)
+                         check_dependencies=args.check_dependencies,
+                         register_workbridge=args.register_workbridge)
     except Exception as error:
         result = {"status": "blocked", "targetId": args.target,
                   "errorType": type(error).__name__,

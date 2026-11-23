@@ -6,7 +6,9 @@ import os
 from pathlib import Path
 import socket
 
-from scripts.observe_physical import ROOT, _identity, _plain_path, _require, _run, published_physical_tool, valid_host_name
+from scripts.observe_physical import (
+    ROOT, _identity, _plain_path, _require, _run, published_physical_tool, valid_host_name, workbridge_root,
+)
 
 PROBE = ROOT / "tools/physical-wgc-probe/bin/Debug/net10.0-windows10.0.19041.0/win-x64/PhysicalWgcProbe.exe"
 # .NET apphost exit codes, independent of the host's display language.
@@ -82,6 +84,7 @@ def capture_gpu(expected_host, output, *, physical_pid=None):
         probe = _probe_path()
         _require(probe.is_file(), "gpu-probe-build-required")
         frames = frame_tools()
+        bridge = workbridge_root()
         before = _identity(physical_pid)
         _require(before["hostName"].casefold() == host.casefold(), "host-mismatch")
         _require(physical_pid is None or before["processId"] == physical_pid, "physical-pid-mismatch")
@@ -94,7 +97,7 @@ def capture_gpu(expected_host, output, *, physical_pid=None):
             "--start-ticks", before["processStartUtcTicks"],
             "--sha256", before["executableSha256"],
             "--hwnd", hex(before["hwnd"]), "--backend", "wgc", "--out", image,
-        ], 20, env={**os.environ, "DOTNET_DISABLE_GUI_ERRORS": "1"})
+        ], 20, env={**os.environ, "DOTNET_DISABLE_GUI_ERRORS": "1", "RR2_WORKBRIDGE_ROOT": str(bridge)})
         if code:
             runtime_failure = DOTNET_PROBE_ERRORS.get(code & 0xFFFFFFFF)
             if runtime_failure:

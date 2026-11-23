@@ -18,6 +18,7 @@ OFFLINE_PROBE_REPORT = {"status": "offline-self-test-passed", "passed": 31,
 class TargetRoutingTests(unittest.TestCase):
     def setUp(self):
         self.enterContext(patch.dict("os.environ", {"RR2_WGC_PROBE": "", "RR2_PHYSICAL_TOOLS_ROOT": "debug"}))
+        self.enterContext(patch.object(observe_physical, "_registered_workbridge", return_value={}))
         self.hostname = patch.object(tool.socket, "gethostname", return_value="AMD-DESKTOP")
         self.hostname.start()
         self.addCleanup(self.hostname.stop)
@@ -311,6 +312,18 @@ class TargetRoutingTests(unittest.TestCase):
                 self.assertEqual(json.loads(output.getvalue())["reason"], reason)
                 check.assert_not_called()
 
+    def test_register_workbridge_is_a_physical_cli_operation_without_capture(self):
+        with patch.object(tool.socket, "gethostname", return_value="RIFT-STATION"), \
+             patch.object(observe_physical, "register_workbridge_client",
+                          return_value={"status": "workbridge-client-registered"}) as register, \
+             patch.object(tool, "_capture_physical") as capture, redirect_stdout(io.StringIO()):
+            args = ["--target", "physical", "--expected-host", "rift-station", "--register-workbridge"]
+            self.assertEqual(tool.main(args), 0)
+            self.assertEqual(tool.main([*args, "--physical-pid", "123"]), 2)
+            self.assertEqual(tool.main([*args, "--allow-foreground-change"]), 2)
+            register.assert_called_once_with("RIFT-STATION")
+            capture.assert_not_called()
+
     def test_wgc_backend_passes_local_identity_and_checks_receipt(self):
         target = {"hostName": "RIFT-STATION", "processId": 123, "hwnd": 456,
                   "processStartUtcTicks": "638000000000000001", "executableSha256": "a" * 64}
@@ -324,6 +337,7 @@ class TargetRoutingTests(unittest.TestCase):
             probe.touch()
             with patch.dict("os.environ", {"RR2_WGC_PROBE": str(probe)}), \
                  patch.object(observe_gpu.socket, "gethostname", return_value="RIFT-STATION"), \
+                 patch.object(observe_gpu, "workbridge_root", return_value=root / "Registered Workbridge"), \
                  patch.object(observe_gpu, "_identity", return_value=target) as identity, \
                  patch.object(observe_gpu, "_run", return_value=(0, "")) as runner, \
                  patch.object(physical_turn_visual_pair, "read_frame", return_value=(report, None, "B" * 64)):
@@ -337,6 +351,7 @@ class TargetRoutingTests(unittest.TestCase):
         self.assertEqual(command[command.index("--host") + 1], "RIFT-STATION")
         self.assertEqual(command[command.index("--pid") + 1], 123)
         self.assertEqual(runner.call_args.kwargs["env"]["DOTNET_DISABLE_GUI_ERRORS"], "1")
+        self.assertEqual(runner.call_args.kwargs["env"]["RR2_WORKBRIDGE_ROOT"], str(root / "Registered Workbridge"))
 
     def test_capture_reports_runtime_startup_failure_without_reading_image(self):
         target = {"hostName": "RIFT-STATION", "processId": 123, "hwnd": 456,

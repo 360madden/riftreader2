@@ -41,6 +41,21 @@ absolute local path of `node.exe` to choose an installation for RR2. Without
 an override, RR2 checks the standard installation and then PATH. The dependency
 report includes the executable and version it checked.
 
+To reuse the selected deployment, CLI, and Node from a new shell, register the
+client after setting any needed overrides above.
+
+```powershell
+& $rr2Python -B scripts/observe_target.py --target physical --expected-host $rr2Host --register-workbridge
+```
+
+Registration checks Node and uses read-only tool discovery against the active
+service. It saves the local paths in `.local/workbridge-client.json` for the
+verified host. Explicit environment settings take precedence. When you select
+a different deployment, its client and Node are selected independently of the
+saved client. After moving the toolchain or changing the service version, set
+the current paths and register again. The usual dependency check still reports
+runner files, WinApp, and desktop turn readiness separately.
+
 ```powershell
 $rr2Host = [Environment]::MachineName
 & $rr2Python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies

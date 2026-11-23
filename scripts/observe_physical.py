@@ -78,9 +78,33 @@ def published_physical_tool(relative_path):
     return _local_absolute_path(Path(root) / relative_path, "invalid-physical-tools-root")
 
 
-def workbridge_root():
-    """Use the configured local deployment, or the standard installation path."""
-    return _local_absolute_path(os.environ.get("RR2_WORKBRIDGE_ROOT", BRIDGE), "invalid-workbridge-root")
+def _registered_workbridge():
+    path = ROOT / ".local" / "workbridge-client.json"
+    if not path.exists() and not path.is_symlink():
+        return {}
+    reason = "invalid-workbridge-client-registration"
+    _plain_path(path)
+    _require(path.is_file(), reason)
+    with path.open("rb") as stream:
+        raw = stream.read(16385)
+    _require(0 < len(raw) <= 16384, reason)
+    try:
+        settings = json.loads(raw)
+    except ValueError as error:
+        raise ValueError(reason) from error
+    _require(isinstance(settings, dict) and settings.get("schema") == "rr2.workbridge-client/1"
+             and valid_host_name(settings.get("host"))
+             and all(isinstance(settings.get(key), str) for key in ("deployment", "cliRoot", "node")), reason)
+    _require(settings["host"].casefold() == socket.gethostname().casefold(), "workbridge-registration-host-mismatch")
+    return settings
+
+
+def workbridge_root(*, use_registered=True):
+    """Resolve one local deployment for service state and desktop turn ownership."""
+    configured = os.environ.get("RR2_WORKBRIDGE_ROOT")
+    if configured is None and use_registered:
+        configured = _registered_workbridge().get("deployment")
+    return _local_absolute_path(BRIDGE if configured is None else configured, "invalid-workbridge-root")
 
 
 def require_clear_desktop_turn(*, bridge=None):
@@ -181,14 +205,17 @@ def _identity(physical_pid=None, *, require_window=True):
     return value
 
 
-def _workbridge_command(bridge):
-    override = os.environ.get("RR2_WORKBRIDGE_CLI_ROOT")
+def _workbridge_command(bridge, *, use_registered=True):
+    settings = _registered_workbridge() if use_registered else {}
+    if settings and Path(settings["deployment"]) != bridge:
+        settings = {}
+    override = os.environ.get("RR2_WORKBRIDGE_CLI_ROOT", settings.get("cliRoot"))
     cli_root = bridge if override is None else _local_absolute_path(override, "invalid-workbridge-cli-root")
     cli = cli_root / "scripts" / "workbridge-cli.mjs"
     state = bridge / ".local"
     _plain_path(cli)
     _plain_path(state)
-    configured_node = os.environ.get("RR2_WORKBRIDGE_NODE")
+    configured_node = os.environ.get("RR2_WORKBRIDGE_NODE", settings.get("node"))
     if configured_node is not None:
         node = _local_absolute_path(configured_node, "invalid-workbridge-node-path")
         _require(node.suffix.casefold() == ".exe", "invalid-workbridge-node-path")
@@ -273,15 +300,8 @@ def _check_workbridge_catalog(command):
     return {"status": "available", "runtimeVersion": version}, tools[names.index("desktop_windows")]
 
 
-def check_workbridge_capture_service(bridge):
-    """Check deployed desktop files, catalog, and the service's WinApp when supported."""
-    missing_files = _missing_workbridge_capture_runners(bridge)
-    details = {"missingFiles": missing_files} if missing_files else {}
-    try:
-        command = _workbridge_command(bridge)
-    except ValueError as error:
-        return {**details, "status": "blocked", "reason": str(error)}
-    details.update(nodeExecutable=str(command[0]), cliPath=str(command[1]))
+def _check_workbridge_node(command):
+    details = {"nodeExecutable": str(command[0]), "cliPath": str(command[1])}
     try:
         node_code, node_text = _run([command[0], "--version"], 5)
     except (OSError, ValueError, subprocess.SubprocessError):
@@ -294,6 +314,50 @@ def check_workbridge_capture_service(bridge):
     if int(version_match[1]) < MIN_WORKBRIDGE_NODE_MAJOR:
         return {**details, "status": "blocked", "reason": "desktop-node-version-unsupported",
                 "minimumNodeMajor": MIN_WORKBRIDGE_NODE_MAJOR}
+    return details
+
+
+def register_workbridge_client(expected_host):
+    """Remember a client verified by read-only discovery against its local service."""
+    from scripts.waypoint_progress import write_json_atomic
+
+    host = socket.gethostname()
+    _require(valid_host_name(expected_host) and host.casefold() == expected_host.casefold(), "host-mismatch")
+    bridge = workbridge_root(use_registered=False)
+    evidence = bridge / ".tools" / "desktop-evidence"
+    _plain_path(evidence)
+    _require(evidence.is_dir(), "shared-gui-evidence-directory-missing")
+    command = _workbridge_command(bridge, use_registered=False)
+    node = _local_absolute_path(command[0], "invalid-workbridge-node-path")
+    result = {"workbridgeRoot": str(bridge), "captureAttempted": False, "inputSent": False,
+              **_check_workbridge_node(command)}
+    if result.get("status") == "blocked":
+        return result
+    catalog, _ = _check_workbridge_catalog(command)
+    result["toolCatalog"] = catalog
+    if catalog["status"] != "available":
+        return {**result, "status": "blocked", "reason": catalog["reason"]}
+    _require(socket.gethostname().casefold() == host.casefold(), "host-changed")
+    path = ROOT / ".local" / "workbridge-client.json"
+    _plain_path(path)
+    path.parent.mkdir(exist_ok=True)
+    settings = {"schema": "rr2.workbridge-client/1", "host": host, "deployment": str(bridge),
+                "cliRoot": str(command[1].parents[1]), "node": str(node)}
+    write_json_atomic(path, settings)
+    return {**result, "status": "workbridge-client-registered", "registration": str(path)}
+
+
+def check_workbridge_capture_service(bridge):
+    """Check deployed desktop files, catalog, and the service's WinApp when supported."""
+    missing_files = _missing_workbridge_capture_runners(bridge)
+    details = {"missingFiles": missing_files} if missing_files else {}
+    try:
+        command = _workbridge_command(bridge)
+    except ValueError as error:
+        return {**details, "status": "blocked", "reason": str(error)}
+    details.update(_check_workbridge_node(command))
+    if details.get("status") == "blocked":
+        return details
 
     try:
         catalog, desktop = _check_workbridge_catalog(command)

@@ -48,6 +48,7 @@ class PhysicalTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
+        self.enterContext(patch.object(physical, "ROOT", self.root))
         self.enterContext(patch.object(physical.os, "environ", dict(physical.os.environ)))
         physical.os.environ.pop("RR2_WORKBRIDGE_ROOT", None)
         physical.os.environ.pop("RR2_WORKBRIDGE_CLI_ROOT", None)
@@ -388,6 +389,53 @@ class PhysicalTests(unittest.TestCase):
             self.assertEqual(call.args[0][1:4], [cli, "--service-state", physical.BRIDGE / ".local"])
         self.assertFalse((cli_root / ".local").exists())
         self.assertFalse((cli_root / ".tools").exists())
+
+    def test_registers_separate_client_for_local_deployment_despite_missing_capture_runner(self):
+        deployment = self.alternate
+        (deployment / ".tools/desktop-evidence").mkdir(parents=True)
+        (deployment / "dist/desktop-capture.mjs").unlink()
+        compatible = self.root / "compatible CLI"
+        self.install_cli(compatible)
+        cli = compatible / "scripts/workbridge-cli.mjs"
+        catalog = (0, json.dumps({"ok": True, "discovery": "tools", "serverVersion": "0.16.4-dev",
+                                 "tools": [{"name": "desktop_windows"}, {"name": "desktop_capture_window"}]}))
+        with patch.object(physical, "_identity") as identity, patch.object(physical, "_call") as call:
+            with patch.dict(physical.os.environ, RR2_WORKBRIDGE_ROOT=str(deployment),
+                            RR2_WORKBRIDGE_CLI_ROOT=str(compatible)), \
+                 patch.object(physical, "_run", side_effect=[NODE_VERSION, catalog]) as run:
+                result = physical.register_workbridge_client("amd-desktop")
+                self.assertEqual(result["status"], "workbridge-client-registered")
+                self.assertEqual(run.call_count, 2)
+            self.assertEqual(physical.workbridge_root(), deployment)
+            self.assertEqual(physical._workbridge_command(deployment),
+                             [self.node, cli, "--service-state", deployment / ".local"])
+            with patch.object(physical, "_run", side_effect=[NODE_VERSION, catalog]):
+                service = physical.check_workbridge_capture_service(deployment)
+            self.assertEqual(service["reason"], "desktop-workbridge-runner-files-missing")
+            self.assertEqual(service["toolCatalog"]["status"], "available")
+            self.assertEqual(self.capture()["reason"], "desktop-workbridge-runner-files-missing")
+            with patch.dict(physical.os.environ, RR2_WORKBRIDGE_ROOT=str(physical.BRIDGE)):
+                self.assertEqual(physical._workbridge_command(physical.workbridge_root())[1],
+                                 physical.BRIDGE / "scripts/workbridge-cli.mjs")
+            with patch.object(physical.socket, "gethostname", return_value="RIFT-STATION"):
+                with self.assertRaisesRegex(ValueError, "workbridge-registration-host-mismatch"):
+                    physical.workbridge_root()
+            identity.assert_not_called()
+            call.assert_not_called()
+
+    def test_failed_registration_preserves_previous_choice(self):
+        (physical.BRIDGE / ".tools/desktop-evidence").mkdir(parents=True)
+        registration = self.root / ".local/workbridge-client.json"
+        registration.parent.mkdir()
+        old = b'{"previous":"registration"}\n'
+        registration.write_bytes(old)
+        mismatch = (2, json.dumps({"ok": False, "error": {"code": "RUNTIME_MISMATCH"}}))
+        with patch.object(physical, "_run", side_effect=[NODE_VERSION, mismatch]) as run:
+            self.assertEqual(physical.register_workbridge_client("AMD-DESKTOP")["reason"], "RUNTIME_MISMATCH")
+            with self.assertRaisesRegex(ValueError, "host-mismatch"):
+                physical.register_workbridge_client("RIFT-STATION")
+        self.assertEqual(registration.read_bytes(), old)
+        self.assertEqual(run.call_count, 2)
 
     def test_staged_cli_runners_do_not_replace_deployed_files(self):
         (physical.BRIDGE / "dist/desktop-capture.mjs").unlink()
