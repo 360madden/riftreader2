@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 from copy import deepcopy
 from datetime import datetime, timezone
+from functools import partial
 import hashlib
 import json
 import math
@@ -30,10 +31,12 @@ from scripts.waypoint_candidate_adoption import adopt_receipt_candidate, _adopti
 from scripts.waypoint_navigation_candidate import _read_document, inspect_candidate, MAX_CANDIDATE_BYTES
 from scripts.waypoint_progress import write_json_atomic
 from scripts.waypoint_view_bundle import bundle_asset
+from scripts.observe_physical import _local_absolute_path, _plain_path, valid_host_name
 
 
 SCHEMA = "rr2.destination-plan/1"
 RIFTWORLD_ROOT = ROOT.parent / "RiftWorld"
+RIFTWORLD_REGISTRATION_SCHEMA = "rr2.riftworld-toolchain/1"
 
 RIFTWORLD_STARTUP_PROBE = r"""
 import json
@@ -115,22 +118,49 @@ def _reference(path):
     return {"path": str(Path(path).resolve()), "sha256": _hash(path)}
 
 
-def _riftworld_tools(root, python):
-    world_root = Path(root or os.environ.get("RR2_RIFTWORLD_ROOT") or RIFTWORLD_ROOT).resolve()
+def _registration_path():
+    return ROOT / ".local" / "riftworld-toolchain.json"
+
+
+def _registered_riftworld():
+    path = _registration_path()
+    _plain_path(path)
+    if not path.exists():
+        return {}
+    settings, _ = _read(path, 16384)
+    host = settings.get("host")
+    keys = ("checkout", "python", "upstream", "javaHome")
+    if settings.get("schema") != RIFTWORLD_REGISTRATION_SCHEMA or not valid_host_name(host):
+        raise ValueError("invalid-riftworld-registration")
+    if host.casefold() != platform.node().casefold():
+        raise ValueError("riftworld-registration-host-mismatch")
+    paths = {}
+    for key in keys:
+        value = settings.get(key)
+        if not isinstance(value, str):
+            raise ValueError("invalid-riftworld-registration")
+        paths[key] = _local_absolute_path(value, "invalid-riftworld-registration-path")
+    return paths
+
+
+def _riftworld_tools(root, python, registered):
+    world_root = Path(root or os.environ.get("RR2_RIFTWORLD_ROOT") or registered.get("checkout") or RIFTWORLD_ROOT).resolve()
     if not world_root.is_dir():
         raise ValueError(f"RiftWorld checkout is unavailable at {world_root}")
     query_tool = world_root / "tools" / "query_destination.py"
     if not query_tool.is_file():
         raise ValueError(f"RiftWorld destination query tool is unavailable at {query_tool}")
     configured = python or os.environ.get("RR2_RIFTWORLD_PYTHON")
+    if not configured and world_root == registered.get("checkout"):
+        configured = registered["python"]
     executable = Path(configured or world_root / ".venv" / "Scripts" / "python.exe").resolve()
     if not executable.is_file():
         raise ValueError(f"RiftWorld Python is unavailable at {executable}")
     return world_root, query_tool, executable
 
 
-def _configured_riftworld_upstream(override):
-    configured = override if override is not None else os.environ.get("RR2_RIFTWORLD_UPSTREAM")
+def _configured_riftworld_upstream(override, registered):
+    configured = override if override is not None else (os.environ.get("RR2_RIFTWORLD_UPSTREAM") or registered.get("upstream"))
     if not configured:
         return None
     upstream = Path(configured)
@@ -142,25 +172,36 @@ def _configured_riftworld_upstream(override):
     return upstream
 
 
+def _riftworld_environment(registered):
+    java = registered.get("javaHome")
+    if os.environ.get("JAVA_HOME") or java is None:
+        return {}
+    if not (java / "bin/server/jvm.dll").is_file():
+        raise ValueError(f"Registered RiftWorld JDK is unavailable at {java}")
+    return {"env": {**os.environ, "JAVA_HOME": str(java)}}
+
+
 def check_dependencies(*, riftworld_root=None, riftworld_python=None, riftworld_upstream=None,
-                       build=None, runner=subprocess.run):
+                       build=None, runner=subprocess.run, use_registered=True):
     """Check the selected local navigation toolchain without a game session or build."""
     result = {"status": "blocked", "ownerHost": platform.node(), "inputSent": False,
               "currentRouteChanged": False}
     try:
-        root, _, python = _riftworld_tools(riftworld_root, riftworld_python)
+        registered = _registered_riftworld() if use_registered else {}
+        root, _, python = _riftworld_tools(riftworld_root, riftworld_python, registered)
+        environment = _riftworld_environment(registered)
     except (OSError, ValueError) as error:
         return dict(result, failedCheck="riftworld-paths", reason=str(error))
     result["riftWorldRuntime"] = {"checkout": str(root), "python": str(python)}
     try:
-        upstream = _configured_riftworld_upstream(riftworld_upstream)
+        upstream = _configured_riftworld_upstream(riftworld_upstream, registered)
     except (OSError, ValueError) as error:
         return dict(result, failedCheck="riftassetdumper-path", reason=str(error))
     try:
         command = [str(python), "-B", "-c", RIFTWORLD_STARTUP_PROBE,
                    str(Path(build).absolute()) if build is not None else "",
                    str(upstream) if upstream is not None else ""]
-        completed = runner(command, cwd=root, text=True, capture_output=True, check=False, timeout=30)
+        completed = runner(command, cwd=root, text=True, capture_output=True, check=False, timeout=30, **environment)
         report = json.loads(completed.stdout)
         if (not isinstance(report, dict) or report.get("status") not in {"ready", "blocked"}
                 or completed.returncode != (0 if report["status"] == "ready" else 2)):
@@ -168,6 +209,33 @@ def check_dependencies(*, riftworld_root=None, riftworld_python=None, riftworld_
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         return dict(result, failedCheck="riftworld-startup-probe", reason=str(error)[:400])
     return {**result, "status": report["status"], "navigationRuntime": report}
+
+
+def register_dependencies(expected_host, **options):
+    host = platform.node()
+    if not valid_host_name(expected_host) or expected_host.casefold() != host.casefold():
+        return {"status": "blocked", "ownerHost": host, "reason": "host-mismatch",
+                "inputSent": False, "currentRouteChanged": False}
+    result = check_dependencies(**options, use_registered=False)
+    if result["status"] != "ready":
+        return result
+    try:
+        root = Path(result["riftWorldRuntime"]["checkout"])
+        runtime = result["navigationRuntime"]
+        registration = {"schema": RIFTWORLD_REGISTRATION_SCHEMA, "host": host}
+        for key, value in (("checkout", root), ("python", result["riftWorldRuntime"]["python"]),
+                           ("upstream", runtime["pipelineCheckout"]), ("javaHome", runtime["javaHome"])):
+            path = root / value
+            if path.drive.startswith(("\\", "/")):
+                raise ValueError("invalid-riftworld-registration-path")
+            registration[key] = str(_local_absolute_path(path.resolve(), "invalid-riftworld-registration-path"))
+        path = _registration_path()
+        _plain_path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        write_json_atomic(path, registration)
+    except (KeyError, TypeError, OSError, ValueError) as error:
+        return {**result, "status": "blocked", "failedCheck": "registration", "reason": str(error)}
+    return {**result, "registration": str(path)}
 
 
 def _relocate_navigation_build(reference, output, upstream):
@@ -808,7 +876,10 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
     if search_extent is not None and (isinstance(search_extent, bool)
                                      or not math.isfinite(search_extent) or search_extent <= 0):
         raise ValueError("search extent must be finite and positive")
-    world_root, query_tool, python = _riftworld_tools(riftworld_root, riftworld_python)
+    registered = _registered_riftworld()
+    world_root, query_tool, python = _riftworld_tools(riftworld_root, riftworld_python, registered)
+    environment = _riftworld_environment(registered)
+    riftworld_runner = partial(runner, **environment) if environment else runner
     catalog = Path(catalog).resolve()
     inputs = {"catalog": _reference(catalog)}
     if preparing:
@@ -862,7 +933,7 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
         prepared = None
         preparation_owner = None
         identity_hint = {}
-        upstream = _configured_riftworld_upstream(riftworld_upstream) if not preparing else None
+        upstream = _configured_riftworld_upstream(riftworld_upstream, registered) if not preparing else None
         if upstream is not None:
             inputs["originalBuild"] = inputs["build"]
             build = _relocate_navigation_build(inputs["originalBuild"], output / "navigation-build", upstream)
@@ -913,7 +984,7 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
             try:
                 process = preparation_runner(prepare_command, cwd=world_root,
                     log_directory=output / "preparation-process", timeout_seconds=prepare_timeout_seconds,
-                    cancel_check=cancel_preparation, max_output_bytes=1024 * 1024)
+                    cancel_check=cancel_preparation, max_output_bytes=1024 * 1024, **environment)
                 plan["preparationProcess"] = {"exitCode": process.returncode,
                     "metadata": process.metadata, "confirmedCleanup": process.confirmed_cleanup}
             except subprocess.SubprocessError as error:
@@ -1001,14 +1072,14 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
         if prepared:
             command += ["--preparation", prepared["preparation"]["descriptor"]]
         plan["stages"]["query"] = "pending"
-        query = runner(command, cwd=world_root, text=True, capture_output=True, check=False)
+        query = riftworld_runner(command, cwd=world_root, text=True, capture_output=True, check=False)
         plan["queryProcess"] = {"exitCode": query.returncode, "stdout": query.stdout,
                                 "stderr": query.stderr}
         if not candidate_path.is_file() or not receipt_path.is_file():
             raise ValueError("destination-query-did-not-publish")
         def validate_destination(candidate, receipt, publication_refs):
             validation = _validated_destination(python, world_root, candidate_path, receipt_path,
-                inputs, runner, candidate, receipt, prepared, publication_refs)
+                inputs, riftworld_runner, candidate, receipt, prepared, publication_refs)
             plan["destinationValidation"] = validation
             return validation
 
@@ -1096,6 +1167,9 @@ def parser():
     mode = result.add_mutually_exclusive_group(required=True)
     mode.add_argument("--check-dependencies", action="store_true",
                       help="check the local RiftWorld Python, JDK and pinned navigation dependencies")
+    mode.add_argument("--register-dependencies", action="store_true",
+                      help="verify and remember the local toolchain for this checkout")
+    result.add_argument("--expected-host", help="verified local Windows hostname for --register-dependencies")
     mode.add_argument("--patch", type=Path, help="Existing exact patch; requires --build")
     mode.add_argument("--prepare-request", type=Path,
                       help="Area-request recipe; requires --source-index and a predeclared source-bound destination")
@@ -1135,11 +1209,19 @@ def main(argv=None):
     cli = parser()
     args = cli.parse_args(argv)
     options = vars(args)
-    if options.pop("check_dependencies"):
-        allowed = {"riftworld_root", "riftworld_python", "riftworld_upstream", "build"}
+    checking = options.pop("check_dependencies")
+    registering = options.pop("register_dependencies")
+    expected_host = options.pop("expected_host")
+    if (expected_host is not None) != registering:
+        cli.error("--register-dependencies and --expected-host must be supplied together")
+    if checking or registering:
+        allowed = {"riftworld_root", "riftworld_python", "riftworld_upstream"}
+        if checking:
+            allowed.add("build")
         if any(value != cli.get_default(key) for key, value in options.items() if key not in allowed):
-            cli.error("--check-dependencies accepts only --build and the --riftworld-* paths")
-        result = check_dependencies(**{key: options[key] for key in allowed})
+            cli.error("dependency modes accept --riftworld-* paths, and --build is available for checks")
+        paths = {key: options[key] for key in allowed}
+        result = register_dependencies(expected_host, **paths) if registering else check_dependencies(**paths)
         print(json.dumps(result, indent=2, allow_nan=False))
         return 0 if result["status"] == "ready" else 2
     if any(value is None for value in (args.catalog, args.destination, args.output_directory)):

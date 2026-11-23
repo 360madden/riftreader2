@@ -25,6 +25,7 @@ _POLL_SECONDS = 0.025
 _CLEANUP_SECONDS = 10.0
 
 _EXTENDED_STARTUPINFO_PRESENT = 0x00080000
+_CREATE_UNICODE_ENVIRONMENT = 0x00000400
 _CREATE_NO_WINDOW = 0x08000000
 _STARTF_USESTDHANDLES = 0x00000100
 _PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x00020002
@@ -226,13 +227,26 @@ def _validate(command, cwd, log_directory, timeout_seconds, max_output_bytes):
     return args, work, logs, float(timeout_seconds), max_output_bytes
 
 
+def _environment_block(env):
+    entries = []
+    for key, value in env.items():
+        if (not isinstance(key, str) or not key or "=" in key or "\0" in key
+                or not isinstance(value, str) or "\0" in value):
+            raise ValueError("Invalid owned process environment entry")
+        entries.append((key, value))
+    block = "\0".join(f"{key}={value}" for key, value in sorted(entries, key=lambda item: item[0].upper()))
+    # CreateProcessW expects a value terminator followed by a block terminator.
+    return ctypes.create_unicode_buffer(block + "\0")
+
+
 def run_owned(command, *, cwd, log_directory, timeout_seconds,
-              cancel_check=None, max_output_bytes=DEFAULT_MAX_OUTPUT_BYTES) -> OwnedProcessResult:
+              cancel_check=None, max_output_bytes=DEFAULT_MAX_OUTPUT_BYTES, env=None) -> OwnedProcessResult:
     """Run a command and all descendants inside one private Windows Job Object."""
     if cancel_check is not None and not callable(cancel_check):
         raise ValueError("cancel_check must be callable or None")
     args, work, logs, timeout, output_limit = _validate(
         command, cwd, log_directory, timeout_seconds, max_output_bytes)
+    environment = _environment_block(env) if env is not None else None
     logs.mkdir(parents=True, exist_ok=False)
     stdout_path, stderr_path = logs / "stdout.log", logs / "stderr.log"
     metadata = {
@@ -318,9 +332,11 @@ def run_owned(command, *, cwd, log_directory, timeout_seconds,
         startup.StartupInfo.hStdError = stderr
         startup.lpAttributeList = attribute_list
         command_line = ctypes.create_unicode_buffer(subprocess.list2cmdline(args))
+        flags = _EXTENDED_STARTUPINFO_PRESENT | _CREATE_NO_WINDOW
+        if environment is not None:
+            flags |= _CREATE_UNICODE_ENVIRONMENT
         if not kernel.CreateProcessW(args[0], command_line, None, None, True,
-                                     _EXTENDED_STARTUPINFO_PRESENT | _CREATE_NO_WINDOW,
-                                     None, str(work), ctypes.byref(startup.StartupInfo),
+                                     flags, environment, str(work), ctypes.byref(startup.StartupInfo),
                                      ctypes.byref(process_info)):
             raise _winerror("CreateProcessW failed")
         handles.extend([process_info.hThread, process_info.hProcess])

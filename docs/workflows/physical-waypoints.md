@@ -24,6 +24,18 @@ if (!$rr2Python) { $rr2Python = 'python' }
 & $rr2Python -B scripts/waypoint_destination_plan.py --check-dependencies
 ```
 
+Use `--register-dependencies` to remember a verified toolchain for this
+checkout. Set `JAVA_HOME` for the initial check if RiftWorld needs a specific
+JDK. The command records the RiftWorld checkout, Python, RiftAssetDumper and
+Java paths that passed the check. Later shells can use the same setup, and
+explicit command options and environment variables take precedence.
+
+```powershell
+$rr2Host = [Environment]::MachineName
+& $rr2Python -B scripts/waypoint_destination_plan.py --register-dependencies --expected-host $rr2Host `
+  --riftworld-root $worldRoot --riftworld-python $worldPython --riftworld-upstream $assetDumperRoot
+```
+
 Add `--build PATH` to verify a saved Detour build and its artifacts. If its
 recorded dependency path is unavailable, set `RR2_RIFTWORLD_UPSTREAM` to the
 local pinned RiftAssetDumper checkout. Both dependency checks use this setting,
@@ -37,6 +49,8 @@ planner verifies the saved mesh and prepared OBJ while copying the build into
 output directory. RiftWorld verifies the build identity and dependencies when
 it opens that copy. Bring the exact WorldPatch and its referenced files as well
 as the Detour build. The plan records hashes for both build manifests.
+Fresh `--prepare-request` builds use the configured RiftWorld checkout's own
+RiftAssetDumper layout and the selected Java environment.
 
 From the RR2 checkout, reproduce the retained courtyard pilot with its saved
 inputs and a fresh output directory:

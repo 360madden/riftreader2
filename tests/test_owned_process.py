@@ -56,6 +56,15 @@ class OwnedProcessTests(unittest.TestCase):
         self.assertEqual(259, result.returncode)
         self.assertTrue(result.confirmed_cleanup)
 
+    def test_owned_child_receives_a_unicode_environment_without_changing_the_parent(self):
+        java_home = str(self.root / "JDK with spacés")
+        parent = os.environ.get("JAVA_HOME")
+        result = self.run_python("import os; print(ascii(os.environ['JAVA_HOME']))",
+                                 env=dict(os.environ, JAVA_HOME=java_home))
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), ascii(java_home))
+        self.assertEqual(os.environ.get("JAVA_HOME"), parent)
+
     def test_exit_code_query_failure_is_not_reported_as_completion(self):
         real = owned_process._kernel32()
 

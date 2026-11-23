@@ -25,6 +25,7 @@ class DestinationPlanTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        self.enterContext(patch.object(bridge, "_registration_path", return_value=self.root / ".local/riftworld-toolchain.json"))
         self.world = self.root / "world with spaces"
         (self.world / "tools").mkdir(parents=True)
         (self.world / "tools" / "query_destination.py").write_text("# test boundary\n")
@@ -147,6 +148,38 @@ class DestinationPlanTests(unittest.TestCase):
                 bridge.main(["--check-dependencies", "--execute"])
         self.assertEqual(exits.exception.code, 2)
         check.assert_not_called()
+
+    def test_registered_toolchain_is_used_for_both_preflight_and_saved_build_queries(self):
+        upstream, _ = self.retained_build()
+        java = self.root / "JDK with spaces"
+        jvm = java / "bin/server/jvm.dll"
+        jvm.parent.mkdir(parents=True)
+        jvm.touch()
+        runtime = {"status": "ready", "pipelineCheckout": str(upstream), "javaHome": str(java)}
+        checked = {"status": "ready", "navigationRuntime": runtime,
+                   "riftWorldRuntime": {"checkout": str(self.world), "python": sys.executable}}
+        process = subprocess.CompletedProcess([], 0, json.dumps(runtime), "")
+        with patch.object(bridge, "ROOT", self.root), patch.dict(bridge.os.environ, {
+                "RR2_RIFTWORLD_ROOT": "", "RR2_RIFTWORLD_PYTHON": "", "RR2_RIFTWORLD_UPSTREAM": "", "JAVA_HOME": ""}):
+            with patch.object(bridge, "check_dependencies", return_value=checked) as check:
+                rejected = bridge.register_dependencies("OTHER-PC")
+                self.assertEqual(rejected["reason"], "host-mismatch")
+                check.assert_not_called()
+                registration = bridge.register_dependencies("AMD-DESKTOP")
+                check.assert_called_once_with(use_registered=False)
+            path = Path(registration["registration"])
+            self.assertEqual(json.loads(path.read_bytes())["javaHome"], str(java))
+            with patch.object(subprocess, "run", return_value=process) as run:
+                self.assertEqual(bridge.check_dependencies(build=self.build, runner=run)["status"], "ready")
+                self.assertEqual(run.call_args.args[0][-1], str(upstream))
+                self.assertEqual(run.call_args.kwargs["env"]["JAVA_HOME"], str(java))
+            result = self.plan(native=False, riftworld_root=None, riftworld_python=None)
+            self.assertEqual(result["status"], "planned")
+            command, options = self.calls[0]
+            self.assertEqual(command[0], str(Path(sys.executable).resolve()))
+            self.assertEqual(options["cwd"], self.world)
+            self.assertEqual(options["env"]["JAVA_HOME"], str(java))
+            self.assertEqual(bridge.os.environ["JAVA_HOME"], "")
 
     def retained_build(self):
         upstream = self.world / "matching upstream"
@@ -812,6 +845,22 @@ class DestinationPlanTests(unittest.TestCase):
         self.assertEqual(catalog_bytes, self.catalog.read_bytes())
         self.assertIn("preparationHandoff", result["inputs"])
         self.assertIn("preparationRun", result)
+
+    def test_registered_java_is_passed_to_preparation_query_and_receipt_validation(self):
+        self.preparation_inputs()
+        java = self.root / "registered JDK"
+        jvm = java / "bin/server/jvm.dll"
+        jvm.parent.mkdir(parents=True)
+        jvm.touch()
+        with patch.dict(bridge.os.environ, JAVA_HOME=""), \
+             patch.object(bridge, "_registered_riftworld", return_value={"javaHome": java}), \
+             patch.object(self, "query_source", wraps=self.query_source) as query:
+            result = self.automatic_plan(native=False)
+        self.assertEqual("planned", result["status"])
+        self.assertEqual(str(java), self.prepare_calls[0][1]["env"]["JAVA_HOME"])
+        self.assertEqual(len(query.call_args_list), 2)
+        for call in query.call_args_list:
+            self.assertEqual(str(java), call.kwargs["env"]["JAVA_HOME"])
 
     def test_large_source_index_is_streamed_without_rr2_json_parse(self):
         self.preparation_inputs(large_index=True)
