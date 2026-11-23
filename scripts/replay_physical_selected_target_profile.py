@@ -10,7 +10,7 @@ import argparse
 from datetime import timedelta
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import re
 import sys
 
@@ -108,7 +108,7 @@ def replay(path, *, keyed_levels=None, keyed_levels_sha256=None):
     for key in expected_keys:
         filename, kind = SOURCE_NAMES[key]
         source = path.parent / filename
-        require(type(paths[key]) is str and Path(paths[key]).name == filename
+        require(type(paths[key]) is str and PureWindowsPath(paths[key]).name == filename
                 and type(shas[key]) is str
                 and SHA.fullmatch(shas[key]) is not None,
                 "source-path-or-sha-invalid")

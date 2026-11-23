@@ -8,6 +8,11 @@
 - `scripts/replay_npc_survey.py` opens the survey's original saved Lua wires, verifies each SHA-256, reruns the existing NPC schema/nonce/player/ID decoder, requires advancing source sequence and clock, checks the selected generation and two-frame confirmed IDs, and verifies the published snapshot is the last original frame. Source authenticity and world-instance identity are not established by a hash alone.
 - `scripts/join_physical_nearby_npc_survey.py` reopens and validates the **original native nearby position and name reports**, regenerates the existing nearby-unit projection, then compares it with a successfully cold-replayed NPC survey. It requires the same process PID/start/build, exact self and unit IDs, bounded host observation interval, matching native/API names and nearby XYZ within explicit tolerances. Any ID/name/position discrepancy withholds the API level and relation for that unit; unknown fields stay unknown.
 
+To replay the Lua side from another analysis machine, copy the survey
+`result.json` and its adjacent `frame-NN.wire` files together. The saved Windows
+path identifies the original filename. Replay opens the copy beside the summary
+and verifies its source hash.
+
 The join reports `apiLevelCandidate`, `apiRelationCandidate`, native distance and height difference, name and position agreement, and a refusal reason for unqualified rows. **All rows retain `combatSuitabilityStatus=unqualified`, `castAuthorized=false`, `moveAuthorized=false`**. Even when the Lua API reports `relation=hostile`, the comparison does not establish action permission, world-instance equality, path clearance, line of sight, attackability or a verified combat outcome.
 
 Native/Lua level agreement uses the two latest replayed Lua frames for the same

@@ -8,11 +8,13 @@ The original native reports are kept under a caller-chosen new output directory,
 
 ## Command
 
-In **PowerShell 7**, from `C:\work\riftreader2`:
+From the RR2 checkout on the verified local Windows host, use the
+[published native reader](../workflows/development.md#publish-the-local-native-reader).
 
 ```powershell
-C:\Python314\python.exe -B scripts\physical_rift.py --expected-host AMD-DESKTOP
-C:\Python314\python.exe -B scripts\physical_nearby_units.py --expected-host AMD-DESKTOP --physical-pid CURRENT_VERIFIED_PID --radius 35 --max-names 18 --output-dir artifacts\NEW_UNUSED_NEARBY_READOUT
+$rr2Host = [Environment]::MachineName
+python -B scripts/physical_rift.py --expected-host $rr2Host
+python -B scripts/physical_nearby_units.py --expected-host $rr2Host --physical-pid CURRENT_VERIFIED_PID --native-reader $rr2PublishedReader --radius 35 --max-names 18 --output-dir artifacts/NEW_UNUSED_NEARBY_READOUT
 ```
 
 Use the actual PID from the new preflight. `--radius` must be greater than 0 and at most 50 native horizontal units; `--max-names` is bounded to 1–32. The CLI refuses existing output directories rather than overwriting their evidence, returns exit 2 for unavailable/invalid sources, and writes `failure.json` for an acquisition failure after directory creation.
@@ -24,8 +26,9 @@ On the verified local Windows host, add `--include-levels` to the nearby reader 
 NPC correlation replays the original level source against its SHA-256 and reports whether the native and Lua numeric candidates agree when it has both. A level result leaves hostility and combat suitability unqualified.
 
 To compare a saved selected-target profile with a keyed native level report,
-keep the profile's original sources together and supply the retained SHA-256 of
-the keyed report. Replay checks the native process and player identity, exact
+copy the profile directory with its original sources and supply the retained
+SHA-256 of the keyed report. Replay finds the native sources beside the copied
+profile on the analysis machine. It checks the native process and player identity, exact
 selected unit and entity, and a 30-second comparison window. It reports matching
 or differing native candidates. Independent RIFT UI or Lua confirmation remains
 a separate check.

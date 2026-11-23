@@ -4,7 +4,7 @@ from __future__ import annotations
 from copy import deepcopy
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from shutil import copytree
 import unittest
 from unittest.mock import patch
@@ -123,6 +123,21 @@ class TargetProfileReplayTests(unittest.TestCase):
         path, _ = self.generate()
         moved = copytree(path.parent, path.parent.parent / "copied-profile") / path.name
         self.assertEqual(self.check(moved)["status"], "source-replayed-candidate")
+
+    def test_copied_bundle_accepts_windows_source_metadata_on_posix(self):
+        path, _ = self.generate()
+        record = json.loads(path.read_text(encoding="utf-8"))
+        recorded_path = r"X:\Original Windows Checkout\selected-position.json"
+        record["sourcePaths"]["selectedPosition"] = recorded_path
+        path.write_text(json.dumps(record), encoding="utf-8")
+
+        def analysis_path(value):
+            return PurePosixPath(value) if value == recorded_path else Path(value)
+
+        with patch.object(replay, "Path", side_effect=analysis_path):
+            result = self.check(path)
+        self.assertEqual(result["status"], "source-replayed-candidate")
+        self.assertEqual(result["sourceCount"], 4)
 
     def test_another_player_name_source_is_refused(self):
         path, _ = self.generate()

@@ -9,7 +9,7 @@ import argparse
 import hashlib
 import json
 import math
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -83,7 +83,7 @@ def replay(source):
                 "receipt-invalid")
         expected = path.parent / f"frame-{index:02d}.wire"
         retained = receipt.get("retainedWire")
-        require(type(retained) is str and Path(retained).name == expected.name
+        require(type(retained) is str and PureWindowsPath(retained).name == expected.name
                 and expected.is_file() and not expected.is_symlink(),
                 "source-byte-file-unavailable")
         raw = expected.read_bytes()

@@ -4,7 +4,7 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime, timedelta
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
@@ -92,6 +92,19 @@ class NpcSourceReplayTests(unittest.TestCase):
         self.assertEqual(replay["snapshot"]["units"][UNIT]["relation"], "hostile")
         self.assertEqual(len(replay["sourceReceipts"]), 2)
         self.assertFalse(replay["inputSent"])
+
+    def test_windows_retained_wire_metadata_replays_on_posix(self):
+        self.acquire()
+        recorded_path = r"X:\Original Windows Checkout\frame-02.wire"
+        self.rewrite(lambda doc: doc["sources"][1].update(retainedWire=recorded_path))
+
+        def analysis_path(value):
+            return PurePosixPath(value) if value == recorded_path else Path(value)
+
+        with patch.object(cold, "Path", side_effect=analysis_path):
+            result = cold.replay(self.saved())
+        self.assertEqual(result["status"], "advancing-source-replayed-candidate")
+        self.assertEqual(result["confirmedUnitIds"], [UNIT])
 
     def test_retained_bytes_mutation_fails(self):
         self.acquire()
