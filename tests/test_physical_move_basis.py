@@ -8,6 +8,7 @@ from io import StringIO
 import json
 import math
 from pathlib import Path
+import shutil
 import struct
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -62,6 +63,7 @@ class PhysicalMoveBasisTests(unittest.TestCase):
         if wrong_host:
             pulse["machine"] = "DIFFERENT-PC"
         identity = {field: pulse[field] for field in ("processId", "processStartUtcTicks", "executableSha256")}
+        identity["executablePath"] = r"C:\RIFT\rift_x64.exe"
         t = datetime(2026, 11, 11, 14, 54, second, tzinfo=timezone.utc)
 
         def stamp(milliseconds):
@@ -193,6 +195,68 @@ class PhysicalMoveBasisTests(unittest.TestCase):
             target["processStartUtcTicks"] = "1"
             with self.assertRaisesRegex(ValueError, "basis-calibration-preflight-target-mismatch"):
                 basis.analyze(self.paths, target_preflight=Path("preflight.json"))
+
+    def calibration_folder(self):
+        folder = self.root / "calibration bundle"
+        folder.mkdir()
+        for key, source in self.paths.items():
+            shutil.copyfile(source, folder / f"{key}.json")
+        a = self.turn_trial("a", 5, 175, -150)
+        d = self.turn_trial("d", 7, -150, 175)
+        for key, trial in (("a", a), ("d", d)):
+            for part, path in zip(("before", "pulse", "after"), trial):
+                shutil.copyfile(path, folder / f"{key}-{part}.json")
+
+        raw = json.loads(a[0].read_text(encoding="utf-8"))
+        for row in raw["observations"]:
+            for field in ("startedAtUtc", "completedAtUtc"):
+                row[field] = row[field].replace("T14:54:", "T14:49:")
+        raw["observation"] = raw["observations"][-1]
+        facing_path = folder / preflight.FACING
+        facing_path.write_text(json.dumps(raw), encoding="utf-8")
+        target = dict(raw["identity"], hostName="AMD-DESKTOP", hwnd=42,
+                      processStartUtcTicks=str(raw["identity"]["processStartUtcTicks"]))
+        summary = {"schema": preflight.SCHEMA, "status": "calibration-baseline-ready", "target": target,
+                   "inputSent": False, "focusRequested": False, "baseline": preflight.baseline(facing_path, target)}
+        (folder / preflight.SUMMARY).write_text(json.dumps(summary), encoding="utf-8")
+        return folder
+
+    def test_complete_calibration_bundle_rebuilds_after_copy(self):
+        folder = self.calibration_folder()
+        with contextlib.redirect_stdout(StringIO()):
+            self.assertEqual(basis.main(["--bundle", str(folder)]), 0)
+        saved, digest = read_basis(folder / basis.BUNDLE_REPORT)
+        moved = shutil.copytree(folder, self.root / "another checkout")
+        with contextlib.redirect_stdout(StringIO()) as output:
+            self.assertEqual(basis.main(["--verify-bundle", str(moved)]), 0)
+        report = json.loads(output.getvalue())
+        self.assertEqual(report["status"], "verified-calibration-bundle")
+        self.assertEqual(report["identity"], saved["identity"])
+        self.assertEqual(report["basisSha256"], digest)
+        self.assertEqual(report["sourceCount"], 12)
+        self.assertFalse(report["movementEligible"])
+        self.assertEqual(read_basis(moved / basis.BUNDLE_REPORT)[1], digest)
+
+    def test_bundle_rejects_valid_json_edits_to_sources_and_saved_rates(self):
+        folder = self.calibration_folder()
+        basis.calibration_bundle(folder)
+        with self.assertRaisesRegex(ValueError, "calibration-bundle-output-exists"):
+            basis.calibration_bundle(folder)
+        path = folder / basis.BUNDLE_REPORT
+        original = path.read_bytes()
+        saved = json.loads(original)
+        saved["turnCalibrationCandidate"]["rates"]["a"]["degreesPerMillisecondCandidate"] += .01
+        path.write_text(json.dumps(saved), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "calibration-bundle-basis-mismatch"):
+            basis.calibration_bundle(folder, verify=True)
+        path.write_bytes(original)
+
+        source = folder / "w.json"
+        receipt_data = json.loads(source.read_bytes())
+        receipt_data["annotation"] = "Edited without changing the calculated motion"
+        source.write_text(json.dumps(receipt_data), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "calibration-bundle-basis-mismatch"):
+            basis.calibration_bundle(folder, verify=True)
 
     def test_basis_from_a_third_host_can_be_reopened_and_rejects_mixed_hosts(self):
         host = "RR2_FIELD-PC"

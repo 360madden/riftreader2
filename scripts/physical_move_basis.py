@@ -20,6 +20,8 @@ if str(ROOT) not in sys.path:
 from scripts.physical_move_key_calibration import from_helper_receipt
 
 KEYS = ("w", "s", "q", "e")
+BUNDLE_SCHEMA = "rr2-physical-movement-calibration-bundle/1"
+BUNDLE_REPORT = "movement-basis.json"
 
 
 def require(ok, reason):
@@ -188,11 +190,64 @@ def analyze(paths, *, later_forward=None, turn_sources=None, target_preflight=No
     return basis
 
 
+def _same_basis(a, b):
+    """Compare saved and recomputed values with room for floating-point rounding."""
+    if type(a) is not type(b):
+        return False
+    if isinstance(a, dict):
+        return a.keys() == b.keys() and all(_same_basis(a[key], b[key]) for key in a)
+    if isinstance(a, list):
+        return len(a) == len(b) and all(_same_basis(x, y) for x, y in zip(a, b))
+    if isinstance(a, float):
+        return math.isclose(a, b, rel_tol=1e-12, abs_tol=1e-12)
+    return a == b
+
+
+def _write_report(path, report):
+    rendered = json.dumps(report, sort_keys=True, allow_nan=False)
+    with path.open("x", encoding="utf-8") as stream:
+        stream.write(rendered + "\n")
+
+
+def calibration_bundle(directory, *, verify=False):
+    """Build or independently replay a complete calibration kept in one directory."""
+    from scripts.physical_move_basis_waypoint import read_basis
+    from scripts.prepare_physical_move_calibration import FACING, SUMMARY
+
+    directory = Path(directory)
+    require(directory.is_dir(), "calibration-bundle-directory-unavailable")
+    destination = directory / BUNDLE_REPORT
+    if verify:
+        saved, saved_sha = read_basis(destination)
+        require(saved.get("bundleSchema") == BUNDLE_SCHEMA, "invalid-calibration-bundle-schema")
+    else:
+        require(not destination.exists() and not destination.is_symlink(), "calibration-bundle-output-exists")
+
+    translations = {key: directory / f"{key}.json" for key in KEYS}
+    turns = {key: tuple(directory / f"{key}-{part}.json" for part in ("before", "pulse", "after"))
+             for key in ("a", "d")}
+    preflight = directory / SUMMARY
+    required = [preflight, directory / FACING, *translations.values(), *turns["a"], *turns["d"]]
+    missing = [path.name for path in required if not path.is_file()]
+    require(not missing, "calibration-bundle-missing: " + ", ".join(missing))
+    report = analyze(translations, turn_sources=turns, target_preflight=preflight)
+    report["bundleSchema"] = BUNDLE_SCHEMA
+    if verify:
+        require(_same_basis(saved, report), "calibration-bundle-basis-mismatch")
+        return {"status": "verified-calibration-bundle", "identity": report["identity"],
+                "basisSha256": saved_sha, "sourceCount": len(required), "movementEligible": False}
+    _write_report(destination, report)
+    return report
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--bundle", type=Path, help="build movement-basis.json in a complete local calibration folder")
+    mode.add_argument("--verify-bundle", type=Path, help="recompute and verify the saved basis against its sibling files")
     for key, long_name in (("w", "--forward"), ("s", "--backward"),
                            ("q", "--left"), ("e", "--right")):
-        parser.add_argument(long_name, type=Path, required=True, dest=key)
+        parser.add_argument(long_name, type=Path, dest=key)
     parser.add_argument("--later-forward", type=Path)
     parser.add_argument("--target-preflight", type=Path,
                         help="match saved measurements to the supplied read-only calibration preflight")
@@ -201,16 +256,22 @@ def main(argv=None):
                             help=f"settled facing reports bracketing one {key.upper()} move-key receipt")
     parser.add_argument("--out", type=Path)
     args = parser.parse_args(argv)
+    translations = {key: getattr(args, key) for key in KEYS}
+    turns = {key: paths for key, paths in (("a", args.turn_a), ("d", args.turn_d)) if paths is not None}
+    if args.bundle or args.verify_bundle:
+        if any(translations.values()) or turns or args.later_forward or args.target_preflight or args.out:
+            parser.error("Bundle modes use the folder's standard filenames. Supply only the bundle mode and folder.")
+    elif not all(translations.values()):
+        parser.error("Supply --forward, --backward, --left and --right, or choose a bundle mode.")
     try:
-        turns = {key: paths for key, paths in (("a", args.turn_a), ("d", args.turn_d)) if paths is not None}
-        result = analyze({key: getattr(args, key) for key in KEYS},
-                         later_forward=args.later_forward, turn_sources=turns or None,
-                         target_preflight=args.target_preflight)
-        rendered = json.dumps(result, sort_keys=True, allow_nan=False)
-        if args.out:
-            with args.out.open("x", encoding="utf-8") as stream:
-                stream.write(rendered + "\n")
-        print(rendered)
+        if args.bundle or args.verify_bundle:
+            result = calibration_bundle(args.bundle or args.verify_bundle, verify=args.verify_bundle is not None)
+        else:
+            result = analyze(translations, later_forward=args.later_forward, turn_sources=turns or None,
+                             target_preflight=args.target_preflight)
+            if args.out:
+                _write_report(args.out, result)
+        print(json.dumps(result, sort_keys=True, allow_nan=False))
         return 0
     except (OSError, ValueError, TypeError, KeyError, OverflowError, RecursionError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)}))

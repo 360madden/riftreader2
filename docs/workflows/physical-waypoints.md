@@ -909,6 +909,20 @@ timing, same-player process identity, stationary XYZ and expected sign. It
 retains the source SHA-256s and records both turn rates as candidates. Input
 ownership and action approval are checked separately during live use.
 
+For a portable calibration folder, place `w.json`, `s.json`, `q.json`, `e.json`,
+`a-before.json`, `a-pulse.json`, `a-after.json`, `d-before.json`, `d-pulse.json`
+and `d-after.json` beside the preflight summary and `settled-facing.json`. Build
+`movement-basis.json` once. You can copy the folder to another checkout and
+verify it there. Verification recomputes the basis from the retained files and
+checks their hashes against the saved basis.
+
+```powershell
+python -B scripts/physical_move_basis.py --bundle artifacts/NEW_CALIBRATION_PREFLIGHT
+python -B scripts/physical_move_basis.py --verify-bundle artifacts/COPIED_CALIBRATION
+```
+
+For individually named receipts, supply the paths explicitly.
+
 ```powershell
 python -B scripts/physical_move_basis.py --forward w.json --backward s.json --left q.json --right e.json `
   --turn-a a-before.json a-pulse.json a-after.json --turn-d d-before.json d-pulse.json d-after.json `
