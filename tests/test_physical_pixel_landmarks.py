@@ -7,11 +7,18 @@ import io
 import json
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 from tempfile import TemporaryDirectory
 import unittest
 
+from PIL import Image
+
 from scripts import physical_pixel_landmarks as landmarks
 from scripts import physical_pixel_ray, physical_pixel_surface
+from tests.test_physical_facing import optical_camera
+from tests.test_physical_pixel_ray import mapping
+from tests.test_physical_turn_visual_pair import make_receipt
 
 
 ROOT = Path(r"C:\work\RiftWorld\artifacts\thedeor-20261113-r4")
@@ -28,6 +35,118 @@ PINS = {
 
 def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+class PortableLandmarkProofTests(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(self.enterContext(TemporaryDirectory(prefix="rr2-portable-landmarks-")))
+        self.original = self.root / "capture sources"
+        self.original.mkdir()
+        self.bundle = self.root / "saved bundle"
+        self.frames = self.bundle / "wgc"
+        self.frames.mkdir(parents=True)
+        self.mesh = self.bundle / "mesh.obj"
+        self.host = "RIFT-STATION"
+        bounds = mapping()
+        camera = optical_camera()
+        image = self.original / "image.png"
+        Image.new("RGB", (320, 200)).save(image)
+        receipt = self.original / "image.png.json"
+        frame = make_receipt(receipt, image, 0)
+        frame.update(machine=self.host, clientFrameMapping=bounds)
+        self.write_json(receipt, frame)
+        identity = frame["targetBefore"]
+        target = dict(hostName=self.host, processId=identity["pid"], processStartUtcTicks=str(identity["startTicks"]),
+                      executablePath=r"C:\RIFT\rift_x64.exe", executableSha256=identity["sha256"], hwnd=identity["hwnd"])
+        native_identity = dict(processId=target["processId"], processStartUtcTicks=int(target["processStartUtcTicks"]),
+                               executablePath=target["executablePath"], executableSha256=target["executableSha256"])
+        native = dict(identity=native_identity, observation={"opticalCameraCandidate": camera})
+        for name, time_field, stamp in (("before", "completedAtUtc", frame["capturedStartedAtUtc"]),
+                                        ("after", "startedAtUtc", "2026-11-11T19:00:00.5Z")):
+            path = self.original / (name + ".json")
+            data = dict(native, observation=dict(native["observation"], **{time_field: stamp}))
+            self.write_json(path, data)
+            shutil.copy2(path, self.bundle / f"native-final-{name}.json")
+        observation = dict(ownerHost=self.host, target=target, captureBackend="Windows.Graphics.Capture",
+                           foregroundMayChange=False, clientFrameMapping=bounds,
+                           capturedAtUtc=frame["capturedCompletedAtUtc"], imageSha256=frame["imageSha256"],
+                           image=str(image), receipt=str(receipt),
+                           nativeFacing=dict(status="stable-bracket-candidate",
+                                             beforeOutput=str(self.original / "before.json"),
+                                             afterOutput=str(self.original / "after.json")))
+        self.write_json(self.bundle / "observation-final.json", observation)
+        corners, vertex_lines = [], []
+        for number, (x, y, depth) in enumerate(((90, 60, 5), (228, 78, 6), (170, 143, 5)), 1):
+            ray = physical_pixel_ray.pixel_ray(camera, bounds, x, y)
+            point = [eye + depth * axis for eye, axis in zip(ray["nativeEyeXYZ"], ray["unitDirectionXYZ"])]
+            corners.append(dict(name=f"Corner {number}", frameXY=[x, y], sourceXYZ=point,
+                                selectionUncertaintyPixels=2))
+            vertex_lines.append("v " + " ".join(map(str, point)))
+        self.mesh.write_text("\n".join([*vertex_lines, "f 1 2 3", ""]), encoding="ascii")
+        self.write_json(self.bundle / "landmarks.json", corners)
+        shutil.copy2(image, self.frames / image.name)
+        shutil.copy2(receipt, self.frames / receipt.name)
+        self.pins = {key: digest(path) for key, path in {
+            "observation": self.bundle / "observation-final.json", "before": self.bundle / "native-final-before.json",
+            "after": self.bundle / "native-final-after.json", "landmarks": self.bundle / "landmarks.json",
+            "mesh": self.mesh, "receipt": receipt,
+        }.items()}
+
+    @staticmethod
+    def write_json(path, data):
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+    def test_direct_cli_replays_a_moved_bundle_with_no_recorded_source_files(self):
+        original = landmarks.replay(self.bundle, self.mesh, pins=self.pins)
+        copied = shutil.copytree(self.bundle, self.root / "moved review folder")
+        for name in ("before.json", "after.json", "image.png", "image.png.json"):
+            (self.original / name).unlink()
+        args = [sys.executable, "-B", str(landmarks.ROOT / "scripts/physical_pixel_landmarks.py"),
+                "--archive-dir", str(copied), "--mesh-obj", str(copied / "mesh.obj"),
+                "--retained-frame-dir", str(copied / "wgc")]
+        for key, flag in (("observation", "observation"), ("before", "native-before"), ("after", "native-after"),
+                          ("landmarks", "landmarks"), ("mesh", "mesh"), ("receipt", "receipt")):
+            args.extend((f"--{flag}-sha256", self.pins[key]))
+        result = subprocess.run(args, cwd=self.root, text=True, capture_output=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+        replay = json.loads(result.stdout)
+        self.assertEqual(replay["status"], "historical-landmark-frame-alignment-candidate")
+        self.assertEqual(replay["identity"]["host"], self.host)
+        self.assertEqual(replay["landmarks"], json.loads(json.dumps(original["landmarks"])))
+        self.assertEqual(Path(replay["sources"]["image"]["path"]), copied / "wgc" / "image.png")
+        self.assertEqual(Path(replay["sources"]["image"]["original"]), self.original / "image.png")
+        self.assertEqual(digest(copied / "observation-final.json"), self.pins["observation"])
+        self.assertFalse(replay["inputSent"])
+        self.assertFalse(replay["movementEligible"])
+
+    def test_portable_replay_requires_a_receipt_hash_and_checks_the_origin_host(self):
+        with self.assertRaisesRegex(ValueError, "requires-all-source-hashes"):
+            landmarks.replay(self.bundle, self.mesh, pins=dict(self.pins, receipt=None), retained_frame_dir=self.frames)
+        with self.assertRaisesRegex(ValueError, "capture-host-mismatch"):
+            landmarks.replay(self.bundle, self.mesh, "OTHER-PC", pins=self.pins, retained_frame_dir=self.frames)
+        result = landmarks.replay(self.bundle, self.mesh, self.host.lower(), pins=self.pins, retained_frame_dir=self.frames)
+        self.assertEqual(result["identity"]["host"], self.host)
+
+    def test_copied_receipt_rejects_edited_bytes_and_mismatched_machine_even_if_repinned(self):
+        path = self.frames / "image.png.json"
+        receipt = json.loads(path.read_text(encoding="utf-8"))
+        self.write_json(path, dict(receipt, machine="OTHER-PC"))
+        with self.assertRaisesRegex(ValueError, "receipt-sha256-mismatch"):
+            landmarks.replay(self.bundle, self.mesh, pins=self.pins, retained_frame_dir=self.frames)
+        with self.assertRaisesRegex(ValueError, "receipt-host-mismatch"):
+            landmarks.replay(self.bundle, self.mesh, pins=dict(self.pins, receipt=digest(path)), retained_frame_dir=self.frames)
+
+    def test_copied_source_bytes_must_match_original_native_and_image_hashes(self):
+        for file, reason in ((self.bundle / "native-final-after.json", "after-sha256-mismatch"),
+                             (self.frames / "image.png", "image-sha256-mismatch")):
+            with self.subTest(file=file.name):
+                data = file.read_bytes()
+                try:
+                    file.write_bytes(data + b"changed")
+                    with self.assertRaisesRegex(ValueError, reason):
+                        landmarks.replay(self.bundle, self.mesh, pins=self.pins, retained_frame_dir=self.frames)
+                finally:
+                    file.write_bytes(data)
 
 
 @unittest.skipUnless(

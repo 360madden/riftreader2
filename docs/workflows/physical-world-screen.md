@@ -391,18 +391,32 @@ is **251 horizontal units** from this courtyard center and is **not in the
 courtyard OBJ's exported CDR placement set**; do not mislabel it as one of the
 visible corners. The cross-epoch/one-rack limits above still apply.
 
-To replay on **AMD-DESKTOP**, from `C:\work\riftreader2`, run:
+To replay on another machine, copy `observation-final.json`,
+`native-final-before.json`, `native-final-after.json`, `landmarks.json` and
+`riftworld-patch.obj` without changing their contents. Copy the original WGC
+image and receipt into `wgc/image.png` and `wgc/image.png.json`. Record the
+original receipt's SHA-256 before copying, using `Get-FileHash` on the capture
+machine. Run from the checkout with Python and Pillow available.
 
 ```powershell
-C:\Python314\python.exe scripts\physical_pixel_landmarks.py `
-  --archive-dir C:\work\RiftWorld\artifacts\thedeor-20261113-r4 `
-  --mesh-obj C:\work\RiftWorld\artifacts\thedeor-20261113-r4\riftworld-patch.obj `
+$bundle = 'C:\path\to\copied-landmark-capture'
+$receiptSha = 'SHA256_RECORDED_FOR_ORIGINAL_WGC_RECEIPT'
+python -B scripts\physical_pixel_landmarks.py `
+  --archive-dir $bundle `
+  --mesh-obj (Join-Path $bundle 'riftworld-patch.obj') `
+  --retained-frame-dir (Join-Path $bundle 'wgc') `
+  --receipt-sha256 $receiptSha `
   --mesh-sha256 9638697914900f3098fbae11d3b6cabe95c663c954898fa6ca589ee759861dec `
   --landmarks-sha256 61d81c7649674b80c5855975f2f235d124fde699552665e13998a45c8a73348e `
   --observation-sha256 666f650f3e11fff325acaab56413203b1966274d7af7776c1a3755197ca68601 `
   --native-before-sha256 00a2c4e060dba5f4f767b6e7d2a8432f4fda1cf32599a31b6021c82bc3e0348d `
   --native-after-sha256 d6effc47840c64610c7dd2b1e754d0ba13b794310c2a5fb67b25032e84c479ff
 ```
+
+Add `--expected-host AMD-DESKTOP` to assert this example's capture hostname.
+Replay reports the recorded host and checks it against the target and WGC
+receipt. It reads the copied native reports, image and receipt and preserves
+the original source paths as provenance.
 
 The JSON returns per-landmark screen/XYZ/ray misses, the exact source hashes,
 model membership and perturbation results, always with

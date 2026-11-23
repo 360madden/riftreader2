@@ -10,10 +10,16 @@ from datetime import datetime, timezone
 import json
 import math
 from pathlib import Path
+import sys
 
-from scripts import export_physical_rerun as rerun
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from scripts import physical_pixel_ray
 from scripts import physical_pixel_surface as surface
+from scripts import physical_rift
+from scripts.waypoint_view_bundle import bundle_asset
 
 SCHEMA = "rr2.retained-pixel-source-landmarks/1"
 MAX_METADATA = 2 * 1024 * 1024
@@ -59,8 +65,7 @@ def _utc(value, name):
 
 
 def _frame_xy(camera, mapping, xyz):
-    projection = rerun.plot.physical._project_world_point(
-        camera, dict(zip("xyz", xyz)))
+    projection = physical_rift._project_world_point(camera, dict(zip("xyz", xyz)))
     _require(projection.get("status") == "available-candidate",
              "landmark-projection-unavailable")
     x = projection["normalizedX"] * mapping["clientWidth"] + mapping["clientLeft"]
@@ -69,10 +74,14 @@ def _frame_xy(camera, mapping, xyz):
     return [x, y]
 
 
-def replay(archive_dir, mesh_obj, expected_host="AMD-DESKTOP", *, pins=None):
+def replay(archive_dir, mesh_obj, expected_host=None, *, pins=None, retained_frame_dir=None):
     """Replay one immutable source-landmark/image/native bracket in a single call."""
-    pins = pins or {}
+    pins = {} if pins is None else pins
     _require(isinstance(pins, dict), "landmark-pins-invalid")
+    retained = retained_frame_dir is not None
+    if retained:
+        _require(all(pins.get(key) for key in ("observation", "before", "after", "landmarks", "mesh", "receipt")),
+                 "landmark-retained-replay-requires-all-source-hashes")
     archive_dir = Path(archive_dir)
     source, sources = {}, {}
     names = {
@@ -82,13 +91,16 @@ def replay(archive_dir, mesh_obj, expected_host="AMD-DESKTOP", *, pins=None):
         "landmarks": "landmarks.json",
     }
     for kind, name in names.items():
-        source[kind], sources[kind] = _json(
-            archive_dir / name, kind, pins.get(kind))
+        path = bundle_asset(archive_dir, name) if retained else archive_dir / name
+        source[kind], sources[kind] = _json(path, kind, pins.get(kind))
     obs, before, after, landmarks = (source[k] for k in names)
     _require(type(obs) is dict and type(before) is dict and type(after) is dict,
              "native-or-image-report-invalid")
-    _require(obs.get("ownerHost") == expected_host
-             and obs.get("captureBackend") == "Windows.Graphics.Capture"
+    source_host = obs.get("ownerHost")
+    _require(physical_rift.valid_host_name(source_host)
+             and (expected_host is None or (physical_rift.valid_host_name(expected_host)
+                  and source_host.casefold() == expected_host.casefold())), "landmark-capture-host-mismatch")
+    _require(obs.get("captureBackend") == "Windows.Graphics.Capture"
              and obs.get("foregroundMayChange") is False
              and obs.get("nativeFacing", {}).get("status") == "stable-bracket-candidate",
              "landmark-physical-wgc-not-admitted")
@@ -97,6 +109,9 @@ def replay(archive_dir, mesh_obj, expected_host="AMD-DESKTOP", *, pins=None):
     _require(type(target) is dict and type(mapping) is dict
              and mapping.get("status") == "available-candidate",
              "landmark-identity-or-client-mapping-missing")
+    if retained:
+        _require(physical_rift.valid_host_name(target.get("hostName"))
+                 and target["hostName"].casefold() == source_host.casefold(), "landmark-target-host-mismatch")
     for kind, report in (("before", before), ("after", after)):
         ident = report.get("identity")
         _require(type(ident) is dict
@@ -109,10 +124,12 @@ def replay(archive_dir, mesh_obj, expected_host="AMD-DESKTOP", *, pins=None):
                      == target.get("executableSha256", "").lower(),
                  "landmark-native-process-epoch-mismatch:" + kind)
         original = obs["nativeFacing"].get(kind + "Output")
-        _require(isinstance(original, str), "landmark-native-source-missing:" + kind)
-        _, _, original_ref = _read_pinned(original, MAX_METADATA, kind + "-original",
-                                         sources[kind]["sha256"])
-        sources[kind]["original"] = original_ref["path"]
+        _require(isinstance(original, str) and original, "landmark-native-source-missing:" + kind)
+        if not retained:
+            _, _, original_ref = _read_pinned(original, MAX_METADATA, kind + "-original",
+                                             sources[kind]["sha256"])
+            original = original_ref["path"]
+        sources[kind]["original"] = original
     first, last = before.get("observation"), after.get("observation")
     _require(type(first) is dict and type(last) is dict,
              "landmark-native-samples-missing")
@@ -130,9 +147,17 @@ def replay(archive_dir, mesh_obj, expected_host="AMD-DESKTOP", *, pins=None):
     _require(first_end < capture_utc < last_start
              and (last_start - first_end).total_seconds() <= 10,
              "landmark-wgc-native-timing-invalid")
-    _, _, image_ref = _read_pinned(obs.get("image"), MAX_IMAGE, "landmark-image",
-                                       obs.get("imageSha256"))
-    receipt, receipt_ref = _json(obs.get("receipt"), "landmark-receipt")
+    image_path, receipt_path = obs.get("image"), obs.get("receipt")
+    image_sha = obs.get("imageSha256")
+    _require(isinstance(image_sha, str) and surface._HEX_SHA.fullmatch(image_sha),
+             "landmark-image-expected-sha-invalid")
+    if retained:
+        _require(all(isinstance(path, str) and path for path in (image_path, receipt_path)),
+                 "landmark-frame-source-missing")
+        image_path = bundle_asset(retained_frame_dir, "image.png")
+        receipt_path = bundle_asset(retained_frame_dir, "image.png.json")
+    _, _, image_ref = _read_pinned(image_path, MAX_IMAGE, "landmark-image", image_sha)
+    receipt, receipt_ref = _json(receipt_path, "landmark-receipt", pins.get("receipt"))
     _require(type(receipt) is dict and receipt.get("inputSent") is False
              and receipt.get("focusChangedByProbe") is False
              and receipt.get("imageSha256", "").lower() == image_ref["sha256"]
@@ -140,6 +165,10 @@ def replay(archive_dir, mesh_obj, expected_host="AMD-DESKTOP", *, pins=None):
              and receipt.get("frameHeight") == mapping.get("frameHeight")
              and receipt.get("clientFrameMapping") == mapping,
              "landmark-wgc-receipt-unqualified")
+    if retained:
+        _require(physical_rift.valid_host_name(receipt.get("machine"))
+                 and receipt["machine"].casefold() == source_host.casefold(), "landmark-receipt-host-mismatch")
+        image_ref["original"], receipt_ref["original"] = obs["image"], obs["receipt"]
     for which in ("targetBefore", "targetAfter"):
         val = receipt.get(which)
         _require(type(val) is dict and val.get("pid") == target["processId"]
@@ -205,7 +234,7 @@ def replay(archive_dir, mesh_obj, expected_host="AMD-DESKTOP", *, pins=None):
     return {"schema": SCHEMA,
             "status": ("historical-landmark-frame-alignment-candidate"
                        if agreement and shifted_rejected else "inconclusive"),
-            "identity": {"host": expected_host, "processId": target["processId"],
+            "identity": {"host": source_host, "processId": target["processId"],
                          "processStartUtcTicks": target["processStartUtcTicks"],
                          "executableSha256": target["executableSha256"]},
             "capturedAtUtc": capture_utc.isoformat(),
@@ -229,7 +258,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--archive-dir", type=Path, required=True)
     parser.add_argument("--mesh-obj", type=Path, required=True)
-    parser.add_argument("--expected-host", default="AMD-DESKTOP")
+    parser.add_argument("--expected-host", help="optional assertion of the original capture hostname")
+    parser.add_argument("--retained-frame-dir", type=Path,
+                        help="use copied image.png and image.png.json without opening the recorded source paths")
+    parser.add_argument("--receipt-sha256", help="expected WGC receipt hash, required for --retained-frame-dir")
     parser.add_argument("--mesh-sha256", required=True)
     parser.add_argument("--landmarks-sha256", required=True)
     parser.add_argument("--observation-sha256", required=True)
@@ -241,7 +273,8 @@ def main(argv=None):
                         pins={"mesh": args.mesh_sha256, "landmarks": args.landmarks_sha256,
                               "observation": args.observation_sha256,
                               "before": args.native_before_sha256,
-                              "after": args.native_after_sha256})
+                              "after": args.native_after_sha256, "receipt": args.receipt_sha256},
+                        retained_frame_dir=args.retained_frame_dir)
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
         print(json.dumps({"schema": SCHEMA, "status": "blocked", "reason": str(error),
                           "inputSent": False, "movementEligible": False}))
