@@ -19,7 +19,12 @@ checkout at `92c6a72` passed the full gate with the Python configured for
 Waypoints, including the real Lua 5.1 producer checks. The newly published
 reader passed the Waypoints, WGC, ReaderBridge, NPC survey, and Telemetry
 dependency checks. The Telemetry check found all three installed addon files.
-Live changed-target and nonce-bound NPC confirmation remain pending.
+A passive LEGION run on build 1179, PID 31684, verified an advancing
+Telemetry publisher in two windows. Independent replay from a copied folder
+reproduced 106 distinct frames and zero observed A–B–A cycles. Live
+changed-target and nonce-bound NPC confirmation remain pending.
+[Passive Telemetry replay](../artifacts/telemetry-passive-legion-p31684-20261123/independent-replay.json)
+
 Workbridge capture still reports missing `dist/desktop-ui.mjs` and
 `dist/desktop-capture.mjs`. The AMD-DESKTOP process observations below are dated
 evidence. [Portable checkout setup](workflows/development.md#reuse-local-tools-from-a-fresh-checkout)
