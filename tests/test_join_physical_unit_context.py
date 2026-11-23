@@ -58,7 +58,7 @@ class UnitContextTests(unittest.TestCase):
                   (self.positions, "A" * 64), (self.names, "B" * 64)]),
               patch.object(join.physical_rift, "_native_values",
                            side_effect=[self.position_values, self.name_values]),
-              patch.object(join.socket, "gethostname", return_value="AMD-DESKTOP")):
+              patch.object(join.socket, "gethostname", return_value="RIFT-STATION")):
             return join.join("position.json", "names.json", **kwargs)
 
     def test_join_preserves_source_pins_and_unknown_hostility(self):
@@ -73,6 +73,7 @@ class UnitContextTests(unittest.TestCase):
         self.assertFalse(result["encounter"]["ready"])
         self.assertEqual({r["hostility"] for r in result["units"]}, {"unknown"})
         self.assertEqual(result["sourceHostProvenance"], "not-embedded-in-raw-native-reports")
+        self.assertEqual(result["analysisHost"], "RIFT-STATION")
 
     def test_changed_entity_address_does_not_attach_cached_name(self):
         self.name_values["rows"][0]["entityAddressDecimal"] = "196608"
@@ -127,15 +128,6 @@ class UnitContextTests(unittest.TestCase):
             with self.subTest(limit=limit):
                 with self.assertRaisesRegex(ValueError, "invalid-gap-limit"):
                     self.assess(max_gap_seconds=limit)
-
-    def test_requires_local_amd_analysis_host(self):
-        with patch.object(join.socket, "gethostname", return_value="OTHER-PC"), \
-             patch.object(join.context, "load", side_effect=[
-                 (self.positions, "A" * 64), (self.names, "B" * 64)]), \
-             patch.object(join.physical_rift, "_native_values",
-                          side_effect=[self.position_values, self.name_values]):
-            with self.assertRaisesRegex(ValueError, "wrong-analysis-host"):
-                join.join("position.json", "names.json")
 
     def test_cli_returns_structured_failure_without_game_access(self):
         capture = StringIO()

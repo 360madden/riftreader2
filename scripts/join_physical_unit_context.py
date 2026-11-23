@@ -44,10 +44,8 @@ def join(position_file, names_file, *, max_gap_seconds=30.0):
     name_values = physical_rift._native_values("unit-names", names)
     pose, naming = positions["observation"], names["observation"]
     owner = pose.get("identity")
-    # These native source files do not embed a host name. Independently guard
-    # the analysis host; pin their process/module identity without pretending
-    # the raw reports independently attest which PC produced them.
-    _require(socket.gethostname().upper() == "AMD-DESKTOP", "wrong-analysis-host")
+    # The raw files carry process/module identity. The analysis hostname below
+    # records where the replay ran.
     _require(isinstance(owner, dict) and owner == naming.get("identity")
              and type(owner.get("processId")) is int and owner["processId"] > 0
              and type(owner.get("processStartUtcTicks")) is int
@@ -97,7 +95,7 @@ def join(position_file, names_file, *, max_gap_seconds=30.0):
         })
     return {
         "schemaVersion": 1, "evidenceKind": "physical-unit-context-candidates/1",
-        "status": "candidate-only", "analysisHost": "AMD-DESKTOP",
+        "status": "candidate-only", "analysisHost": socket.gethostname(),
         "sourceHostProvenance": "not-embedded-in-raw-native-reports",
         "target": owner, "selfKeyCandidate": position_values["selfKey"],
         "sources": {"positionsSha256": pos_sha, "namesSha256": name_sha},

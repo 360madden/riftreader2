@@ -8,10 +8,11 @@ import unittest
 
 from scripts import capture_readerbridge_v3 as capture
 from scripts.readerbridge_v3 import decode_packet
+from tests.test_readerbridge_v3 import NAME, PLAYER, STATS, packet, section
 
 
-ROOT = Path(__file__).resolve().parents[1]
-PACKET = (ROOT / "artifacts/survival-readerbridge-20261114/quick-1.bin").read_bytes()
+PACKET = packet(section("P", PLAYER.replace(b"name=6:" + NAME, b"name=5:Atank"))
+                + section("S", STATS))
 DECODED = decode_packet(PACKET)
 TARGET = {"processId": 2468, "processStartUtcTicks": 123456789,
           "executableSha256": "A" * 64}
@@ -53,9 +54,9 @@ class FakeRunner:
         if command == "scout-values-native":
             self.scouts += 1
             output.mkdir()
-            # Use the real CRC-valid packet.  On the second successful attempt,
+            # Use a synthetic CRC-valid packet. On the second successful attempt,
             # advancing is represented by adjusting the first decoded result in
-            # the test's decoder shim, while the retained bytes remain authentic.
+            # the test's decoder shim while keeping the fixture bytes fixed.
             companion = (f"RRAPICOORD1|schema=1|seq={DECODED['sequence']}|"
                          f"sampledAt={DECODED['sourceTimeMs'] / 1000:.3f}|source=rift-api|"
                          "view=Inspect.Unit.Detail(player)|status=pass|x=7429.0|y=863.0|z=2935.0|"
