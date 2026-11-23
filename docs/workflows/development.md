@@ -134,10 +134,11 @@ absolute local path of the copied bundle. `RR2_NATIVE_READER` and
 ### Prepare local physical Python environments
 
 With 64-bit Windows Python and Tcl/Tk installed, create a new environment for
-Waypoints and WGC. `--extra overlay` adds the Qt and DXcam environment, and
-`--extra rerun` adds a separate Rerun environment. The command uses the pinned
-requirements and returns environment variables for the local shell. A Python
-environment is created at its final path on each host.
+Waypoints and WGC. `--extra overlay` adds Qt and DXcam, `--extra rerun` adds
+Rerun, and `--extra validation` adds the development test dependencies with
+the pinned Lua 5.1 runtime. Each environment uses its own pinned requirements
+and is created at its final path on the local host. The command returns the
+interpreter settings for the current shell.
 
 ```powershell
 $rr2Host = [Environment]::MachineName
@@ -665,7 +666,10 @@ these are starting roles, not fixed assignments or evidence of readiness.
 
 ## Restore, build, and test
 
-Use a repository-local environment for the full validation suite:
+Use [the setup command](#prepare-local-physical-python-environments) with
+`--extra validation` and apply its `RIFTREADER2_LUA_PYTHON` setting in the
+shell that runs validation. You can also prepare a repository-local environment
+manually.
 
 ```powershell
 python -m venv artifacts/tools/lua-python

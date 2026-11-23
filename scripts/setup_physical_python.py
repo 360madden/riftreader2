@@ -1,4 +1,4 @@
-"""Create fresh Windows Python environments for RR2 physical workflows."""
+"""Create fresh Windows Python environments for RR2 workflows and validation."""
 from __future__ import annotations
 
 import argparse
@@ -66,6 +66,12 @@ def setup(output, *, extras=()):
         if not version.startswith("rerun-cli "):
             raise ValueError("Rerun returned an unrecognized version response")
         settings["RR2_RERUN_PYTHON"] = str(rerun)
+    if "validation" in extras:
+        validation = _create_environment(output / "validation", ("requirements-validation.txt",))
+        _run([str(validation), "-B", str(ROOT / "scripts/check_validation_python.py")],
+             "Check validation Python imports")
+        _run([str(validation), "-B", str(ROOT / "scripts/check_lua_runtime.py")], "Check validation Lua 5.1 runtime")
+        settings["RIFTREADER2_LUA_PYTHON"] = str(validation)
     return settings
 
 
@@ -73,8 +79,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--expected-host", required=True, help="verified local Windows machine name")
     parser.add_argument("--output-root", required=True, type=Path, help="new directory for these environments")
-    parser.add_argument("--extra", choices=("overlay", "rerun"), action="append", default=[],
-                        help="also prepare Qt/DXcam or Rerun (repeatable)")
+    parser.add_argument("--extra", choices=("overlay", "rerun", "validation"), action="append", default=[],
+                        help="also prepare Qt/DXcam, Rerun, or the development test suite (repeatable)")
     args = parser.parse_args(argv)
     host = socket.gethostname()
     try:
