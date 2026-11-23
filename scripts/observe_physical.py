@@ -209,6 +209,36 @@ def _check_workbridge_winapp(command):
     return failure
 
 
+def _check_workbridge_catalog(command):
+    code, text = _run([*command, "--list-tools", "--timeout", "6", "--json"], 10)
+    entry = _workbridge_response(text)
+    if code != 0 or entry.get("ok") is not True:
+        error = entry.get("error")
+        _require(isinstance(error, dict), "workbridge-discovery-failed")
+        reason = error.get("code")
+        _require(isinstance(reason, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", reason),
+                 "workbridge-discovery-failed")
+        result = {"status": "blocked", "reason": reason}
+        for field in ("expectedVersion", "runtimeVersion"):
+            version = error.get(field)
+            if isinstance(version, str) and re.fullmatch(r"[0-9][A-Za-z0-9.+-]{0,63}", version):
+                result[field] = version
+        return result, None
+    tools = entry.get("tools")
+    version = entry.get("serverVersion")
+    _require(entry.get("discovery") == "tools" and isinstance(tools, list) and len(tools) <= 1000
+             and all(isinstance(tool, dict) and isinstance(tool.get("name"), str) for tool in tools)
+             and isinstance(version, str) and re.fullmatch(r"[0-9][A-Za-z0-9.+-]{0,63}", version),
+             "invalid-backend-response")
+    names = [tool["name"] for tool in tools]
+    _require(len(names) == len(set(names)), "invalid-backend-response")
+    missing = [name for name in ("desktop_windows", "desktop_capture_window") if name not in names]
+    if missing:
+        return {"status": "blocked", "reason": "TOOL_NOT_FOUND", "runtimeVersion": version,
+                "missingTools": missing}, None
+    return {"status": "available", "runtimeVersion": version}, tools[names.index("desktop_windows")]
+
+
 def check_workbridge_capture_service(bridge):
     """Check deployed desktop files, catalog, and the service's WinApp when supported."""
     missing_files = _missing_workbridge_capture_runners(bridge)
@@ -230,36 +260,20 @@ def check_workbridge_capture_service(bridge):
     if int(version_match[1]) < MIN_WORKBRIDGE_NODE_MAJOR:
         return {**details, "status": "blocked", "reason": "desktop-node-version-unsupported",
                 "minimumNodeMajor": MIN_WORKBRIDGE_NODE_MAJOR}
+
+    try:
+        catalog, desktop = _check_workbridge_catalog(command)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        if not missing_files:
+            raise
+        catalog, desktop = {"status": "blocked", "reason": "workbridge-discovery-unavailable"}, None
     if missing_files:
-        return {**details, "status": "blocked", "reason": "desktop-workbridge-runner-files-missing"}
-    code, text = _run([*command, "--list-tools", "--timeout", "6", "--json"], 10)
-    entry = _workbridge_response(text)
-    if code != 0 or entry.get("ok") is not True:
-        error = entry.get("error")
-        _require(isinstance(error, dict), "workbridge-discovery-failed")
-        reason = error.get("code")
-        _require(isinstance(reason, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", reason),
-                 "workbridge-discovery-failed")
-        result = {**details, "status": "blocked", "reason": reason}
-        for field in ("expectedVersion", "runtimeVersion"):
-            version = error.get(field)
-            if isinstance(version, str) and re.fullmatch(r"[0-9][A-Za-z0-9.+-]{0,63}", version):
-                result[field] = version
-        return result
-    tools = entry.get("tools")
-    version = entry.get("serverVersion")
-    _require(entry.get("discovery") == "tools" and isinstance(tools, list) and len(tools) <= 1000
-             and all(isinstance(tool, dict) and isinstance(tool.get("name"), str) for tool in tools)
-             and isinstance(version, str) and re.fullmatch(r"[0-9][A-Za-z0-9.+-]{0,63}", version),
-             "invalid-backend-response")
-    names = [tool["name"] for tool in tools]
-    _require(len(names) == len(set(names)), "invalid-backend-response")
-    missing = [name for name in ("desktop_windows", "desktop_capture_window") if name not in names]
-    if missing:
-        return {**details, "status": "blocked", "reason": "TOOL_NOT_FOUND", "runtimeVersion": version,
-                "missingTools": missing}
-    details["runtimeVersion"] = version
-    desktop = tools[names.index("desktop_windows")]
+        return {**details, "status": "blocked", "reason": "desktop-workbridge-runner-files-missing",
+                "toolCatalog": catalog}
+
+    details.update(catalog)
+    if catalog["status"] == "blocked":
+        return details
     schema = desktop.get("inputSchema")
     properties = schema.get("properties") if isinstance(schema, dict) else None
     capability = properties.get("checkDependencies") if isinstance(properties, dict) else None

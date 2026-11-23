@@ -60,12 +60,14 @@ x64 .NET 10 Desktop Runtime or set `DOTNET_ROOT_X64` to its private installation
 directory. For `gpu-probe-publish-incomplete`, use the complete published probe
 folder. The Workbridge check looks for `dist/desktop-ui.mjs`,
 `dist/desktop-capture.mjs`, and `dist/desktop-turn-admission.mjs` in the active
-deployment and checks the local Node version. With those prerequisites present,
-it checks registration of `desktop_windows` and `desktop_capture_window` on the
-running service. When the catalog advertises the version-only WinApp check,
-the owner checks WinApp in its own environment and reports the result in
-`workbridgeService.winapp`. Older owners report `winapp.status` as `not-checked`.
-A `RUNTIME_MISMATCH` gives the CLI and service versions.
+deployment and checks the local Node version. With a compatible Node and local
+CLI, it checks registration of `desktop_windows` and `desktop_capture_window`
+on the running service. When deployment files are missing, the report includes
+discovery under `workbridgeService.toolCatalog`. A `RUNTIME_MISMATCH` gives the
+CLI and service versions. The service checks WinApp in its own environment
+when the runners are present and the catalog advertises the version-only
+capability. The result appears in `workbridgeService.winapp`. Older owners
+report `winapp.status` as `not-checked`.
 `missingFiles` lists deployed runners even when the configured CLI or Node is
 unavailable. Missing runners also prevent a Workbridge capture from selecting a
 RIFT process. Restore them through Workbridge's staged update workflow.

@@ -59,6 +59,8 @@ changed-target and nonce-bound NPC confirmation remain pending.
 
 Workbridge capture reports missing `dist/desktop-ui.mjs`,
 `dist/desktop-capture.mjs`, and `dist/desktop-turn-admission.mjs` on LEGION.
+The same check reports that the CLI expects 0.16.5-dev and the service reports
+0.16.4-dev. [Active deployment report](../artifacts/workbridge-active-blockers-legion-20261123.json)
 A same-version `0.16.4-dev` Workbridge repair candidate passed release validation
 and independent manifest verification. Its receipt is pending review. The live
 owner still has mixed package and runtime versions and an incomplete desktop bundle.
