@@ -12,10 +12,11 @@ CAPTURE_PYTHON = ROOT / ".local/overlay-venv/Scripts/python.exe"
 
 
 def prepared_python(root, environment, executable="python.exe"):
-    setup = root / ".local/physical-python"
-    python = setup / environment / "Scripts" / executable
-    if (setup / ".ready").is_file() and python.is_file():
-        return python
+    for name in ("physical-python-link", "physical-python"):
+        setup = root / ".local" / name
+        python = setup / environment / "Scripts" / executable
+        if (setup / ".ready").is_file() and python.is_file():
+            return python
     return None
 
 

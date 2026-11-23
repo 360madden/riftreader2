@@ -164,7 +164,17 @@ foreach ($setting in $rr2Setup.environment.PSObject.Properties) {
 ```
 
 If pip reports a Windows path-length error while installing Qt in a deeply
-nested checkout, use `--output-root` with a shorter local path.
+nested checkout, use `--output-root` with a shorter local path. Then register
+that completed setup so a new shell or Explorer can find it.
+
+```powershell
+.\rr2-setup-python.cmd --expected-host $rr2Host --use-existing $rr2PythonRoot
+```
+
+Registration creates `.local/physical-python-link` as a Windows directory
+junction. The interpreters stay at their installed path. Each tool checks the
+registered setup first, then the checkout's default setup, after any explicit
+interpreter override.
 
 ### Reuse local tools from a fresh checkout
 
@@ -683,9 +693,10 @@ these are starting roles, not fixed assignments or evidence of readiness.
 ## Restore, build, and test
 
 Use [the setup command](#prepare-local-physical-python-environments) with
-`--extra validation`. For a custom output root, apply the returned
-`RIFTREADER2_LUA_PYTHON` setting in the shell that runs validation. You can
-also prepare a repository-local environment manually.
+`--extra validation`. For a custom output root, register the completed setup
+with `--use-existing` or apply the returned `RIFTREADER2_LUA_PYTHON` setting
+in the shell that runs validation. You can also prepare a repository-local
+environment manually.
 
 ```powershell
 python -m venv artifacts/tools/lua-python
@@ -712,7 +723,7 @@ exact SDK from this checkout. An explicit `-DotNet PATH` or
 `RIFTREADER2_DOTNET` selects only that executable, so an incompatible override
 fails directly.
 
-Validation checks the completed `.local/physical-python` setup,
+Validation checks the registered setup, the completed `.local/physical-python` setup,
 `artifacts/tools/lua-python/Scripts/python.exe`, the checkout's `.venv`,
 the absolute executable in `RIFTREADER2_PYTHON`, Python
 installations on `PATH`, then installations listed by the Windows `py` launcher.

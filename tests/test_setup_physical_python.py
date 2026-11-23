@@ -26,9 +26,17 @@ class PhysicalPythonSetupTests(unittest.TestCase):
         create.assert_not_called()
 
     def test_setup_selects_existing_pin_files_and_returns_the_right_interpreters(self):
+        def create_interpreter(path, _):
+            python = path / "Scripts/python.exe"
+            python.parent.mkdir(parents=True)
+            python.touch()
+            if path.name == "overlay":
+                python.with_name("pythonw.exe").touch()
+            return python
+
         with TemporaryDirectory() as temporary, patch.object(tool.sys, "platform", "win32"), \
                 patch.object(tool, "_run", return_value="rerun-cli fixture") as run, \
-                patch.object(tool, "_create_environment", side_effect=lambda path, _: path / "Scripts/python.exe") as create:
+                patch.object(tool, "_create_environment", side_effect=create_interpreter) as create:
             root = Path(temporary) / "new environments"
             result = tool.setup(root, extras=("overlay", "rerun", "validation"))
             self.assertTrue((root / ".ready").is_file())
@@ -57,3 +65,23 @@ class PhysicalPythonSetupTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "optional install error"):
                 tool.setup(root, extras=("overlay",))
             self.assertFalse((root / ".ready").exists())
+
+    def test_registration_refuses_partial_setup_and_preserves_existing_link_path(self):
+        with TemporaryDirectory() as temporary, patch.object(tool.sys, "platform", "win32"), \
+                patch.object(tool, "_run") as run:
+            root = Path(temporary)
+            checkout = root / "checkout"
+            setup = root / "short setup"
+            core = setup / tool.INTERPRETERS["RIFTREADER2_PYTHON"]
+            core.parent.mkdir(parents=True)
+            core.touch()
+            with patch.object(tool, "ROOT", checkout):
+                with self.assertRaisesRegex(ValueError, "existing-physical-python-setup-incomplete"):
+                    tool.use_existing(setup)
+                (setup / ".ready").touch()
+                existing = checkout / ".local" / "physical-python-link"
+                existing.mkdir(parents=True)
+                with self.assertRaisesRegex(ValueError, "Physical Python link already exists"):
+                    tool.use_existing(setup)
+                self.assertTrue(existing.is_dir())
+            run.assert_not_called()

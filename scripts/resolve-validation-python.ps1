@@ -35,10 +35,12 @@ function Resolve-ValidationPython {
         return $command.Source
     }
 
-    $prepared = Join-Path $RepositoryRoot '.local/physical-python'
     $candidates = @(
-        if (Test-Path -LiteralPath (Join-Path $prepared '.ready') -PathType Leaf) {
-            Join-Path $prepared 'validation/Scripts/python.exe'
+        foreach ($setupName in @('physical-python-link', 'physical-python')) {
+            $prepared = Join-Path $RepositoryRoot ".local/$setupName"
+            if (Test-Path -LiteralPath (Join-Path $prepared '.ready') -PathType Leaf) {
+                Join-Path $prepared 'validation/Scripts/python.exe'
+            }
         }
         Join-Path $RepositoryRoot 'artifacts/tools/lua-python/Scripts/python.exe'
         Join-Path $RepositoryRoot '.venv/Scripts/python.exe'

@@ -80,6 +80,13 @@ class WindowsLauncherTests(unittest.TestCase):
         override = self.run_launcher("Waypoints.cmd", ["--check"], override=sys.executable)
         self.assertEqual(Path(json.loads(override.stdout)["executable"]), Path(sys.executable))
 
+        registered = self.root / ".local" / "physical-python-link"
+        venv.create(registered / "core")
+        (registered / ".ready").touch()
+        result = self.run_launcher("Waypoints.cmd", ["--check"])
+        self.assertEqual(result.returncode, 17, result.stderr)
+        self.assertEqual(Path(json.loads(result.stdout)["executable"]), registered / "core/Scripts/python.exe")
+
     def test_invalid_explicit_interpreter_reports_failure(self):
         result = self.run_launcher("Waypoints.cmd", override=self.root / "missing.exe")
         self.assertEqual(result.returncode, 2)
