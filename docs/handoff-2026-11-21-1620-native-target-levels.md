@@ -1,5 +1,11 @@
 # RR2 handoff — November 21, 2026, 16:20 EST
 
+**November 23 follow-up on LEGION:** The retained build-1179 capture and
+selected-target profile replayed with matching native level candidates of **14**
+for the same unit, entity, player and process epoch. This covers the native
+comparison in P0. Independent RIFT UI or Lua evidence remains pending.
+[Replaying the native comparison](reference/physical-native-nearby-units-2026-11-21.md#numeric-level-candidates)
+
 **Machine verified:** **AMD-DESKTOP**, from machine-local Windows PowerShell `[Environment]::MachineName` (exit 0 at 16:20:19 EST); Workbridge **0.16.5-dev** rooted at `C:\work`.\
 **Repository:** `C:\work\riftreader2`; branch **`codex/modular-foundation`**.\
 **Git HEAD before this handoff:** `359109f43058fc310e76a2cd37a037141b90c7b4` (synchronized with `origin/codex/modular-foundation` at preflight). **After creating/pushing the handoff, reread `git log` and `git status`; never assume this pre-handoff HEAD remains current.**\

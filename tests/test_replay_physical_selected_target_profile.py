@@ -12,6 +12,7 @@ from unittest.mock import patch
 from scripts import physical_selected_target_profile as profile
 from scripts import replay_physical_selected_target_profile as replay
 from tests import test_physical_selected_target_profile as fixture_module
+from tests.test_native_unit_level_projection import report as keyed_level_report
 
 
 class TargetProfileReplayTests(unittest.TestCase):
@@ -31,10 +32,27 @@ class TargetProfileReplayTests(unittest.TestCase):
                           side_effect=self.decode):
             return self.fixture.execute()
 
-    def check(self, path):
+    def check(self, path, **options):
         with patch.object(replay.physical_rift, "_native_values",
                           side_effect=self.decode):
-            return replay.replay(path)
+            return replay.replay(path, **options)
+
+    def keyed_source(self, *, started=10, entity=fixture_module.ENTITY, **observation):
+        report = keyed_level_report()
+        row = report["observation"]["rows"][0]
+        start, end = fixture_module.time(started), fixture_module.time(started + 1)
+        row.update(startedAtUtc=start, completedAtUtc=end, entityAddressDecimal=str(entity))
+        report["observation"].update(identity=deepcopy(fixture_module.IDENTITY),
+                                     selfKey=fixture_module.SELF,
+                                     startedAtUtc=start, completedAtUtc=end, rows=[row])
+        report["observation"].update(observation)
+        return report
+
+    def pin_keyed(self, source):
+        path = self.fixture.output / "keyed-level.json"
+        raw = json.dumps(source).encode("utf-8")
+        path.write_bytes(raw)
+        return {"keyed_levels": path, "keyed_levels_sha256": hashlib.sha256(raw).hexdigest()}
 
     def mutate(self, file, mutate, update_profile_sha=False):
         path = self.fixture.output / file
@@ -65,6 +83,34 @@ class TargetProfileReplayTests(unittest.TestCase):
         self.assertEqual(verification["targetLevelCandidate"], 10)
         self.assertEqual(verification["healthCandidate"]["current"], 522)
         self.assertFalse(verification["inputSent"])
+
+    def test_keyed_level_replays_matching_and_different_native_candidates(self):
+        path, _ = self.generate()
+        for value, status in ((10, "matching-native-level-candidates"),
+                              (11, "different-native-level-candidates")):
+            with self.subTest(value=value):
+                source = self.keyed_source()
+                source["observation"]["rows"][0]["numericLevelCandidate"] = value
+                pinned = self.pin_keyed(source)
+                result = self.check(path, **pinned)["keyedLevelComparison"]
+                self.assertEqual(result["status"], status)
+                self.assertEqual(result["keyedLevelCandidate"], value)
+                self.assertEqual(result["keyedSourceSha256"], pinned["keyed_levels_sha256"].upper())
+
+    def test_keyed_level_refuses_changed_entity_owner_or_comparison_window(self):
+        path, _ = self.generate()
+        cases = {
+            "entity-mismatch": self.keyed_source(entity=fixture_module.ENTITY + 8),
+            "owner-mismatch": self.keyed_source(selfKey="123"),
+            "outside-comparison-window": self.keyed_source(started=300),
+        }
+        for reason, source in cases.items():
+            with self.subTest(reason=reason), self.assertRaisesRegex(ValueError, reason):
+                self.check(path, **self.pin_keyed(source))
+        pinned = self.pin_keyed(self.keyed_source())
+        pinned["keyed_levels"].write_bytes(pinned["keyed_levels"].read_bytes() + b"\n")
+        with self.assertRaisesRegex(ValueError, "keyed-level-source-sha-mismatch"):
+            self.check(path, **pinned)
 
     def test_changed_original_selected_target_is_not_replayed(self):
         path, _ = self.generate()

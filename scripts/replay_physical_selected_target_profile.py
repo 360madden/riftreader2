@@ -7,6 +7,7 @@ The report remains a native candidate, never independent game UI/API evidence.
 from __future__ import annotations
 
 import argparse
+from datetime import timedelta
 import hashlib
 import json
 from pathlib import Path
@@ -17,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts import physical_rift
+from scripts import native_unit_level_projection, physical_rift
 from scripts import physical_selected_target_profile as profile
 
 SOURCE_NAMES = {
@@ -37,14 +38,46 @@ def require(test, reason):
 def _read_json(path, *, max_size):
     require(path.is_file() and not path.is_symlink(),
             "source-file-unavailable")
-    raw = path.read_bytes()
+    with path.open("rb") as source:
+        raw = source.read(max_size + 1)
     require(0 < len(raw) <= max_size, "source-size-unqualified")
     doc = physical_rift._strict_native_json(raw.decode("utf-8-sig"))
     require(type(doc) is dict, "source-not-object")
     return doc, hashlib.sha256(raw).hexdigest().upper()
 
 
-def replay(path):
+def _compare_keyed_level(path, expected_sha, selected, before, after, self_key):
+    require(type(expected_sha) is str and SHA.fullmatch(expected_sha) is not None,
+            "keyed-level-sha-invalid")
+    require(type(selected["targetLevelCandidate"]) is int, "selected-level-unavailable")
+    document, sha = _read_json(Path(path), max_size=8*1024*1024)
+    require(sha == expected_sha.upper(), "keyed-level-source-sha-mismatch")
+    values = native_unit_level_projection.values(document)
+    keyed = document["observation"]
+    require(keyed["identity"] == before["identity"] == after["identity"]
+            and values["selfKey"] == self_key, "keyed-level-owner-mismatch")
+    unit_id = selected["selectedUnitIdCandidate"]
+    row = next((unit for unit in keyed["rows"] if unit["unitIdCandidate"] == unit_id), None)
+    require(row is not None and row["status"] == "numeric-level-candidate", "keyed-level-unavailable")
+    require(row["entityAddressDecimal"] == selected["selectedEntityAddressDecimal"],
+            "keyed-level-entity-mismatch")
+    stamp = physical_rift._utc_tick_order_key
+    span_start = min(stamp(before["startedAtUtc"]), stamp(row["startedAtUtc"]))
+    span_end = max(stamp(after["completedAtUtc"]), stamp(row["completedAtUtc"]))
+    require(span_end <= (span_start[0] + timedelta(seconds=30), span_start[1]),
+            "keyed-level-outside-comparison-window")
+    return {
+        "status": ("matching-native-level-candidates"
+                   if row["numericLevelCandidate"] == selected["targetLevelCandidate"]
+                   else "different-native-level-candidates"),
+        "keyedLevelCandidate": row["numericLevelCandidate"],
+        "keyedSourceSha256": sha,
+        "keyedCompletedAtUtc": row["completedAtUtc"],
+    }
+
+
+def replay(path, *, keyed_levels=None, keyed_levels_sha256=None):
+    require((keyed_levels is None) == (keyed_levels_sha256 is None), "keyed-level-path-and-sha-required")
     path = Path(path).absolute()
     report, profile_sha = _read_json(path, max_size=1024*1024)
     require(report.get("schema") == profile.SCHEMA
@@ -166,7 +199,7 @@ def replay(path):
              "instance, hostility, attackability, LOS, movement, "
              "or combat outcomes."),
             "profile-qualification-conflict")
-    return {
+    replayed = {
         "status": "source-replayed-candidate", "profileStatus": report["status"],
         "sourceCount": len(expected_keys),
         "selectedUnitIdCandidate": result["selectedUnitIdCandidate"],
@@ -179,14 +212,22 @@ def replay(path):
             "relationships independently replayed; no live API/UI validation, "
             "gameplay causality, hostility or combat authority.")
     }
+    if keyed_levels is not None:
+        replayed["keyedLevelComparison"] = _compare_keyed_level(
+            keyed_levels, keyed_levels_sha256, result, before["observation"],
+            after["observation"], start["selfUnitKey"])
+    return replayed
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--profile", required=True, type=Path)
+    parser.add_argument("--keyed-levels", type=Path, help="original native keyed-level report")
+    parser.add_argument("--keyed-levels-sha256", help="retained SHA-256 of the keyed-level report")
     args = parser.parse_args(argv)
     try:
-        result = replay(args.profile)
+        result = replay(args.profile, keyed_levels=args.keyed_levels,
+                        keyed_levels_sha256=args.keyed_levels_sha256)
     except (OSError, ValueError, TypeError, KeyError,
             UnicodeError, OverflowError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:240],

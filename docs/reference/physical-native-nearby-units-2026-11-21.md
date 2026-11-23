@@ -23,6 +23,18 @@ On the verified local Windows host, add `--include-levels` to the nearby reader 
 
 NPC correlation replays the original level source against its SHA-256 and reports whether the native and Lua numeric candidates agree when it has both. A level result leaves hostility and combat suitability unqualified.
 
+To compare a saved selected-target profile with a keyed native level report,
+keep the profile's original sources together and supply the retained SHA-256 of
+the keyed report. Replay checks the native process and player identity, exact
+selected unit and entity, and a 30-second comparison window. It reports matching
+or differing native candidates. Independent RIFT UI or Lua confirmation remains
+a separate check.
+
+```powershell
+python -B scripts/replay_physical_selected_target_profile.py --profile PROFILE_JSON `
+  --keyed-levels KEYED_LEVELS_JSON --keyed-levels-sha256 RETAINED_KEYED_SHA256
+```
+
 ## Physical acceptance
 
 - Verified exact physical RIFT process: AMD-DESKTOP, PID `37676`, process-start ticks `639308565554559088`, executable SHA-256 `DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01`.
