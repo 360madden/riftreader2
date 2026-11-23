@@ -1,0 +1,2 @@
+# Local physical Waypoints and WGC image verification.
+Pillow==12.3.0

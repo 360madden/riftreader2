@@ -131,6 +131,24 @@ On another checkout or Windows host, set `RR2_PHYSICAL_TOOLS_ROOT` to the
 absolute local path of the copied bundle. `RR2_NATIVE_READER` and
 `RR2_WGC_PROBE` take precedence for their respective tools when set.
 
+### Prepare local physical Python environments
+
+With 64-bit Windows Python and Tcl/Tk installed, create a new environment for
+Waypoints and WGC. `--extra overlay` adds the Qt and DXcam environment, and
+`--extra rerun` adds a separate Rerun environment. The command uses the pinned
+requirements and returns environment variables for the local shell. A Python
+environment is created at its final path on each host.
+
+```powershell
+$rr2Host = [Environment]::MachineName
+$rr2PythonRoot = Join-Path (Get-Location).Path '.local/physical-python'
+$rr2Setup = .\rr2-setup-python.cmd --expected-host $rr2Host --output-root $rr2PythonRoot --extra overlay --extra rerun | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) { throw $rr2Setup.reason }
+foreach ($setting in $rr2Setup.environment.PSObject.Properties) {
+    Set-Item -LiteralPath "Env:$($setting.Name)" -Value $setting.Value
+}
+```
+
 ### Reuse local tools from a fresh checkout
 
 Set the paths you want to override in the shell that runs RR2. Keep the complete
