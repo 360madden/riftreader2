@@ -298,8 +298,11 @@ class IdentityHttpTests(unittest.TestCase):
     def test_identity_requires_authentication_and_exact_bounded_payload(self):
         payload = {"machineName": "RIFT-LAB-2", "processId": 12,
                    "processStartUtcTicks": 1234, "executableSha256": "ab" * 32}
-        self.assertEqual(self.request("POST", "/api/identity", payload, token="wrong")[0], 401)
-        self.assertEqual(self.request("POST", "/api/identity", payload, origin="http://wrong")[0], 403)
+        # The handler rejects unauthorized headers before reading a body. Sending a
+        # body in a second TCP write can race that close and abort the reply on Windows.
+        self.assertEqual(self.request("POST", "/api/identity", token="wrong")[0], 401)
+        self.assertEqual(self.request("POST", "/api/identity", origin="http://wrong")[0], 403)
+        self.assertEqual(self.request("POST", "/api/identity")[0], 409)
         self.assertEqual(self.request("POST", "/api/identity", {**payload, "armToken": "extra"})[0], 409)
         self.assertEqual(self.gateway.calls, [])
         self.assertEqual(self.request("POST", "/api/identity", payload)[0], 200)
