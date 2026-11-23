@@ -118,6 +118,7 @@ class BeaconPoseWindowTests(unittest.TestCase):
         self.ready()
         self.packet()
         self.pump_until(lambda: "X 2.000" in self.header())
+        self.button("New point").invoke()
         self.enter("Timed add", 7, 1)
         self.button("Add X / Z").invoke()
         deadline = time.monotonic() + .45

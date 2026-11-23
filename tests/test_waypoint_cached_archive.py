@@ -16,6 +16,7 @@ class CachedArchiveTests(unittest.TestCase):
     widgets = fixture.PlaybackWindowStateTests.widgets
     button = fixture.PlaybackWindowStateTests.button
     launch = fixture.PlaybackWindowStateTests.launch
+    route_table = fixture.PlaybackWindowStateTests.route_table
 
     def archived_cache(self):
         self.document = {"waypoints": [["Main start", 0, 0], ["Main end", 1, 0]], "heights": [10, 10]}
@@ -64,7 +65,7 @@ class CachedArchiveTests(unittest.TestCase):
         self.launch(self.adapter())
         self.assertFalse(self.active.exists())
         self.assertEqual(self.original, self.slot.read_bytes())
-        table = next(w for w in self.widgets(self.roots[0]) if isinstance(w, fixture.ttk.Treeview))
+        table = self.route_table()
         self.assertEqual((), table.get_children())
 
     def test_wrong_owner_does_not_promote_other_players_archive(self):
@@ -98,7 +99,7 @@ class CachedArchiveTests(unittest.TestCase):
         self.launch(self.adapter(), explicit)
         self.assertFalse(self.active.exists())
         self.assertEqual(self.original, self.slot.read_bytes())
-        table = next(w for w in self.widgets(self.roots[0]) if isinstance(w, fixture.ttk.Treeview))
+        table = self.route_table()
         self.assertEqual("Explicit", table.item(table.get_children()[0], "values")[0])
 
     def test_invalid_active_checkpoint_is_preserved_during_cache_fallback(self):

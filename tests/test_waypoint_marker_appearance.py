@@ -162,7 +162,7 @@ class MarkerAppearanceTests(unittest.TestCase):
             self.root.update()
             time.sleep(.01)
         self.assertGreater(self.reader.call_count, reads)
-        self.assertEqual("Live pose (2 s)", str(checkbox["text"]))
+        self.assertEqual("Live pose (1 s)", str(checkbox["text"]))
         self.assertTrue(checkbox.instate(["selected"]))
 
     def test_beacon_status_does_not_equate_running_reader_with_visibility(self):

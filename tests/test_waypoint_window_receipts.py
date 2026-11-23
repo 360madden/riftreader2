@@ -20,6 +20,7 @@ class WindowReceiptTests(unittest.TestCase):
     widgets = fixture.RecordingWindowTests.widgets
     button = fixture.RecordingWindowTests.button
     wait_for = fixture.RecordingWindowTests.wait_for
+    saved = fixture.RecordingWindowTests.saved
 
     def setUp(self):
         fixture.RecordingWindowTests.setUp(self)
@@ -34,7 +35,7 @@ class WindowReceiptTests(unittest.TestCase):
         # play_route is imported when launch_window initializes, so install this
         # fake in the callback closure's globals through a fresh launch instead.
         self.close_existing()
-        args = SimpleNamespace(expected_host="AMD-DESKTOP", physical_pid=123,
+        args = SimpleNamespace(expected_host=fixture.TEST_HOST, physical_pid=123,
                                initial_adapter=self.adapter, basis=Path("unused"),
                                face_waypoints=True, route=None, auto_reconnect=False)
         app.launch_window(args)
@@ -78,6 +79,13 @@ class WindowReceiptTests(unittest.TestCase):
     def receipts(self):
         return list((self.root_path / "artifacts").glob("waypoint-run-*.json"))
 
+    def pause_periodic_pose(self):
+        option = next(w for w in self.widgets() if isinstance(w, fixture.ttk.Checkbutton)
+                      and str(w["text"]).startswith("Live pose"))
+        if option.instate(["selected"]):
+            option.invoke()
+        self.wait_for(lambda: all(not thread.is_alive() for thread in self.threads))
+
     def invoke_and_wait(self, label):
         before = len(self.receipts())
         self.button(label).invoke()
@@ -111,7 +119,7 @@ class WindowReceiptTests(unittest.TestCase):
         self.assertEqual([("Goal", "2", "0")], args[1])
         self.assertIs(self.runner, kwargs["runner"])
         self.assertTrue(kwargs["face_waypoints"])
-        saved = list((self.root_path / "artifacts").glob("recorded-route-*.json"))
+        saved = self.saved()
         self.assertEqual(1, len(saved))
         self.assertEqual(document, json.loads(saved[0].read_text()))
         snapshot = self.root_path / "artifacts" / "waypoint-last-route.json"
@@ -163,7 +171,7 @@ class WindowReceiptTests(unittest.TestCase):
                     self.wait_for(lambda: all(not t.is_alive() for t in self.threads))
                     # Pump the queued publication/idle events.
                     self.wait_for(lambda: str(self.button("Refresh")["state"]) != "disabled")
-                self.assertEqual([], list((self.root_path / "artifacts").glob("recorded-route-*.json")))
+                self.assertEqual([], self.saved())
                 self.assertEqual('{"old":true}', checkpoint.read_text())
                 self.assertEqual(prior_snapshot, snapshot.read_bytes())
                 self.assertEqual(prior_points, [self.table.item(i, "values") for i in self.table.get_children()])
@@ -187,7 +195,7 @@ class WindowReceiptTests(unittest.TestCase):
                     return True
 
             self.wait_for(destroyed)
-        self.assertEqual([], list((self.root_path / "artifacts").glob("recorded-route-*.json")))
+        self.assertEqual([], self.saved())
         self.assertEqual('{"old":true}', checkpoint.read_text())
 
     def test_face_and_playback_receipts_keep_operation_and_direction(self):
@@ -226,6 +234,7 @@ class WindowReceiptTests(unittest.TestCase):
         self.assertEqual((.05, .5), (verification["maxXyzDrift"], verification["maxYawDriftDegrees"]))
 
     def test_stop_retains_changing_pose_evidence(self):
+        self.pause_periodic_pose()
         self.runner.side_effect = app.Stopped("operator stopped")
         self.adapter.read = Mock(side_effect=[self.pose(0), self.pose(.1)])
         receipt = self.invoke_and_wait("Go Selected")
@@ -237,6 +246,7 @@ class WindowReceiptTests(unittest.TestCase):
         self.assertEqual(2, self.adapter.read.call_count)
 
     def test_stop_retains_partial_evidence_when_second_read_unavailable(self):
+        self.pause_periodic_pose()
         self.runner.side_effect = app.Stopped("operator stopped")
         self.adapter.read = Mock(side_effect=[self.pose(0), app.WaypointError("native lease unavailable")])
         receipt = self.invoke_and_wait("Go Selected")
@@ -263,6 +273,7 @@ class WindowReceiptTests(unittest.TestCase):
         self.assertIn("after halt", receipt["stopVerification"]["qualification"])
 
     def test_action_failure_preserves_reason_when_halt_measurement_unavailable(self):
+        self.pause_periodic_pose()
         self.runner.side_effect = app.WaypointError("foreground lost")
         self.adapter.read = Mock(side_effect=ValueError("native unavailable"))
         receipt = self.invoke_and_wait("Go Selected")
@@ -272,6 +283,7 @@ class WindowReceiptTests(unittest.TestCase):
         self.assertEqual(1, self.adapter.read.call_count)
 
     def test_refresh_error_does_not_measure_halt(self):
+        self.pause_periodic_pose()
         self.adapter.read = Mock(side_effect=ValueError("native unavailable"))
         with patch.object(app, "verify_stopped_pose") as verify:
             self.button("Refresh").invoke()

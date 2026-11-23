@@ -41,10 +41,6 @@ class MarkerPlaybackTests(unittest.TestCase):
         self.play_mock = self.play_patch.start()
         self.addCleanup(self.play_patch.stop)
         fixture.RecordingWindowTests.setUp(self)
-        self.adapter.pid = 123
-        self.adapter.target = {"processId": 123, "processStartUtcTicks": "1234",
-                               "executableSha256": "a" * 64, "hwnd": 12345}
-        self.adapter.binding["runtimeIdentity"]["processStartUtcTicks"] = "1234"
         self.no_input.side_effect = lambda *_: SimpleNamespace(close=lambda: None)
         self.table = next(w for w in self.widgets() if isinstance(w, fixture.ttk.Treeview)
                           and tuple(w["columns"]) == ("name", "x", "z"))
@@ -107,7 +103,6 @@ class MarkerPlaybackTests(unittest.TestCase):
         fixture.RecordingWindowTests.cleanup_windows(self)
 
     def supply_marker_pose(self):
-        self.adapter.target.update(hostName="AMD-DESKTOP", executablePath=r"C:\RIFT\rift_x64.exe")
         self.marker.pose_path = self.root_path / "artifacts" / "owned-beacon-pose.json"
         write_pose(self.marker.pose_path, dict(target=self.adapter.target, acquiredMonotonic=time.monotonic(),
             playerPose=dict(playerKey=self.adapter.binding["runtimeIdentity"]["unitKey"],
@@ -115,15 +110,29 @@ class MarkerPlaybackTests(unittest.TestCase):
                             sampledAtUtc=datetime.now(timezone.utc).isoformat())), 1)
         self.wait_for(lambda: str(self.button("Play Forward")["state"]) != "disabled")
 
-    def test_play_keeps_markers_and_stop_latches_before_signal_failure(self):
+    def finish_marker_shutdown(self, action):
+        self.marker.running.return_value = False
+        self.button("Refresh").invoke()
+        self.wait_for(lambda: str(self.button(action)["state"]) != "disabled")
+
+    def test_play_waits_for_markers_and_stop_latches_before_late_signal_failure(self):
         self.supply_marker_pose()
-        def fail_stop():
-            self.assertTrue(self.stopped.wait(1), "movement STOP must latch before marker signal")
-            raise OSError("signal unavailable")
-        self.marker.stop.side_effect = fail_stop
+        self.button("Play Forward").invoke()
+        self.marker.stop.assert_called_once()
+        self.play_mock.assert_not_called()
+        self.finish_marker_shutdown("Play Forward")
+        self.marker.stop.reset_mock()
         self.button("Play Forward").invoke()
         self.assertTrue(self.entered.wait(2))
         self.marker.stop.assert_not_called()
+
+        def fail_stop():
+            self.assertTrue(self.stopped.wait(1), "movement STOP must latch before marker signal")
+            raise OSError("signal unavailable")
+
+        # Exercise the cleanup path if an owned marker child is reported again during motion.
+        self.marker.running.return_value = True
+        self.marker.stop.side_effect = fail_stop
         self.button("STOP").invoke()
         self.assertTrue(self.stopped.wait(1))
         self.marker.stop.assert_called_once()
@@ -135,34 +144,30 @@ class MarkerPlaybackTests(unittest.TestCase):
         self.marker.stop.assert_called_once()
         self.assertFalse(self.entered.is_set())
 
-    def test_resume_keeps_marker_child_until_stop(self):
+    def test_resume_waits_for_marker_shutdown_and_an_explicit_retry(self):
         checkpoint = self.root_path / "artifacts" / "waypoint-current-progress.json"
         progress = RouteProgress({"waypoints": [["Start", 0, 0], ["End", 1, 0]]},
                                  "forward", self.adapter.binding["runtimeIdentity"])
         progress.begin({"x": 0, "y": 0, "z": 0})
         progress.confirm_arrival(0, progress.ordered_points[0])
         progress.save(checkpoint)
-        # A running child must supply its own fresh display packet. Missing
-        # packets intentionally clear the radar and disable pose-dependent UI.
-        self.adapter.target.update(hostName="AMD-DESKTOP", executablePath=r"C:\RIFT\rift_x64.exe")
-        self.marker.pose_path = self.root_path / "artifacts" / "owned-beacon-pose.json"
-        write_pose(self.marker.pose_path, dict(target=self.adapter.target, acquiredMonotonic=time.monotonic(),
-            playerPose=dict(playerKey=self.adapter.binding["runtimeIdentity"]["unitKey"],
-                            position=dict(x=0, y=0, z=0), bearing=0,
-                            sampledAtUtc=datetime.now(timezone.utc).isoformat())), 1)
-        self.button("Refresh").invoke()
+        self.supply_marker_pose()
         self.wait_for(lambda: str(self.button("Resume")["state"]) != "disabled")
+        self.button("Resume").invoke()
+        self.play_mock.assert_not_called()
+        self.marker.stop.assert_called_once()
+        self.finish_marker_shutdown("Resume")
+        self.play_mock.assert_not_called()
         self.button("Resume").invoke()
         self.assertTrue(self.entered.wait(2))
         self.assertTrue(self.play_mock.call_args.kwargs["resume"])
-        self.marker.stop.assert_not_called()
         self.button("STOP").invoke()
         self.assertTrue(self.stopped.wait(1))
         self.marker.stop.assert_called_once()
         self.wait_for(lambda: str(self.button("Refresh")["state"]) != "disabled")
 
     def test_f8_stop_event_also_requests_marker_shutdown(self):
-        self.supply_marker_pose()
+        self.finish_marker_shutdown("Play Forward")
         listener = {}
         def foreground(window, stop, events):
             listener.update(stop=stop, events=events)
@@ -170,6 +175,7 @@ class MarkerPlaybackTests(unittest.TestCase):
         self.no_input.side_effect = foreground
         self.button("Play Forward").invoke()
         self.assertTrue(self.entered.wait(2))
+        self.marker.running.return_value = True
         listener["stop"].set()
         listener["events"].put({"status": "stopping", "reason": "F8 STOP requested"})
         self.wait_for(lambda: self.marker.stop.called)

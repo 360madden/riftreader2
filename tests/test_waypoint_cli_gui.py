@@ -614,14 +614,14 @@ class GuiBridgeTests(unittest.TestCase):
             self.assertEqual(after[key], before[key], key)
         self.assertFalse((self.root / 'movement-called').exists())
 
-    def test_replay_status_matches_snapshot_and_explains_endpoint(self):
+    def test_replay_status_matches_snapshot_and_explains_approach_limit(self):
         self.assertTrue(self.call('route.add', {'name': 'Here', 'x': 12, 'z': 24})['ok'])
-        self.assertTrue(self.call('route.add', {'name': 'End', 'x': 13, 'z': 24})['ok'])
+        self.assertTrue(self.call('route.add', {'name': 'End', 'x': 33, 'z': 24})['ok'])
         playback = self.call('playback.status')['data']
         self.assertTrue(playback['faceWaypoints'])
         self.assertTrue(playback['readiness']['forward']['ready'], playback)
         self.assertFalse(playback['readiness']['reverse']['ready'])
-        self.assertIn('endpoint', playback['readiness']['reverse']['reason'])
+        self.assertIn('approach limit is 20u', playback['readiness']['reverse']['reason'])
         self.assertFalse(playback['readiness']['resume']['ready'])
         self.assertIn('no saved', playback['readiness']['resume']['reason'])
         snapshot = self.call('status')['data']

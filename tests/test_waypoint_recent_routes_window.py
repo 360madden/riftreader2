@@ -33,9 +33,10 @@ class RecentRoutesTests(unittest.TestCase):
     route_table = fixture.PlaybackWindowStateTests.route_table
 
     def prepare(self, route=None):
-        pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
+        def read(**kwargs):
+            return app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
         self.identity = {"machine": "AMD-DESKTOP", "gameBuildSha256": "a" * 64, "unitKey": "player"}
-        self.adapter = SimpleNamespace(read=lambda **kwargs: pose, pid=123,
+        self.adapter = SimpleNamespace(read=read, pid=123,
                                        binding={"runtimeIdentity": self.identity},
                                        target={"processId": 123}, input_receipt_path=self.path / "unused")
         self.launch(self.adapter, route)
@@ -84,6 +85,8 @@ class RecentRoutesTests(unittest.TestCase):
         progress.confirm_arrival(0, progress.ordered_points[0])
         progress.save(checkpoint)
         prior = checkpoint.read_bytes()
+        self.button("Refresh").invoke()
+        self.wait_idle()
         self.combo.current(6)
         self.button("Load recent").invoke()
         self.assertEqual(prior, checkpoint.read_bytes())

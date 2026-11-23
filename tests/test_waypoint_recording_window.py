@@ -11,7 +11,10 @@ import unittest
 from unittest.mock import Mock, patch
 
 from scripts import physical_waypoints as app
+from scripts import waypoint_cli_protocol
 from tests.tk_support import withdrawn_root, reject_error_dialog
+
+TEST_HOST = "RIFT-STATION"
 
 try:
     import tkinter as tk
@@ -66,16 +69,26 @@ class RecordingWindowTests(unittest.TestCase):
         self.stack.enter_context(patch.object(tk, "Tk", side_effect=make_window))
         self.stack.enter_context(patch.object(actual_tk, "mainloop", return_value=None))
         self.stack.enter_context(patch.object(app, "ROOT", self.root_path))
+        session_root = waypoint_cli_protocol._root
+        self.stack.enter_context(patch.object(
+            waypoint_cli_protocol, "_root",
+            side_effect=lambda helper, root: session_root(helper, root or self.root_path / "helpers"),
+        ))
         self.stack.enter_context(patch.object(app.threading, "Thread", side_effect=make_thread))
         self.no_input = self.stack.enter_context(patch.object(app, "ForegroundStop",
                                                  side_effect=AssertionError("Input is forbidden")))
         self.stack.enter_context(patch("scripts.waypoint_observation.observe_batch", side_effect=self.batch))
         self.identity = Mock(side_effect=AssertionError("passive recorder must not claim input control"))
-        self.adapter = SimpleNamespace(binding={"runtimeIdentity": {"machine": "AMD-DESKTOP", "gameBuildSha256": "a" * 64,
-                                                                         "unitKey": "player", "processId": 123}},
+        self.adapter = SimpleNamespace(pid=123,
+                                       target={"hostName": TEST_HOST, "processId": 123, "processStartUtcTicks": "10000",
+                                               "executablePath": r"C:\RIFT\rift_x64.exe", "executableSha256": "a" * 64,
+                                               "hwnd": 1234},
+                                       binding={"runtimeIdentity": {"machine": TEST_HOST, "gameBuildSha256": "a" * 64,
+                                                                    "unitKey": "player", "processId": 123,
+                                                                    "processStartUtcTicks": "10000"}},
                                        input_receipt_path=self.root_path / "unused.jsonl",
                                        read=lambda **_: self.pose(0), identity=self.identity)
-        args = SimpleNamespace(expected_host="AMD-DESKTOP", physical_pid=123,
+        args = SimpleNamespace(expected_host=TEST_HOST, physical_pid=123,
                                initial_adapter=self.adapter, basis=Path("unused"),
                                face_waypoints=True, route=None, auto_reconnect=False)
         self.addCleanup(self.cleanup_windows)

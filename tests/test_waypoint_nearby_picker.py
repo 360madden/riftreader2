@@ -18,13 +18,14 @@ class NearbyPickerTests(unittest.TestCase):
     widgets = fixture.PlaybackWindowStateTests.widgets
     button = fixture.PlaybackWindowStateTests.button
     launch = fixture.PlaybackWindowStateTests.launch
+    route_table = fixture.PlaybackWindowStateTests.route_table
     prepare = view.ViewWindowTests.prepare
     wait_idle = view.ViewWindowTests.wait_idle
 
     def ready(self):
         self.prepare()
         self.root = self.roots[0]
-        self.table = next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Treeview))
+        self.table = self.route_table()
         self.before = [self.table.item(item, "values") for item in self.table.get_children()]
         self.pickers = []
         actual = fixture.tk.Toplevel
@@ -155,12 +156,11 @@ class NearbyPickerTests(unittest.TestCase):
 
     def test_full_route_refuses_add_without_dropping_picker_or_points(self):
         self.ready()
-        for number in range(18):
-            self.table.insert("", "end", values=(f"Extra {number}", "0", "0"))
         self.open_picker()
         self.select()
-        self.picker_button("Add Selected").invoke()
-        self.assertEqual(20, len(self.table.get_children()))
+        with patch.object(fixture.app, "MAX_WAYPOINTS", len(self.before)):
+            self.picker_button("Add Selected").invoke()
+        self.assertEqual(self.before, self.route_values())
         self.assertTrue(self.pickers[-1].winfo_exists())
         self.picker_button("Cancel").invoke()
 

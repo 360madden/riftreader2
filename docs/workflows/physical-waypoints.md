@@ -823,6 +823,8 @@ gold reticle, short beacon and name/distance pill; **Include selected target**
 adds a distinct magenta diamond when a fresh target projection is available.
 NEXT is cyan and ordinary/completed points remain subdued. **Hide markers** stops
 the owned feed. Markers are click-through and never start route playback.
+If you choose **Play Forward**, **Play Reverse**, or **Resume** while the marker
+reader is running, Waypoints requests shutdown. Choose the action again after it exits.
 Map clicks and typed X/Z points also work as beacons without measuring every
 height. Unmeasured points borrow Y from the nearest measured route point. If none
 are measured, they use the player's freshly read Y when the marker session starts;

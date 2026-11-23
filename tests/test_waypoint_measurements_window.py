@@ -18,6 +18,7 @@ class MeasurementWindowTests(unittest.TestCase):
     widgets = fixture.PlaybackWindowStateTests.widgets
     button = fixture.PlaybackWindowStateTests.button
     launch = fixture.PlaybackWindowStateTests.launch
+    route_table = fixture.PlaybackWindowStateTests.route_table
 
     def prepare(self, route=None):
         self.identity = {"machine": "AMD-DESKTOP", "gameBuildSha256": "a" * 64,
@@ -28,7 +29,7 @@ class MeasurementWindowTests(unittest.TestCase):
                                        input_receipt_path=self.path / "unused")
         self.launch(self.adapter, route)
         self.window = self.roots[0]
-        self.table = next(w for w in self.widgets(self.window) if isinstance(w, fixture.ttk.Treeview))
+        self.table = self.route_table()
         self.entries = [w for w in self.widgets(self.window) if isinstance(w, fixture.ttk.Entry)]
 
     def wait_rows(self, count):
@@ -55,6 +56,7 @@ class MeasurementWindowTests(unittest.TestCase):
         self.prepare()
         self.button("Save Current").invoke()
         self.wait_rows(1)
+        self.button("New point").invoke()
         self.edit("Manual", "4", "5")
         self.button("Add X / Z").invoke()
         self.window.update()
@@ -69,7 +71,7 @@ class MeasurementWindowTests(unittest.TestCase):
         self.assertNotIn("recording", result)
         values = [str(self.window.getvar(str(w.cget("textvariable")))) for w in self.widgets(self.window)
                   if isinstance(w, fixture.ttk.Label) and w.cget("textvariable")]
-        self.assertTrue(any("3D: measured heights 1 / 2" in value for value in values), values)
+        self.assertTrue(any("Beacons: 1 measured" in value and "1 estimated" in value for value in values), values)
 
     def test_coordinate_change_clears_only_that_receipt_and_undo_restores(self):
         self.prepare()
@@ -87,7 +89,7 @@ class MeasurementWindowTests(unittest.TestCase):
         self.button("Undo").invoke()
         values = [str(self.window.getvar(str(w.cget("textvariable")))) for w in self.widgets(self.window)
                   if isinstance(w, fixture.ttk.Label) and w.cget("textvariable")]
-        self.assertTrue(any("3D: measured heights 1 / 1" in value for value in values), values)
+        self.assertTrue(any("Beacons: 1 measured" in value and "0 estimated" in value for value in values), values)
         restored = self.save_copy()
         self.assertEqual([17.25], restored["heights"])
         self.assertEqual("native-source.json", restored["pointMeasurements"][0]["source"])

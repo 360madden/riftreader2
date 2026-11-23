@@ -73,6 +73,7 @@ class MarkerSyncTests(unittest.TestCase):
 
     def test_add_edit_reorder_remove_clear_undo_and_selection_keep_one_child(self):
         self.ready()
+        self.button("New point").invoke()
         self.enter("Added XZ", 7, 1)
         self.button("Add X / Z").invoke()
         value = self.wait_payload(lambda v: len(v["route"]["waypoints"]) == 8)
@@ -103,6 +104,7 @@ class MarkerSyncTests(unittest.TestCase):
         self.wait_payload(lambda v: v["landmarkNumber"] == 3)
         self.button("Hide markers").invoke()
         previous = self.owned.route_updates_path.read_bytes()
+        self.button("New point").invoke()
         self.enter("After Hide", 8, 0)
         self.button("Add X / Z").invoke()
         time.sleep(.17)
@@ -128,6 +130,7 @@ class MarkerSyncTests(unittest.TestCase):
         self.ready()
         previous = self.owned.route_updates_path.read_bytes()
         with patch.object(self.owned, "update", side_effect=OSError("disk denied")):
+            self.button("New point").invoke()
             self.enter("Cannot publish", 8, 0)
             self.button("Add X / Z").invoke()
             deadline = time.monotonic() + 2
