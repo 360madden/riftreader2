@@ -34,6 +34,9 @@ probe. Copy the complete publish folder and set `RR2_WGC_PROBE` to its local
 executable path. The observer still uses Python with Pillow and the local
 desktop-evidence directory.
 
+To build the probe and the native reader together, use the
+[physical tools publish command](../../docs/workflows/development.md#publish-both-physical-tools-for-local-use).
+
 ```powershell
 $rr2PublishedProbe = Join-Path (Get-Location).Path 'artifacts\tools\wgc-self-contained'
 & $rr2DotNet restore $rr2Probe --locked-mode -p:SelfContained=true

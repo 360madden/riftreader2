@@ -112,6 +112,22 @@ native read commands. Set `$env:RR2_NATIVE_READER = $rr2PublishedReader` to use
 it as the default for physical reads and Waypoints in this shell and its child
 processes. An explicit `--native-reader` takes precedence where supported.
 
+### Publish both physical tools for local use
+
+`publish-physical-tools.ps1` uses the pinned SDK to publish the native reader
+and the WGC probe with their .NET runtimes. It checks the reader's help output
+and runs the probe's offline self-test. The command creates a new directory
+under `artifacts/tools/physical/` by default. Use `-OutputDirectory` to choose
+a new local directory, and keep both tool folders intact when copying them.
+
+```powershell
+$rr2Host = [Environment]::MachineName
+$rr2Tools = .\scripts\publish-physical-tools.ps1 -ExpectedHost $rr2Host
+$env:RR2_NATIVE_READER = $rr2Tools.NativeReader
+$env:RR2_WGC_PROBE = $rr2Tools.WgcProbe
+.\rr2-check-dependencies.cmd --expected-host $rr2Host --workflow wgc
+```
+
 ### Reuse local tools from a fresh checkout
 
 Set the paths you want to override in the shell that runs RR2. Keep the complete
@@ -126,7 +142,7 @@ movement calibration measured on the Windows host that will run Waypoints.
 | Native physical reads and Waypoints | `RR2_NATIVE_READER` | [Published Live reader](#publish-the-local-native-reader) |
 | Installed physical addons | `RR2_RIFT_ADDONS_ROOT` | Optional absolute local AddOns directory, with Windows Documents used by default |
 | Waypoints calibration | `RR2_WAYPOINTS_BASIS` | [Verified calibration folder](physical-waypoints.md#local-calibration-and-dependency-checks) |
-| WGC capture | `RR2_WGC_PROBE` | [Published WGC probe](../../tools/physical-wgc-probe/README.md), Python with Pillow, and the active deployment's desktop-evidence directory |
+| WGC capture | `RR2_WGC_PROBE` | [Published WGC probe](#publish-both-physical-tools-for-local-use), Python with Pillow, and the active deployment's desktop-evidence directory |
 | Qt waypoint markers | `RR2_OVERLAY_PYTHON` | Python with [overlay requirements](../../requirements-overlay.txt) |
 | DXcam capture | `RR2_DXCAM_PYTHON` | Python with [capture requirements](../../requirements-capture.txt) |
 | Rerun export and viewer | `RR2_RERUN_PYTHON` | Python with [visualization requirements](../../requirements-visualization.txt) |
