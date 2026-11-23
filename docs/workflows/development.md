@@ -118,7 +118,7 @@ movement calibration measured on the Windows host that will run Waypoints.
 | Qt waypoint markers | `RR2_OVERLAY_PYTHON` | Python with [overlay requirements](../../requirements-overlay.txt) |
 | DXcam capture | `RR2_DXCAM_PYTHON` | Python with [capture requirements](../../requirements-capture.txt) |
 | Rerun export and viewer | `RR2_RERUN_PYTHON` | Python with [visualization requirements](../../requirements-visualization.txt) |
-| Shared desktop evidence and Workbridge capture | `RR2_WORKBRIDGE_ROOT`, `RR2_WORKBRIDGE_CLI_ROOT` | [Active local deployment and matching CLI](target-observation.md#active-workflow-on-the-local-windows-host) |
+| Shared desktop evidence and Workbridge capture | `RR2_WORKBRIDGE_ROOT`, `RR2_WORKBRIDGE_CLI_ROOT`, `RR2_WORKBRIDGE_NODE` | [Active local deployment, matching CLI, and Node.js 24+](target-observation.md#active-workflow-on-the-local-windows-host) |
 
 Run these checks from the checkout without selecting a RIFT process. To check
 Workbridge capture, replace `--native-facing` with

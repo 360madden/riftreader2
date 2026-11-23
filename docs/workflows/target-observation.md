@@ -33,6 +33,11 @@ checkout or release payload whose CLI matches the running version. This changes
 the executable script used for Workbridge calls. The running deployment still
 provides the service state, desktop evidence, and capture runner files.
 
+Workbridge capture needs Node.js 24 or newer. Set `RR2_WORKBRIDGE_NODE` to the
+absolute local path of `node.exe` to choose an installation for RR2. Without
+an override, RR2 checks the standard installation and then PATH. The dependency
+report includes the executable and version it checked.
+
 ```powershell
 $rr2Host = [Environment]::MachineName
 python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies
@@ -47,10 +52,11 @@ requires a runnable build, including the companion files and .NET desktop
 runtime. Set `RR2_WGC_PROBE` to the absolute path of a locally published
 `PhysicalWgcProbe.exe` to use it for dependency checks and captures. The output
 gives the probe exit code if it fails and identifies the
-Python interpreter to use for a capture or for installing Pillow. Workbridge checks
-registration of `desktop_windows` and `desktop_capture_window` on the running
-service and checks `dist/desktop-ui.mjs` and `dist/desktop-capture.mjs` in its
-deployment. A `RUNTIME_MISMATCH` includes the versions expected and running.
+Python interpreter to use for a capture or for installing Pillow. Workbridge
+checks Node startup and version before checking registration of `desktop_windows`
+and `desktop_capture_window` on the running service. It also checks
+`dist/desktop-ui.mjs` and `dist/desktop-capture.mjs` in that deployment.
+A `RUNTIME_MISMATCH` includes the CLI version and the running service version.
 `desktop-workbridge-runner-files-missing` names the files that the service
 cannot launch from its deployment. Install those through Workbridge's staged
 update workflow.

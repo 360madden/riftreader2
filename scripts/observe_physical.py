@@ -17,6 +17,7 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 BRIDGE = Path(r"C:\work\workbridge-mcp")
 NODE = Path(r"C:\Program Files\nodejs\node.exe")
+MIN_WORKBRIDGE_NODE_MAJOR = 24
 POWERSHELL = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
 MAX_OUTPUT = 12 * 1024 * 1024
 MAX_IMAGE = 8 * 1024 * 1024
@@ -41,17 +42,17 @@ def _plain_path(path):
                      "reparse-path")
 
 
-def _local_workbridge_root(value, reason):
-    root = Path(value)
-    _require(root.is_absolute() and not root.drive.startswith(("\\", "/"))
-             and ".." not in root.parts, reason)
-    _plain_path(root)
-    return root
+def _local_workbridge_path(value, reason):
+    path = Path(value)
+    _require(path.is_absolute() and not path.drive.startswith(("\\", "/"))
+             and ".." not in path.parts, reason)
+    _plain_path(path)
+    return path
 
 
 def workbridge_root():
     """Use the configured local deployment, or the standard installation path."""
-    return _local_workbridge_root(os.environ.get("RR2_WORKBRIDGE_ROOT", BRIDGE), "invalid-workbridge-root")
+    return _local_workbridge_path(os.environ.get("RR2_WORKBRIDGE_ROOT", BRIDGE), "invalid-workbridge-root")
 
 
 def require_clear_desktop_turn(*, bridge=None):
@@ -134,12 +135,18 @@ def _identity(physical_pid=None, *, require_window=True):
 
 def _workbridge_command(bridge):
     override = os.environ.get("RR2_WORKBRIDGE_CLI_ROOT")
-    cli_root = bridge if override is None else _local_workbridge_root(override, "invalid-workbridge-cli-root")
+    cli_root = bridge if override is None else _local_workbridge_path(override, "invalid-workbridge-cli-root")
     cli = cli_root / "scripts" / "workbridge-cli.mjs"
     state = bridge / ".local"
     _plain_path(cli)
     _plain_path(state)
-    node = NODE if NODE.is_file() else shutil.which("node")
+    configured_node = os.environ.get("RR2_WORKBRIDGE_NODE")
+    if configured_node is not None:
+        node = _local_workbridge_path(configured_node, "invalid-workbridge-node-path")
+        _require(node.suffix.casefold() == ".exe", "invalid-workbridge-node-path")
+        _require(node.is_file(), "desktop-node-runtime-unavailable")
+    else:
+        node = NODE if NODE.is_file() else shutil.which("node")
     _require(node is not None, "desktop-node-runtime-unavailable")
     _require(cli.is_file(), "desktop-workbridge-cli-unavailable")
     _require(state.is_dir(), "desktop-workbridge-service-state-unavailable")
@@ -159,7 +166,19 @@ def _workbridge_response(text):
 def check_workbridge_capture_service(bridge):
     """Check the authenticated tool catalog and the deployed desktop runner files."""
     command = _workbridge_command(bridge)
-    cli_path = str(command[1])
+    details = {"nodeExecutable": str(command[0]), "cliPath": str(command[1])}
+    try:
+        node_code, node_text = _run([command[0], "--version"], 5)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return {**details, "status": "blocked", "reason": "desktop-node-version-unavailable"}
+    version_match = re.fullmatch(r"v([0-9]{1,3})\.[0-9]{1,6}\.[0-9]{1,6}(?:-[A-Za-z0-9.-]{1,32})?",
+                                 node_text.strip())
+    if node_code != 0 or version_match is None:
+        return {**details, "status": "blocked", "reason": "desktop-node-version-unavailable"}
+    details["nodeVersion"] = version_match[0]
+    if int(version_match[1]) < MIN_WORKBRIDGE_NODE_MAJOR:
+        return {**details, "status": "blocked", "reason": "desktop-node-version-unsupported",
+                "minimumNodeMajor": MIN_WORKBRIDGE_NODE_MAJOR}
     code, text = _run([*command, "--list-tools", "--timeout", "6", "--json"], 10)
     entry = _workbridge_response(text)
     if code != 0 or entry.get("ok") is not True:
@@ -168,7 +187,7 @@ def check_workbridge_capture_service(bridge):
         reason = error.get("code")
         _require(isinstance(reason, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", reason),
                  "workbridge-discovery-failed")
-        result = {"status": "blocked", "reason": reason, "cliPath": cli_path}
+        result = {**details, "status": "blocked", "reason": reason}
         for field in ("expectedVersion", "runtimeVersion"):
             version = error.get(field)
             if isinstance(version, str) and re.fullmatch(r"[0-9][A-Za-z0-9.+-]{0,63}", version):
@@ -184,7 +203,7 @@ def check_workbridge_capture_service(bridge):
     _require(len(names) == len(set(names)), "invalid-backend-response")
     missing = [name for name in ("desktop_windows", "desktop_capture_window") if name not in names]
     if missing:
-        return {"status": "blocked", "reason": "TOOL_NOT_FOUND", "runtimeVersion": version, "cliPath": cli_path,
+        return {**details, "status": "blocked", "reason": "TOOL_NOT_FOUND", "runtimeVersion": version,
                 "missingTools": missing}
     # Workbridge executes these scripts from the running deployment's dist directory.
     # Having the files beside the CLI alone cannot satisfy the server-side runner.
@@ -195,14 +214,12 @@ def check_workbridge_capture_service(bridge):
         if not path.is_file():
             missing_files.append(relative)
     if missing_files:
-        return {"status": "blocked", "reason": "desktop-workbridge-runner-files-missing", "runtimeVersion": version,
-                "cliPath": cli_path, "missingFiles": missing_files}
-    return {"status": "available", "runtimeVersion": version, "cliPath": cli_path}
+        return {**details, "status": "blocked", "reason": "desktop-workbridge-runner-files-missing",
+                "runtimeVersion": version, "missingFiles": missing_files}
+    return {**details, "status": "available", "runtimeVersion": version}
 
 
-def _call(tool, arguments, output, *, bridge=None):
-    bridge = workbridge_root() if bridge is None else bridge
-    command = _workbridge_command(bridge)
+def _call(command, tool, arguments, output):
     request = output / (tool + "-request.json")
     with request.open("x", encoding="utf-8") as stream:
         json.dump([{"tool": tool, "arguments": arguments}], stream)
@@ -233,13 +250,14 @@ def capture_physical(expected_host, output, *, allow_foreground_change=False,
         output = Path(os.path.abspath(output))
         _plain_path(output)
         _require(not output.exists() and output.parent.is_dir(), "fresh-output-required")
+        bridge = workbridge_root()
+        command = _workbridge_command(bridge)
         output.mkdir()
         before = _identity(physical_pid)
         _require(physical_pid is None or before.get("processId") == physical_pid,
                  "physical-pid-mismatch")
         _require(before.get("hostName", "").casefold() == expected_host.casefold(), "host-mismatch")
-        bridge = workbridge_root()
-        windows = _call("desktop_windows", {"app": str(before["processId"])}, output, bridge=bridge)
+        windows = _call(command, "desktop_windows", {"app": str(before["processId"])}, output)
         _require(windows.get("truncated") is False, "window-list-truncated")
         matches = [w for w in windows.get("windows", [])
                    if w.get("pid") == before["processId"] and w.get("hwnd") == before["hwnd"]
@@ -255,10 +273,10 @@ def capture_physical(expected_host, output, *, allow_foreground_change=False,
         request_id = "rr2_physical_" + uuid.uuid4().hex
         started = datetime.now(timezone.utc)
         started = started.replace(microsecond=(started.microsecond // 1000) * 1000)
-        receipt = _call("desktop_capture_window", {
+        receipt = _call(command, "desktop_capture_window", {
             "pid": before["processId"], "hwnd": before["hwnd"], "process": "rift_x64",
             "requestId": request_id, "title": window["title"], "className": window["className"],
-        }, output, bridge=bridge)
+        }, output)
         _require(_identity(physical_pid) == before, "stale-identity")
         ended = datetime.now(timezone.utc)
         _require(receipt.get("ok") is True and receipt.get("replayed") is False and
