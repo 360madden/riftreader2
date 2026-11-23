@@ -277,9 +277,38 @@ class PhysicalTests(unittest.TestCase):
             self.assertEqual(physical._call("desktop_windows", {"app": "123"}, self.root), value)
             command = run.call_args.args[0]
             self.assertIn("--service-state", command)
-            self.assertEqual(command[1:6], [bridge / "scripts" / "workbridge-cli.mjs",
-                                           "--service-state", bridge / ".local", "--root", bridge.parent])
+            self.assertEqual(command[1:4], [bridge / "scripts" / "workbridge-cli.mjs",
+                                           "--service-state", bridge / ".local"])
+            self.assertNotIn("--root", command)
             self.assertNotIn("--state-dir", command)
+
+    def test_workbridge_preflight_only_discovers_tool_and_reports_versions(self):
+        bridge = self.root / "install" / "workbridge"
+        cli = bridge / "scripts" / "workbridge-cli.mjs"
+        cli.parent.mkdir(parents=True)
+        cli.touch()
+        (bridge / ".local").mkdir()
+        cases = (
+            (0, {"ok": True, "discovery": "tools", "serverVersion": "0.16.5-dev",
+                 "tools": [{"name": "desktop_capture_window"}]},
+             {"status": "available", "runtimeVersion": "0.16.5-dev"}),
+            (2, {"ok": False, "error": {"code": "RUNTIME_MISMATCH",
+                                       "expectedVersion": "0.16.5-dev", "runtimeVersion": "0.16.4-dev",
+                                       "message": "text not needed in the preflight receipt"}},
+             {"status": "blocked", "reason": "RUNTIME_MISMATCH",
+              "expectedVersion": "0.16.5-dev", "runtimeVersion": "0.16.4-dev"}),
+        )
+        for code, response, expected in cases:
+            with self.subTest(expected=expected), \
+                 patch.object(physical, "NODE", self.root / "no-system-node.exe"), \
+                 patch.object(physical.shutil, "which", return_value="node-from-path.exe"), \
+                 patch.object(physical, "_run", return_value=(code, json.dumps(response))) as run:
+                self.assertEqual(physical.check_workbridge_capture_service(bridge), expected)
+                command = run.call_args.args[0]
+                self.assertEqual(command[1:], [cli, "--service-state", bridge / ".local",
+                                                "--list-tools", "--tool", "desktop_capture_window",
+                                                "--timeout", "6", "--json"])
+                self.assertEqual(run.call_args.args[1], 10)
 
     def test_cli_error_code_preserved(self):
         response = {"schemaVersion": 1, "index": 0, "tool": "desktop_capture_window", "ok": False,

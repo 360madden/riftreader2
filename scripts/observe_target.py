@@ -125,10 +125,39 @@ def _paired_preview(result, width, crop):
     return review_pair(Path(result["image"]), result["imageSha256"], crop, width)
 
 
+def _check_capture_dependencies():
+    from scripts import observe_physical, observe_gpu
+
+    bridge = observe_physical.workbridge_root()
+    probe = observe_gpu.PROBE
+    wgc_probe = {"status": "available" if probe.is_file() else "blocked", "path": str(probe)}
+    if wgc_probe["status"] == "blocked":
+        wgc_probe["reason"] = "gpu-probe-build-required"
+    turn = {"status": "clear", "path": str(bridge / ".tools" / "desktop-evidence")}
+    try:
+        observe_physical.require_clear_desktop_turn(bridge=bridge)
+    except ValueError as error:
+        turn.update(status="blocked", reason=str(error))
+    except OSError:
+        turn.update(status="blocked", reason="desktop-turn-check-unavailable")
+    try:
+        service = observe_physical.check_workbridge_capture_service(bridge)
+    except (json.JSONDecodeError, OSError):
+        service = {"status": "blocked", "reason": "workbridge-discovery-unavailable"}
+    except ValueError as error:
+        service = {"status": "blocked", "reason": str(error)}
+    blocked = any(check["status"] == "blocked" for check in (wgc_probe, turn, service))
+    return {"status": "blocked" if blocked else "capture-dependencies-ready",
+            "workbridgeRoot": str(bridge), "wgcProbe": wgc_probe,
+            "desktopTurn": turn, "workbridgeService": service,
+            "captureAttempted": False, "inputSent": False}
+
+
 def observe(target_id, expected_host, output=None, *, native_vitals=False,
             allow_foreground_change=False, with_preview=False, preview_width=840,
             preview_detail_crop=None, host_preview=False, physical_pid=None,
-            historical_vm=False, physical_capture_backend=None, native_facing=False):
+            historical_vm=False, physical_capture_backend=None, native_facing=False,
+            check_dependencies=False):
     started = time.perf_counter()
     if not isinstance(target_id, str):
         raise ValueError("unknown-target")
@@ -150,6 +179,16 @@ def observe(target_id, expected_host, output=None, *, native_vitals=False,
         raise ValueError("host-mismatch")
     if workflow == "physical":
         owner_host = actual_host
+    if check_dependencies:
+        if (workflow != "physical" or output is not None or native_vitals or native_facing
+                or allow_foreground_change or with_preview or preview_detail_crop is not None
+                or preview_width != 840 or host_preview or physical_pid is not None
+                or historical_vm or physical_capture_backend is not None):
+            raise ValueError("capture-dependency-check-incompatible-options")
+        result = _check_capture_dependencies()
+        if socket.gethostname().casefold() != actual_host.casefold():
+            raise ValueError("host-changed")
+        return dict(result, targetId=target_id, workflow=workflow, ownerHost=owner_host)
     if physical_capture_backend is not None:
         if workflow != "physical" or physical_capture_backend != "wgc":
             raise ValueError("invalid-physical-capture-backend")
@@ -230,6 +269,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", required=True, metavar="{physical,physical-HOST,lab1,lab2}")
     parser.add_argument("--expected-host", required=True)
+    parser.add_argument("--check-dependencies", action="store_true",
+                        help="physical only: check local capture dependencies without selecting or capturing a window")
     parser.add_argument("--output", type=Path, help="fresh absolute directory; omitted creates a unique artifact path")
     parser.add_argument("--native-vitals", action="store_true", help="historical Lab 2 only; retain existing candidate qualifications")
     parser.add_argument("--native-facing", action="store_true",
@@ -260,7 +301,8 @@ def main(argv=None):
                           physical_pid=args.physical_pid,
                           historical_vm=args.allow_historical_vm,
                           physical_capture_backend=args.physical_capture_backend,
-                          native_facing=args.native_facing)
+                         native_facing=args.native_facing,
+                         check_dependencies=args.check_dependencies)
     except Exception as error:
         result = {"status": "blocked", "targetId": args.target,
                   "errorType": type(error).__name__,

@@ -50,9 +50,10 @@ def workbridge_root():
     return root
 
 
-def require_clear_desktop_turn():
+def require_clear_desktop_turn(*, bridge=None):
     """Check Workbridge admission without creating or releasing a lock."""
-    evidence = workbridge_root() / ".tools" / "desktop-evidence"
+    bridge = workbridge_root() if bridge is None else bridge
+    evidence = bridge / ".tools" / "desktop-evidence"
     _plain_path(evidence)
     _require(evidence.is_dir(), "shared-gui-evidence-directory-missing")
     for path in evidence.iterdir():
@@ -127,24 +128,63 @@ def _identity(physical_pid=None, *, require_window=True):
     return value
 
 
-def _call(tool, arguments, output, *, bridge=None):
-    bridge = workbridge_root() if bridge is None else bridge
+def _workbridge_command(bridge):
     cli = bridge / "scripts" / "workbridge-cli.mjs"
     state = bridge / ".local"
     _plain_path(cli)
     _plain_path(state)
     node = NODE if NODE.is_file() else shutil.which("node")
     _require(node is not None, "desktop-node-runtime-unavailable")
-    request = output / (tool + "-request.json")
-    with request.open("x", encoding="utf-8") as stream:
-        json.dump([{"tool": tool, "arguments": arguments}], stream)
-    code, text = _run([node, cli,
-                      "--service-state", state, "--root", bridge.parent,
-                      "--input", request, "--timeout", "100", "--json"])
+    # The authenticated service state identifies the local deployment. Desktop
+    # tools do not depend on the service's separate file-workspace root.
+    return [node, cli, "--service-state", state]
+
+
+def _workbridge_response(text):
     lines = text.splitlines()
     _require(len(lines) == 1, "invalid-backend-response")
     entry = json.loads(lines[0])
     _require(isinstance(entry, dict), "invalid-backend-response")
+    return entry
+
+
+def check_workbridge_capture_service(bridge):
+    """Discover the capture tool through the existing authenticated local CLI."""
+    command = _workbridge_command(bridge)
+    _require(command[1].is_file(), "desktop-workbridge-cli-unavailable")
+    _require(command[3].is_dir(), "desktop-workbridge-service-state-unavailable")
+    tool = "desktop_capture_window"
+    code, text = _run([*command, "--list-tools", "--tool", tool, "--timeout", "6", "--json"], 10)
+    entry = _workbridge_response(text)
+    if code != 0 or entry.get("ok") is not True:
+        error = entry.get("error")
+        _require(isinstance(error, dict), "workbridge-discovery-failed")
+        reason = error.get("code")
+        _require(isinstance(reason, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", reason),
+                 "workbridge-discovery-failed")
+        result = {"status": "blocked", "reason": reason}
+        for field in ("expectedVersion", "runtimeVersion"):
+            version = error.get(field)
+            if isinstance(version, str) and re.fullmatch(r"[0-9][A-Za-z0-9.+-]{0,63}", version):
+                result[field] = version
+        return result
+    tools = entry.get("tools")
+    version = entry.get("serverVersion")
+    _require(entry.get("discovery") == "tools" and isinstance(tools, list)
+             and len(tools) == 1 and isinstance(tools[0], dict) and tools[0].get("name") == tool
+             and isinstance(version, str) and re.fullmatch(r"[0-9][A-Za-z0-9.+-]{0,63}", version),
+             "invalid-backend-response")
+    return {"status": "available", "runtimeVersion": version}
+
+
+def _call(tool, arguments, output, *, bridge=None):
+    bridge = workbridge_root() if bridge is None else bridge
+    command = _workbridge_command(bridge)
+    request = output / (tool + "-request.json")
+    with request.open("x", encoding="utf-8") as stream:
+        json.dump([{"tool": tool, "arguments": arguments}], stream)
+    code, text = _run([*command, "--input", request, "--timeout", "100", "--json"])
+    entry = _workbridge_response(text)
     result = entry.get("result", {})
     _require(isinstance(result, dict), "invalid-backend-response")
     if code != 0 or entry.get("ok") is not True:

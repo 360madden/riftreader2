@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts import observe_target as tool
-from scripts import observe_gpu
+from scripts import observe_gpu, observe_physical
 
 
 class TargetRoutingTests(unittest.TestCase):
@@ -56,6 +56,49 @@ class TargetRoutingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "target-host-mismatch"):
                 tool.observe("physical-legion", "RIFT-STATION", physical_capture_backend="wgc")
             gpu.assert_not_called()
+
+    def test_cli_reports_capture_dependencies_without_game_or_desktop_access(self):
+        with TemporaryDirectory() as temp, \
+             patch.object(tool.socket, "gethostname", return_value="RIFT-STATION"), \
+             patch.object(observe_physical, "_identity") as identity, \
+             patch.object(observe_gpu, "capture_gpu") as capture_gpu, \
+             patch.object(observe_physical, "capture_physical") as capture_physical, \
+             patch.object(observe_physical, "workbridge_root", return_value=Path(temp) / "bridge"), \
+             patch.object(observe_physical, "check_workbridge_capture_service") as service:
+            probe = Path(temp) / "wgc.exe"
+            probe.touch()
+            with patch.object(observe_gpu, "PROBE", probe), redirect_stdout(io.StringIO()) as output:
+                service.return_value = {"status": "blocked", "reason": "RUNTIME_MISMATCH"}
+                args = ["--target", "physical", "--expected-host", "rift-station", "--check-dependencies"]
+                self.assertEqual(tool.main(args), 2)
+                result = json.loads(output.getvalue())
+            self.assertEqual(result["ownerHost"], "RIFT-STATION")
+            self.assertEqual(result["wgcProbe"]["status"], "available")
+            self.assertEqual(result["desktopTurn"]["reason"], "shared-gui-evidence-directory-missing")
+            self.assertEqual(result["workbridgeService"]["reason"], "RUNTIME_MISMATCH")
+            self.assertFalse(result["captureAttempted"])
+            identity.assert_not_called()
+            capture_gpu.assert_not_called()
+            capture_physical.assert_not_called()
+
+            Path(result["desktopTurn"]["path"]).mkdir(parents=True)
+            service.return_value = {"status": "available", "runtimeVersion": "0.16.5-dev"}
+            with patch.object(observe_gpu, "PROBE", probe), redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(tool.main(args), 0)
+                self.assertEqual(json.loads(output.getvalue())["status"], "capture-dependencies-ready")
+
+    def test_capture_dependency_check_rejects_foreign_host_and_capture_options(self):
+        for target, host, extra, reason in (
+                ("physical", "LEGION", [], "host-mismatch"),
+                ("lab1", "AMD-DESKTOP", [], "capture-dependency-check-incompatible-options"),
+                ("physical", "AMD-DESKTOP", ["--allow-foreground-change"],
+                 "capture-dependency-check-incompatible-options")):
+            with self.subTest(target=target, host=host), redirect_stdout(io.StringIO()) as output, \
+                 patch.object(tool, "_check_capture_dependencies") as check:
+                self.assertEqual(tool.main(["--target", target, "--expected-host", host,
+                                            "--check-dependencies", *extra]), 2)
+                self.assertEqual(json.loads(output.getvalue())["reason"], reason)
+                check.assert_not_called()
 
     def test_wgc_backend_passes_local_identity_and_checks_receipt(self):
         target = {"hostName": "RIFT-STATION", "processId": 123, "hwnd": 456,

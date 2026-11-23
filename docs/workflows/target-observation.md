@@ -29,14 +29,17 @@ pointed at the installation that owns the desktop turn, including when several
 Workbridge checkouts exist on the same machine.
 
 ```powershell
-$env:RR2_WORKBRIDGE_ROOT = 'D:\Tools\workbridge-mcp'
-python -B -c "from scripts.observe_physical import require_clear_desktop_turn; require_clear_desktop_turn()"
+$rr2Host = [Environment]::MachineName
+python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies
 ```
 
-The Python command checks the directory and guard files at that instant. The
-Workbridge window backend separately needs a reachable service whose runtime
-version matches its CLI. `RUNTIME_MISMATCH` identifies a deployment version
-problem. A WGC identity inspection can still identify the RIFT window.
+The dependency check reports the WGC executable, the desktop-turn directory
+and guard files, and the Workbridge window-capture tool's registration on the
+running service. It uses read-only tool discovery and requires no RIFT PID.
+Exit code `2` means at least one dependency is blocked. `RUNTIME_MISMATCH`
+includes both versions. It applies to the Workbridge window backend. WGC has
+its own build and desktop-turn checks. Run the capture command separately with
+a freshly verified PID after the checks for its backend pass.
 
 The historical VMware material below is **archived**. The observation CLI now
 rejects `lab1`/`lab2` by default with `vmware-retired-use-physical-rift`;
