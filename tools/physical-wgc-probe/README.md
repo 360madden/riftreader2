@@ -13,12 +13,17 @@ A standalone C#/.NET 10 one-shot window capture candidate using [WgcSharp 1.1.1]
 
 ## Commands
 
-From PowerShell in the local Windows checkout, using the pinned SDK:
+From the repository root in PowerShell 7, use the repository's SDK resolver to
+find the version pinned in `global.json`.
 
 ```powershell
-dotnet restore tools\physical-wgc-probe\PhysicalWgcProbe.csproj --locked-mode
-dotnet build tools\physical-wgc-probe\PhysicalWgcProbe.csproj -c Debug --no-restore
-dotnet run --project tools\physical-wgc-probe\PhysicalWgcProbe.csproj -c Debug --no-build -- --self-test
+. .\scripts\resolve-validation-dotnet.ps1
+$rr2SdkVersion = (Get-Content global.json -Raw | ConvertFrom-Json).sdk.version
+$rr2DotNet = Resolve-ValidationDotNet -RepositoryRoot (Get-Location).Path -PinnedSdk $rr2SdkVersion
+$rr2Probe = 'tools\physical-wgc-probe\PhysicalWgcProbe.csproj'
+& $rr2DotNet restore $rr2Probe --locked-mode
+& $rr2DotNet build $rr2Probe -c Debug --no-restore
+& $rr2DotNet run --project $rr2Probe -c Debug --no-build -- --self-test
 ```
 
 For a single local WGC capture, run the following from the repository root with Python and Pillow installed. Choose the current PID from the process listing. The observer writes a new artifact directory and returns the image and receipt paths.
@@ -32,7 +37,7 @@ python scripts/observe_target.py --target physical --expected-host $rr2Host --ph
 For *read-only identity inspection*, supply current values for a visible, non-cloaked target from the same machine:
 
 ```powershell
-dotnet run --project tools\physical-wgc-probe\PhysicalWgcProbe.csproj -c Debug --no-build -- `
+& $rr2DotNet run --project $rr2Probe -c Debug --no-build -- `
   --inspect --host $rr2Host --process rift_x64 `
   --pid <CURRENT_PID> --start-ticks <CURRENT_START_UTC_TICKS> `
   --sha256 <CURRENT_EXE_SHA256> --hwnd 0x<CURRENT_HWND> --backend wgc
@@ -40,7 +45,7 @@ dotnet run --project tools\physical-wgc-probe\PhysicalWgcProbe.csproj -c Debug -
 
 This prints target metadata only; **no pixels or input**. Values in this file are placeholders, not reusable process pins.
 
-Direct invocation requires `--capture`, the same identity fields, `--allow-one-capture`, `--backend wgc|dxgi`, and an absolute `--out` path to a new PNG in the checkout's `artifacts` directory. The command writes a PNG and JSON receipt with image hash, frame dimensions, capture duration, before/after pinned identity, and sampled pixel diversity. Capture requires reviewed Workbridge GUI ownership and the deployed `C:\work\workbridge-mcp\.tools\desktop-evidence` directory.
+Direct invocation requires `--capture`, the same identity fields, `--allow-one-capture`, `--backend wgc|dxgi`, and an absolute `--out` path to a new PNG in the checkout's `artifacts` directory. The command writes a PNG and JSON receipt with image hash, frame dimensions, capture duration, before/after pinned identity, and sampled pixel diversity. Capture requires reviewed Workbridge GUI ownership and the `.tools\desktop-evidence` directory in the active local deployment.
 
 ## Verified on AMD-DESKTOP
 
