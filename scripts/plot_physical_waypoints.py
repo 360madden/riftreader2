@@ -22,6 +22,7 @@ from scripts import physical_rift as physical
 from scripts.physical_turn_visual_pair import (client_frame_mapping,
     project_client_point_to_frame, verified_frame, require, unique_fields)
 from scripts.waypoint_progress import write_json_atomic
+from scripts.waypoint_view_bundle import bundle_asset
 from scripts.physical_waypoint_overlay import _label_layout
 
 
@@ -68,12 +69,28 @@ def render(observation_path, route_path, output):
             and observation.get("workflow") == "physical", "physical-observation-required")
     bracket = observation.get("nativeFacing", {})
     require(bracket.get("status") == "stable-bracket-candidate", "stable-native-frame-bracket-required")
-    reports = [_read(_path(bracket[key], observation_path.parent)) for key in ("beforeOutput", "afterOutput")]
+    retained = observation.get("retainedFrame")
+    if retained is not None:
+        from scripts.plot_physical_units import _saved
+
+        before, after = (bundle_asset(observation_path.parent, bracket[key]) for key in ("beforeOutput", "afterOutput"))
+        reports = []
+        for key, path in (("beforeOutput", before), ("afterOutput", after)):
+            native, source = _saved(path)
+            pin = observation["retainedNativeSources"][key]
+            require(bundle_asset(observation_path.parent, pin["retained"]) == path
+                    and pin["sha256"] == source["sha256"], "retained-native-source-mismatch")
+            reports.append(native)
+        image_path = bundle_asset(observation_path.parent, observation["image"])
+        receipt_path = bundle_asset(observation_path.parent, observation["receipt"])
+    else:
+        before, after = (_path(bracket[key], observation_path.parent) for key in ("beforeOutput", "afterOutput"))
+        reports = [_read(path) for path in (before, after)]
+        image_path = _path(observation["image"], observation_path.parent)
+        receipt_path = _path(observation["receipt"], observation_path.parent)
     values = [physical._native_values("facing", report) for report in reports]
     first, last = [report["observation"] for report in reports]
-    image_path = _path(observation["image"], observation_path.parent)
-    receipt_path = _path(observation["receipt"], observation_path.parent)
-    frame, image, digest, receipt_digest = verified_frame(image_path, receipt_path)
+    frame, image, digest, receipt_digest = verified_frame(image_path, receipt_path, retained_frame=retained)
     mapping = client_frame_mapping(frame)
     require(mapping.get("status") == "available-candidate", "available-client-frame-mapping-required")
     target, identity = observation["target"], reports[0]["identity"]
@@ -108,8 +125,7 @@ def render(observation_path, route_path, output):
     return _render_validated(observation_path, route_path, output, route, host=host, identity=identity,
         values=values[-1], camera=camera, mapping=mapping, image=image, image_path=image_path, digest=digest,
         receipt_digest=receipt_digest, captured_at=frame["capturedCompletedAtUtc"],
-        native_before=_path(bracket["beforeOutput"], observation_path.parent),
-        native_after=_path(bracket["afterOutput"], observation_path.parent))
+        native_before=before, native_after=after)
 
 
 def render_desktop_pair(pair_path, route_path, output):
@@ -121,6 +137,10 @@ def render_desktop_pair(pair_path, route_path, output):
     pair_path, route_path, output = (Path(p).resolve() for p in (pair_path, route_path, output))
     require(not output.exists() and output.parent.is_dir(), "fresh-output-directory-required")
     pair, pair_source = _saved(pair_path)
+    def source_path(value):
+        if pair.get("bundleVersion") == 1:
+            return bundle_asset(pair_path.parent, value)
+        return _path(value, pair_path.parent).resolve()
     route = _read(route_path)
     require(pair.get("status") == "stable-native-composite-event-candidate"
             and pair.get("diagnosticKind") == "dxcam-native-event-pair/1"
@@ -205,8 +225,8 @@ def render_desktop_pair(pair_path, route_path, output):
     require(isinstance(sources, list) and len(sources) == 2, "desktop-native-sources-required")
     reports, paths = [], []
     for source, key in zip(sources, ("nativeBeforeOutput", "nativeAfterOutput")):
-        path = _path(source["path"], pair_path.parent).resolve()
-        require(path == _path(pair[key], pair_path.parent).resolve(), "desktop-native-source-path-mismatch")
+        path = source_path(source["path"])
+        require(path == source_path(pair[key]), "desktop-native-source-path-mismatch")
         report, actual = _saved(path)
         require(actual["sha256"].casefold() == source["sha256"].casefold(), "desktop-native-source-hash-mismatch")
         reports.append(report)
@@ -216,7 +236,7 @@ def render_desktop_pair(pair_path, route_path, output):
     stamp = physical._utc_tick_order_key
     require(0 <= (stamp(last["completedAtUtc"])[0] - stamp(first["startedAtUtc"])[0]).total_seconds() <= 5,
             "desktop-native-UTC-bracket-too-long")
-    image_path = _path(pair["image"], pair_path.parent).resolve()
+    image_path = source_path(pair["image"])
     require(image_path.is_file() and not image_path.is_symlink() and image_path.stat().st_size <= 12*1024*1024,
             "desktop-image-missing-or-oversized")
     raw = image_path.read_bytes()
@@ -323,12 +343,17 @@ def _render_validated(observation_path, route_path, output, route, *, host, iden
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--observation", type=Path, required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--observation", type=Path)
+    source.add_argument("--desktop-pair", type=Path, help="retained DXcam/native capture candidate")
     parser.add_argument("--route", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
-        result = render(args.observation, args.route, args.output)
+        if args.desktop_pair is None:
+            result = render(args.observation, args.route, args.output)
+        else:
+            result = render_desktop_pair(args.desktop_pair, args.route, args.output)
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
         print(json.dumps({"status": "blocked", "reason": str(error)}))
         return 2

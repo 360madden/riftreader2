@@ -2590,20 +2590,33 @@ def launch_window(args):
                         f"+{window.winfo_rooty() + 30}")
         picker.grab_set()
 
-    def load_saved_scene(source):
-        nonlocal saved_view, saved_rerun, saved_unit_sample, last_capture_state, last_capture_error
-        path = cli_file(source)
+    def read_saved_scene(path):
         if path.stat().st_size > 1048576: raise ValueError("Scene manifest is too large")
         manifest = json.loads(path.read_text(encoding="utf-8-sig"))
         if not isinstance(manifest, dict) or manifest.get("status") != "saved-route-view-candidate":
             raise ValueError("Choose a saved scene manifest")
-        def asset(value):
-            if not value: return None
-            candidate = Path(value)
-            resolved = cli_file(candidate if candidate.is_absolute() else path.parent / candidate)
-            return str(resolved) if resolved.is_file() else None
-        image, rerun = asset(manifest.get("image")), asset((manifest.get("rerun") or {}).get("path"))
-        sample = asset((manifest.get("unitSample") or {}).get("path"))
+        return manifest
+
+    def scene_asset(path, manifest, value, suffix):
+        if not value:
+            return None
+        if manifest.get("bundleVersion") == 1:
+            from scripts.waypoint_view_bundle import bundle_asset
+            candidate = bundle_asset(path.parent, value)
+        else:
+            candidate = path.parent / value
+        resolved = cli_file(candidate)
+        if resolved.suffix.casefold() != suffix:
+            raise ValueError(f"Saved scene asset must be a {suffix} file")
+        return str(resolved) if resolved.is_file() else None
+
+    def load_saved_scene(source):
+        nonlocal saved_view, saved_rerun, saved_unit_sample, last_capture_state, last_capture_error
+        path = cli_file(source)
+        manifest = read_saved_scene(path)
+        image = scene_asset(path, manifest, manifest.get("image"), ".png")
+        rerun = scene_asset(path, manifest, (manifest.get("rerun") or {}).get("path"), ".rrd")
+        sample = scene_asset(path, manifest, (manifest.get("unitSample") or {}).get("path"), ".json")
         if image is None and rerun is None: raise ValueError("Saved scene assets are unavailable")
         saved_view, saved_rerun, saved_unit_sample = image, rerun, sample
         last_capture_state, last_capture_error = "loaded", None
@@ -4322,12 +4335,10 @@ def launch_window(args):
                 path = cli_file(values["file"])
                 if not path.is_file(): raise CliError("file-unavailable", str(path))
                 if path.suffix.lower() == ".json":
-                    manifest = json.loads(path.read_text(encoding="utf-8"))
-                    if manifest.get("status") != "saved-route-view-candidate": raise ValueError("not a saved view manifest")
-                    selected = manifest.get("image") if command == "view.open" else manifest.get("rerun", {}).get("path")
-                    if not selected: raise ValueError("this view has no exported 3D recording")
-                    path = cli_file(selected)
-                    if not path.is_file(): raise ValueError("saved view asset is unavailable")
+                    manifest = read_saved_scene(path)
+                    selected = manifest.get("image") if command == "view.open" else (manifest.get("rerun") or {}).get("path")
+                    path = scene_asset(path, manifest, selected, ".png" if command == "view.open" else ".rrd")
+                    if path is None: raise ValueError("saved view asset is unavailable")
                 if command == "view.open":
                     import os
                     os.startfile(str(path))

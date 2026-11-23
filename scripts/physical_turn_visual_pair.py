@@ -122,7 +122,7 @@ def project_client_point_to_frame(point: dict | None, mapping: dict) -> dict:
             "coordinateConvention": "top-left-frame-physical-pixels"}
 
 
-def verified_frame(image_path: Path, receipt_path: Path) -> tuple[dict, Image.Image, str, str]:
+def verified_frame(image_path: Path, receipt_path: Path, *, retained_frame=None) -> tuple[dict, Image.Image, str, str]:
     report, receipt_sha = read_receipt(receipt_path)
     require(report.get("schemaVersion") == 1
             and report.get("status") == "unqualified-gpu-window-frame"
@@ -156,9 +156,15 @@ def verified_frame(image_path: Path, receipt_path: Path) -> tuple[dict, Image.Im
     require(started <= ended and (ended-started).total_seconds() <= 6,
             "visual-capture-timing-invalid")
 
-    require(type(report.get("outputPath")) is str
-            and Path(report["outputPath"]).resolve() == image_path.resolve(),
-            "visual-receipt-path-mismatch")
+    original = report.get("outputPath")
+    require(type(original) is str and bool(original), "visual-receipt-path-mismatch")
+    if retained_frame is None:
+        require(Path(original).resolve() == image_path.resolve(), "visual-receipt-path-mismatch")
+    else:
+        require(isinstance(retained_frame, dict)
+                and retained_frame.get("originalOutputPath") == original
+                and retained_frame.get("receiptSha256") == receipt_sha,
+                "retained-visual-receipt-mismatch")
     require(image_path.is_file() and not image_path.is_symlink()
             and 1 <= image_path.stat().st_size <= MAX_PNG_BYTES,
             "visual-image-missing-or-oversized")

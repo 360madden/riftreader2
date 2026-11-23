@@ -472,9 +472,24 @@ starting a viewer. Open view opens only the last successfully saved projection.
 Failed capture or unstable camera blocks the projection and retains diagnostics.
 The desktop event has no exact capture UTC; Rerun explicitly labels its timeline
 placement as the native-after start upper bound. This remains separate from WGC.
-Offline projection and Rerun export use the recorded host identity. They can run
-on a different analysis machine when the retained image and native source paths
-resolve there. Host, process, build and source checks still apply to the evidence.
+New **Save view** bundles can be moved as a directory. Open the copied `view.json`
+with **Open saved…** or `rr2-waypoints.cmd view open "$bundle/view.json"`, where
+`$bundle` is the copied directory. The manifest and replay inputs use paths within
+the bundle. The original WGC receipt stays byte-for-byte
+intact, including its recorded capture path. Replay checks its recorded hash,
+the image hash, and both retained native source hashes before rendering.
+The original host, process and build still identify the evidence.
+
+To regenerate the projection on an analysis host, pass a new output directory:
+
+```powershell
+python scripts/plot_physical_waypoints.py --observation "$bundle/observation.json" --route "$bundle/route.json" --output "$bundle-replayed"
+```
+
+For a DXcam bundle, use `--desktop-pair "$bundle/desktop-pair.json"` in place of
+`--observation`. The Rerun exporter accepts the same source and route arguments,
+with `--output` pointing to a new `.rrd` file. Older manifests with absolute paths
+remain readable in their original location.
 The explicit desktop Save view/Open view buttons passed on PID17212 after normal relaunch
 restored game rendering: seven markers, exact retained native copies, a 2.050 s
 capture and 0.790 s native bracket. The resulting `view.rrd` passed upstream verify,

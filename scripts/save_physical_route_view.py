@@ -15,12 +15,15 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import socket
 import subprocess
 
 from scripts import observe_physical, observe_target, physical_rift, plot_physical_waypoints
 from scripts.live_physical_waypoints import load_route
+from scripts.physical_turn_visual_pair import MAX_PNG_BYTES, MAX_RECEIPT_BYTES, read_receipt
 from scripts.waypoint_progress import write_json_atomic
+from scripts.waypoint_view_bundle import bundle_reference
 
 ROOT = Path(__file__).resolve().parents[1]
 VISUALIZATION_PYTHON = ROOT / ".local/visualization-venv/Scripts/python.exe"
@@ -50,6 +53,50 @@ def launch_saved_rerun(path):
                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
+def _relative_fields(mapping, directory, *fields):
+    for key in fields:
+        if mapping.get(key):
+            mapping[key] = bundle_reference(directory, mapping[key])
+
+
+def _save_manifest(directory, result):
+    manifest = deepcopy(result)
+    _relative_fields(manifest, directory, "route", "observation", "image", "projection", "focusReceipt")
+    _relative_fields(manifest["rerun"], directory, "path")
+    for source in manifest.get("nativeSources", {}).values():
+        _relative_fields(source, directory, "retained")
+    for side in ("before", "after"):
+        entry = manifest.get("zoneContextCandidate", {}).get(side, {})
+        _relative_fields(entry, directory, "source")
+    sample = manifest.get("unitSample", {})
+    _relative_fields(sample, directory, "path", "source")
+    _relative_fields(sample.get("names", {}), directory, "path", "source", "receiptPath")
+    manifest.update(bundleVersion=1, directory=".")
+    write_json_atomic(directory / "view.json", manifest)
+
+
+def _retain_capture_asset(path, directory, filename, limit):
+    source = Path(path)
+    require(source.is_absolute() and source.is_file() and not source.is_symlink()
+            and 0 < source.stat().st_size <= limit, "invalid-capture-source")
+    source = source.resolve()
+    if not source.is_relative_to(directory.resolve()):
+        with source.open("rb") as original, (directory / filename).open("xb") as retained:
+            shutil.copyfileobj(original, retained)
+        source = directory / filename
+    return bundle_reference(directory, source)
+
+
+def _retain_wgc_frame(observation, directory):
+    original_image, original_receipt = Path(observation["image"]), Path(observation["receipt"])
+    receipt, digest = read_receipt(original_receipt)
+    require(Path(receipt["outputPath"]).resolve() == original_image.resolve(), "visual-receipt-path-mismatch")
+    image = _retain_capture_asset(original_image, directory, "frame.png", MAX_PNG_BYTES)
+    receipt_path = _retain_capture_asset(original_receipt, directory, "frame.receipt.json", MAX_RECEIPT_BYTES)
+    observation.update(image=image, receipt=receipt_path,
+                       retainedFrame={"originalOutputPath": receipt["outputPath"], "receiptSha256": digest})
+
+
 def _retain_native_sources(observation, directory, sources):
     bracket = observation.get("nativeFacing")
     if not isinstance(bracket, dict):
@@ -67,7 +114,7 @@ def _retain_native_sources(observation, directory, sources):
         with retained.open("xb") as stream:
             stream.write(raw)
         sources[field]["retained"] = str(retained)
-        bracket[field] = str(retained)
+        bracket[field] = filename
 
 
 def _zone_context(selection, route, path):
@@ -135,7 +182,10 @@ def _unit_names_sample(selection, values, positions, directory):
         return dict(entry, reason="no-displayed-units")
     try:
         receipt = physical_rift.read_native(selection, "unit-names", output=source, unit_keys=keys)
-        write_json_atomic(wrapper, receipt)
+        retained = deepcopy(receipt)
+        if retained.get("nativeOutput") == str(source):
+            retained["nativeOutput"] = source.name
+        write_json_atomic(wrapper, retained)
         entry["receiptPath"] = str(wrapper)
         require(receipt.get("status") == "complete", receipt.get("reason", "unit-names-unavailable"))
         require(receipt.get("workflow") == "physical" and receipt.get("nativeRead") == "unit-names"
@@ -194,9 +244,11 @@ def _unit_sample(selection, route, directory):
         require(values == receipt.get("nativeValues"), "unit-source-values-mismatch")
         require(values["selfKey"] == route["identity"]["unitKey"], "unit-route-player-mismatch")
         retained = deepcopy(receipt)
+        retained["nativeOutput"] = source.name
         retained["nativeSourceSha256"] = digest
         names = _unit_names_sample(selection, values, report["observation"], directory)
-        retained["nameSample"] = names
+        retained["nameSample"] = deepcopy(names)
+        _relative_fields(retained["nameSample"], directory, "path", "source", "receiptPath")
         write_json_atomic(wrapper, retained)
         entry.update(status="saved", path=str(wrapper), source=str(source), sha256=digest, names=names)
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
@@ -296,9 +348,12 @@ def _desktop_capture(host, pid, pinned, directory, result):
         with retained.open("xb") as stream:
             stream.write(raw)
         sources[field] = dict(source=source["path"], sha256=source["sha256"], retained=str(retained))
-        source["path"] = pair[field] = str(retained)
-    pair["retainedNativeSources"] = sources
-    # The pair's PNG already resides inside this new bundle.
+        source["path"] = pair[field] = filename
+    pair["retainedNativeSources"] = deepcopy(sources)
+    for source in pair["retainedNativeSources"].values():
+        _relative_fields(source, directory, "retained")
+    pair["image"] = _retain_capture_asset(pair["image"], directory, "frame.png", MAX_PNG_BYTES)
+    pair.update(bundleVersion=1, report="desktop-pair.json")
     write_json_atomic(directory / "desktop-pair.json", pair)
     result.update(nativeSources=sources, requestedDisplay=display, sourceKind="desktop-composite-event-candidate")
     return directory / "desktop-pair.json"
@@ -364,8 +419,13 @@ def save_route_view(expected_host, physical_pid, document, output, *, expected_t
                 result["nativeSources"] = {}
                 try:
                     _retain_native_sources(observation, directory, result["nativeSources"])
+                    if (observation.get("status") == "verified-awaiting-visual-review"
+                            and observation.get("target") == pinned):
+                        _retain_wgc_frame(observation, directory)
                 finally:
-                    observation["retainedNativeSources"] = result["nativeSources"]
+                    observation["retainedNativeSources"] = deepcopy(result["nativeSources"])
+                    for source in observation["retainedNativeSources"].values():
+                        _relative_fields(source, directory, "retained")
                     write_json_atomic(observation_path, observation)
                     result["observation"] = str(observation_path)
                 require(observation.get("status") == "verified-awaiting-visual-review",
@@ -378,22 +438,22 @@ def save_route_view(expected_host, physical_pid, document, output, *, expected_t
         if include_units:
             result["unitSample"] = _unit_sample(selection, route, directory)
         unit_sample = result.get("unitSample", {}).get("path")
-        if capture_backend == "desktop":
-            projection = plot_physical_waypoints.render_desktop_pair(observation_path, route_path, directory / "projection")
-            result.update(status="saved-route-view-candidate", image=projection["annotatedImage"],
-                          projection=projection["report"])
-            result["rerun"] = _optional_rerun(route_path, observation_path, directory, export_rerun, desktop=True, unit_sample=unit_sample)
-            write_json_atomic(directory / "view.json", result)
-            return result
-        projection = plot_physical_waypoints.render(observation_path, route_path, directory / "projection")
+        desktop = capture_backend == "desktop"
+        render = plot_physical_waypoints.render_desktop_pair if desktop else plot_physical_waypoints.render
+        projection = render(observation_path, route_path, directory / "projection")
+        projection_summary = dict(projection, bundleVersion=1, bundleRoot="..")
+        _relative_fields(projection_summary, directory, "observation", "route", "nativeBefore", "nativeAfter",
+                         "originalImage", "annotatedImage", "report")
+        write_json_atomic(Path(projection["report"]), projection_summary)
         result.update(status="saved-route-view-candidate", image=projection["annotatedImage"],
                       projection=projection["report"])
-        result["rerun"] = _optional_rerun(route_path, observation_path, directory, export_rerun, unit_sample=unit_sample)
+        result["rerun"] = _optional_rerun(route_path, observation_path, directory, export_rerun,
+                                          desktop=desktop, unit_sample=unit_sample)
     except (ValueError, OSError, KeyError, TypeError, AttributeError, subprocess.TimeoutExpired) as error:
         result.update(status="blocked", reason=str(error))
     if created:
         try:
-            write_json_atomic(directory / "view.json", result)
+            _save_manifest(directory, result)
         except (OSError, ValueError, TypeError) as error:
             result.update(status="blocked", reason="view-summary-write-failed", summaryWriteError=str(error))
     return result

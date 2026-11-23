@@ -222,6 +222,29 @@ class GuiBridgeTests(unittest.TestCase):
     def call(self, op, args=None, rid=None):
         return protocol.request(self.session, op, args or {}, timeout=5, request_id=rid)
 
+    def test_view_commands_resolve_a_moved_bundle_and_refuse_an_escaping_asset(self):
+        bundle = self.root / 'moved view'
+        bundle.mkdir()
+        image = bundle / 'view.png'
+        image.write_bytes(b'test viewport')
+        manifest = bundle / 'view.json'
+        document = {'status': 'saved-route-view-candidate', 'bundleVersion': 1, 'image': image.name}
+        manifest.write_text(json.dumps(document), encoding='utf-8')
+        loaded = self.call('view.load', {'file': str(manifest)})
+        self.assertTrue(loaded['ok'], loaded)
+        self.assertEqual(loaded['data']['image'], str(image))
+        opened = self.call('view.open', {'file': str(manifest)})
+        self.assertTrue(opened['ok'], opened)
+        self.assertEqual(opened['data']['file'], str(image))
+
+        outside = self.root / 'outside.png'
+        outside.write_bytes(b'outside')
+        document['image'] = '../outside.png'
+        manifest.write_text(json.dumps(document), encoding='utf-8')
+        rejected = self.call('view.open', {'file': str(manifest)})
+        self.assertFalse(rejected['ok'], rejected)
+        self.assertIn('view-bundle-path-outside-directory', rejected['error']['message'])
+
     def test_cached_status_and_route_dirty_revision_round_trip(self):
         status = self.call('status')['data']
         self.assertFalse(status['app']['visible'])

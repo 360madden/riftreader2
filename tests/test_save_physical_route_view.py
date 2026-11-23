@@ -17,7 +17,8 @@ from tests.test_physical_unit_positions import report as units_report
 
 
 def pin_native_source(source, target):
-    source["observation"]["identity"].update(
+    observation = source["observation"]
+    observation["identity"] = dict(observation["identity"],
         processId=target["processId"], processStartUtcTicks=int(target["processStartUtcTicks"]),
         executableSha256=target["executableSha256"])
     return source
@@ -90,11 +91,14 @@ class SaveViewTests(unittest.TestCase):
         self.assertFalse(result["inputSent"] or result["focusChanged"])
         self.assertEqual(self.document, original)
         self.assertEqual(json.loads((self.output / "route.json").read_text()), original)
-        self.assertEqual(json.loads((self.output / "view.json").read_text()), result)
+        manifest = json.loads((self.output / "view.json").read_text())
+        self.assertEqual(manifest["bundleVersion"], 1)
+        self.assertEqual(manifest["image"], "projection/waypoints.png")
+        self.assertEqual(manifest["observation"], "observation.json")
         retained_observation = json.loads(Path(result["observation"]).read_text())
         for field, filename in (("beforeOutput", "native-before.json"), ("afterOutput", "native-after.json")):
             self.assertEqual((self.output / filename).read_bytes(), native_sources[field])
-            self.assertEqual(retained_observation["nativeFacing"][field], str(self.output / filename))
+            self.assertEqual(retained_observation["nativeFacing"][field], filename)
             self.assertEqual(result["nativeSources"][field]["source"], original_observation["nativeFacing"][field])
             self.assertEqual(result["nativeSources"][field]["sha256"], hashlib.sha256(native_sources[field]).hexdigest())
             self.assertEqual(Path(original_observation["nativeFacing"][field]).read_bytes(), native_sources[field])
@@ -104,6 +108,38 @@ class SaveViewTests(unittest.TestCase):
             output=self.output / "capture", physical_pid=self.target["processId"],
             native_facing=True, physical_capture_backend="wgc")
         self.process.assert_not_called()
+
+    def test_moved_wgc_bundle_replays_with_unchanged_receipt_and_native_pins(self):
+        result = self.save(export_rerun=False)
+        self.assertEqual(result["status"], "saved-route-view-candidate", result)
+        capture_receipt = Path(self.capture.return_value["receipt"])
+        capture_image = Path(self.capture.return_value["image"])
+        raw_receipt = capture_receipt.read_bytes()
+        raw_image = capture_image.read_bytes()
+        moved = self.output.rename(self.root / "moved view")
+        capture_receipt.unlink()
+        capture_image.unlink()
+        manifest = json.loads((moved / "view.json").read_text())
+        observation_path = moved / manifest["observation"]
+        observation = json.loads(observation_path.read_text())
+        self.assertEqual((moved / observation["receipt"]).read_bytes(), raw_receipt)
+        self.assertEqual((moved / observation["image"]).read_bytes(), raw_image)
+        with patch.object(saved.socket, "gethostname", return_value="ANALYSIS-PC"):
+            replay = saved.plot_physical_waypoints.render(observation_path, moved / manifest["route"], self.root / "replayed")
+        self.assertEqual(replay["machine"], self.target["hostName"])
+        self.assertEqual(replay["points"][0]["ground"]["pixel"], [160, 110])
+        self.assertTrue((moved / manifest["image"]).is_file())
+
+        with (moved / observation["receipt"]).open("ab") as stream:
+            stream.write(b"\n")
+        with self.assertRaisesRegex(ValueError, "retained-visual-receipt-mismatch"):
+            saved.plot_physical_waypoints.render(observation_path, moved / manifest["route"], self.root / "tampered")
+
+        (moved / observation["receipt"]).write_bytes(raw_receipt)
+        with (moved / observation["nativeFacing"]["beforeOutput"]).open("ab") as stream:
+            stream.write(b"\n")
+        with self.assertRaisesRegex(ValueError, "retained-native-source-mismatch"):
+            saved.plot_physical_waypoints.render(observation_path, moved / manifest["route"], self.root / "tampered")
 
     def test_focus_neutral_route_view_preserves_another_local_host(self):
         host = "RIFT-STATION"
@@ -161,8 +197,18 @@ class SaveViewTests(unittest.TestCase):
         self.assertEqual(sample["names"]["reason"], "optional-names-unavailable")
         self.assertTrue(Path(sample["names"]["receiptPath"]).is_file())
         wrapper = json.loads(Path(sample["path"]).read_text())
+        self.assertEqual(wrapper["nativeOutput"], "units-native.json")
+        self.assertEqual(wrapper["nameSample"]["receiptPath"], "unit-names-sample.json")
         self.assertEqual(wrapper["nativeSourceSha256"], hashlib.sha256(Path(sample["source"]).read_bytes()).hexdigest())
         self.assertEqual(result["rerun"]["status"], "saved")
+        from scripts.export_physical_rerun import prepare_unit_samples
+
+        moved = self.output.rename(self.root / "moved unit sample")
+        manifest = json.loads((moved / "view.json").read_text())
+        scans = prepare_unit_samples([moved / manifest["unitSample"]["path"]],
+                                     saved.load_route(moved / manifest["route"]), [])
+        self.assertEqual(scans[0]["nativeSource"]["sha256"], sample["sha256"])
+        self.assertTrue((moved / manifest["unitSample"]["names"]["receiptPath"]).is_file())
 
     def test_optional_unit_failure_or_identity_mismatch_keeps_core_and_omits_sample(self):
         self.python.write_bytes(b"not-executed")
@@ -228,6 +274,7 @@ class SaveViewTests(unittest.TestCase):
         self.assertEqual(Path(entry["source"]).name, "unit-names-native.json")
         receipt = json.loads(Path(entry["path"]).read_text())
         self.assertEqual(receipt["nativeSourceSha256"], entry["sha256"])
+        self.assertEqual(receipt["nativeOutput"], "unit-names-native.json")
         self.assertEqual(receipt["nativeValues"]["rows"][0]["unitKey"], key)
 
     def test_bad_optional_names_leave_saved_positions_and_core_view(self):
@@ -528,13 +575,13 @@ class DesktopSaveViewTests(unittest.TestCase):
         self.wgc.assert_not_called()
         pair = json.loads(Path(result["observation"]).read_text())
         self.assertEqual(pair["inputSent"], False)
-        self.assertTrue(Path(pair["image"]).is_relative_to(self.output))
+        self.assertEqual(pair["image"], "capture/image.png")
         for index, (field, filename) in enumerate((("nativeBeforeOutput", "native-before.json"),
                                                    ("nativeAfterOutput", "native-after.json"))):
             retained = self.output / filename
             self.assertEqual(retained.read_bytes(), sources[index])
-            self.assertEqual(pair[field], str(retained))
-            self.assertEqual(pair["nativeSources"][index]["path"], str(retained))
+            self.assertEqual(pair[field], filename)
+            self.assertEqual(pair["nativeSources"][index]["path"], filename)
             self.assertEqual(pair["nativeSources"][index]["sha256"], hashlib.sha256(sources[index]).hexdigest())
             self.assertEqual(result["nativeSources"][field]["source"], original_pair[field])
             self.assertEqual(Path(original_pair[field]).read_bytes(), sources[index])
@@ -546,6 +593,12 @@ class DesktopSaveViewTests(unittest.TestCase):
         with Image.open(result["image"]) as image:
             self.assertEqual(image.size, (320, 200))
             self.assertEqual(image.getpixel((160, 100)), (255, 204, 51))
+        moved = self.output.rename(self.root / "moved desktop bundle")
+        manifest = json.loads((moved / "view.json").read_text())
+        with patch.object(saved.socket, "gethostname", return_value="ANALYSIS-PC"):
+            replay = saved.plot_physical_waypoints.render_desktop_pair(
+                moved / manifest["observation"], moved / manifest["route"], self.root / "replayed-desktop")
+        self.assertEqual(replay["points"], projection["points"])
 
     def test_held_input_or_wrong_focus_identity_refuses_before_desktop_capture(self):
         self.focus["desktopInputsDown"] = ["W"]
