@@ -111,7 +111,7 @@ movement calibration measured on the Windows host that will run Waypoints.
 
 | Workflow | Setting | Local prerequisite |
 | --- | --- | --- |
-| Full development validation | `RIFTREADER2_DOTNET`, `RIFTREADER2_LUA_PYTHON` | [Pinned SDK and prepared Python](#restore-build-and-test) |
+| Full development validation | `RIFTREADER2_DOTNET`, `RIFTREADER2_LUA_PYTHON` or `RIFTREADER2_PYTHON` | [Pinned SDK and prepared Python](#restore-build-and-test) |
 | Waypoints launcher and CLI | `RIFTREADER2_PYTHON` | Python with Tcl/Tk |
 | Waypoints prepared maps | `RR2_RIFTWORLD_ROOT`, `RR2_RIFTWORLD_PYTHON` | [Local RiftWorld checkout and its Python](physical-waypoints.md#prepared-map-destinations) |
 | Native physical reads and Waypoints | `RR2_NATIVE_READER` | [Published Live reader](#publish-the-local-native-reader) |
