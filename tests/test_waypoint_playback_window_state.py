@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts import physical_waypoints as app
+from scripts import waypoint_cli_protocol
 from scripts.waypoint_progress import RouteProgress
 from tests.tk_support import withdrawn_root, reject_error_dialog
 
@@ -41,6 +42,11 @@ class PlaybackWindowStateTests(unittest.TestCase):
         self.path = Path(self.temp)
         (self.path / "artifacts").mkdir()
         self.stack.enter_context(patch.object(app, "ROOT", self.path))
+        session_root = waypoint_cli_protocol._root
+        self.stack.enter_context(patch.object(
+            waypoint_cli_protocol, "_root",
+            side_effect=lambda helper, root: session_root(helper, root or self.path / "helpers"),
+        ))
         self.threads, self.roots, self.callback_errors = [], [], []
         actual_tk, actual_thread = tk.Tk, threading.Thread
         def root(*args, **kwargs):
@@ -85,8 +91,11 @@ class PlaybackWindowStateTests(unittest.TestCase):
                     if isinstance(w, ttk.Treeview) and tuple(w["columns"]) == ("name", "x", "z"))
 
     def launch(self, adapter=None, route=None):
-        if adapter is not None and not getattr(adapter, "binding", None):
-            adapter.binding = {"runtimeIdentity": dict(TEST_IDENTITY)}
+        if adapter is not None:
+            if not getattr(adapter, "binding", None):
+                adapter.binding = {"runtimeIdentity": dict(TEST_IDENTITY)}
+            if not hasattr(adapter, "target"):
+                adapter.target = None
         args = SimpleNamespace(expected_host="AMD-DESKTOP", physical_pid=None if adapter is None else 123,
                                initial_adapter=adapter, basis=Path("unused"), face_waypoints=True,
                                route=route, auto_reconnect=True, initial_reason="waiting" if adapter is None else None)

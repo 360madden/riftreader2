@@ -81,6 +81,7 @@ class HeaderWindowTests(unittest.TestCase):
 
     def test_idle_stop_latches_without_claiming_release_or_stationary_evidence(self):
         self.launch_pose()
+        self.pose_toggle().invoke()
         before = self.reader.call_count
         self.button("STOP").invoke()
         self.roots[0].update()

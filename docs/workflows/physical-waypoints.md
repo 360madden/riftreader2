@@ -808,11 +808,13 @@ The radar is a reference diagram: it supplies no terrain, collision, occlusion o
 walkable-route guarantee. A saved trail does not expand the playback budgets.
 Detailed acquisition/file errors remain in Activity; compact captions stay short.
 
-The November 12 dark-theme redesign passed focused withdrawn GUI/map checks.
-Its offline layout gallery can be regenerated with
-`python scripts/preview_waypoint_ui.py`; those SVG representations are not native
-screenshots or proof of actual window clipping. Reopen the helper normally to
-load new source; reopening never starts playback automatically.
+Run `python scripts/preview_waypoint_ui.py --output artifacts/waypoints-preview`
+on any Windows host with Python and Tk to generate the offline layout gallery.
+Open the generated `index.html` to review the six tabs at two sizes and three
+fixture states. The manifest records both the machine that ran the preview and
+the host that recorded the example route. The preview uses a withdrawn Tk window
+and a temporary command directory. The SVGs describe intended layout. Actual
+window clipping requires a separate on-screen check.
 
 In **Scene & beacons**, choose **Show markers** to display saved world locations
 while RIFT or that Waypoints window is foreground. This keeps size and opacity

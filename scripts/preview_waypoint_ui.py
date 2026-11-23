@@ -7,6 +7,7 @@ proof of actual pixel allocation/clipping. ROOT/cache/progress live in a tempdir
 from __future__ import annotations
 import argparse
 from contextlib import ExitStack
+from functools import partial
 import gc
 import html
 import json
@@ -73,7 +74,7 @@ def widget_inventory(window):
         return value
     return item(window)
 
-def preview_svg(local, width, height, tab, scenario):
+def preview_svg(local, width, height, tab, scenario, host):
     """Small explicit intended-layout composition; deliberately no Tk layout emulator."""
     import tkinter as tk
     from tkinter import ttk
@@ -104,13 +105,16 @@ def preview_svg(local, width, height, tab, scenario):
         text(x+10,y+20,label,11,ink)
         return w
     text(26,29,'RIFT / READER 2',10,gold,'600');text(26,61,APP_TITLE,24,fg,'600')
-    text(160,29,'AMD-DESKTOP / OFFLINE FIXTURE',10,'#a3b5c4')
-    button(width-250,24,'Refresh',90);button(width-148,24,'STOP / F8',122)
+    text(160,29,f'{host} / OFFLINE FIXTURE',10,'#a3b5c4')
+    button(width-250,24,'Refresh',90)
+    stop_button = local['stop_button']
+    button(width-148,24,str(stop_button.cget('text')),122,widget=stop_button)
     live=bool(local['live_pose'].get())
     rect(width-250,66,12,12,style.lookup('TCheckbutton','indicatorbackground',('selected',) if live else ()) or '#102131','#4b6578',2)
     if live:text(width-248,76,'v',9,bg,'bold')
-    text(width-230,77,'Live pose (2 s)',11,style.lookup('TCheckbutton','foreground') or fg)
-    text(width-148,76,'Always available',9,'#a3b5c4')
+    text(width-230,77,local['live_pose_option'].cget('text'),11,
+         style.lookup('TCheckbutton','foreground') or fg)
+    text(width-148,76,local['stop_hint'].get(),9,'#a3b5c4')
     status=local['state'].get();rect(24,85,width-48,32)
     text(38,106,status[:int((width-80)/6.1)],12,gold)
     text(26,140,local['pose_text'].get(),12,fg)
@@ -233,8 +237,9 @@ def preview_svg(local, width, height, tab, scenario):
         lines=[]
     if tab=='Activity':
         lines=[]
+        activity_text = local['activity_controls'].text
         text(40,taby+65,local['state'].get()[:int((width-90)/6)],11,gold)
-        rect(39,taby+76,width-78,88,local['log'].cget('background'),'#4b6578',3)
+        rect(39,taby+76,width-78,88,activity_text.cget('background'),'#4b6578',3)
     for widget,value in lines:
         if isinstance(widget,(ttk.Button,ttk.Checkbutton)):
             bw=max(66,len(value)*6.5+25)
@@ -244,7 +249,7 @@ def preview_svg(local, width, height, tab, scenario):
             if x>40:x,y=40,y+39
             if y+15<height-34:text(x,y+14,value[:int((width-90)/6)],11,'#a9b9c9');y+=23
     if tab=='Activity':
-        content=local['log'].get('1.0','end-1c').strip().splitlines()[-4:]
+        content=activity_text.get('1.0','end-1c').strip().splitlines()[-4:]
         for n,line in enumerate(content):text(49,taby+94+n*19,line[:int((width-90)/6)],11,'#b2c3d2')
     text(25,height-12,'OFFLINE WIDGET-LAYOUT PREVIEW  -  intended placement; withdrawn allocation is not a screenshot',9,'#7e90a2')
     parts.append('</svg>');return '\n'.join(parts)
@@ -253,16 +258,17 @@ def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path,default=ROOT/'output/playwright/waypoint-ui')
     args=parser.parse_args(argv)
-    if socket.gethostname().upper()!='AMD-DESKTOP':raise SystemExit('Host mismatch: AMD-DESKTOP required')
+    host = socket.gethostname()
     import tkinter as tk
     from tkinter import ttk
-    from scripts import physical_waypoints as app
+    from scripts import physical_waypoints as app, waypoint_cli_protocol
     args.output.mkdir(parents=True,exist_ok=True)
     actual_tk=tk.Tk; roots=[];threads=[];local={};errors=[]
     route=json.loads((ROOT/'docs/validation/gui-taught-route-2026-11-12.json').read_text())
     identity=route['recording']['identity']
     position=route['waypoints'][0];pose=app.Snapshot(app.Position(position[1],route['heights'][0],position[2]),62,time.monotonic(),'offline-fixture')
-    adapter=SimpleNamespace(pid=123,binding=identity,read=lambda **kw:pose,identity=denied,pulse=denied,reserve=denied)
+    adapter = SimpleNamespace(pid=123, target=None, binding=identity, read=lambda **kw: pose,
+                              identity=denied, pulse=denied, reserve=denied)
     def root_factory(*a,**kw):
         r=actual_tk(*a,**kw);r.withdraw();r.report_callback_exception=lambda *e:errors.append(str(e[1]));roots.append(r);return r
     class InlineThread:
@@ -275,12 +281,15 @@ def main(argv=None):
     try:
       with tempfile.TemporaryDirectory(prefix='rr2-offline-ui-') as temp,ExitStack() as stack:
         sandbox=Path(temp);(sandbox/'artifacts').mkdir();path=sandbox/'seven-point-demo.json';path.write_text(json.dumps(route))
+        session_server = partial(waypoint_cli_protocol.LocalSessionServer, root=sandbox / 'sessions')
         for obj,name,value in ((app,'ROOT',sandbox),(tk,'Tk',root_factory),(actual_tk,'mainloop',capture_loop),
+                (waypoint_cli_protocol,'LocalSessionServer',session_server),
                 (app.threading,'Thread',InlineThread),(app,'ForegroundStop',denied),(app,'PhysicalAdapter',denied),
                 (app.physical_rift,'select_physical',denied),(app.physical_rift,'read_native',denied)):
             stack.enter_context(patch.object(obj,name,value))
-        app.launch_window(SimpleNamespace(expected_host='AMD-DESKTOP',physical_pid=123,initial_adapter=adapter,
-            basis=Path('offline-unused'),face_waypoints=True,route=path,auto_reconnect=False,initial_reason=None))
+        app.launch_window(SimpleNamespace(expected_host=host,physical_pid=123,initial_adapter=adapter,
+            basis=Path('offline-unused'),face_waypoints=True,route=path,auto_reconnect=False,
+            background=True,cli=True,initial_reason=None))
         window=roots[0]
         for _ in range(3):window.update();time.sleep(.09)
         if window.state()!='withdrawn' or window.winfo_ismapped():raise AssertionError('Preview must remain withdrawn')
@@ -288,6 +297,8 @@ def main(argv=None):
         local['live_pose'].set(False)
         previews=[]
         scenarios=[('idle-start',0,False),('idle-corner',2,False),('busy-next',4,True)]
+        diagnostics = local['diagnostics']
+        diagnostics.info('Offline fixture loaded seven retained route points.')
         for scenario,index,busy in scenarios:
             point=route['waypoints'][index]
             for function in (local['redraw'],local['poll']):
@@ -302,21 +313,18 @@ def main(argv=None):
                     label=str(widget.cget('text'))
                     if label in ('Play Forward','Play Reverse','Resume','Auto-walk + record','Record','Run Route','Go Selected','Face Selected','Save current position','Save Current'):
                         widget.configure(state='disabled' if busy else 'normal')
-            local['log'].configure(state='normal');local['log'].delete('1.0','end')
-            local['log'].insert('end', 'OFFLINE FIXTURE  -  no native process connected.\n'
-                'Loaded seven actual retained recorded points; original provenance unchanged.\n'
-                + (f'Synthetic playback: {index}/7 confirmed; next Recorded {index+1}.\n' if busy else 'Ready: choose a waypoint or playback direction.\n')
-                + 'This preview made no gameplay input or captures.\n')
-            local['log'].configure(state='disabled')
+            diagnostics.info(f'Synthetic playback: {index}/7 confirmed, next point {index + 1}.')
+            local['activity_controls'].refresh(force=True)
             for width,height in ((1120,850),(980,740)):
                 window.geometry(f'{width}x{height}');window.update_idletasks()
                 for item in local['workflow'].tabs():
                     local['workflow'].select(item);window.update_idletasks();tab=local['workflow'].tab(item,'text')
                     slug=f'{width}x{height}-{scenario}-{tab.split()[0].lower()}'
-                    svg=preview_svg(local,width,height,tab,scenario);(args.output/(slug+'.svg')).write_text(svg,encoding='utf-8')
+                    svg=preview_svg(local,width,height,tab,scenario,host);(args.output/(slug+'.svg')).write_text(svg,encoding='utf-8')
                     (args.output/(slug+'.json')).write_text(json.dumps(widget_inventory(window),indent=2),encoding='utf-8')
                     previews.append(dict(file=slug+'.svg',width=width,height=height,scenario=scenario,tab=tab))
-        manifest=dict(kind='offline-widget-layout-preview',host='AMD-DESKTOP',mapped=False,
+        manifest=dict(kind='offline-widget-layout-preview',host=host,mapped=False,
+            fixtureHost=identity['runtimeIdentity']['machine'],
             limitation='Real Tk requested sizes/styles/widget tree/Canvas primitives. Intended placement only; withdrawn descendant allocation is not on-screen geometry or screenshot proof.',
             scenarios=scenarios,previews=previews,callbackErrors=errors)
         (args.output/'manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
