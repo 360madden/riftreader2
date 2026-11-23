@@ -111,7 +111,9 @@ movement calibration measured on the Windows host that will run Waypoints.
 
 | Workflow | Setting | Local prerequisite |
 | --- | --- | --- |
+| Full development validation | `RIFTREADER2_DOTNET`, `RIFTREADER2_LUA_PYTHON` | [Pinned SDK and prepared Python](#restore-build-and-test) |
 | Waypoints launcher and CLI | `RIFTREADER2_PYTHON` | Python with Tcl/Tk |
+| Waypoints prepared maps | `RR2_RIFTWORLD_ROOT`, `RR2_RIFTWORLD_PYTHON` | [Local RiftWorld checkout and its Python](physical-waypoints.md#prepared-map-destinations) |
 | Native physical reads and Waypoints | `RR2_NATIVE_READER` | [Published Live reader](#publish-the-local-native-reader) |
 | Waypoints calibration | `RR2_WAYPOINTS_BASIS` | [Verified calibration folder](physical-waypoints.md#local-calibration-and-dependency-checks) |
 | WGC capture | `RR2_WGC_PROBE` | [Published WGC probe](../../tools/physical-wgc-probe/README.md), Python with Pillow, and the active deployment's desktop-evidence directory |
@@ -120,16 +122,16 @@ movement calibration measured on the Windows host that will run Waypoints.
 | Rerun export and viewer | `RR2_RERUN_PYTHON` | Python with [visualization requirements](../../requirements-visualization.txt) |
 | Shared desktop evidence and Workbridge capture | `RR2_WORKBRIDGE_ROOT`, `RR2_WORKBRIDGE_CLI_ROOT`, `RR2_WORKBRIDGE_NODE` | [Active local deployment, matching CLI, and Node.js 24+](target-observation.md#active-workflow-on-the-local-windows-host) |
 
-Run these checks from the checkout without selecting a RIFT process. To check
-Workbridge capture, replace `--native-facing` with
-`--physical-capture-backend workbridge`.
+Run these dependency checks from the checkout. The WGC check also starts the
+native facing reader in help mode. Workbridge checks its own capture setup.
 
 ```powershell
 $rr2Host = [Environment]::MachineName
 $rr2Python = $env:RIFTREADER2_PYTHON
 if (!$rr2Python) { $rr2Python = 'python' }
 .\rr2-waypoints.cmd doctor --local --dependencies-only
-& $rr2Python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies --native-facing
+& $rr2Python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies --physical-capture-backend wgc --native-facing
+& $rr2Python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies --physical-capture-backend workbridge
 .\scripts\validate.ps1 -CheckPrerequisites
 ```
 

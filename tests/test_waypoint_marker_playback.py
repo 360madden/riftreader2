@@ -22,7 +22,8 @@ class MarkerPlaybackTests(unittest.TestCase):
     wait_for = fixture.RecordingWindowTests.wait_for
 
     def setUp(self):
-        self.marker = SimpleNamespace(running=Mock(return_value=True), stop=Mock(), update=Mock(),
+        # The initial refresh owns pose until a marker test launches its child.
+        self.marker = SimpleNamespace(running=Mock(return_value=False), stop=Mock(), update=Mock(),
                                       stop_requested=False, exit_code=None, pose_path=None)
         self.marker_patch = patch.object(app, "OwnedWaypointMarkers", return_value=self.marker)
         self.marker_patch.start()
@@ -108,6 +109,7 @@ class MarkerPlaybackTests(unittest.TestCase):
             playerPose=dict(playerKey=self.adapter.binding["runtimeIdentity"]["unitKey"],
                             position=dict(x=0, y=0, z=0), bearing=0,
                             sampledAtUtc=datetime.now(timezone.utc).isoformat())), 1)
+        self.marker.running.return_value = True
         self.wait_for(lambda: str(self.button("Play Forward")["state"]) != "disabled")
 
     def finish_marker_shutdown(self, action):
@@ -140,6 +142,7 @@ class MarkerPlaybackTests(unittest.TestCase):
         self.wait_for(lambda: str(self.button("Refresh")["state"]) != "disabled")
 
     def test_go_still_requests_marker_stop_and_waits(self):
+        self.marker.running.return_value = True
         self.button("Go Selected").invoke()
         self.marker.stop.assert_called_once()
         self.assertFalse(self.entered.is_set())
@@ -192,7 +195,7 @@ class MarkerPlaybackTests(unittest.TestCase):
                         if isinstance(w, fixture.ttk.Label) and w["textvariable"]
                         and str(self.window.getvar(w["textvariable"])).startswith(
                             ("X ", "Position unavailable", "Position is loading")))
-        previous = displayed_pose()
+        self.marker.running.return_value = True
         with patch.object(self.window, "focus_displayof", return_value=self.window):
             deadline = time.monotonic() + 2.2
             while time.monotonic() < deadline:
