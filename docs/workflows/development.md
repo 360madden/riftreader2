@@ -307,8 +307,28 @@ verified local name in `--expected-host`. The explicit
 is established. [Visual observation workflow](target-observation.md#active-workflow-on-the-local-windows-host)
 
 Use local .NET 10 `RiftReader2.Live` for native reads and the host-local control
-agent only after its exact process/config prerequisites are met. For a
-physical multibox control agent, set **both** optional config fields
+agent only after its exact process/config prerequisites are met. On the owning
+Windows machine, verify the local hostname and select the current RIFT PID
+before checking reservation availability or preparing paired configs:
+
+```powershell
+$rrHost = [Environment]::MachineName
+Get-Process -Name rift_x64 | Select-Object Id, MainWindowHandle
+$rrPid = <verified RIFT PID>
+python scripts/physical_reservation_preflight.py --host $rrHost --pid $rrPid
+```
+
+The preflight samples the exact host, PID, start ticks and executable SHA. It
+acquires, rechecks and releases the Windows client reservation. To prepare
+paired session configs, use `python scripts/physical_control_config.py --host
+$rrHost --pid $rrPid --local-ip <local-private-IPv4> --agent-port <agent-port>
+--ui-port <operator-port>`. Choose an IPv4 address assigned to an eligible local
+interface and two distinct ports. The command writes credentials into a new
+session directory under `artifacts`. Keep those files local. Both checks work
+on AMD-DESKTOP, LEGION and other verified local Windows hosts. Service startup,
+movement calibration and supervised input have their own prerequisites.
+
+For a physical multibox control agent, set **both** optional config fields
 `boundProcessId` and `boundProcessStartUtcTicks` to the same freshly verified
 local RIFT process. Missing or mismatched bindings fail closed; leaving both
 absent retains the original exactly-one-process rule. The five native control-agent

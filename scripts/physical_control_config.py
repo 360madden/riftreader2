@@ -77,7 +77,7 @@ def _check_ip(ip_text, interfaces):
 
 def create_config(host, pid, local_ip, agent_port, ui_port, output_root,
                   *, selector=None, interface_provider=None):
-    require(isinstance(host, str) and host.upper() in physical_rift.SUPPORTED_HOSTS
+    require(physical_rift.valid_host_name(host)
             and host.casefold() == socket.gethostname().casefold(),
             "physical config host mismatch")
     require(type(pid) is int and 1 <= pid <= 2147483647, "physical PID invalid")
@@ -162,7 +162,7 @@ def create_config(host, pid, local_ip, agent_port, ui_port, output_root,
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--host", required=True, choices=physical_rift.SUPPORTED_HOSTS)
+    parser.add_argument("--host", required=True, help="verified local Windows machine name")
     parser.add_argument("--pid", type=int, required=True)
     parser.add_argument("--local-ip", required=True)
     parser.add_argument("--agent-port", type=int, required=True)

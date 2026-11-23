@@ -13,7 +13,7 @@ from scripts.nav_physical_reservation import (
 )
 
 
-HOST = socket.gethostname()
+HOST = "RR2_FIELD-PC"
 PID = 1876544  # A synthetic PID; these tests never inspect a live game.
 TICKS = 639299470183328173
 SHA = "a" * 64
@@ -31,16 +31,22 @@ def ready(**changes):
 
 @unittest.skipUnless(os.name == "nt", "Windows physical reservation only")
 class ReadOnlyPhysicalPreflightTests(unittest.TestCase):
+    def setUp(self):
+        local_host = patch.object(socket, "gethostname", return_value=HOST)
+        local_host.start()
+        self.addCleanup(local_host.stop)
+
     def test_stable_target_owns_and_releases_reservation(self):
         calls = []
         def selector(**kwargs):
             calls.append(kwargs)
             return ready()
-        receipt = probe.preflight(HOST, PID, selector=selector)
+        receipt = probe.preflight(HOST.lower(), PID, selector=selector)
         self.assertEqual(len(calls), 3)
-        self.assertEqual(calls, [{"expected_host": HOST, "physical_pid": PID}] * 3)
+        self.assertEqual(calls, [{"expected_host": HOST.lower(), "physical_pid": PID}] * 3)
         self.assertEqual(receipt["status"], "verified-read-only")
         self.assertEqual(receipt["recordType"], "physical-reservation-preflight/1")
+        self.assertEqual(receipt["identity"]["machineName"], HOST)
         self.assertEqual(receipt["identity"]["processId"], PID)
         self.assertEqual(receipt["identity"]["processStartUtcTicks"], str(TICKS))
         self.assertEqual(receipt["reservation"], "acquired-and-released")
@@ -62,7 +68,7 @@ class ReadOnlyPhysicalPreflightTests(unittest.TestCase):
     def test_invalid_or_cross_host_request_fails_before_selection(self):
         def no_select(**_):
             self.fail("selector must not be called")
-        for host, pid in (("OTHER-HOST", PID), (HOST, 0), (HOST, True)):
+        for host, pid in (("OTHER-HOST", PID), ("bad host", PID), (HOST, 0), (HOST, True)):
             with self.subTest(host=host, pid=pid), self.assertRaises(
                     probe.PhysicalPreflightError):
                 probe.preflight(host, pid, selector=no_select)

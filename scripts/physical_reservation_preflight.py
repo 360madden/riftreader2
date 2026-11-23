@@ -61,7 +61,7 @@ def selected_identity(selection: object, host: str, pid: int) -> PhysicalClientI
 
 def preflight(host: str, pid: int, *, selector=None, reservation_type=PhysicalClientReservation) -> dict:
     """Acquire, recheck and release one local mutex; never grant input authority."""
-    if (not isinstance(host, str) or host.upper() not in physical_rift.SUPPORTED_HOSTS
+    if (not physical_rift.valid_host_name(host)
             or host.casefold() != socket.gethostname().casefold()):
         raise PhysicalPreflightError("physical-preflight-host-mismatch")
     if type(pid) is not int or not 1 <= pid <= 2147483647:
@@ -96,7 +96,7 @@ def preflight(host: str, pid: int, *, selector=None, reservation_type=PhysicalCl
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--host", required=True, choices=physical_rift.SUPPORTED_HOSTS)
+    parser.add_argument("--host", required=True, help="verified local Windows machine name")
     parser.add_argument("--pid", type=int, required=True, help="one exact local rift_x64 process ID")
     args = parser.parse_args(argv)
     try:

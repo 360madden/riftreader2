@@ -32,7 +32,7 @@ class PhysicalClientIdentity:
     def __post_init__(self):
         if (not isinstance(self.machine_name, str)
                 or not 1 <= len(self.machine_name) <= 64
-                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]{0,63}", self.machine_name)):
+                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", self.machine_name)):
             raise PhysicalReservationError("physical-identity-machine-invalid")
         if type(self.process_id) is not int or not 1 <= self.process_id <= 2147483647:
             raise PhysicalReservationError("physical-identity-pid-invalid")

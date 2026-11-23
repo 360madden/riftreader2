@@ -871,6 +871,8 @@ changed builds or players and ambiguous processes are refused. Reconnection
 does not resume an interrupted trip or start movement.
 The launcher defaults to **Face, then walk**. `--route PATH` opens a saved route.
 For a read-only readiness check, run `python scripts/launch_physical_waypoints.py --check`.
+The bundled default basis is from AMD-DESKTOP. On LEGION, supply `--basis PATH`
+with measured calibration for that host, executable build and player.
 
 Cold-start behavior passed a live AMD-DESKTOP case on November 12: the same app
 opened with RIFT absent, waited through character selection, then bound the new

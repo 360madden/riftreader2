@@ -13,7 +13,7 @@ from unittest.mock import patch
 from scripts import physical_control_config as config
 from scripts.control_host import HostConfig
 
-HOST = socket.gethostname()
+HOST = "RR2_FIELD-PC"
 PID = 1876544
 TICKS = 639299470183328173
 SHA = "a" * 64
@@ -39,6 +39,9 @@ def ready(**changes):
 
 class PhysicalControlConfigTests(unittest.TestCase):
     def setUp(self):
+        local_host = patch.object(socket, "gethostname", return_value=HOST)
+        local_host.start()
+        self.addCleanup(local_host.stop)
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
@@ -57,9 +60,10 @@ class PhysicalControlConfigTests(unittest.TestCase):
             interface_provider=kwargs.pop("interfaces", lambda: INTERFACES))
 
     def test_creates_compatible_pair_without_logging_secret(self):
-        receipt = self.make()
+        receipt = self.make(host=HOST.lower())
         self.assertEqual(receipt["status"], "physical-config-pair-created")
-        self.assertEqual(self.calls, [{"expected_host": HOST, "physical_pid": PID}] * 2)
+        self.assertEqual(self.calls, [{"expected_host": HOST.lower(), "physical_pid": PID}] * 2)
+        self.assertEqual(receipt["machineName"], HOST)
         self.assertFalse(receipt["gameInputSent"])
         self.assertFalse(receipt["serviceStarted"])
         host = json.loads(Path(receipt["hostConfigPath"]).read_text(encoding="utf-8"))
@@ -103,6 +107,7 @@ class PhysicalControlConfigTests(unittest.TestCase):
     def test_host_ip_vm_adapter_and_port_refusals_precede_selection(self):
         for changes in (
             {"host": "LEGION"},
+            {"host": "malformed / host"},
             {"pid": 0},
             {"pid": True},
             {"local_ip": "127.0.0.1"},

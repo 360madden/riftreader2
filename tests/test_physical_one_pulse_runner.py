@@ -8,11 +8,12 @@ import socket
 from types import SimpleNamespace
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from scripts import control_host
 from scripts import physical_one_pulse_runner as pulse
 
-HOST = socket.gethostname()
+HOST = "AMD-DESKTOP"
 PID = 1876545
 TICKS = 639299470183328173
 SHA = "a" * 64
@@ -99,6 +100,9 @@ class FakeGateway:
 @unittest.skipUnless(os.name == "nt", "Windows reservation only")
 class OnePulseTests(unittest.TestCase):
     def setUp(self):
+        local_host = patch.object(socket, "gethostname", return_value=HOST)
+        local_host.start()
+        self.addCleanup(local_host.stop)
         td = tempfile.TemporaryDirectory()
         self.addCleanup(td.cleanup)
         self.folder = Path(td.name)
