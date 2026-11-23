@@ -10,17 +10,33 @@ namespace RiftReader2.Live;
 /// <summary>A local read-only presentation of the existing position sampler.</summary>
 internal static class PositionPanelCommand
 {
-    internal static int Run(string[] args)
+    internal static int Run(string[] args, TextWriter output, TextWriter error)
     {
         try
         {
-            var options = NativeCommandRunner.ParseOptions(args, "--profile", "--output-directory");
+            var checking = args.Length > 0 && args[0] == "--check-profile";
+            var options = checking
+                ? NativeCommandRunner.ParseOptions(args[1..], "--profile")
+                : NativeCommandRunner.ParseOptions(args, "--profile", "--output-directory");
             var profilePath = options.GetValueOrDefault("--profile") ??
                 Path.Combine(AppContext.BaseDirectory, "position-candidate-profile.json");
+            var profile = NativePositionProfileLoader.LoadAsync(profilePath).GetAwaiter().GetResult();
+            if (checking)
+            {
+                output.WriteLine(JsonSerializer.Serialize(new
+                {
+                    status = "position-profile-ready",
+                    profilePath = Path.GetFullPath(profilePath),
+                    profileSha256 = profile.SourceSha256,
+                    executableSha256 = profile.Profile.ExecutableSha256,
+                    windowOpened = false,
+                    inputSent = false,
+                }, JsonFormat.Options));
+                return 0;
+            }
             var outputDirectory = options.GetValueOrDefault("--output-directory") ??
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     "RiftReader2", "Position", DateTimeOffset.UtcNow.ToString("yyyyMMddTHHmmssZ", CultureInfo.InvariantCulture) + "-" + Guid.NewGuid().ToString("N")[..8]);
-            var profile = NativePositionProfileLoader.LoadAsync(profilePath).GetAwaiter().GetResult();
             var directory = Path.GetFullPath(outputDirectory);
             if (Directory.Exists(directory) || File.Exists(directory))
                 throw new IOException("The panel evidence directory already exists; use a new session directory.");
@@ -63,9 +79,9 @@ internal static class PositionPanelCommand
             return 0;
         }
         catch (Exception exception) when (exception is ArgumentException or IOException or
-            UnauthorizedAccessException or InvalidDataException or JsonException or Win32Exception)
+            UnauthorizedAccessException or InvalidDataException or JsonException or OverflowException or Win32Exception)
         {
-            Console.Error.WriteLine($"Position panel: {exception.Message}");
+            error.WriteLine($"Position panel: {exception.Message}");
             return 2;
         }
     }

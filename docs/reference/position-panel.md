@@ -10,6 +10,15 @@ process cannot use this window to read memory inside a guest VM.
 ```
 
 The default profile is `position-candidate-profile.json` beside the executable.
+Use the offline check before opening the panel from a copied bundle.
+
+```powershell
+.\RiftReader2.Live.exe position-panel --check-profile
+```
+
+The check reports the profile file's SHA-256 and the expected RIFT executable
+SHA-256. Pass `--profile PATH` to check an explicit profile.
+
 Each launch creates a new evidence session beneath
 `%LOCALAPPDATA%\RiftReader2\Position\`. Explicit paths are also supported:
 

@@ -76,6 +76,18 @@ try {
         (Get-FileHash -LiteralPath $positionProfile).Hash -ne (Get-FileHash -LiteralPath $trackedPositionProfile).Hash) {
         throw 'Published position panel is missing its exact default profile sidecar.'
     }
+    Push-Location -LiteralPath $runDirectory
+    try {
+        $profileOutput = & $captureExecutable position-panel --check-profile
+        if ($LASTEXITCODE -ne 0) { throw 'Published position panel profile check failed.' }
+    }
+    finally { Pop-Location }
+    $profileCheck = $profileOutput | ConvertFrom-Json
+    if ($profileCheck.status -cne 'position-profile-ready' -or $profileCheck.profilePath -ine $positionProfile -or
+        $profileCheck.profileSha256 -ne (Get-FileHash -LiteralPath $trackedPositionProfile).Hash -or
+        $profileCheck.windowOpened -ne $false -or $profileCheck.inputSent -ne $false) {
+        throw 'Published position panel profile check returned invalid evidence.'
+    }
     $savedNativeErrorPreference = $ErrorActionPreference
     try {
         # Windows PowerShell 5.1 treats redirected native stderr as ErrorRecords.

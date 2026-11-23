@@ -133,6 +133,23 @@ try {
     if ($LASTEXITCODE -ne 0 -or $readerHelp[0] -cne 'RiftReader2.Live native tools') {
         throw 'Published native reader failed its startup check.'
     }
+    if ($readerHelp -clike 'position-panel *') {
+        $profile = Join-Path $readerDirectory 'position-candidate-profile.json'
+        Assert-PlainPath $profile
+        if (-not (Test-Path -LiteralPath $profile -PathType Leaf)) {
+            throw "Published native reader is missing the position panel profile: $profile"
+        }
+        if ($readerHelp -clike 'position-panel --check-profile *') {
+            $profileOutput = & $reader position-panel --check-profile
+            if ($LASTEXITCODE -ne 0) { throw 'Published position panel profile failed validation.' }
+            $profileCheck = $profileOutput | ConvertFrom-Json
+            if ($profileCheck.status -cne 'position-profile-ready' -or $profileCheck.inputSent -ne $false -or
+                $profileCheck.windowOpened -ne $false -or $profileCheck.profilePath -ine $profile -or
+                $profileCheck.profileSha256 -ne (Get-FileHash -LiteralPath $profile -Algorithm SHA256).Hash) {
+                throw 'Published reader returned an invalid position panel profile check.'
+            }
+        }
+    }
     $runtime = Get-WgcRuntimeCheck $probe
     if ($runtime.status -ne 'ready') {
         $detail = if ($runtime.missingFiles) { " Missing files: $($runtime.missingFiles -join ', ')." } else { '' }

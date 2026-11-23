@@ -133,6 +133,10 @@ its local path. Registration checks the reader, the WGC runtime files listed
 by the probe, and its offline self-test. It uses the current host's checkout
 settings and needs PowerShell 7 and the published bundle.
 
+Readers that advertise the position panel require its default profile beside
+the executable. If the reader supports `position-panel --check-profile`,
+registration also validates the profile and compares the reported file hash.
+
 `RR2_PHYSICAL_TOOLS_ROOT` selects a different local bundle for the current shell
 or selects the checkout's Debug builds with the value `debug`.
 `RR2_NATIVE_READER` and `RR2_WGC_PROBE` take precedence for their respective tools.

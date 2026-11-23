@@ -31,7 +31,7 @@ internal static class Program
                 return await CurrentBuildSurvivalSampleCommand.RunAsync(
                     args[1..], Console.Out, commandCancellation.Token);
             if (args[0] == "position-panel")
-                return PositionPanelCommand.Run(args[1..]);
+                return PositionPanelCommand.Run(args[1..], Console.Out, Console.Error);
             return await NativeCommandRunner.RunAsync(args, Console.Out, Console.Error, commandCancellation.Token);
         }
         if (!OperatingSystem.IsWindows() || !Environment.Is64BitProcess)
