@@ -320,7 +320,22 @@ def _desktop_capture(host, pid, pinned, directory, result, *, native_reader=None
     capture_python = _local_python(os.environ.get("RR2_DXCAM_PYTHON"), CAPTURE_PYTHON,
                                    "invalid-dxcam-python-path")
     require(capture_python.is_file(), "desktop-capture-environment-unavailable")
-    executable = physical_rift._native_reader_path()
+    executable = physical_rift._native_reader_path(native_reader)
+    probe_script = str(ROOT / "scripts/probe_dxcam_native_pair.py")
+    reader_args = ("--native-reader", str(executable)) if native_reader is not None else ()
+    dependencies = subprocess.run([str(capture_python), probe_script, "--check-dependencies",
+                                  "--expected-host", host, *reader_args],
+                                  cwd=ROOT, capture_output=True, text=True, timeout=20, check=False,
+                                  creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    try:
+        report = json.loads(dependencies.stdout)
+    except ValueError as error:
+        raise ValueError("desktop-capture-dependency-check-failed") from error
+    require(isinstance(report, dict), "desktop-capture-dependency-check-failed")
+    result["desktopDependencies"] = report
+    require(dependencies.returncode == 0 and report.get("status") == "ready",
+            report.get("reason", "desktop-capture-dependency-check-failed"))
+    observe_physical.require_clear_desktop_turn()
     result.update(focusRequested=True, focusMayChange=True, focusChanged=None)
     command = [str(executable), "move-key", "--focus-only", "--pid", str(pid),
                "--expect-start-ticks", pinned["processStartUtcTicks"], "--expect-sha256", pinned["executableSha256"],
@@ -344,13 +359,11 @@ def _desktop_capture(host, pid, pinned, directory, result, *, native_reader=None
     result["focusChanged"] = focus.get("focusAttempt") is not None
     display = _monitor_name(pinned["hwnd"])
     capture = directory / "capture"
-    command = [str(capture_python), str(ROOT / "scripts/probe_dxcam_native_pair.py"),
+    command = [str(capture_python), probe_script,
                "--expected-host", host, "--physical-pid", str(pid), "--display", display,
                "--output", str(capture), "--timeout", "10",
                "--expect-start-ticks", pinned["processStartUtcTicks"],
-               "--expect-sha256", pinned["executableSha256"], "--expect-hwnd", hex(pinned["hwnd"])]
-    if native_reader is not None:
-        command.extend(("--native-reader", str(native_reader)))
+               "--expect-sha256", pinned["executableSha256"], "--expect-hwnd", hex(pinned["hwnd"]), *reader_args]
     completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=30, check=False,
                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     pair_path = capture / "pair.json"

@@ -24,6 +24,9 @@ from scripts import observe_physical, physical_rift
 from scripts.waypoint_progress import write_json_atomic
 
 
+DXCAM_VERSION = "0.3.0"
+
+
 def require(condition, reason):
     if not condition:
         raise ValueError(reason)
@@ -41,7 +44,7 @@ class _DXcamBackend:
     by get_latest_frame, but a nonblocking lock avoids its Event.wait loop.
     """
     def __init__(self):
-        require(importlib.metadata.version("dxcam") == "0.3.0", "dxcam-0.3.0-required")
+        require(importlib.metadata.version("dxcam") == DXCAM_VERSION, f"dxcam-{DXCAM_VERSION}-required")
         import dxcam
         self.module = dxcam
 
@@ -113,7 +116,7 @@ def probe(expected_host, physical_pid, display, output, *, frames=30, timeout=10
     first_frame = last_frame = None
     accepted, waits, duplicate_polls, empty_polls = [], [], 0, 0
     result = {"schemaVersion": 1, "status": "blocked", "machine": expected_host,
-        "diagnosticKind": "dxcam-desktop-composite-pilot/1", "dxcamVersion": "0.3.0",
+        "diagnosticKind": "dxcam-desktop-composite-pilot/1", "dxcamVersion": DXCAM_VERSION,
         "inputSent": False, "focusChanged": False, "nativeCameraBracket": False,
         "requestedFrames": frames, "timeoutSeconds": timeout, "requestedDisplay": display,
         "startedAtUtc": datetime.now(timezone.utc).isoformat(),

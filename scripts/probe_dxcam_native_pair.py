@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import ctypes
 import hashlib
+from importlib import metadata, util
 import json
 import math
 from pathlib import Path
@@ -14,10 +15,35 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from scripts import observe_physical, physical_rift as native
-from scripts.probe_dxcam import _DXcamBackend, _output, _snapshot, require
+from scripts.probe_dxcam import DXCAM_VERSION, _DXcamBackend, _output, _snapshot, require
 from scripts.plot_physical_units import _saved
 from scripts.waypoint_progress import write_json_atomic
 from scripts.live_physical_waypoints import _expected_target, _hwnd_argument
+
+
+def check_dependencies(expected_host, native_reader=None):
+    """Check Save view startup without importing DXcam or selecting a window."""
+    result = {"status": "blocked", "workflow": "dxcam", "ownerHost": socket.gethostname(),
+              "pythonExecutable": sys.executable, "inputSent": False, "focusChanged": False}
+    if not native.is_local_host(expected_host):
+        return dict(result, reason="host-mismatch")
+    missing = [name for module, name in (("dxcam", "dxcam"), ("PIL", "Pillow"),
+                                         ("numpy", "numpy"), ("comtypes", "comtypes"))
+               if util.find_spec(module) is None]
+    if missing:
+        return dict(result, reason="dxcam-python-dependencies-missing", missingPackages=missing)
+    try:
+        version = metadata.version("dxcam")
+    except metadata.PackageNotFoundError:
+        version = None
+    result["dxcamVersion"] = version
+    if version != DXCAM_VERSION:
+        return dict(result, reason=f"dxcam-{DXCAM_VERSION}-required")
+    reader = native.check_native_reader(expected_host, native_reader, kind="facing")
+    result["nativeReader"] = reader
+    if reader["status"] != "ready":
+        return dict(result, reason=reader["reason"])
+    return dict(result, status="ready")
 
 
 class Qpc:
@@ -232,18 +258,31 @@ def probe(expected_host, physical_pid, display, output, *, timeout=10, select=No
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--expected-host", required=True, help="verified local Windows machine name")
-    parser.add_argument("--physical-pid", required=True, type=int)
-    parser.add_argument("--display", required=True)
-    parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--timeout", default=10, type=float)
+    parser.add_argument("--check-dependencies", action="store_true",
+                        help="check the DXcam environment and Save view reader without selecting RIFT")
+    parser.add_argument("--physical-pid", type=int)
+    parser.add_argument("--display")
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--timeout", type=float)
     parser.add_argument("--expect-start-ticks")
     parser.add_argument("--expect-sha256")
     parser.add_argument("--expect-hwnd", type=_hwnd_argument)
     parser.add_argument("--native-reader", type=Path,
                         help="absolute local path to a published RiftReader2.Live.exe")
     args = parser.parse_args(argv)
+    capture_args = (args.physical_pid, args.display, args.output)
+    if args.check_dependencies:
+        if any(value is not None for value in (*capture_args, args.timeout,
+                                                args.expect_start_ticks, args.expect_sha256, args.expect_hwnd)):
+            parser.error("--check-dependencies accepts only --expected-host and --native-reader")
+        result = check_dependencies(args.expected_host, args.native_reader)
+        print(json.dumps(result))
+        return 0 if result["status"] == "ready" else 2
+    if any(value is None for value in capture_args):
+        parser.error("capture requires --physical-pid, --display and --output")
     try:
-        result = probe(args.expected_host, args.physical_pid, args.display, args.output, timeout=args.timeout,
+        result = probe(args.expected_host, args.physical_pid, args.display, args.output,
+                       timeout=10 if args.timeout is None else args.timeout,
                        expected_start_ticks=args.expect_start_ticks, expected_sha256=args.expect_sha256,
                        expected_hwnd=args.expect_hwnd, native_reader=args.native_reader)
     except (ValueError, OSError) as error:

@@ -503,7 +503,23 @@ desktop path. That mode checks the shared Workbridge admission state before
 focusing the pinned RIFT window without keys. Set `RR2_DXCAM_PYTHON` to an
 absolute local Python executable with the packages in
 [requirements-capture.txt](../../requirements-capture.txt) to use an environment
-outside the checkout. The desktop bracket uses the selected Save view reader.
+outside the checkout. Save view uses the selected reader for both the focus step
+and the desktop bracket. It checks the configured capture Python packages and
+reader startup before requesting focus.
+
+From the checkout, run the same dependency check with the local Python and
+[published reader](development.md#publish-the-local-native-reader). It needs no
+RIFT process or display selection.
+
+```powershell
+$rr2CapturePython = $env:RR2_DXCAM_PYTHON
+if (!$rr2CapturePython) { $rr2CapturePython = '.\.local\overlay-venv\Scripts\python.exe' }
+& $rr2CapturePython -B scripts/probe_dxcam_native_pair.py --check-dependencies --expected-host ([Environment]::MachineName) --native-reader $rr2PublishedReader
+```
+
+The check discovers the packages without initializing DXcam and starts the
+native reader in help mode. Display availability is checked during capture.
+
 A successful `artifacts/waypoint-view-*` bundle contains route, original PNG, copied native
 before/after reports with hashes, projection PNG/JSON and `view.json`. If the
 optional visualization environment is available, it also saves `view.rrd` without

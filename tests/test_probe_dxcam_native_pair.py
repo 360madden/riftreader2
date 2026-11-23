@@ -1,6 +1,8 @@
 """Fenced-pair tests inject every clock/device/native/desktop dependency."""
 from copy import deepcopy
+from contextlib import redirect_stdout
 import hashlib
+from io import StringIO
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,6 +13,35 @@ import numpy as np
 from scripts import probe_dxcam_native_pair as pair
 from tests import test_plot_physical_waypoints as fixtures
 from tests import test_probe_dxcam as device_fixture
+
+
+class DependencyTests(unittest.TestCase):
+    def test_dependency_cli_checks_the_selected_reader_without_a_game_process(self):
+        with (patch.object(pair.socket, "gethostname", return_value="RIFT-STATION"),
+              patch.object(pair.util, "find_spec", return_value=object()),
+              patch.object(pair.metadata, "version", return_value=pair.DXCAM_VERSION),
+              patch.object(pair.native, "check_native_reader", return_value={"status": "ready"}) as reader,
+              patch.object(pair.native, "select_physical") as select,
+              redirect_stdout(StringIO()) as output):
+            options = ["--expected-host", "rift-station", "--check-dependencies",
+                       "--native-reader", "published reader.exe"]
+            self.assertEqual(pair.main(options), 0)
+        reader.assert_called_once_with("rift-station", Path("published reader.exe"), kind="facing")
+        select.assert_not_called()
+        report = json.loads(output.getvalue())
+        self.assertFalse(report["inputSent"] or report["focusChanged"])
+
+    def test_missing_packages_and_wrong_host_skip_reader_startup(self):
+        with (patch.object(pair.socket, "gethostname", return_value="RIFT-STATION"),
+              patch.object(pair.util, "find_spec", return_value=None) as find_spec,
+              patch.object(pair.native, "check_native_reader") as reader):
+            wrong_host = pair.check_dependencies("OTHER-PC")
+            find_spec.assert_not_called()
+            report = pair.check_dependencies("RIFT-STATION")
+        reader.assert_not_called()
+        self.assertEqual(wrong_host["reason"], "host-mismatch")
+        self.assertEqual(report["reason"], "dxcam-python-dependencies-missing")
+        self.assertEqual(report["missingPackages"], ["dxcam", "Pillow", "numpy", "comtypes"])
 
 
 class Qpc:

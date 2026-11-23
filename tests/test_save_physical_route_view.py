@@ -514,6 +514,7 @@ class DesktopSaveViewTests(unittest.TestCase):
         self.capture_python = self.root / "capture-python.exe"
         self.capture_python.write_bytes(b"not-executed")
         self.view_reader = None
+        self.dependencies = dict(status="ready", workflow="dxcam", dxcamVersion="0.3.0")
         self.enterContext(patch.dict("os.environ", {"RR2_DXCAM_PYTHON": ""}))
         self.enterContext(patch.object(saved.os, "environ", dict(saved.os.environ, RR2_RERUN_PYTHON="")))
         self.desktop_turn = self.enterContext(patch.object(saved.observe_physical, "require_clear_desktop_turn"))
@@ -554,15 +555,34 @@ class DesktopSaveViewTests(unittest.TestCase):
         self.assertFalse(result["focusChanged"])
         self.process.assert_not_called()
 
+    def test_missing_dxcam_package_refuses_before_focus(self):
+        self.dependencies = dict(status="blocked", reason="dxcam-python-dependencies-missing",
+                                 missingPackages=["dxcam"])
+        result = self.save()
+        self.assertEqual(result["reason"], "dxcam-python-dependencies-missing")
+        self.assertEqual(result["desktopDependencies"]["missingPackages"], ["dxcam"])
+        self.assertFalse(result.get("focusRequested", False))
+        self.assertFalse((self.output / "focus.json").exists())
+        self.process.assert_called_once()
+
     def subprocess(self, command, **kwargs):
         self.assertEqual(kwargs["creationflags"], getattr(subprocess, "CREATE_NO_WINDOW", 0))
         if command[1] == "move-key":
-            self.assertEqual(command, [str(saved.physical_rift.NATIVE_EXE), "move-key", "--focus-only",
+            self.assertEqual(command, [str(self.view_reader or saved.physical_rift.NATIVE_EXE), "move-key", "--focus-only",
                 "--pid", str(self.target["processId"]), "--expect-start-ticks", self.target["processStartUtcTicks"],
                 "--expect-sha256", self.target["executableSha256"], "--expect-hwnd", hex(self.target["hwnd"]), "--json"])
             self.assertEqual(kwargs["timeout"], 10)
             return types.SimpleNamespace(returncode=0, stdout=json.dumps(self.focus))
         if command[1].endswith("probe_dxcam_native_pair.py"):
+            if command[2] == "--check-dependencies":
+                expected = [str(self.capture_python), str(saved.ROOT / "scripts/probe_dxcam_native_pair.py"),
+                            "--check-dependencies", "--expected-host", "AMD-DESKTOP"]
+                if self.view_reader is not None:
+                    expected.extend(("--native-reader", str(self.view_reader)))
+                self.assertEqual(command, expected)
+                self.assertEqual(kwargs["timeout"], 20)
+                return types.SimpleNamespace(returncode=0 if self.dependencies["status"] == "ready" else 2,
+                                             stdout=json.dumps(self.dependencies))
             expected = [str(self.capture_python), str(saved.ROOT / "scripts/probe_dxcam_native_pair.py"),
                 "--expected-host", "AMD-DESKTOP", "--physical-pid", str(self.target["processId"]),
                 "--display", self.fixture.pair["requestedDisplay"], "--output", str(self.output / "capture"),
@@ -603,7 +623,7 @@ class DesktopSaveViewTests(unittest.TestCase):
         self.assertEqual(result["captureBackend"], "desktop")
         self.assertTrue(result["focusRequested"] and result["focusChanged"])
         self.assertFalse(result["inputSent"])
-        self.assertEqual(self.process.call_count, 2)
+        self.assertEqual(self.process.call_count, 3)
         self.monitor.assert_called_once_with(self.target["hwnd"])
         self.wgc.assert_not_called()
         pair = json.loads(Path(result["observation"]).read_text())
@@ -637,7 +657,7 @@ class DesktopSaveViewTests(unittest.TestCase):
         self.focus["desktopInputsDown"] = ["W"]
         result = self.save()
         self.assertEqual(result["status"], "blocked")
-        self.assertEqual(self.process.call_count, 1)
+        self.assertEqual(self.process.call_count, 2)
         self.monitor.assert_not_called()
         self.assertFalse((self.output / "capture").exists())
         self.assertTrue((self.output / "focus.json").is_file())
@@ -646,7 +666,7 @@ class DesktopSaveViewTests(unittest.TestCase):
         self.focus["target"]["processStartUtcTicks"] = "123"
         result = self.save(output=self.root / "wrong-focus-target")
         self.assertEqual(result["reason"], "focus-target-identity-mismatch")
-        self.assertEqual(self.process.call_count, 2)
+        self.assertEqual(self.process.call_count, 4)
         self.wgc.assert_not_called()
 
     def test_desktop_failure_or_tampered_source_never_falls_back_to_wgc(self):
