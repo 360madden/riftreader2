@@ -25,6 +25,17 @@ On the verified local Windows host, add `--include-levels` to the nearby reader 
 
 NPC correlation replays the original level source against its SHA-256 and reports whether the native and Lua numeric candidates agree when it has both. A level result leaves hostility and combat suitability unqualified.
 
+Keep the nearby report and its original native JSON files together to replay
+them from a different checkout. Replay verifies the saved SHA-256 values and
+reconstructs the nearby candidates offline. Supply the original report's
+SHA-256 when you have it.
+
+```powershell
+python -B scripts/physical_nearby_units.py --replay-report COPIED_NEARBY_REPORT_JSON
+# With an independently retained report digest:
+python -B scripts/physical_nearby_units.py --replay-report COPIED_NEARBY_REPORT_JSON --report-sha256 RETAINED_REPORT_SHA256
+```
+
 To compare a saved selected-target profile with a keyed native level report,
 copy the profile directory with its original sources and supply the retained
 SHA-256 of the keyed report. Replay finds the native sources beside the copied

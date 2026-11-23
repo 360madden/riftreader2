@@ -258,6 +258,16 @@ class NearbyUnitTests(unittest.TestCase):
         self.assertFalse((self.dest / "unit-names-native.json").exists())
         self.assertFalse((self.dest / "failure.json").exists())
 
+    def test_empty_replay_rechecks_process_identity_from_position_source(self):
+        path, report = self.invoke(radius=1.0)
+        with patch.object(near.physical_rift, "_native_values", side_effect=self.project):
+            verified, _, _ = original_native_nearby(path)
+            self.assertEqual(verified, report)
+            report["process"]["processId"] = 999
+            path.write_text(json.dumps(report), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "nearby-source-projection-mismatch"):
+                original_native_nearby(path)
+
     def test_source_receipt_process_change_cannot_be_promoted(self):
         selection = {"status": "ready", "target": deepcopy(PROCESS)}
         with TemporaryDirectory() as tmp:
@@ -273,6 +283,30 @@ class NearbyUnitTests(unittest.TestCase):
                        "nativeSourceSha256": hashlib.sha256(data).hexdigest().upper()}
             with self.assertRaisesRegex(ValueError, "source-process-identity-mismatch"):
                 near.source_from_receipt(receipt, path, selection, "unit-positions")
+
+    def test_cli_replays_with_an_optional_original_digest_without_a_live_reader(self):
+        path, report = self.invoke(include_levels=True)
+        digest = hashlib.sha256(path.read_bytes()).hexdigest().upper()
+        with patch.object(near.physical_rift, "_native_values", side_effect=self.project), \
+                patch.object(near, "capture") as live:
+            with redirect_stdout(StringIO()) as stdout:
+                self.assertEqual(0, near.main([
+                    "--replay-report", str(path), "--report-sha256", digest.lower(),
+                ]))
+            verified = json.loads(stdout.getvalue())
+            self.assertTrue(verified["replayVerified"])
+            self.assertFalse(verified["inputSent"])
+            self.assertEqual(verified["reportSha256"], digest)
+            self.assertEqual(verified["processId"], report["process"]["processId"])
+            self.assertEqual(verified["numericLevelCandidates"], 1)
+
+            with redirect_stdout(StringIO()) as stdout:
+                self.assertEqual(2, near.main([
+                    "--replay-report", str(path), "--report-sha256", "0" * 64,
+                ]))
+            self.assertEqual(json.loads(stdout.getvalue())["reason"],
+                             "nearby-native-units-nearby-report-sha-mismatch")
+            live.assert_not_called()
 
     def test_cli_prints_summary_without_unsafe_read(self):
         report = {"status": "nearby-unit-candidates",

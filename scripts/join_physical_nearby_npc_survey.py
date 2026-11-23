@@ -6,7 +6,6 @@ correlation is a research candidate, never combat authorization.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 from pathlib import Path
@@ -16,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts import physical_nearby_units as nearby
+from scripts.physical_nearby_units import original_native_nearby
 from scripts import physical_rift
 from scripts import replay_npc_survey
 
@@ -24,67 +23,6 @@ from scripts import replay_npc_survey
 def require(ok, reason):
     if not ok:
         raise ValueError("nearby-npc-join-" + reason)
-
-
-def _strict_file(path, max_bytes):
-    path = Path(path)
-    require(path.is_file() and not path.is_symlink(), "source-unavailable")
-    with path.open("rb") as stream:
-        raw = stream.read(max_bytes + 1)
-    require(0 < len(raw) <= max_bytes, "source-size")
-    doc = physical_rift._strict_native_json(raw.decode("utf-8-sig"))
-    require(type(doc) is dict, "source-not-object")
-    return doc, hashlib.sha256(raw).hexdigest().upper()
-
-
-def original_native_nearby(source):
-    """Re-derive nearby candidates from the original native reports."""
-    path = Path(source)
-    saved, digest = _strict_file(path, 1_000_000)
-    require(saved.get("schema") == nearby.SCHEMA
-            and saved.get("status") in (
-                "nearby-unit-candidates", "no-nearby-position-candidates")
-            and saved.get("inputSent") is False, "nearby-summary-invalid")
-    host = saved.get("host")
-    require("host" not in saved or physical_rift.valid_host_name(host), "nearby-host-invalid")
-    pos_path = path.parent / "unit-positions-native.json"
-    position_doc, pos_sha = _strict_file(pos_path, 16 * 1024 * 1024)
-    source_shas = saved.get("sourceSha256")
-    require(type(source_shas) is dict
-            and source_shas.get("unitPositions") == pos_sha,
-            "position-source-sha-mismatch")
-    positions = physical_rift._native_values("unit-positions", position_doc)
-    picked, total = nearby.choose_nearby(
-        positions, radius=saved.get("radius"), limit=saved.get("nameLimit"))
-    if picked:
-        names_doc, name_sha = _strict_file(
-            path.parent / "unit-names-native.json", 16 * 1024 * 1024)
-        require(source_shas.get("unitNames") == name_sha,
-                "name-source-sha-mismatch")
-        names = physical_rift._native_values("unit-names", names_doc)
-        rebuilt = nearby.combine(
-            picked, total, position_doc, positions, names_doc, names,
-            pos_sha, name_sha, radius=saved["radius"], limit=saved["nameLimit"], host=host)
-        last_native = names_doc["observation"]["completedAtUtc"]
-        if "unitLevels" in source_shas:
-            levels_doc, level_sha = _strict_file(path.parent / "unit-levels-native.json", 16 * 1024 * 1024)
-            require(source_shas["unitLevels"] == level_sha, "level-source-sha-mismatch")
-            levels = physical_rift._native_values("unit-levels", levels_doc)
-            nearby.add_level_candidates(rebuilt, position_doc, names_doc, levels_doc, levels, level_sha)
-            last_native = levels_doc["observation"]["completedAtUtc"]
-    else:
-        require(saved.get("status") == "no-nearby-position-candidates"
-                and saved.get("samples") == []
-                and saved.get("namedCandidateCount") == 0
-                and saved.get("totalNearbyPositionCandidates") == 0
-                and "numericLevelCandidateCount" not in saved
-                and "unitLevels" not in source_shas
-                and source_shas.get("unitNames") is None,
-                "empty-nearby-summary-mismatch")
-        rebuilt = saved
-        last_native = position_doc["observation"]["completedAtUtc"]
-    require(saved == rebuilt, "nearby-source-projection-mismatch")
-    return saved, digest, (position_doc["observation"]["startedAtUtc"], last_native)
 
 
 def _seconds(before, after):

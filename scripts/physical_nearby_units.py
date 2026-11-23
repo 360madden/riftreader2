@@ -185,6 +185,87 @@ def add_level_candidates(report, position_raw, name_raw, level_raw, levels, sour
                                "Position, displayed level, hostility and combat suitability remain unqualified.")
 
 
+def _empty_nearby_report(pos_raw, positions, pos_hash, *, radius, limit, host=None):
+    return {
+        "schema": SCHEMA, "status": "no-nearby-position-candidates",
+        **({"host": host} if host is not None else {}),
+        "process": {key: pos_raw["observation"]["identity"][key]
+                    for key in ("processId", "processStartUtcTicks",
+                                "executablePath", "executableSha256")},
+        "selfKey": positions["selfKey"],
+        "selfPositionCandidate":
+            pos_raw["observation"]["selfPositionCandidate"],
+        "radius": radius, "nameLimit": limit,
+        "unitsExamined": positions["unitsExamined"],
+        "positionsFound": positions["positionsFound"],
+        "totalNearbyPositionCandidates": 0,
+        "namedCandidateCount": 0, "samples": [],
+        "sourceSha256": {"unitPositions": pos_hash, "unitNames": None},
+        "worldCoverage": "bounded-unit-manager-subset",
+        "worldIdentityStatus": "unavailable", "inputSent": False,
+        "qualification": ("No nearby position candidates in one bounded "
+                          "loaded-unit-manager scan; this is not a "
+                          "world-wide absence claim or gameplay decision.")
+    }
+
+
+def read_hashed_json(path, max_bytes):
+    path = Path(path)
+    require(path.is_file() and not path.is_symlink(), "source-unavailable")
+    with path.open("rb") as stream:
+        raw = stream.read(max_bytes + 1)
+    require(0 < len(raw) <= max_bytes, "source-size")
+    doc = physical_rift._strict_native_json(raw.decode("utf-8-sig"))
+    require(type(doc) is dict, "source-not-object")
+    return doc, hashlib.sha256(raw).hexdigest().upper()
+
+
+def original_native_nearby(source, *, expected_sha256=None):
+    """Re-derive nearby candidates from the original native reports."""
+    path = Path(source)
+    saved, digest = read_hashed_json(path, 1_000_000)
+    if expected_sha256 is not None:
+        require(isinstance(expected_sha256, str) and digest == expected_sha256.upper(),
+                "nearby-report-sha-mismatch")
+    require(saved.get("schema") == SCHEMA
+            and saved.get("status") in (
+                "nearby-unit-candidates", "no-nearby-position-candidates")
+            and saved.get("inputSent") is False, "nearby-summary-invalid")
+    host = saved.get("host")
+    require("host" not in saved or physical_rift.valid_host_name(host), "nearby-host-invalid")
+    pos_path = path.parent / "unit-positions-native.json"
+    position_doc, pos_sha = read_hashed_json(pos_path, 16 * 1024 * 1024)
+    source_shas = saved.get("sourceSha256")
+    require(type(source_shas) is dict
+            and source_shas.get("unitPositions") == pos_sha,
+            "position-source-sha-mismatch")
+    positions = physical_rift._native_values("unit-positions", position_doc)
+    picked, total = choose_nearby(
+        positions, radius=saved.get("radius"), limit=saved.get("nameLimit"))
+    if picked:
+        names_doc, name_sha = read_hashed_json(
+            path.parent / "unit-names-native.json", 16 * 1024 * 1024)
+        require(source_shas.get("unitNames") == name_sha,
+                "name-source-sha-mismatch")
+        names = physical_rift._native_values("unit-names", names_doc)
+        rebuilt = combine(
+            picked, total, position_doc, positions, names_doc, names,
+            pos_sha, name_sha, radius=saved["radius"], limit=saved["nameLimit"], host=host)
+        last_native = names_doc["observation"]["completedAtUtc"]
+        if "unitLevels" in source_shas:
+            levels_doc, level_sha = read_hashed_json(path.parent / "unit-levels-native.json", 16 * 1024 * 1024)
+            require(source_shas["unitLevels"] == level_sha, "level-source-sha-mismatch")
+            levels = physical_rift._native_values("unit-levels", levels_doc)
+            add_level_candidates(rebuilt, position_doc, names_doc, levels_doc, levels, level_sha)
+            last_native = levels_doc["observation"]["completedAtUtc"]
+    else:
+        rebuilt = _empty_nearby_report(position_doc, positions, pos_sha,
+                                       radius=saved["radius"], limit=saved["nameLimit"], host=host)
+        last_native = position_doc["observation"]["completedAtUtc"]
+    require(saved == rebuilt, "nearby-source-projection-mismatch")
+    return saved, digest, (position_doc["observation"]["startedAtUtc"], last_native)
+
+
 def capture(expected_host, pid, destination, *, radius=35.0, limit=18, include_levels=False, native_reader=None,
             choose=physical_rift.select_physical,
             read=physical_rift.read_native):
@@ -237,29 +318,8 @@ def capture(expected_host, pid, destination, *, radius=35.0, limit=18, include_l
                 require(receipt_levels.get("nativeSourceSha256") is not None, "level-source-sha-missing")
                 add_level_candidates(report, pos_raw, names_raw, level_raw, levels, level_hash)
         else:
-            # A valid bounded scan may legitimately find zero nearby units.
-            # Preserve the original source and do not fabricate a name lookup.
-            report = {
-                "schema": SCHEMA, "status": "no-nearby-position-candidates",
-                "host": host,
-                "process": {key: pos_raw["observation"]["identity"][key]
-                            for key in ("processId", "processStartUtcTicks",
-                                        "executablePath", "executableSha256")},
-                "selfKey": positions["selfKey"],
-                "selfPositionCandidate":
-                    pos_raw["observation"]["selfPositionCandidate"],
-                "radius": radius, "nameLimit": limit,
-                "unitsExamined": positions["unitsExamined"],
-                "positionsFound": positions["positionsFound"],
-                "totalNearbyPositionCandidates": 0,
-                "namedCandidateCount": 0, "samples": [],
-                "sourceSha256": {"unitPositions": pos_hash, "unitNames": None},
-                "worldCoverage": "bounded-unit-manager-subset",
-                "worldIdentityStatus": "unavailable", "inputSent": False,
-                "qualification": ("No nearby position candidates in one bounded "
-                                  "loaded-unit-manager scan; this is not a "
-                                  "world-wide absence claim or gameplay decision.")
-            }
+            report = _empty_nearby_report(pos_raw, positions, pos_hash, radius=radius,
+                                          limit=limit, host=host)
         require(choose(expected_host, pid).get("target") ==
                 target, "process-changed-after-reads")
         path = destination / "nearby-report.json"
@@ -279,32 +339,48 @@ def capture(expected_host, pid, destination, *, radius=35.0, limit=18, include_l
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument("--expected-host",
-                        required=True)
-    parser.add_argument("--physical-pid", required=True, type=int)
-    parser.add_argument("--radius", type=float, default=35.0)
-    parser.add_argument("--max-names", type=int, default=18)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--physical-pid", type=int)
+    mode.add_argument("--replay-report", type=Path, help="verify saved nearby native evidence offline")
+    parser.add_argument("--expected-host", help="required for physical capture")
+    parser.add_argument("--radius", type=float, help="capture radius (default 35)")
+    parser.add_argument("--max-names", type=int, help="maximum name candidates (default 18)")
     parser.add_argument("--include-levels", action="store_true",
                         help="read up to 12 nearby numeric-level candidates, named units first")
     parser.add_argument("--native-reader", type=Path, help="absolute path to a local published reader")
-    parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--report-sha256", help="optional retained SHA-256 for --replay-report")
     args = parser.parse_args(argv)
+    report_sha = None
+    if args.replay_report is not None:
+        if args.include_levels or any(value is not None for value in (
+                args.expected_host, args.radius, args.max_names, args.native_reader, args.output_dir)):
+            parser.error("--replay-report accepts only --report-sha256")
+    elif not args.expected_host or args.output_dir is None or args.report_sha256 is not None:
+        parser.error("--physical-pid requires --expected-host and --output-dir; --report-sha256 is for replay")
     try:
-        path, report = capture(args.expected_host, args.physical_pid,
-                               args.output_dir, radius=args.radius,
-                               limit=args.max_names, include_levels=args.include_levels,
-                               native_reader=args.native_reader)
+        if args.replay_report is not None:
+            path = args.replay_report
+            report, report_sha, _ = original_native_nearby(path, expected_sha256=args.report_sha256)
+        else:
+            path, report = capture(args.expected_host, args.physical_pid, args.output_dir,
+                                   radius=35.0 if args.radius is None else args.radius,
+                                   limit=18 if args.max_names is None else args.max_names,
+                                   include_levels=args.include_levels, native_reader=args.native_reader)
     except (ValueError, OSError, TypeError, KeyError, AttributeError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:240],
                           "inputSent": False}))
         return 2
-    print(json.dumps({"status": report["status"], "processId": args.physical_pid,
+    print(json.dumps({"status": report["status"],
+                      "processId": args.physical_pid if report_sha is None else report["process"]["processId"],
                       "withinRadius": report["totalNearbyPositionCandidates"],
                       "reported": len(report["samples"]),
                       "namedCandidates": report["namedCandidateCount"],
                       **({"numericLevelCandidates": report.get("numericLevelCandidateCount", 0)}
-                         if args.include_levels else {}),
-                      "output": str(path), "inputSent": False}))
+                         if args.include_levels or "numericLevelCandidateCount" in report else {}),
+                      **({"replayVerified": True, "captureHost": report.get("host"),
+                          "reportSha256": report_sha} if report_sha is not None else {"output": str(path)}),
+                      "inputSent": False}))
     return 0
 
 

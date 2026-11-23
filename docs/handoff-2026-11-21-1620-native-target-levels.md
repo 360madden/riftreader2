@@ -6,6 +6,11 @@ for the same unit, entity, player and process epoch. This covers the native
 comparison in P0. Independent RIFT UI or Lua evidence remains pending.
 [Replaying the native comparison](reference/physical-native-nearby-units-2026-11-21.md#numeric-level-candidates)
 
+A later read-only LEGION observation on PID 31684 found no selected unit at either
+endpoint and returned 10 named nearby units with native numeric level candidates.
+The standalone nearby replay reproduced those counts from four copied JSON files
+without a live reader. [Nearby replay](../artifacts/native-level-passive-legion-p31684-20261123/nearby-replay.json)
+
 LEGION passed the NPC survey's installed-addon and published-reader checks,
 including the keyed native level command. The generated capture command keeps
 the reader path, process start ticks, executable hash and deadline from

@@ -221,7 +221,7 @@ def prepare(host, pid, destination, *, radius=35.0, limit=12, include_levels=Fal
 def replay_plan(path):
     """Audit saved preparation evidence without reading the current game or addon install."""
     path = Path(path)
-    plan, digest = join._strict_file(path, 256 * 1024)
+    plan, digest = nearby.read_hashed_json(path, 256 * 1024)
     require(plan.get("schema") in (SCHEMA, LEGACY_SCHEMA)
             and plan.get("status") == "prepared-not-activated"
             and plan.get("inputSent") is False and plan.get("addonActivated") is False
