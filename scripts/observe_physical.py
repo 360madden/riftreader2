@@ -177,9 +177,9 @@ def _workbridge_response(text):
 
 
 def _missing_workbridge_capture_runners(bridge):
-    # The active service launches these relative to its own deployed dist directory.
+    # Include the shared admission module imported by the capture runner and service.
     missing = []
-    for relative in ("dist/desktop-ui.mjs", "dist/desktop-capture.mjs"):
+    for relative in ("dist/desktop-ui.mjs", "dist/desktop-capture.mjs", "dist/desktop-turn-admission.mjs"):
         path = bridge / relative
         _plain_path(path)
         if not path.is_file():

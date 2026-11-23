@@ -54,7 +54,7 @@ class PhysicalTests(unittest.TestCase):
     @staticmethod
     def install_desktop_files(root):
         (root / "dist").mkdir()
-        for name in ("desktop-ui.mjs", "desktop-capture.mjs"):
+        for name in ("desktop-ui.mjs", "desktop-capture.mjs", "desktop-turn-admission.mjs"):
             (root / "dist" / name).touch()
 
     def test_desktop_turn_check_refuses_missing_directory_locks_and_quarantine(self):
@@ -388,6 +388,19 @@ class PhysicalTests(unittest.TestCase):
         self.assertEqual(result, {"status": "blocked", "reason": "desktop-node-runtime-unavailable",
                                   "missingFiles": ["dist/desktop-ui.mjs"]})
         run.assert_not_called()
+
+    def test_missing_admission_module_blocks_discovery_and_capture_with_both_entry_scripts_present(self):
+        (physical.BRIDGE / "dist/desktop-turn-admission.mjs").unlink()
+        with patch.object(physical, "_run", return_value=NODE_VERSION) as run, \
+             patch.object(physical, "_identity") as identity, patch.object(physical, "_call") as call:
+            result = physical.check_workbridge_capture_service(physical.BRIDGE)
+            self.assertEqual(result["status"], "blocked")
+            self.assertEqual(result["missingFiles"], ["dist/desktop-turn-admission.mjs"])
+            self.assertEqual(self.capture()["reason"], "desktop-workbridge-runner-files-missing")
+            run.assert_called_once_with([self.node, "--version"], 5)
+            identity.assert_not_called()
+            call.assert_not_called()
+            self.assertFalse((self.root / "run").exists())
 
     def test_explicit_invalid_or_missing_cli_refuses_without_using_default(self):
         cases = (("", "invalid-workbridge-cli-root"), ("relative", "invalid-workbridge-cli-root"),

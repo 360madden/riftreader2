@@ -56,8 +56,9 @@ runtime. Set `RR2_WGC_PROBE` to the absolute path of a locally published
 `PhysicalWgcProbe.exe` to use it for dependency checks and captures. The output
 gives the probe exit code if it fails and identifies the
 Python interpreter to use for a capture or for installing Pillow. The Workbridge
-check inspects `dist/desktop-ui.mjs` and `dist/desktop-capture.mjs` in the active
-deployment and checks the local Node version. With those prerequisites present,
+check looks for `dist/desktop-ui.mjs`, `dist/desktop-capture.mjs`, and
+`dist/desktop-turn-admission.mjs` in the active deployment and checks the local
+Node version. With those prerequisites present,
 it checks registration of `desktop_windows` and `desktop_capture_window` on the
 running service. A `RUNTIME_MISMATCH` then gives the CLI and service versions.
 `missingFiles` lists deployed runners even when the configured CLI or Node is

@@ -30,9 +30,10 @@ reproduced 106 distinct frames and zero observed A–B–A cycles. Live
 changed-target and nonce-bound NPC confirmation remain pending.
 [Passive Telemetry replay](../artifacts/telemetry-passive-legion-p31684-20261123/independent-replay.json)
 
-Workbridge capture still reports missing `dist/desktop-ui.mjs` and
-`dist/desktop-capture.mjs`. The AMD-DESKTOP process observations below are dated
-evidence. [Portable checkout setup](workflows/development.md#reuse-local-tools-from-a-fresh-checkout)
+Workbridge capture reports missing `dist/desktop-ui.mjs`,
+`dist/desktop-capture.mjs`, and `dist/desktop-turn-admission.mjs` on LEGION.
+WGC passed its dependency checks. The AMD-DESKTOP process observations below
+are dated evidence. [Portable checkout setup](workflows/development.md#reuse-local-tools-from-a-fresh-checkout)
 · [LEGION validation log](../artifacts/validation-legion-6c21976.log)
 
 **Machine verified:** **AMD-DESKTOP**, from machine-local Windows PowerShell `[Environment]::MachineName` (exit 0 at 16:20:19 EST); Workbridge **0.16.5-dev** rooted at `C:\work`.\
