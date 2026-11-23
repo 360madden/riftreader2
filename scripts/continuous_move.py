@@ -1181,7 +1181,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--expected-host", required=True, help="verified local Windows machine name")
     parser.add_argument("--physical-pid", required=True, type=int)
-    parser.add_argument("--basis", type=Path, help="override the local host's movement calibration file")
+    parser.add_argument("--basis", type=Path, help="local movement calibration file or complete folder")
     parser.add_argument("--x", required=True, type=float)
     parser.add_argument("--z", required=True, type=float)
     parser.add_argument("--execute", action="store_true")

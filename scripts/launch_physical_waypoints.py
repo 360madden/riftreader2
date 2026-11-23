@@ -15,8 +15,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts import physical_rift
-from scripts.physical_move_basis_waypoint import read_basis
-from scripts.physical_waypoints import PhysicalAdapter, launch_window, movement_basis_path
+from scripts.physical_waypoints import PhysicalAdapter, launch_window, movement_basis_path, read_waypoints_basis
 
 
 def start_window_process(arguments):
@@ -52,7 +51,7 @@ def check_local_setup(physical_pid=None, basis=None, *, dependencies_only=False)
               "movementBasis": {"status": "present", "path": str(basis_path)}}
     if not reader.is_file():
         checks["nativeReader"].update(status="blocked", reason="native-reader-not-built")
-    if not basis_path.is_file():
+    if not (basis_path.is_file() or basis_path.is_dir()):
         checks["movementBasis"].update(status="blocked", reason="movement-basis-missing")
 
     if dependencies_only:
@@ -61,7 +60,7 @@ def check_local_setup(physical_pid=None, basis=None, *, dependencies_only=False)
             checks["nativeReader"].update(status="blocked", reason=probe["reason"])
         if checks["movementBasis"]["status"] == "present":
             try:
-                calibration, _ = read_basis(basis_path)
+                calibration, _ = read_waypoints_basis(basis_path)
                 if calibration["identity"]["machine"].casefold() != host.casefold():
                     raise ValueError("movement-basis-host-mismatch")
             except (OSError, ValueError) as error:
@@ -103,7 +102,7 @@ def main(argv=None):
         argv = argv[1:]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--physical-pid", type=int, help="required when several RIFT clients are running")
-    parser.add_argument("--basis", type=Path, help="override the local host's movement calibration file")
+    parser.add_argument("--basis", type=Path, help="local movement calibration file or complete folder")
     parser.add_argument("--view-native-reader", type=Path,
                         help="absolute path to a local published reader for Save view telemetry")
     parser.add_argument("--route", type=Path)

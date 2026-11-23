@@ -928,7 +928,9 @@ For a portable calibration folder, place `w.json`, `s.json`, `q.json`, `e.json`,
 and `d-after.json` beside the preflight summary and `settled-facing.json`. Build
 `movement-basis.json` once. You can copy the folder to another checkout and
 verify it there. Verification recomputes the basis from the retained files and
-checks their hashes against the saved basis.
+checks their hashes against the saved basis. Pass the complete folder to
+`--basis` or set `RR2_WAYPOINTS_BASIS` to its absolute path. Waypoints and doctor
+verify the folder before using its calibration.
 
 ```powershell
 python -B scripts/physical_move_basis.py --bundle artifacts/NEW_CALIBRATION_PREFLIGHT

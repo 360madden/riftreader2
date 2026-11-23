@@ -478,6 +478,19 @@ def movement_basis_path(host, basis_path=None):
     return ROOT / "config" / f"physical-movement-basis.{host.lower()}.json"
 
 
+def read_waypoints_basis(path):
+    if not path.is_dir():
+        return read_basis(path)
+    from scripts.physical_move_basis import BUNDLE_REPORT, calibration_bundle
+
+    _plain_path(path)
+    verified = calibration_bundle(path, verify=True)
+    basis, digest = read_basis(path / BUNDLE_REPORT)
+    if digest != verified["basisSha256"]:
+        raise WaypointError("calibration-bundle-basis-changed")
+    return basis, digest
+
+
 class PhysicalAdapter:
     """Fresh epoch-pinned input, with reusable numerical calibration seeds."""
 
@@ -495,8 +508,8 @@ class PhysicalAdapter:
         basis_path = movement_basis_path(host, basis_path)
         if not basis_path.exists():
             raise WaypointError(f"Movement calibration for {host} is missing at {basis_path}. "
-                                "Supply --basis or RR2_WAYPOINTS_BASIS with a measured basis for this host, build and player.")
-        self.basis, self.basis_sha = read_basis(basis_path)
+                                "Supply a measured basis for this host, build and player via --basis or RR2_WAYPOINTS_BASIS.")
+        self.basis, self.basis_sha = read_waypoints_basis(basis_path)
         ident = self.basis["identity"]
         if (ident["machine"].casefold() != host.casefold()
                 or ident["gameBuildSha256"].casefold() != self.target["executableSha256"].casefold()):
@@ -5197,7 +5210,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--expected-host", required=True, help="verified local Windows machine name")
     parser.add_argument("--physical-pid", required=True, type=int)
-    parser.add_argument("--basis", type=Path, help="override the local host's movement calibration file")
+    parser.add_argument("--basis", type=Path, help="local movement calibration file or complete folder")
     parser.add_argument("--view-native-reader", type=Path,
                         help="absolute path to a local published reader for Save view telemetry")
     parser.add_argument("--route", type=Path, help="load a waypoint JSON into the window without running it")

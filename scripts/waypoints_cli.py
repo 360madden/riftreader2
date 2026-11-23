@@ -215,7 +215,7 @@ def build_parser():
             p.add_argument("--pid", type=positive, default=argparse.SUPPRESS,
                            help="with --local: select one physical RIFT PID")
             p.add_argument("--basis", type=Path, default=argparse.SUPPRESS,
-                           help="with --local: check a specific movement calibration file")
+                           help="with --local: check a local movement calibration file or folder")
     for group, verbs in {
         "app":"list open show hide close", "route":"list load save new add update remove reorder select undo validate run context tag-zone",
         "zone":"status refresh", "library":"list save import load show select",

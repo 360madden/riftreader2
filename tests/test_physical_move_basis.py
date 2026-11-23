@@ -16,6 +16,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts import physical_move_basis as basis
+from scripts import launch_physical_waypoints as launcher
 from scripts.physical_move_basis_waypoint import read_basis
 from scripts.physical_waypoints import PhysicalAdapter
 from scripts import prepare_physical_move_calibration as preflight
@@ -237,6 +238,25 @@ class PhysicalMoveBasisTests(unittest.TestCase):
         self.assertFalse(report["movementEligible"])
         self.assertEqual(read_basis(moved / basis.BUNDLE_REPORT)[1], digest)
 
+        target, _, _ = preflight.verify_preflight(moved / preflight.SUMMARY)
+        host = target["hostName"]
+        reader = self.root / "reader.exe"
+        reader.touch()
+        with patch.dict("os.environ", {"RR2_WAYPOINTS_BASIS": str(moved)}), \
+             patch.object(launcher.socket, "gethostname", return_value=host), \
+             patch.object(launcher, "_check_tkinter", return_value={"status": "available"}), \
+             patch.object(launcher.physical_rift, "check_native_reader", return_value={"status": "ready"}), \
+             patch.object(launcher.physical_rift, "NATIVE_EXE", reader), \
+             patch.object(launcher.physical_rift, "select_physical") as select, \
+             patch.object(PhysicalAdapter, "read", return_value=SimpleNamespace(bearing=12)):
+            check = launcher.check_local_setup(dependencies_only=True)
+            self.assertTrue(check["ready"])
+            self.assertEqual(check["checks"]["movementBasis"]["path"], str(moved))
+            select.assert_not_called()
+            select.return_value = {"status": "ready", "target": target}
+            adapter = PhysicalAdapter(host, target["processId"])
+            self.assertEqual(adapter.basis_sha, digest)
+
     def test_bundle_rejects_valid_json_edits_to_sources_and_saved_rates(self):
         folder = self.calibration_folder()
         basis.calibration_bundle(folder)
@@ -256,7 +276,7 @@ class PhysicalMoveBasisTests(unittest.TestCase):
         receipt_data["annotation"] = "Edited without changing the calculated motion"
         source.write_text(json.dumps(receipt_data), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "calibration-bundle-basis-mismatch"):
-            basis.calibration_bundle(folder, verify=True)
+            launcher.read_waypoints_basis(folder)
 
     def test_basis_from_a_third_host_can_be_reopened_and_rejects_mixed_hosts(self):
         host = "RR2_FIELD-PC"
