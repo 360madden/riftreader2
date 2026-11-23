@@ -15,8 +15,9 @@ checkout and Python it used.
 
 Check the prepared-map toolchain from the RR2 checkout before planning.
 The check uses RiftWorld's configured Python, verifies the pinned dependency
-checkout and JARs, and starts Java through JPype to load Recast and Detour.
-It needs no map or running RIFT process.
+checkout and JARs, and starts Java through JPype to load Recast and Detour. It
+also checks the RiftWorld APIs used to prepare an area and validate its
+destination receipt. It needs no map or running RIFT process.
 
 ```powershell
 $rr2Python = $env:RIFTREADER2_PYTHON
@@ -36,8 +37,10 @@ $rr2Host = [Environment]::MachineName
   --riftworld-root $worldRoot --riftworld-python $worldPython --riftworld-upstream $assetDumperRoot
 ```
 
-Add `--build PATH` to verify a saved Detour build and its artifacts. If its
-recorded dependency path is unavailable, set `RR2_RIFTWORLD_UPSTREAM` to the
+Add `--build PATH` to scope the check to a saved Detour build and its artifacts.
+The `areaPreparation` result still reports whether this RiftWorld checkout can
+prepare a fresh area. If the build's recorded dependency path is unavailable,
+set `RR2_RIFTWORLD_UPSTREAM` to the
 local pinned RiftAssetDumper checkout. Both dependency checks use this setting,
 including `rr2-check-dependencies.cmd --workflow prepared-maps`.
 `--riftworld-upstream PATH` takes precedence when passed to the planner.

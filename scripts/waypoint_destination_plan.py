@@ -39,10 +39,31 @@ RIFTWORLD_ROOT = ROOT.parent / "RiftWorld"
 RIFTWORLD_REGISTRATION_SCHEMA = "rr2.riftworld-toolchain/1"
 
 RIFTWORLD_STARTUP_PROBE = r"""
+from inspect import signature
 import json
 from pathlib import Path
 import shutil
 import sys
+
+def area_preparation_check(navigation):
+    try:
+        from riftworld import preparation
+        from riftworld.rr2 import validate_destination_receipt
+        from riftworld.storage import ensure_processing_space
+
+        if Path(preparation.__file__).resolve() != Path.cwd() / "riftworld/preparation.py":
+            raise ValueError("RiftWorld preparation was loaded from an unexpected checkout")
+        signature(preparation.prepare_area).bind(None, None, scene_store=None, patch_store=None,
+                                                 preparation_store=None, allow_partial_navigation=True)
+        signature(navigation.build_navigation).bind(None, None, bounds=None, profile=None,
+                                                    upstream=None, coverage=None, context=None)
+        signature(preparation.prepared_navigation_handoff).bind(None, request_path=None, profile_path=None,
+                                                                 navigation_descriptor=None)
+        signature(validate_destination_receipt).bind(None, None)
+        signature(ensure_processing_space).bind(None)
+    except (ImportError, AttributeError, TypeError, ValueError) as error:
+        return {"status": "blocked", "reason": str(error)[:400]}
+    return {"status": "available"}
 
 result = {"status": "blocked"}
 stage = "riftworld-import"
@@ -54,6 +75,7 @@ try:
     if query_tool != (Path.cwd() / "tools" / "query_destination.py").resolve():
         raise ValueError(f"Destination query tool was loaded from an unexpected checkout: {query_tool}")
     result["queryTool"] = str(query_tool)
+    result["areaPreparation"] = area_preparation_check(navigation)
 
     stage = "jpype-import"
     import jpype
@@ -89,6 +111,9 @@ try:
     jpype.JClass("org.recast4j.recast.RecastBuilder")
     jpype.JClass("org.recast4j.detour.NavMeshQuery")
     result["javaVersion"] = str(jpype.JClass("java.lang.System").getProperty("java.version"))
+    stage = "area-preparation"
+    if not supplied_build and result["areaPreparation"]["status"] == "blocked":
+        raise ValueError(result["areaPreparation"]["reason"])
     result["status"] = "ready"
 except (Exception, SystemExit) as error:
     result.update(failedCheck=stage, reason=str(error)[:400])
@@ -1170,7 +1195,7 @@ def parser():
     result.add_argument("--catalog", type=Path)
     mode = result.add_mutually_exclusive_group(required=True)
     mode.add_argument("--check-dependencies", action="store_true",
-                      help="check the local RiftWorld Python, JDK and pinned navigation dependencies")
+                      help="check the local map preparation toolchain, or one saved build with --build")
     mode.add_argument("--register-dependencies", action="store_true",
                       help="verify and remember the local toolchain for this checkout")
     result.add_argument("--expected-host", help="verified local Windows hostname for --register-dependencies")

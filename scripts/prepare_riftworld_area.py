@@ -33,6 +33,7 @@ def main(argv=None):
     from riftworld import preparation
     from riftworld.core import read_json, write_json
     from riftworld.navigation import build_navigation
+    from riftworld.preparation import prepared_navigation_handoff
     from riftworld.storage import ensure_processing_space
 
     if Path(preparation.__file__).resolve() != world / "riftworld/preparation.py":
@@ -72,7 +73,7 @@ def main(argv=None):
 
     navigation = {"requested": True, "status": "built", "build": build}
     write_json(receipt, {**handle.run, "navigation": navigation})
-    handoff = preparation.prepared_navigation_handoff(
+    handoff = prepared_navigation_handoff(
         handle, request_path=args.request, profile_path=args.profile,
         navigation_descriptor=descriptor,
     )

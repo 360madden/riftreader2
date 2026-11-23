@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import io
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -141,6 +142,40 @@ class DestinationPlanTests(unittest.TestCase):
                                                runner=run)
         self.assertEqual(result["failedCheck"], "riftassetdumper-path")
         run.assert_not_called()
+
+    @unittest.skipUnless(shutil.which("git"), "navigation dependency probe requires Git")
+    def test_dependency_probe_requires_fresh_preparation_only_for_general_check(self):
+        upstream = self.world / "asset dumper"
+        upstream.mkdir()
+        (self.world / "riftworld").mkdir()
+        modules = {
+            "tools/__init__.py": "",
+            "tools/nav_patch.py": "def resolve_java_home(): return 'fixture-jdk'\n"
+                                  "def verify_upstream(upstream): return {}\n",
+            "riftworld/__init__.py": "",
+            "riftworld/preparation.py": "",
+            "riftworld/rr2.py": "def validate_destination_receipt(candidate, receipt): pass\n",
+            "riftworld/storage.py": "def ensure_processing_space(path): pass\n",
+            "riftworld/navigation.py": "def _load_upstream(upstream): pass\n"
+                                       "def _read_manifest(directory):\n"
+                                       "    return {'buildId': 'retained-build', 'dependencies': {}}\n",
+            "jpype.py": "__version__ = 'fixture'\n"
+                        "class System:\n"
+                        "    @staticmethod\n"
+                        "    def getProperty(name): return '21'\n"
+                        "def JClass(name): return System\n",
+        }
+        for relative, source in modules.items():
+            (self.world / relative).write_text(source, encoding="utf-8")
+        options = {"riftworld_root": self.world, "riftworld_python": sys.executable,
+                   "riftworld_upstream": upstream}
+        full = bridge.check_dependencies(**options)
+        self.assertEqual(full["status"], "blocked")
+        self.assertEqual(full["navigationRuntime"]["failedCheck"], "area-preparation")
+        saved = bridge.check_dependencies(**options, build=self.build)
+        self.assertEqual(saved["status"], "ready")
+        self.assertEqual(saved["navigationRuntime"]["areaPreparation"]["status"], "blocked")
+        self.assertEqual(saved["navigationRuntime"]["navigationBuild"]["buildId"], "retained-build")
 
     def test_dependency_cli_refuses_to_execute(self):
         with patch.object(bridge, "check_dependencies") as check, contextlib.redirect_stderr(io.StringIO()):
