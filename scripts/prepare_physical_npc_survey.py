@@ -9,7 +9,6 @@ import argparse
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
-import os
 from pathlib import Path
 import re
 import secrets
@@ -21,6 +20,7 @@ if str(ROOT) not in sys.path:
 
 from scripts import physical_nearby_units as nearby
 from scripts import join_physical_nearby_npc_survey as join
+from scripts import observe_physical
 from scripts import physical_rift
 
 SCHEMA = "rr2-npc-survey-preparation/1"
@@ -29,6 +29,17 @@ SCHEMA = "rr2-npc-survey-preparation/1"
 def require(condition, reason):
     if not condition:
         raise ValueError("npc-survey-prepare-" + reason)
+
+
+def default_casting_directory():
+    code, text = observe_physical._run([
+        observe_physical.POWERSHELL, "-NoProfile", "-NonInteractive", "-Command",
+        "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);"
+        "[Environment]::GetFolderPath('MyDocuments')"
+    ], timeout=10)
+    documents = Path(text.strip())
+    require(code == 0 and documents.is_absolute(), "provide-installed-casting-directory")
+    return documents / "RIFT" / "Interface" / "AddOns" / "RiftReader2Casting"
 
 
 def installed_survey(casting_dir):
@@ -74,13 +85,7 @@ def prepare(host, pid, destination, *, radius=35.0, limit=12,
             and type(radius) in (int, float) and not isinstance(radius, bool)
             and 0 < radius <= 50,
             "invalid-host-pid-or-bounds")
-    if casting_dir is None:
-        one_drive = os.environ.get("OneDrive")
-        require(type(one_drive) is str and one_drive,
-                "provide-installed-casting-directory")
-        casting_dir = (Path(one_drive) / "Documents" / "RIFT" /
-                       "Interface" / "AddOns" / "RiftReader2Casting")
-    addon = installed_survey(casting_dir)
+    addon = installed_survey(default_casting_directory() if casting_dir is None else casting_dir)
     output = Path(destination)
     if not output.is_absolute():
         output = ROOT / output

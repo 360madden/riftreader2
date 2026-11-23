@@ -107,6 +107,13 @@ class NPCPreparationTests(unittest.TestCase):
         self.assertEqual(self.native_call_count, 1)
         self.assertLessEqual(len(result["inGameBindCommand"]), 270)
 
+    def test_default_installed_addon_uses_windows_documents(self):
+        documents = self.dir / "Redirected Documents"
+        with patch.object(prep.observe_physical, "_run",
+                          return_value=(0, str(documents) + "\n")):
+            self.assertEqual(prep.default_casting_directory(), documents / "RIFT" /
+                             "Interface" / "AddOns" / "RiftReader2Casting")
+
     def test_no_named_candidates_creates_failure_and_not_bind_command(self):
         self.nearby["samples"]=[{"nameStatus":"unavailable",
                                  "unitIdCandidate":"u0000000000000002"}]

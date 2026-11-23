@@ -92,8 +92,9 @@ python scripts/physical_rift.py --expected-host $rr2Host --read-native vitals --
 
 With the freshly verified `CURRENT_PID`, use a new output directory for each
 command. NPC survey preparation verifies the installed addon files and prints
-the bind and capture commands. Run the capture command after the operator binds
-the nonce in RIFT.
+the bind and capture commands. It looks under the current user's Windows
+Documents folder. Pass `--installed-casting-dir` for a custom installation.
+Run the capture command after the operator binds the nonce in RIFT.
 
 ```powershell
 python -B scripts/physical_nearby_units.py --expected-host $rr2Host --physical-pid CURRENT_PID --output-dir artifacts/NEW_NEARBY
