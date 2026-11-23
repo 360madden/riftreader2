@@ -1002,7 +1002,11 @@ internal static class FollowRouteCommand
                     var settledOnDirectPath = OnDirectPath(settledOne) && OnDirectPath(settledTwo);
                     double AlongPastGoal(Pose p) => (p.X - options.X) * (options.X - travelStart.X)
                         + (p.Z - options.Z) * (options.Z - travelStart.Z);
-                    var returnFromOvershoot = false;
+                    // A short leg can cross the goal between braking and the settled pair
+                    // even when the planned grade was too small to predict downhill coast.
+                    var returnFromOvershoot = AlongPastGoal(brakePose) < 0
+                        && AlongPastGoal(settledOne) > 0 && AlongPastGoal(settledTwo) > 0
+                        && settleOneDistance <= .50 && settleTwoDistance <= .50;
                     for (var finish = 0; finish < 2 && (finish == 0 || returnFromOvershoot)
                         && Volatile.Read(ref terminalReason) is null && stationary && settledOnDirectPath
                         && settleOneDistance > ArrivalRadius && settleTwoDistance > ArrivalRadius
@@ -1308,6 +1312,15 @@ internal static class FollowRouteCommand
         _ => 3
     };
 
+    internal static void ValidateBuild(Options options, string sha)
+    {
+        if (!string.Equals(sha, options.ExpectedSha256, StringComparison.OrdinalIgnoreCase)
+            || !CurrentBuildPlayerLookup.IsCoreBuild(sha))
+            throw new InvalidOperationException("RIFT executable hash does not match the supported exact build.");
+        if (options.SurvivalInterrupt && CurrentBuildPlayerLookup.IsUpdatedBuild(sha))
+            throw new InvalidOperationException("Follow-route survival feedback is unavailable for this exact build.");
+    }
+
     internal static async Task<int> RunAsync(string[] args, CancellationToken token)
     {
         var json = args.Contains("--json", StringComparer.Ordinal);
@@ -1327,9 +1340,7 @@ internal static class FollowRouteCommand
             var executable = game.MainModule?.FileName
                 ?? throw new InvalidOperationException("Cannot resolve game executable path.");
             var sha = WindowsControlDesktop.GetFreshExecutableSha256(executable);
-            if (!string.Equals(sha, options.ExpectedSha256, StringComparison.OrdinalIgnoreCase)
-                || !string.Equals(sha, CurrentBuildPlayerLookup.GameSha256, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("RIFT executable hash does not match the supported exact build.");
+            ValidateBuild(options, sha);
             DesktopTarget Inspect()
             {
                 var inspected = WindowsControlDesktop.InspectPinned("rift_x64", executable, sha,

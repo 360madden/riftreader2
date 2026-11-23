@@ -66,6 +66,21 @@ public sealed class FollowRouteCommandTests
     private static Task NoDelay(TimeSpan _, CancellationToken __) => Task.CompletedTask;
 
     [Fact]
+    public void BuildAdmissionAcceptsCurrentPoseReaderAndKeepsSurvivalBuildScoped()
+    {
+        var updated = CurrentBuildPlayerLookup.UpdatedGameSha256;
+        var historical = CurrentBuildPlayerLookup.GameSha256;
+        var route = Options() with { ExpectedSha256 = updated };
+        FollowRouteCommand.ValidateBuild(route, updated.ToLowerInvariant());
+        Assert.Throws<InvalidOperationException>(() => FollowRouteCommand.ValidateBuild(route, historical));
+        Assert.Throws<InvalidOperationException>(() =>
+            FollowRouteCommand.ValidateBuild(Options(), Options().ExpectedSha256));
+        Assert.Throws<InvalidOperationException>(() =>
+            FollowRouteCommand.ValidateBuild(route with { SurvivalInterrupt = true }, updated));
+        FollowRouteCommand.ValidateBuild(route with { ExpectedSha256 = historical, SurvivalInterrupt = true }, historical);
+    }
+
+    [Fact]
     public void ParseRequiresExactOwnerAndOriginTriplet()
     {
         var args = new[] { "--expected-host", "AMD-DESKTOP", "--pid", "5",
@@ -842,6 +857,26 @@ public sealed class FollowRouteCommandTests
         Assert.Equal(2, input.Events.Count(x => x == "down:w"));
         Assert.Equal(2, input.Events.Count(x => x == "up:w"));
         Assert.True(input.Events.IndexOf("up:w") < input.Events.IndexOf("down:d"));
+        Assert.True(input.Events.LastIndexOf("up:d") < input.Events.LastIndexOf("down:w"));
+        Assert.True(result.ReleaseSucceeded);
+    }
+
+    [Fact]
+    public async Task ShortLegUsesBoundedReturnWhenReleasedCoastCrossesGoal()
+    {
+        var input = new Input();
+        var result = await FollowRouteCommand.FollowAsync(Options(z: .68) with { GoalY = 7 },
+            Reader(Pose(0, 0), Pose(0, .5), Pose(0, 1.02, y: 6.85), Pose(0, 1.02, y: 6.85),
+                Pose(0, 1.02, -38, y: 6.85), Pose(0, 1.02, -75, y: 6.85),
+                Pose(0, 1.02, -110, y: 6.85), Pose(0, 1.02, -148, y: 6.85),
+                Pose(0, 1.02, -169, y: 6.85), Pose(0, 1.02, -177, y: 6.85),
+                Pose(0, 1.02, 180, y: 6.85), Pose(0, 1.02, 180, y: 6.85),
+                Pose(0, .85, 180, y: 6.9), Pose(0, .85, 180, y: 6.9)),
+            input, () => null, NoDelay);
+
+        Assert.Equal("arrived", result.Status);
+        Assert.Equal(2, input.Events.Count(x => x == "down:w"));
+        Assert.Equal(2, input.Events.Count(x => x == "up:w"));
         Assert.True(input.Events.LastIndexOf("up:d") < input.Events.LastIndexOf("down:w"));
         Assert.True(result.ReleaseSucceeded);
     }
