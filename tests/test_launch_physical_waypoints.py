@@ -21,7 +21,8 @@ class LauncherTests(unittest.TestCase):
         root_patcher = patch.object(launcher, "ROOT", self.root)
         root_patcher.start()
         self.addCleanup(root_patcher.stop)
-        self.enterContext(patch.dict("os.environ", {"RR2_WAYPOINTS_BASIS": ""}))
+        self.enterContext(patch.dict("os.environ", {"RR2_WAYPOINTS_BASIS": "",
+                                                   "RR2_NATIVE_READER": "", "RR2_PHYSICAL_TOOLS_ROOT": "debug"}))
 
     def run_launcher(self, args):
         adapter = SimpleNamespace(read=lambda: SimpleNamespace(bearing=12), binding={"mode": "reused-seed"})
@@ -137,6 +138,20 @@ class LauncherTests(unittest.TestCase):
             self.assertIsNone(good["target"])
             self.assertFalse(good["inputSent"])
             self.assertEqual(run.call_args.args[0], [reader, "--help"])
+
+            vector = calibration["samples"]["laterW"]
+            original_velocity = vector["vxCandidate"]
+            for invalid in (None, "not a velocity", 1e308):
+                with self.subTest(invalid_velocity=invalid):
+                    vector["vxCandidate"] = invalid
+                    basis_path.write_text(json.dumps(calibration), encoding="utf-8")
+                    unusable = launcher.check_local_setup(basis=basis_path, dependencies_only=True)
+                    self.assertFalse(unusable["ready"])
+                    self.assertEqual(unusable["checks"]["movementBasis"]["reason"],
+                                     "movement-basis-invalid-vectors")
+                    self.assertEqual(unusable["checks"]["nativeReader"]["status"], "available")
+            vector["vxCandidate"] = original_velocity
+            basis_path.write_text(json.dumps(calibration), encoding="utf-8")
 
             run.return_value = (0, "RiftReader2.Live native tools\nsample-current-vitals")
             mismatched_reader = launcher.check_local_setup(basis=basis_path, dependencies_only=True)

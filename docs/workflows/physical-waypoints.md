@@ -935,7 +935,7 @@ Relative `--route` and `--basis` paths start from the shell that launched Waypoi
 
 ### Local calibration and dependency checks
 
-For a read-only readiness check, run `python scripts/launch_physical_waypoints.py --check`.
+For a read-only readiness check, run `Waypoints.cmd --check`.
 Before opening the helper on a Windows host, use `rr2-waypoints.cmd doctor --local`.
 It reports Tkinter and Tcl, the native reader executable, the current RIFT
 process and window, and the local movement basis. When the reader, window and
@@ -945,11 +945,10 @@ specific measurement. The local check returns exit `2` when a prerequisite is
 blocked. Plain `doctor` reports the state of an existing helper session.
 Use `rr2-waypoints.cmd doctor --local --dependencies-only` before starting RIFT.
 It starts the reader's help command, checks Tcl and verifies the calibration
-belongs to the local host. It reports each dependency separately when a reader
-or calibration path is invalid. The JSON output includes missing
-native commands or the reader's exit code when available. The regular local
-check verifies the build and
-player against a running client.
+belongs to the local host and supplies usable movement vectors. It reports each
+dependency separately when a reader or calibration is invalid. The JSON output
+includes missing native commands or the reader's exit code when available. The
+regular local check verifies the build and player against a running client.
 Set `RR2_NATIVE_READER` to the absolute path of a complete local publish to use
 that build for Waypoints, its native movement commands and STOP recovery.
 [Native reader publish steps](development.md#publish-the-local-native-reader)

@@ -489,15 +489,21 @@ def movement_basis_path(host, basis_path=None):
 
 
 def read_waypoints_basis(path):
-    if not path.is_dir():
-        return read_basis(path)
-    from scripts.physical_move_basis import BUNDLE_REPORT, calibration_bundle
+    if path.is_dir():
+        from scripts.physical_move_basis import BUNDLE_REPORT, calibration_bundle
 
-    _plain_path(path)
-    verified = calibration_bundle(path, verify=True)
-    basis, digest = read_basis(path / BUNDLE_REPORT)
-    if digest != verified["basisSha256"]:
-        raise WaypointError("calibration-bundle-basis-changed")
+        _plain_path(path)
+        verified = calibration_bundle(path, verify=True)
+        basis, digest = read_basis(path / BUNDLE_REPORT)
+        if digest != verified["basisSha256"]:
+            raise WaypointError("calibration-bundle-basis-changed")
+    else:
+        basis, digest = read_basis(path)
+    try:
+        # Use the same speed and direction model as playback, without a live bearing.
+        candidate_calibrations(basis, 0.0)
+    except (ArithmeticError, KeyError, TypeError, ValueError) as error:
+        raise WaypointError("movement-basis-invalid-vectors") from error
     return basis, digest
 
 

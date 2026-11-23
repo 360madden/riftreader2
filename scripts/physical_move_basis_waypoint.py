@@ -119,9 +119,10 @@ def candidate_calibrations(b, actor_degrees=None):
             vectors[key] = (speed * math.sin(bearing), speed * math.cos(bearing))
     calibrations = {}
     for key, (x, z) in vectors.items():
-        require(math.hypot(x, z) > 0, "waypoint-basis-vector-zero")
-        calibrations[key] = Calibration(key, x, z, 100,
-                                        math.hypot(x, z) * 100, 0.0)
+        displacement = math.hypot(x, z) * 100
+        require(math.isfinite(displacement), "waypoint-basis-vector-nonfinite")
+        require(displacement > 0, "waypoint-basis-vector-zero")
+        calibrations[key] = Calibration(key, x, z, 100, displacement, 0.0)
     validate_noncollinear(calibrations)
     return calibrations, vectors
 
