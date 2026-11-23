@@ -227,6 +227,16 @@ class LauncherTests(unittest.TestCase):
             with self.assertRaisesRegex(waypoints.WaypointError, "invalid-waypoints-basis-path"):
                 waypoints.movement_basis_path("RIFT-STATION")
 
+    def test_local_calibration_folder_takes_precedence_over_packaged_basis(self):
+        local = self.root / ".local" / "waypoints-calibration" / "rift-station"
+        local.mkdir(parents=True)
+        with patch.object(waypoints, "ROOT", self.root):
+            self.assertEqual(waypoints.movement_basis_path("RIFT-STATION"), local)
+            self.assertEqual(waypoints.movement_basis_path("OTHER-PC"),
+                             self.root / "config" / "physical-movement-basis.other-pc.json")
+            with patch.dict("os.environ", {"RR2_WAYPOINTS_BASIS": str(self.root / "custom folder")}):
+                self.assertEqual(waypoints.movement_basis_path("RIFT-STATION"), self.root / "custom folder")
+
     def test_explicit_pid_absent_stays_strict(self):
         with patch.object(launcher.socket, "gethostname", return_value="AMD-DESKTOP"), \
              patch.object(launcher.physical_rift, "select_physical", return_value={"status": "blocked", "reason": "absent"}), \

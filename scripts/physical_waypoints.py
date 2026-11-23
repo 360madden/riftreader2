@@ -475,6 +475,9 @@ def movement_basis_path(host, basis_path=None):
             raise WaypointError("invalid-waypoints-basis-path")
         _plain_path(path)
         return path
+    local_bundle = ROOT / ".local" / "waypoints-calibration" / host.lower()
+    if local_bundle.is_dir():
+        return local_bundle
     return ROOT / "config" / f"physical-movement-basis.{host.lower()}.json"
 
 

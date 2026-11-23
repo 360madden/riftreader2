@@ -890,11 +890,11 @@ Set `RR2_NATIVE_READER` to the absolute path of a complete local publish to use
 that build for Waypoints, its native movement commands and STOP recovery.
 [Native reader publish steps](development.md#publish-the-local-native-reader)
 
-Waypoints looks for `config/physical-movement-basis.<lowercase-host>.json` by
-default. The checkout includes the AMD-DESKTOP basis. On other Windows hosts,
-save the local movement basis under the matching name or set
-`RR2_WAYPOINTS_BASIS` to its absolute path to reuse it across checkouts.
-`--basis PATH` takes precedence. The launcher, idle reconnect and local doctor
+Waypoints first uses `--basis PATH` or `RR2_WAYPOINTS_BASIS` when supplied. For
+automatic startup, copy the complete calibration folder to
+`.local/waypoints-calibration/<lowercase-host>`. Otherwise Waypoints looks for
+`config/physical-movement-basis.<lowercase-host>.json`. The checkout includes an
+AMD-DESKTOP basis at that path. The launcher, idle reconnect and local doctor
 use the same selection rule. Use a basis measured for the current host,
 executable build and player. The offline `scripts/physical_move_basis.py`
 builder can consume saved move-key
