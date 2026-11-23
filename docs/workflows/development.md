@@ -179,6 +179,7 @@ Run the capture command after the operator binds the nonce in RIFT.
 python -B scripts/physical_nearby_units.py --expected-host $rr2Host --physical-pid CURRENT_PID --include-levels --output-dir artifacts/NEW_NEARBY
 python -B scripts/collect_physical_player_state.py --expected-host $rr2Host --physical-pid CURRENT_PID --include-stats --include-zone --output-dir artifacts/NEW_PLAYER_STATE
 python -B scripts/capture_physical_telemetry_target_series.py --expected-host $rr2Host --physical-pid CURRENT_PID --native-reader $rr2PublishedReader --output-dir artifacts/NEW_TARGET_SERIES
+python -B scripts/prepare_physical_npc_survey.py --check-dependencies --expected-host $rr2Host --include-levels
 python -B scripts/prepare_physical_npc_survey.py --expected-host $rr2Host --physical-pid CURRENT_PID --include-levels --output-dir artifacts/NEW_NPC_PLAN
 ```
 
@@ -187,10 +188,10 @@ For a published build, pass `--native-reader $rr2PublishedReader` to
 `collect_physical_player_state.py`. Each collector uses the selected executable
 for all of its native samples. The Telemetry zone and target-series captures
 use the selected reader for the survey and both sides of every bracket,
-including a stale-scope retry. NPC survey preparation also accepts the option
-and carries it into its generated auto-map command. Use
-`prepare_physical_npc_survey.py --check-addon` to verify the installed NPC
-survey files before preparing a plan.
+including a stale-scope retry. The NPC dependency check verifies the installed
+addon files and reader startup without selecting RIFT. Preparation carries the
+resolved reader path into the generated auto-map command, including when the
+reader was configured through `RR2_NATIVE_READER`.
 
 Copy the player-state directory with its `summary.json` and native source files
 to replay it offline. Replay locates the sources beside the summary and checks

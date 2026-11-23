@@ -36,20 +36,23 @@ A successful join is a **research/candidate** result only. The default interval 
 
 ### Prepare and replay a saved bind plan
 
-Prepare a fresh plan for the current local RIFT process. The tool resolves the addon under the Windows Documents folder by default. Use `--installed-casting-dir` for a custom installation.
+Check the local reader and addon before preparing a plan for a current RIFT
+process. The tool looks for the addon under the Windows Documents folder. Use
+`--installed-casting-dir` for a custom installation.
 
 ```powershell
-python -B scripts\prepare_physical_npc_survey.py --expected-host $rr2Host --check-addon
+python -B scripts\prepare_physical_npc_survey.py --expected-host $rr2Host --check-dependencies --include-levels
 python -B scripts\prepare_physical_npc_survey.py --expected-host $rr2Host --physical-pid CURRENT_VERIFIED_PID --include-levels --output-dir artifacts\NEW_NPC_BIND_PLAN
 ```
 
-The addon check verifies installed files without selecting a game process.
-Add `--native-reader $rr2PublishedReader` to preparation to use a local
-published executable for nearby data and the generated auto-map command's
-player-context read. A direct capture with an explicit seed uses the same
-option for its native scout and fragment reads. The generated commands include
-absolute paths to their scripts, so they can run from a different working
-directory on the capture host.
+The dependency check verifies the installed addon and the reader's advertised
+nearby-position, name and player-context commands without selecting RIFT.
+`--include-levels` adds the keyed native level command, and `--check-addon`
+checks the installed files alone. Select a published reader with
+`--native-reader $rr2PublishedReader` or `RR2_NATIVE_READER`. Preparation
+includes absolute script and reader paths in the capture command, so it can run
+in another shell on the capture host. A direct capture with an explicit seed
+uses the reader option for its native scout and fragment reads.
 
 Copy the entire plan folder, including `plan.json`, `native/` and `addon-evidence/`, to run the offline check from any checkout. Replay verifies the original capture identity and times, reconstructs the selected IDs, checks the saved bind text and verifies the retained manifest and Lua file. Older plans still replay with addon evidence reported as `recorded-only`.
 

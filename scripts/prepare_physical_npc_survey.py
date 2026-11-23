@@ -109,9 +109,8 @@ def prepare(host, pid, destination, *, radius=35.0, limit=12, include_levels=Fal
             and 0 < radius <= 50,
             "invalid-host-pid-or-bounds")
     require(physical_rift.is_local_host(host), "wrong-host")
-    if native_reader is not None:
-        native_reader = physical_rift._native_reader_path(native_reader)
-        require(native_reader.is_file(), "native-reader-not-built")
+    native_reader = physical_rift._native_reader_path(native_reader)
+    require(native_reader.is_file(), "native-reader-not-built")
     addon, manifest, module = installed_survey(default_casting_directory() if casting_dir is None else casting_dir)
     output = Path(destination)
     if not output.is_absolute():
@@ -125,8 +124,7 @@ def prepare(host, pid, destination, *, radius=35.0, limit=12, include_levels=Fal
         # `limit` named IDs. Nearby position candidates may include cache misses.
         nearby_path, native_report = capture_nearby(
             host, pid, output/"native", radius=radius,
-            limit=max(18, limit), include_levels=include_levels,
-            **({"native_reader": native_reader} if native_reader is not None else {}))
+            limit=max(18, limit), include_levels=include_levels, native_reader=native_reader)
         checked, native_sha, (native_started, native_at) = join.original_native_nearby(nearby_path)
         require(native_report == checked, "native-summary-changed")
         identity = checked["process"]
@@ -164,9 +162,8 @@ def prepare(host, pid, destination, *, radius=35.0, limit=12, include_levels=Fal
             + " --physical-pid " + str(pid)
             + " --session-id " + _quote(nonce)
             + " --unit-ids " + _quote(",".join(ids))
-            + " --auto-map --max-attempts 5 --output " + _quote(npc_path))
-        if native_reader is not None:
-            capture_command += " --native-reader " + _quote(native_reader)
+            + " --auto-map --max-attempts 5 --output " + _quote(npc_path)
+            + " --native-reader " + _quote(native_reader))
         compare_command = ("& " + _quote(sys.executable)
             + " -B " + _quote(ROOT / "scripts/join_physical_nearby_npc_survey.py")
             + " --nearby " + _quote(nearby_path)
@@ -277,12 +274,29 @@ def replay_plan(path):
             "inputSent": False, "addonActivated": False, "combatAuthorized": False}
 
 
+def _check_dependencies(host, casting_dir, native_reader, *, include_levels=False):
+    kinds = ("unit-positions", "unit-names", "player-context")
+    if include_levels:
+        kinds += ("unit-levels",)
+    reader = physical_rift.check_native_reader(host, native_reader, kind=kinds)
+    try:
+        addon, _, _ = installed_survey(casting_dir or default_casting_directory())
+        addon["status"] = "addon-configuration-ready"
+    except (OSError, ValueError) as exc:
+        addon = {"status": "blocked", "reason": str(exc)[:240]}
+    ready = reader["status"] == "ready" and addon["status"] == "addon-configuration-ready"
+    return {"status": "survey-dependencies-ready" if ready else "blocked",
+            "ownerHost": host, "nativeReader": reader, "installedAddon": addon, "inputSent": False}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--replay-plan", type=Path, help="validate a saved plan and its retained sources offline")
     mode.add_argument("--check-addon", action="store_true",
                       help="verify installed NPC survey files without selecting a game process")
+    mode.add_argument("--check-dependencies", action="store_true",
+                      help="check the installed NPC addon and native reader without selecting a game process")
     parser.add_argument("--expected-host")
     parser.add_argument("--physical-pid", type=int)
     parser.add_argument("--radius", type=float, default=35)
@@ -294,24 +308,33 @@ def main(argv=None):
     parser.add_argument("--output-dir", type=Path)
     args = parser.parse_args(argv)
     acquisition_requested = (args.physical_pid is not None or args.output_dir is not None
-                             or args.native_reader is not None or args.radius != 35
-                             or args.max_ids != 12 or args.include_levels)
+                             or args.radius != 35 or args.max_ids != 12)
+    reader_options = args.native_reader is not None or args.include_levels
     if args.replay_plan:
-        if acquisition_requested or args.expected_host is not None or args.installed_casting_dir is not None:
+        if (acquisition_requested or reader_options or args.expected_host is not None
+                or args.installed_casting_dir is not None):
             parser.error("--replay-plan uses only the saved plan and its sibling evidence files")
     elif args.check_addon:
-        if acquisition_requested:
+        if acquisition_requested or reader_options:
             parser.error("--check-addon accepts only --expected-host and --installed-casting-dir")
+    elif args.check_dependencies:
+        if acquisition_requested:
+            parser.error("--check-dependencies does not accept a game PID, output directory, radius or ID limit")
     elif args.expected_host is None or args.physical_pid is None or args.output_dir is None:
-        parser.error("supply --expected-host, --physical-pid and --output-dir, or use --replay-plan or --check-addon")
+        parser.error("supply --expected-host, --physical-pid and --output-dir, or use a check or replay mode")
     try:
         if args.replay_plan:
             print(json.dumps(replay_plan(args.replay_plan), allow_nan=False))
             return 0
-        if args.check_addon:
+        if args.check_addon or args.check_dependencies:
             host = socket.gethostname()
             require(physical_rift.is_local_host(host if args.expected_host is None else args.expected_host),
                     "wrong-host")
+            if args.check_dependencies:
+                dependencies = _check_dependencies(host, args.installed_casting_dir, args.native_reader,
+                                                   include_levels=args.include_levels)
+                print(json.dumps(dependencies))
+                return 0 if dependencies["status"] == "survey-dependencies-ready" else 2
             addon, _, _ = installed_survey(args.installed_casting_dir or default_casting_directory())
             print(json.dumps(dict(addon, status="addon-configuration-ready", ownerHost=host, inputSent=False)))
             return 0

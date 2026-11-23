@@ -84,14 +84,20 @@ def bind_native_reader(read, override):
     return partial(read, native_reader=path)
 
 
-def check_native_reader(expected_host=None, native_reader=None, *, kind=None):
+def check_native_reader(expected_host=None, native_reader=None, *, kind: str | Sequence[str] | None = None):
+    """Check reader startup and the selected read commands without selecting RIFT."""
     host = socket.gethostname()
     result = {"status": "blocked", "workflow": "physical", "ownerHost": host}
     if not valid_host_name(host) or (expected_host is not None and not is_local_host(expected_host)):
         return dict(result, reason="host-mismatch")
-    if kind is not None and kind not in NATIVE_READS:
-        return dict(result, reason="unknown-native-read")
-    required = set(NATIVE_READS.values()) if kind is None else {NATIVE_READS[kind]}
+    if kind is None:
+        required = set(NATIVE_READS.values())
+    else:
+        kinds = (kind,) if isinstance(kind, str) else kind
+        if not isinstance(kinds, Sequence) or not kinds or any(
+                not isinstance(name, str) or name not in NATIVE_READS for name in kinds):
+            return dict(result, reason="unknown-native-read")
+        required = {NATIVE_READS[name] for name in kinds}
     try:
         reader = _native_reader_path(native_reader)
         result["nativeReaderPath"] = str(reader)

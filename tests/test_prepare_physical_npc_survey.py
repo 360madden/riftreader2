@@ -49,6 +49,10 @@ class NPCPreparationTests(unittest.TestCase):
         self.native_call_count = 0
         self.native_reader = None
         self.included_levels = False
+        self.default_reader = self.dir / "RiftReader2.Live.exe"
+        self.default_reader.touch()
+        self.enterContext(patch.object(prep.physical_rift, "NATIVE_EXE", self.default_reader))
+        self.enterContext(patch.dict("os.environ", {"RR2_NATIVE_READER": ""}))
         self.enterContext(patch.object(prep.physical_rift.socket, "gethostname", return_value="RIFT-STATION"))
 
     def collect(self, host, pid, directory, *, radius, limit, include_levels=False, native_reader=None):
@@ -102,12 +106,30 @@ class NPCPreparationTests(unittest.TestCase):
         self.assertEqual(self.native_call_count,1)
 
     def test_published_reader_is_reused_by_the_generated_capture_command(self):
-        published = self.dir / "RiftReader2.Live.exe"
+        published = self.dir / "published reader" / "RiftReader2.Live.exe"
+        published.parent.mkdir()
         published.touch()
         _, prepared = self.prepare(native_reader=published)
         self.assertEqual(self.native_reader, published)
         self.assertIn("--native-reader " + prep._quote(published), prepared["captureCommand"])
         self.assertIn(prep._quote(prep.ROOT / "scripts/join_physical_nearby_npc_survey.py"), prepared["joinCommand"])
+
+    def test_environment_reader_is_written_into_the_generated_capture_command(self):
+        published = self.dir / "reader from environment.exe"
+        published.touch()
+        with patch.dict("os.environ", {"RR2_NATIVE_READER": str(published)}):
+            _, plan = self.prepare()
+        self.assertEqual(self.native_reader, published)
+        self.assertIn("--native-reader " + prep._quote(published), plan["captureCommand"])
+
+    def test_missing_default_reader_refuses_before_addon_or_game_access(self):
+        self.default_reader.unlink()
+        with patch.object(prep, "installed_survey") as installed:
+            with self.assertRaisesRegex(ValueError, "native-reader-not-built"):
+                self.prepare()
+        installed.assert_not_called()
+        self.assertEqual(self.native_call_count, 0)
+        self.assertFalse((self.dir / "plan").exists())
 
     def test_check_addon_verifies_installation_without_selecting_process(self):
         with patch.object(prep.physical_rift, "select_physical") as select, redirect_stdout(StringIO()) as output:
@@ -119,6 +141,41 @@ class NPCPreparationTests(unittest.TestCase):
         self.assertTrue(result["configurationVerified"])
         self.assertEqual(result["runningAddonLoaded"], "unverified")
         select.assert_not_called()
+
+    def test_dependency_check_requires_levels_only_when_requested(self):
+        help_text = "\n".join(("RiftReader2.Live native tools",
+                               "sample-current-unit-positions --pid N",
+                               "sample-current-unit-template-names --pid N",
+                               "sample-current-player-context --pid N"))
+        with patch.object(prep.physical_rift, "select_physical") as select, \
+             patch.object(prep.observe_physical, "_run", return_value=(0, help_text)) as run:
+            for options, expected in (([], 0), (["--include-levels"], 2)):
+                with self.subTest(options=options), redirect_stdout(StringIO()) as output:
+                    code = prep.main(["--check-dependencies", "--expected-host", "RIFT-STATION",
+                                      "--installed-casting-dir", str(self.installed),
+                                      "--native-reader", str(self.default_reader), *options])
+                    self.assertEqual(code, expected)
+                    result = json.loads(output.getvalue())
+                    self.assertEqual(result["installedAddon"]["status"], "addon-configuration-ready")
+                    self.assertFalse(result["inputSent"])
+                    if expected == 0:
+                        self.assertEqual(result["status"], "survey-dependencies-ready")
+                        self.assertEqual(result["nativeReader"]["nativeCommandsAdvertised"], 3)
+                    else:
+                        self.assertEqual(result["status"], "blocked")
+                        self.assertEqual(result["nativeReader"]["missingCommands"], ["sample-current-unit-levels"])
+        self.assertEqual(run.call_count, 2)
+        self.assertTrue(all(call.args[0] == [self.default_reader, "--help"] for call in run.call_args_list))
+        select.assert_not_called()
+
+    def test_dependency_check_refuses_foreign_host_before_inspecting_files(self):
+        with patch.object(prep, "installed_survey") as installed, \
+             patch.object(prep.physical_rift, "check_native_reader") as reader, \
+             redirect_stdout(StringIO()) as output:
+            self.assertEqual(prep.main(["--check-dependencies", "--expected-host", "ANOTHER-PC"]), 2)
+        self.assertEqual(json.loads(output.getvalue())["reason"], "npc-survey-prepare-wrong-host")
+        installed.assert_not_called()
+        reader.assert_not_called()
 
     def replay(self, path):
         with patch.object(prep.join, "original_native_nearby",

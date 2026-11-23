@@ -6,6 +6,11 @@ for the same unit, entity, player and process epoch. This covers the native
 comparison in P0. Independent RIFT UI or Lua evidence remains pending.
 [Replaying the native comparison](reference/physical-native-nearby-units-2026-11-21.md#numeric-level-candidates)
 
+LEGION passed the NPC survey's installed-addon and published-reader checks,
+including the keyed native level command. The generated capture command keeps
+the reader path used for preparation. The live Lua comparison still needs an
+advancing nonce-bound survey. [NPC survey preparation](reference/physical-nearby-npc-correlation-2026-11-21.md#prepare-and-replay-a-saved-bind-plan)
+
 The current Windows workflow verifies the local host before using physical
 tools. A fresh checkout can use a published native reader, a calibration
 verified for that host, and local Python environments. The fresh LEGION
