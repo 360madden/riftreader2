@@ -189,31 +189,60 @@ def run(pid, output, *, count=3, interval_ms=500, scope_count=4,
         raise
 
 
+def check_dependencies(expected_host=None, native_reader=None):
+    """Check local startup prerequisites without selecting a game process."""
+    reader = physical_rift.check_native_reader(
+        expected_host, native_reader, kind=("zone-context", "player-context"))
+    platform_ready = capture.supports_readonly_windows_process()
+    return {
+        "status": "ready" if platform_ready and reader["status"] == "ready" else "blocked",
+        "ownerHost": reader["ownerHost"],
+        "python": {
+            "status": "ready" if platform_ready else "requires-64-bit-windows-python",
+            "executable": sys.executable,
+        },
+        "nativeReader": reader,
+        "telemetryPublisher": "unverified",
+        "inputSent": False,
+    }
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--physical-pid", type=int, required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--check-dependencies", action="store_true",
+                      help="check Windows Python and the native reader without selecting RIFT")
+    mode.add_argument("--physical-pid", type=int)
     parser.add_argument("--expected-host", help="require this local Windows hostname")
     parser.add_argument("--native-reader", type=Path,
                         help="absolute local path to a published RiftReader2.Live.exe")
-    parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--count", type=int, default=3)
-    parser.add_argument("--interval-ms", type=int, default=500)
-    parser.add_argument("--scope-count", type=int, default=4)
-    parser.add_argument("--recover-stale-scope", action="store_true",
+    parser.add_argument("--output-dir", type=Path, default=argparse.SUPPRESS)
+    parser.add_argument("--count", type=int, default=argparse.SUPPRESS)
+    parser.add_argument("--interval-ms", type=int, default=argparse.SUPPRESS)
+    parser.add_argument("--scope-count", type=int, default=argparse.SUPPRESS)
+    parser.add_argument("--recover-stale-scope", action="store_true", default=argparse.SUPPRESS,
                         help="on an unqualified cached Lua scope, retain original and "
                              "perform one bounded read-only map rediscovery")
-    parser.add_argument("--stop-on-aba", action="store_true",
+    parser.add_argument("--stop-on-aba", action="store_true", default=argparse.SUPPRESS,
                         help="stop before the requested window limit only after an "
                              "independent source-hashed A-B-A candidate is observed")
-    args = parser.parse_args(argv)
+    options = vars(parser.parse_args(argv))
+    dependency_check = options.pop("check_dependencies")
+    pid = options.pop("physical_pid")
+    expected_host = options.pop("expected_host")
+    native_reader = options.pop("native_reader")
+    if dependency_check:
+        if options:
+            parser.error("--check-dependencies accepts only --expected-host and --native-reader")
+        result = check_dependencies(expected_host, native_reader)
+        print(json.dumps(result))
+        return 0 if result["status"] == "ready" else 2
+    if "output_dir" not in options:
+        parser.error("--physical-pid requires --output-dir")
+    output = options.pop("output_dir")
     try:
-        path, result = run(
-            args.physical_pid, args.output_dir,
-            count=args.count, interval_ms=args.interval_ms,
-            scope_count=args.scope_count,
-            recover_stale_scope=args.recover_stale_scope,
-            stop_on_aba=args.stop_on_aba, expected_host=args.expected_host,
-            native_reader=args.native_reader)
+        path, result = run(pid, output, expected_host=expected_host, native_reader=native_reader,
+                           **options)
     except (OSError, ValueError, TypeError, KeyError, IndexError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:220],
                           "inputSent": False}))

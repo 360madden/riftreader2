@@ -62,6 +62,15 @@ class CaptureTests(unittest.TestCase):
                        "executableSha256":SHA,"executablePath":r"C:\Games\RIFT\rift_x64.exe","hwnd":123}
         self.selection = {"status":"ready","ownerHost":HOST,"target":self.target}
 
+    def test_32_bit_python_refuses_before_loading_process_apis(self):
+        with patch.object(cap.sys, "platform", "win32"), \
+                patch.object(cap.ctypes, "sizeof", return_value=4), \
+                patch.object(cap.ctypes, "WinDLL", create=True) as load_kernel:
+            self.assertFalse(cap.supports_readonly_windows_process())
+            with self.assertRaisesRegex(OSError, "requires 64-bit Python on Windows"):
+                cap.ReadOnlyWindowsProcess(PID).__enter__()
+        load_kernel.assert_not_called()
+
     def test_canonical_bounds_reject_before_process_inspection(self):
         with patch.object(cap.socket, "gethostname", return_value=HOST), \
              patch.object(cap.physical_rift, "select_physical") as select:

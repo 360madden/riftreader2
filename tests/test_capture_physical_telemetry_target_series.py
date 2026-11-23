@@ -1,7 +1,7 @@
 """No-game-input tests for bounded physical target continuity acquisition."""
 from __future__ import annotations
 
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 import json
 from pathlib import Path
@@ -203,6 +203,60 @@ class SeriesCaptureTests(unittest.TestCase):
         self.assertTrue((self.output / "failure.json").is_file())
         self.assertFalse((self.output / "result.json").exists())
         self.assertFalse((self.output / "capture-03").exists())
+
+    def test_dependency_check_accepts_another_local_host_and_exact_native_commands(self):
+        reader = self.output.parent / "Reader With Spaces.exe"
+        reader.touch()
+        help_text = ("RiftReader2.Live native tools\n"
+                     "sample-current-player-context <arguments>\n"
+                     "sample-current-zone-seed <arguments>\n")
+        with patch.object(capture.physical_rift.socket, "gethostname", return_value="RIFT-STATION"), \
+                patch.object(capture.capture, "supports_readonly_windows_process", return_value=True), \
+                patch.object(capture.physical_rift.observe_physical, "_run",
+                             return_value=(0, help_text)) as native_startup, \
+                patch.object(capture, "run") as run, \
+                redirect_stdout(StringIO()) as stdout:
+            code = capture.main(["--check-dependencies", "--expected-host", "rift-station",
+                                 "--native-reader", str(reader)])
+        self.assertEqual(code, 0)
+        run.assert_not_called()
+        native_startup.assert_called_once()
+        self.assertEqual(native_startup.call_args.args[0], [reader, "--help"])
+        result = json.loads(stdout.getvalue())
+        self.assertEqual(result["ownerHost"], "RIFT-STATION")
+        self.assertEqual(result["nativeReader"]["nativeCommandsAdvertised"], 2)
+        self.assertEqual(result["telemetryPublisher"], "unverified")
+        self.assertFalse(result["inputSent"])
+        self.assertFalse(self.output.exists())
+
+    def test_dependency_check_reports_missing_native_command_and_unsupported_python(self):
+        reader = self.output.parent / "Reader.exe"
+        reader.touch()
+        help_text = "RiftReader2.Live native tools\nsample-current-zone-seed <arguments>\n"
+        with patch.object(capture.capture, "supports_readonly_windows_process", return_value=False), \
+                patch.object(capture.physical_rift.observe_physical, "_run", return_value=(0, help_text)), \
+                redirect_stdout(StringIO()) as stdout:
+            code = capture.main(["--check-dependencies", "--native-reader", str(reader)])
+        self.assertEqual(code, 2)
+        result = json.loads(stdout.getvalue())
+        self.assertEqual(result["python"]["status"], "requires-64-bit-windows-python")
+        self.assertEqual(result["nativeReader"]["missingCommands"], ["sample-current-player-context"])
+
+    def test_wrong_host_blocks_before_native_startup_and_rejects_capture_options(self):
+        with patch.object(capture.physical_rift.socket, "gethostname", return_value="RIFT-STATION"), \
+                patch.object(capture.physical_rift.observe_physical, "_run") as startup, \
+                redirect_stdout(StringIO()) as stdout:
+            code = capture.main(["--check-dependencies", "--expected-host", "OTHER-STATION"])
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(stdout.getvalue())["nativeReader"]["reason"], "host-mismatch")
+        startup.assert_not_called()
+        for options in (["--physical-pid", str(PID)], ["--count", "3"],
+                        ["--output-dir", str(self.output)], ["--stop-on-aba"]):
+            with self.subTest(options=options), redirect_stderr(StringIO()), \
+                    patch.object(capture, "check_dependencies") as check, self.assertRaises(SystemExit):
+                capture.main(["--check-dependencies", *options])
+            check.assert_not_called()
+        self.assertFalse(self.output.exists())
 
     def test_cli_opt_in_stop_on_aba_is_forwarded(self):
         fake = {

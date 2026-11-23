@@ -88,6 +88,10 @@ class _MemoryBasicInformation(ctypes.Structure):
                 ("type", ctypes.c_ulong)]
 
 
+def supports_readonly_windows_process():
+    return sys.platform == "win32" and ctypes.sizeof(ctypes.c_void_p) == 8
+
+
 class ReadOnlyWindowsProcess:
     """Only PROCESS_VM_READ | PROCESS_QUERY_INFORMATION; no write privileges."""
 
@@ -95,8 +99,8 @@ class ReadOnlyWindowsProcess:
         self.pid, self.handle, self.kernel = pid, None, None
 
     def __enter__(self):
-        if sys.platform != "win32":
-            raise OSError("Read-only RIFT acquisition requires Windows.")
+        if not supports_readonly_windows_process():
+            raise OSError("Read-only RIFT acquisition requires 64-bit Python on Windows.")
         k = ctypes.WinDLL("kernel32", use_last_error=True)
         k.OpenProcess.argtypes = [ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
         k.OpenProcess.restype = ctypes.c_void_p
