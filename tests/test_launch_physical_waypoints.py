@@ -138,6 +138,12 @@ class LauncherTests(unittest.TestCase):
             self.assertFalse(good["inputSent"])
             self.assertEqual(run.call_args.args[0], [reader, "--help"])
 
+            run.return_value = (0, "RiftReader2.Live native tools\nsample-current-vitals")
+            mismatched_reader = launcher.check_local_setup(basis=basis_path, dependencies_only=True)
+            self.assertFalse(mismatched_reader["ready"])
+            self.assertEqual(mismatched_reader["checks"]["nativeReader"]["missingCommands"],
+                             ["sample-current-facing"])
+
             calibration["identity"]["machine"] = "AMD-DESKTOP"
             basis_path.write_text(json.dumps(calibration), encoding="utf-8")
             run.return_value = (2, "missing companion files")
@@ -145,8 +151,29 @@ class LauncherTests(unittest.TestCase):
             self.assertFalse(blocked["ready"])
             self.assertEqual(blocked["checks"]["movementBasis"]["reason"], "movement-basis-host-mismatch")
             self.assertEqual(blocked["checks"]["nativeReader"]["reason"], "native-reader-failed")
+            self.assertEqual(blocked["checks"]["nativeReader"]["exitCode"], 2)
             select.assert_not_called()
             adapter.assert_not_called()
+
+    def test_dependency_doctor_reports_invalid_reader_alongside_other_checks(self):
+        host = "RIFT-STATION"
+        calibration = basis()
+        calibration["identity"]["machine"] = host
+        basis_path = self.root / "measured.json"
+        basis_path.write_text(json.dumps(calibration), encoding="utf-8")
+        with patch.dict("os.environ", {"RR2_NATIVE_READER": "relative-reader.exe"}), \
+             patch.object(launcher.socket, "gethostname", return_value=host), \
+             patch.object(launcher, "_check_tkinter", return_value={"status": "available"}), \
+             patch.object(launcher.physical_rift, "select_physical") as select, \
+             patch.object(launcher.physical_rift.observe_physical, "_run") as run:
+            report = launcher.check_local_setup(basis=basis_path, dependencies_only=True)
+        self.assertFalse(report["ready"])
+        self.assertIsNone(report["target"])
+        self.assertEqual(report["checks"]["tkinter"]["status"], "available")
+        self.assertEqual(report["checks"]["movementBasis"]["status"], "present")
+        self.assertEqual(report["checks"]["nativeReader"]["reason"], "invalid-native-reader-path")
+        select.assert_not_called()
+        run.assert_not_called()
 
     def test_default_waits_when_absent_or_ambiguous(self):
         for reason in ("not found", "ambiguous"):

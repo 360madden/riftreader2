@@ -901,7 +901,10 @@ specific measurement. The local check returns exit `2` when a prerequisite is
 blocked. Plain `doctor` reports the state of an existing helper session.
 Use `rr2-waypoints.cmd doctor --local --dependencies-only` before starting RIFT.
 It starts the reader's help command, checks Tcl and verifies the calibration
-file belongs to the local host. The regular local check verifies the build and
+belongs to the local host. These results are reported separately when a reader
+path is invalid or the reader cannot start. The JSON output includes missing
+native commands or the reader's exit code when available. The regular local
+check verifies the build and
 player against a running client.
 Set `RR2_NATIVE_READER` to the absolute path of a complete local publish to use
 that build for Waypoints, its native movement commands and STOP recovery.

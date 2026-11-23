@@ -38,6 +38,26 @@ def _check_tkinter():
     return {"status": "available", "tclVersion": version}
 
 
+def _check_native_reader(host, *, startup):
+    if startup:
+        probe = physical_rift.check_native_reader(host, kind="facing")
+        check = {"status": "available" if probe["status"] == "ready" else "blocked"}
+        if "nativeReaderPath" in probe:
+            check["path"] = probe["nativeReaderPath"]
+        for field in ("reason", "detail", "exitCode", "missingCommands"):
+            if field in probe:
+                check[field] = probe[field]
+        return check
+
+    try:
+        reader = physical_rift._native_reader_path()
+        if reader.is_file():
+            return {"status": "available", "path": str(reader)}
+        return {"status": "blocked", "reason": "native-reader-not-built", "path": str(reader)}
+    except (TypeError, ValueError, OSError) as exc:
+        return {"status": "blocked", "reason": "invalid-native-reader-path", "detail": str(exc)[:240]}
+
+
 def check_local_setup(physical_pid=None, basis=None, *, dependencies_only=False):
     """Check local Waypoints setup without a GUI, control ownership or game input."""
     host = socket.gethostname().upper()
@@ -47,18 +67,13 @@ def check_local_setup(physical_pid=None, basis=None, *, dependencies_only=False)
     if dependencies_only and physical_pid is not None:
         raise ValueError("dependency-check-does-not-select-rift")
     basis_path = movement_basis_path(host, basis).absolute()
-    reader = physical_rift._native_reader_path()
-    checks = {"tkinter": _check_tkinter(), "nativeReader": {"status": "available", "path": str(reader)},
+    checks = {"tkinter": _check_tkinter(),
+              "nativeReader": _check_native_reader(host, startup=dependencies_only),
               "movementBasis": {"status": "present", "path": str(basis_path)}}
-    if not reader.is_file():
-        checks["nativeReader"].update(status="blocked", reason="native-reader-not-built")
     if not (basis_path.is_file() or basis_path.is_dir()):
         checks["movementBasis"].update(status="blocked", reason="movement-basis-missing")
 
     if dependencies_only:
-        probe = physical_rift.check_native_reader(host, kind="facing")
-        if probe["status"] != "ready":
-            checks["nativeReader"].update(status="blocked", reason=probe["reason"])
         if checks["movementBasis"]["status"] == "present":
             try:
                 calibration, _ = read_waypoints_basis(basis_path)
