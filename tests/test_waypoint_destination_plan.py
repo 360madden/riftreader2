@@ -12,6 +12,7 @@ import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
+from zipfile import ZipFile
 
 from scripts import waypoint_destination_plan as bridge
 from scripts.waypoint_candidate_adoption import validate_adopted_route
@@ -256,6 +257,93 @@ class DestinationPlanTests(unittest.TestCase):
                         self.assertEqual(result["verifiedResult"], expected)
                     else:
                         with self.assertRaisesRegex(ValueError, "destination-archive-.*-mismatch"):
+                            bridge.replay_destination_archive(handoff, output, **options)
+                    self.assertEqual(planned.call_count, 0 if case == "changed-member" else 1)
+                    self.assertEqual((output / "replay-verification.json").is_file(), case == "verified")
+
+    def test_retained_archive_rebuilds_the_index_and_verifies_the_prepared_result(self):
+        archive = self.root / "retained.zip"
+        patch_info = {"path": "patch.json", "patchId": "1" * 64, "geometrySha256": bridge._hash(
+            self.save("geometry.obj", {"fixture": "geometry"}))}
+        expected = {"sourceIndexId": "2" * 64, "areaRequestId": "3" * 64,
+                    "preparationId": "4" * 64, "preparedPatchId": self.candidate["patchId"],
+                    "detourBuildId": self.candidate["planner"]["buildId"], "detourPolygonCount": 12,
+                    "candidateId": self.candidate["candidateId"], "pointCount": len(self.candidate["points"])}
+        build = self.save("test-build.json", {"navmesh": {"polygonCount": expected["detourPolygonCount"]}})
+        replay = {"sourcePatch": patch_info, "request": "request.json", "catalog": "catalog.json",
+                  "modelStores": ["models"], "destination": "fixture-end", "from": "0,0,0",
+                  "snapLimits": {"maxHorizontalXZ": .1, "maxVerticalY": .2}, "expected": expected}
+        upstream = self.world / "upstream"
+        upstream.mkdir()
+        for case in ("verified", "wrong-count", "changed-member"):
+            with self.subTest(case=case):
+                self.candidate["status"] = "complete"
+                expected_archive = dict(expected, pointCount=999) if case == "wrong-count" else expected
+                with ZipFile(archive, "w") as writer:
+                    writer.write(self.root / "geometry.obj", "geometry.obj")
+                    writer.writestr("replay.json", json.dumps({**replay, "expected": expected_archive}))
+                    for name in ("patch.json", "models/model.json", "request.json", "catalog.json"):
+                        writer.writestr(name, "{}")
+                handoff = self.save("retained-handoff.json", {"archive": archive.name, "sha256": bridge._hash(archive),
+                    "sourceArchiveSha256": "5" * 64, "patch": patch_info, "replayInputs": "replay.json"})
+                output = self.root / case
+
+                def runner(command, **options):
+                    if "restore-patch" in command:
+                        restored = Path(command[command.index("--out-dir") + 1])
+                        with ZipFile(archive) as reader:
+                            reader.extractall(restored)
+                            count = len(reader.infolist())
+                        if case == "changed-member":
+                            (restored / "models/model.json").write_bytes(b"changed")
+                        receipt = {"schema": "riftworld.patch-restore/1", "archiveSha256": bridge._hash(archive),
+                                   "patchId": patch_info["patchId"], "outDirectory": str(restored),
+                                   "memberCount": count, "patch": str(restored / "patch.json"),
+                                   "geometry": str(restored / "geometry.obj")}
+                    else:
+                        self.assertIn("build-source-index", command)
+                        source_patch = Path(command[command.index("--retained-patch") + 1])
+                        self.assertEqual(command[command.index("--retained-model-store") + 1],
+                                         str(source_patch.parent / "models"))
+                        index = Path(command[command.index("--index-store") + 1]) / expected["sourceIndexId"] / "source-index.json"
+                        index.parent.mkdir(parents=True)
+                        index.write_text("{}", encoding="utf-8")
+                        receipt = {"status": "stored-source-index", "sourceIndexId": expected["sourceIndexId"],
+                                   "descriptor": str(index)}
+                    return subprocess.CompletedProcess(command, 0, json.dumps(receipt), "")
+
+                def plan(output_directory, source_index, **options):
+                    self.assertTrue(options["allow_partial_navigation"])
+                    self.assertNotIn("execute", options)
+                    self.assertEqual(options["max_horizontal_snap"], .1)
+                    self.assertEqual(options["max_vertical_snap"], .2)
+                    output_directory.mkdir()
+                    candidate = output_directory / "candidate.json"
+                    bridge.write_json_atomic(candidate, self.candidate)
+                    bridge.write_json_atomic(output_directory / "plan.json", {})
+                    patch_path = output_directory.parent / "restored/patch.json"
+                    return {"status": "planned", "inputSent": False, "currentRouteChanged": False,
+                            "candidate": bridge._reference(candidate), "inputs": {"sourceIndex": bridge._reference(source_index)},
+                            "destinationValidation": {"binding": {"mode": "source-index"}},
+                            "preparedNavigation": {
+                                "sourcePatch": {"descriptor": str(patch_path), "patchId": patch_info["patchId"],
+                                                "descriptorSha256": bridge._hash(patch_path)},
+                                "sourceIndex": {"sourceIndexId": expected["sourceIndexId"]},
+                                "areaRequest": {"areaRequestId": expected["areaRequestId"]},
+                                "preparation": {"preparationId": expected["preparationId"]},
+                                "patch": {"patchId": expected["preparedPatchId"]},
+                                "navigation": {"buildId": expected["detourBuildId"], "descriptor": str(build),
+                                               "descriptorSha256": bridge._hash(build)}}}
+
+                with patch.object(bridge, "plan_destination", side_effect=plan) as planned:
+                    options = {"riftworld_root": self.world, "riftworld_python": sys.executable,
+                               "riftworld_upstream": upstream, "runner": runner}
+                    if case == "verified":
+                        report = bridge.replay_destination_archive(handoff, output, **options)
+                        self.assertEqual(report["mode"], "retained-source")
+                        self.assertEqual(report["verifiedResult"], expected)
+                    else:
+                        with self.assertRaisesRegex(ValueError, "archive-.*-mismatch"):
                             bridge.replay_destination_archive(handoff, output, **options)
                     self.assertEqual(planned.call_count, 0 if case == "changed-member" else 1)
                     self.assertEqual((output / "replay-verification.json").is_file(), case == "verified")

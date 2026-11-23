@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import time
+from zipfile import BadZipFile, ZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -1238,9 +1239,119 @@ def _archived_route_result(candidate, route, *, include_geometry=False):
     return result
 
 
+def _retained_archive_members(archive, archive_sha, restored):
+    """Derive member hashes from the checksummed ZIP used by RiftWorld."""
+    try:
+        with archive.open("rb") as stream:
+            expected = archive_sha.casefold()
+            if hashlib.file_digest(stream, "sha256").hexdigest() != expected:
+                raise ValueError("destination-archive-changed-after-restore")
+            members = {}
+            with ZipFile(stream) as reader:
+                entries = reader.infolist()
+                for member in entries:
+                    if member.is_dir():
+                        continue
+                    asset = bundle_asset(restored, member.filename)
+                    _plain_path(restored / member.filename)
+                    if asset in members:
+                        raise ValueError("destination-archive-conflicting-members")
+                    with reader.open(member) as source:
+                        members[asset] = hashlib.file_digest(source, "sha256").hexdigest()
+            stream.seek(0)
+            if hashlib.file_digest(stream, "sha256").hexdigest() != expected:
+                raise ValueError("destination-archive-changed-after-restore")
+            return members, len(entries)
+    except BadZipFile as error:
+        raise ValueError("invalid-retained-destination-archive") from error
+
+
+def _replay_retained_destination(replay, restored, patch_info, members, plan_directory, *,
+                                 world, python, upstream, runner, environment):
+    if replay["sourcePatch"] != patch_info:
+        raise ValueError("retained-archive-source-patch-mismatch")
+    patch = bundle_asset(restored, patch_info["path"])
+
+    def member(name):
+        asset = bundle_asset(restored, name)
+        _plain_path(restored / name)
+        if asset not in members:
+            raise ValueError("destination-archive-replay-input-not-listed")
+        return asset
+
+    model_names = replay["modelStores"]
+    if not isinstance(model_names, list) or not model_names:
+        raise ValueError("retained-archive-model-stores-required")
+    model_stores = []
+    for name in model_names:
+        store = bundle_asset(restored, name)
+        _plain_path(restored / name)
+        if not store.is_dir() or not any(path.is_relative_to(store) for path in members):
+            raise ValueError("retained-archive-model-store-not-listed")
+        model_stores.append(store)
+    catalog = member(replay["catalog"])
+    request = member(replay["request"])
+    expected = replay["expected"]
+    index_id = expected["sourceIndexId"]
+    if not isinstance(index_id, str) or not re.fullmatch("[a-f0-9]{64}", index_id):
+        raise ValueError("invalid-retained-archive-source-index-id")
+
+    index_store = plan_directory.parent / "source-indexes"
+    command = [str(python), "-B", "-m", "riftworld", "build-source-index", "--retained-patch", str(patch),
+               "--index-store", str(index_store)]
+    for store in model_stores:
+        command += ["--retained-model-store", str(store)]
+    process = runner(command, cwd=world, text=True, capture_output=True, check=False, timeout=120, **environment)
+    if process.returncode != 0:
+        details = process.stderr.strip().splitlines()
+        raise ValueError("retained-archive-source-index-failed" + (": " + details[-1][:400] if details else ""))
+    handle = json.loads(process.stdout)
+    index = index_store / index_id / "source-index.json"
+    _plain_path(index)
+    if (handle["status"] != "stored-source-index" or handle["sourceIndexId"] != index_id
+            or Path(handle["descriptor"]) != index or not index.is_file()):
+        raise ValueError("retained-archive-source-index-mismatch")
+
+    snap_limits = replay.get("snapLimits", {})
+    plan = plan_destination(
+        prepare_request=request, source_index=index, allow_partial_navigation=True, catalog=catalog,
+        destination=replay["destination"], start=replay["from"], output_directory=plan_directory,
+        search_extent=replay.get("searchExtent"), max_horizontal_snap=snap_limits.get("maxHorizontalXZ"),
+        max_vertical_snap=snap_limits.get("maxVerticalY"),
+        riftworld_root=world, riftworld_python=python, riftworld_upstream=upstream, runner=runner,
+    )
+    if (plan["status"] != "planned" or plan.get("inputSent") is not False
+            or plan.get("currentRouteChanged") is not False
+            or plan.get("destinationValidation", {}).get("binding", {}).get("mode") != "source-index"):
+        blockers = plan.get("blockers", [])
+        raise ValueError("retained-archive-plan-failed" + (": " + blockers[0] if blockers else ""))
+    candidate, digest = _read(plan_directory / "candidate.json")
+    prepared = plan["preparedNavigation"]
+    source = prepared["sourcePatch"]
+    navigation = prepared["navigation"]
+    build, build_digest = _read(navigation["descriptor"])
+    actual = {
+        "sourceIndexId": prepared["sourceIndex"]["sourceIndexId"],
+        "areaRequestId": prepared["areaRequest"]["areaRequestId"],
+        "preparationId": prepared["preparation"]["preparationId"],
+        "preparedPatchId": prepared["patch"]["patchId"],
+        "detourBuildId": navigation["buildId"],
+        "detourPolygonCount": build["navmesh"]["polygonCount"],
+        "candidateId": candidate["candidateId"],
+        "pointCount": len(candidate["points"]),
+    }
+    if (actual != expected or Path(source["descriptor"]) != patch or source["patchId"] != patch_info["patchId"]
+            or source["descriptorSha256"].casefold() != members[patch].casefold()
+            or candidate["status"] != "complete" or digest != plan["candidate"]["sha256"]
+            or build_digest.casefold() != navigation["descriptorSha256"].casefold()
+            or plan["inputs"]["sourceIndex"] != _reference(index)):
+        raise ValueError("retained-archive-replay-result-mismatch")
+    return actual
+
+
 def replay_destination_archive(handoff_path, output_directory, *, riftworld_root=None,
                                riftworld_python=None, riftworld_upstream=None, runner=subprocess.run):
-    """Restore a checksummed map handoff and verify an offline adoption replay."""
+    """Restore a checksummed map handoff and verify an offline destination replay."""
     handoff_path = _archive_local_path(handoff_path, "invalid-archive-handoff-path")
     handoff, handoff_sha = _read(handoff_path)
     archive = bundle_asset(handoff_path.parent, handoff["archive"])
@@ -1258,16 +1369,20 @@ def replay_destination_archive(handoff_path, output_directory, *, riftworld_root
         raise ValueError("invalid-destination-archive-sha256")
     patch = bundle_asset(restored, patch_info["path"])
     replay_path = bundle_asset(restored, handoff["replayInputs"])
-    source_hashes = handoff["contents"]
-    if (not isinstance(source_hashes, dict) or patch_info["path"] not in source_hashes
-            or handoff["replayInputs"] in source_hashes):
-        raise ValueError("invalid-destination-archive-members")
-    members = {bundle_asset(restored, name): digest for name, digest in source_hashes.items()}
-    members[replay_path] = handoff["replayInputsSha256"]
-    if len(members) != len(source_hashes) + 1 or any(
-            not isinstance(digest, str) or not re.fullmatch(r"[a-fA-F0-9]{64}", digest)
-            for digest in members.values()):
-        raise ValueError("invalid-destination-archive-member-hash")
+    retained = ("sourceArchiveSha256" in handoff
+                and not {"contents", "replayInputsSha256"} & handoff.keys())
+    if not retained:
+        source_hashes = handoff["contents"]
+        if (not isinstance(source_hashes, dict) or patch_info["path"] not in source_hashes
+                or handoff["replayInputs"] in source_hashes):
+            raise ValueError("invalid-destination-archive-members")
+        members = {bundle_asset(restored, name): digest for name, digest in source_hashes.items()}
+        members[replay_path] = handoff["replayInputsSha256"]
+        member_count = len(members)
+        if member_count != len(source_hashes) + 1 or any(
+                not isinstance(digest, str) or not re.fullmatch(r"[a-fA-F0-9]{64}", digest)
+                for digest in members.values()):
+            raise ValueError("invalid-destination-archive-member-hash")
 
     registered = _registered_riftworld()
     world, _, python = _riftworld_tools(riftworld_root, riftworld_python, registered)
@@ -1283,11 +1398,13 @@ def replay_destination_archive(handoff_path, output_directory, *, riftworld_root
         details = restored_process.stderr.strip().splitlines()
         raise ValueError("destination-archive-restore-failed" + (": " + details[-1][:400] if details else ""))
     restoration = json.loads(restored_process.stdout)
+    if retained:
+        members, member_count = _retained_archive_members(archive, archive_sha, restored)
     if (not isinstance(restoration, dict) or restoration.get("schema") != "riftworld.patch-restore/1"
             or restoration.get("patchId") != patch_info["patchId"]
             or str(restoration.get("archiveSha256", "")).casefold() != archive_sha.casefold()
             or Path(restoration["patch"]) != patch or Path(restoration["outDirectory"]) != restored
-            or restoration.get("memberCount") != len(members)):
+            or restoration.get("memberCount") != member_count):
         raise ValueError("destination-archive-restore-receipt-mismatch")
 
     def verify_members():
@@ -1305,17 +1422,46 @@ def replay_destination_archive(handoff_path, output_directory, *, riftworld_root
     geometry = Path(restoration["geometry"])
     if geometry not in members or members[geometry].casefold() != patch_info["geometrySha256"].casefold():
         raise ValueError("destination-archive-geometry-mismatch")
+    if replay_path not in members:
+        raise ValueError("destination-archive-replay-input-not-listed")
     replay, replay_sha = _read(replay_path)
     if replay_sha.casefold() != members[replay_path].casefold():
         raise ValueError("destination-archive-replay-inputs-changed")
-    receipts = replay["nativeReceipts"]
-    if not isinstance(receipts, list) or not receipts:
-        raise ValueError("destination-archive-native-receipts-required")
     snap_limits = replay.get("snapLimits", {})
     if not isinstance(snap_limits, dict) or set(snap_limits) - {"maxHorizontalXZ", "maxVerticalY"}:
         raise ValueError("invalid-destination-archive-snap-limits")
 
     plan_directory = output / "plan"
+    if retained:
+        actual = _replay_retained_destination(replay, restored, patch_info, members, plan_directory,
+                                              world=world, python=python, upstream=upstream, runner=runner,
+                                              environment=_riftworld_environment(registered))
+    else:
+        actual = _replay_saved_destination(replay, patch, patch_info, replay_member, plan_directory,
+                                            world=world, python=python, upstream=upstream, runner=runner)
+    verify_members()
+    if _hash(handoff_path) != handoff_sha:
+        raise ValueError("destination-archive-handoff-changed")
+    if _hash(archive).casefold() != archive_sha.casefold():
+        raise ValueError("destination-archive-changed-after-restore")
+
+    verification = output / "replay-verification.json"
+    report = {"schema": "rr2.destination-archive-replay/1", "status": "replayed", "ownerHost": platform.node(),
+              "handoff": {"path": str(handoff_path), "sha256": handoff_sha}, "restoration": restoration,
+              "plan": _reference(plan_directory / "plan.json"), "verifiedResult": actual,
+              "verification": str(verification), "inputSent": False, "currentRouteChanged": False}
+    if retained:
+        report["mode"] = "retained-source"
+    write_json_atomic(verification, report)
+    return report
+
+
+def _replay_saved_destination(replay, patch, patch_info, replay_member, plan_directory, *,
+                               world, python, upstream, runner):
+    receipts = replay["nativeReceipts"]
+    if not isinstance(receipts, list) or not receipts:
+        raise ValueError("destination-archive-native-receipts-required")
+    snap_limits = replay.get("snapLimits", {})
     plan = plan_destination(
         patch=patch, build=replay_member(replay["build"]), catalog=replay_member(replay["catalog"]),
         destination=replay["destination"], start=replay["from"], output_directory=plan_directory,
@@ -1338,17 +1484,7 @@ def replay_destination_archive(handoff_path, output_directory, *, riftworld_root
     if (actual != expected or actual["patchId"] != patch_info["patchId"]
             or candidate_sha != plan["candidate"]["sha256"] or route_sha != plan["adoptedRoute"]["sha256"]):
         raise ValueError("destination-archive-replay-result-mismatch")
-    verify_members()
-    if _hash(handoff_path) != handoff_sha:
-        raise ValueError("destination-archive-handoff-changed")
-
-    verification = output / "replay-verification.json"
-    report = {"schema": "rr2.destination-archive-replay/1", "status": "replayed", "ownerHost": platform.node(),
-              "handoff": {"path": str(handoff_path), "sha256": handoff_sha}, "restoration": restoration,
-              "plan": _reference(plan_directory / "plan.json"), "verifiedResult": actual,
-              "verification": str(verification), "inputSent": False, "currentRouteChanged": False}
-    write_json_atomic(verification, report)
-    return report
+    return actual
 
 
 def parser():

@@ -64,9 +64,16 @@ receipt for its new location while reusing matching cached scenes, patches and
 Detour builds. Repeating preparation with the same index and storage reuses
 that receipt.
 
-For a copied retained map, restore the RiftWorld archive and rebuild its index
-with `build-source-index --retained-patch` and the copied model stores. Pass that
-index and the archive's request and destination catalog to `--prepare-request`.
+For a retained RiftWorld replay archive, keep the ZIP and its `handoff.json`
+together. Use the [archive replay command](#replay-the-verified-watch-route-from-a-copied-archive)
+with a fresh output directory. Waypoints checks the ZIP and restored files,
+rebuilds a local source index from the archived model stores, and plans offline.
+The verification records the source index, request, preparation, patch, build
+and candidate IDs, the Detour polygon count and the candidate point count.
+[Retained Watch archive replay](../../artifacts/retained-watch-archive-replay-cli-legion-20261123.json)
+
+For manual planning, pass the index from `build-source-index --retained-patch`
+and the restored request and catalog to `--prepare-request`.
 RR2 verifies the retained source patch and its scene through the preparation
 handoff. Pass the archive's limits with `--max-horizontal-snap` and
 `--max-vertical-snap` when reproducing its query. RR2 checks the limits in the
