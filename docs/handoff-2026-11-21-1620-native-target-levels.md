@@ -1,9 +1,17 @@
 # RR2 handoff — November 21, 2026, 16:20 EST
 
+**November 23 selected-target follow-up on LEGION:** Two advancing ReaderBridge
+packets reported **Tira Marlas, level 14** on build 1179, PID 424. The surrounding
+native reads agreed on the name and level and retained a stable native unit and
+entity. The Lua target section has no unit ID, so this is a name-correlated
+comparison. The copied capture replayed independently. No input was sent.
+[Selected-target replay](../artifacts/readerbridge-target-auto-legion-e7944567/independent-target-replay.json)
+
 **November 23 follow-up on LEGION:** The retained build-1179 capture and
 selected-target profile replayed with matching native level candidates of **14**
 for the same unit, entity, player and process epoch. This covers the native
-comparison in P0. Independent RIFT UI or Lua evidence remains pending.
+comparison in P0 for that retained unit. The newer LEGION passage above records
+the independent Lua comparison for Tira Marlas.
 [Replaying the native comparison](reference/physical-native-nearby-units-2026-11-21.md#numeric-level-candidates)
 
 A later read-only LEGION observation on PID 31684 found no selected unit at either
@@ -22,7 +30,7 @@ process epochs. The observations sent no input.
 On the same LEGION process, ReaderBridge published two advancing frames with
 player level 45, matching both surrounding native reads. The independent replay
 verified the retained packet and player evidence. ReaderBridge reported no
-target in both frames, so the selected-target level comparison remains open.
+target in either of those frames.
 New captures save the native context samples alongside the packets so that
 `replay_readerbridge_v3.py` can verify the comparison from a copied folder.
 [Player-level replay](../artifacts/readerbridge-replay-legion-wide-736cbfee/independent-replay.json)

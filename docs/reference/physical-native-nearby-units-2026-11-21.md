@@ -49,6 +49,18 @@ python -B scripts/replay_physical_selected_target_profile.py --profile PROFILE_J
   --keyed-levels KEYED_LEVELS_JSON --keyed-levels-sha256 RETAINED_KEYED_SHA256
 ```
 
+For a currently selected unit, ReaderBridge can retain two advancing Lua
+packets between native selected-target and template-name reads. Replay checks
+the source hashes, process and player, stable native unit and entity, and
+the acquisition order within 30 seconds. Lua publishes the target's name and
+level. The comparison uses the shared name because the packet has no unit ID.
+Copy the whole capture folder to replay it without a live reader.
+
+```powershell
+python -B scripts/capture_readerbridge_v3.py --expected-host $rr2Host --physical-pid CURRENT_VERIFIED_PID --auto-map --include-selected-target --output artifacts/NEW_TARGET_BRIDGE
+python -B scripts/replay_readerbridge_v3.py --summary artifacts/NEW_TARGET_BRIDGE/result.json
+```
+
 ## Physical acceptance
 
 - Verified exact physical RIFT process: AMD-DESKTOP, PID `37676`, process-start ticks `639308565554559088`, executable SHA-256 `DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01`.

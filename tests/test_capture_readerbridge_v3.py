@@ -198,7 +198,8 @@ class CaptureReaderBridgeTests(unittest.TestCase):
                 "--expected-host", HOST, "--physical-pid", "2468", "--seed-index", str(self.seed),
                 "--output", str(output), "--native-reader", str(self.reader),
             ]))
-        acquire.assert_called_once_with(HOST, 2468, self.seed, output, scan_mib=16, native_reader=self.reader)
+        acquire.assert_called_once_with(HOST, 2468, self.seed, output, scan_mib=16, native_reader=self.reader,
+                                        include_selected_target=False)
 
     def test_acquires_two_advancing_generations_with_bounded_requests(self):
         runner = FakeRunner()
@@ -261,6 +262,38 @@ class CaptureReaderBridgeTests(unittest.TestCase):
                         replay.replay(copied / "result.json")
                 finally:
                     source.write_bytes(raw)
+
+    def test_selected_target_replay_requires_ordered_hashed_sources_and_matching_names(self):
+        references = {}
+        for key, (name, kind) in capture.SELECTED_TARGET_SOURCES.items():
+            second = {"selectedBefore": 0, "nameBefore": 1, "nameAfter": 4, "selectedAfter": 5}[key]
+            observation = dict(identity=TARGET, selfKey=SELF_NUMBER, targetKey=1234, targetEntity=4567,
+                               startedAtUtc=f"2026-11-21T00:00:0{second}Z",
+                               completedAtUtc=f"2026-11-21T00:00:0{second}.1Z")
+            values = (dict(status="candidate", unitId="u00000000000004D2", numericLevelCandidate=14)
+                      if kind == "selected-target" else dict(selectedBaseNameCandidate="Tira Marlas"))
+            raw = json.dumps(dict(observation=observation, values=values)).encode()
+            (self.root / name).write_bytes(raw)
+            references[key] = {"file": name, "sha256": hashlib.sha256(raw).hexdigest().upper()}
+        generations = [{"luaTarget": {"name": "Tira Marlas", "level": 14},
+                        "startedAtUtc": f"2026-11-21T00:00:0{second}Z",
+                        "completedAtUtc": f"2026-11-21T00:00:0{second}.1Z"} for second in (2, 3)]
+        with patch.object(capture.physical_rift, "_native_values", side_effect=lambda _, doc: doc["values"]):
+            def compare():
+                return replay._selected_target_levels(self.root, references, TARGET, SELF_ID, generations)
+
+            result = compare()
+            self.assertEqual(result["status"], "matching-named-target-level-candidates")
+            self.assertFalse(result["luaUnitIdProvided"])
+            generations[0]["luaTarget"]["name"] = "Another NPC"
+            self.assertEqual(compare()["status"], "different-native-and-lua-target-names")
+            generations[-1]["completedAtUtc"] = "2026-11-21T00:00:05Z"
+            with self.assertRaisesRegex(ValueError, "selected-target-does-not-bracket-packets"):
+                compare()
+            name_report = self.root / "name-after.json"
+            name_report.write_bytes(name_report.read_bytes() + b"\n")
+            with self.assertRaisesRegex(ValueError, "selected-target-source-sha-mismatch"):
+                compare()
 
     def test_finds_current_private_scope_without_a_seed_and_rechecks_owner(self):
         address = 16 * capture.MIB

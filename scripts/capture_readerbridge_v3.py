@@ -319,8 +319,41 @@ def _retain_player_context(readout, destination):
     return {"file": destination.name, "sha256": sha}
 
 
+SELECTED_TARGET_SOURCES = {
+    "selectedBefore": ("selected-before.json", "selected-target"),
+    "nameBefore": ("name-before.json", "target-name"),
+    "nameAfter": ("name-after.json", "target-name"),
+    "selectedAfter": ("selected-after.json", "selected-target"),
+}
+
+
+def _retain_selected_target(selection, reader, read_native, directory, keys):
+    sources = {}
+    for key in keys:
+        filename, kind = SELECTED_TARGET_SOURCES[key]
+        path = directory / filename
+        readout = read_native(selection, kind, output=path, native_reader=reader)
+        if (readout.get("status") != "complete" or readout.get("nativeRead") != kind
+                or readout.get("target") != selection["target"] or readout.get("nativeOutput") != str(path)):
+            raise CaptureError("native-selected-target-source-unavailable:" + key)
+        with path.open("rb") as stream:
+            raw = stream.read(MIB + 1)
+        if not 0 < len(raw) <= MIB:
+            raise CaptureError("native-selected-target-source-size-invalid:" + key)
+        document = _loads_json(raw, filename)
+        if (not _same_target(document.get("observation", {}).get("identity", {}), selection["target"])
+                or physical_rift._native_values(kind, document) != readout["nativeValues"]):
+            raise CaptureError("native-selected-target-source-mismatch:" + key)
+        sha = hashlib.sha256(raw).hexdigest().upper()
+        recorded_sha = readout.get("nativeSourceSha256")
+        if recorded_sha is not None and recorded_sha.upper() != sha:
+            raise CaptureError("native-selected-target-source-changed:" + key)
+        sources[key] = {"file": filename, "sha256": sha}
+    return sources
+
+
 def acquire(expected_host: str, physical_pid: int, seed_index: Path | None, output: Path,
-            *, scan_mib: int = 16, native_reader=None, runner=subprocess.run, sleep=time.sleep,
+            *, scan_mib: int = 16, native_reader=None, include_selected_target=False, runner=subprocess.run, sleep=time.sleep,
             selector=physical_rift.select_physical, read_context=physical_rift.read_native,
             progress=_stderr_progress, reader_factory=ReadOnlyWindowsProcess) -> dict:
     # Native commands run from the checkout, even when invoked from elsewhere.
@@ -346,6 +379,10 @@ def acquire(expected_host: str, physical_pid: int, seed_index: Path | None, outp
     self_id, before = _read_current_self(selection, reader, read_context)
     output.mkdir(parents=True, exist_ok=False)
     before_ref = _retain_player_context(before, output / "native-player-before.json")
+    selected_target_refs = {}
+    if include_selected_target:
+        selected_target_refs.update(_retain_selected_target(
+            selection, reader, read_context, output, ("selectedBefore", "nameBefore")))
     scope = {"seedIndex": str(seed_index) if seed_index is not None else None, "maxAttempts": 3}
     if seed_index is None:
         scan_bytes = scan_mib * MIB
@@ -448,6 +485,9 @@ def acquire(expected_host: str, physical_pid: int, seed_index: Path | None, outp
     if final_id != self_id:
         raise CaptureError("player-changed-during-readerbridge-acquisition")
     after_ref = _retain_player_context(after, output / "native-player-after.json")
+    if include_selected_target:
+        selected_target_refs.update(_retain_selected_target(
+            selection, reader, read_context, output, ("nameAfter", "selectedAfter")))
     result = {"schemaVersion": 1, "evidenceKind": "readerbridge-v3-bounded-acquisition/1",
               "status": "captured", "ready": False, "inputSent": False,
               "guiStateChanged": False, "host": selection["ownerHost"], "target": target, "selfId": self_id,
@@ -455,6 +495,8 @@ def acquire(expected_host: str, physical_pid: int, seed_index: Path | None, outp
               "generations": generations, "attempts": attempts, "limitations": LIMITATIONS}
     if before_ref is not None and after_ref is not None:
         result["nativePlayerContext"] = {"before": before_ref, "after": after_ref}
+    if include_selected_target:
+        result["nativeSelectedTarget"] = selected_target_refs
     result["nextCheck"] = ("Independently correlate a controlled changed state before treating any "
                            "decoded field as qualified; reacquire from a fresh scout after every restart.")
     _write_json(output / "result.json", result)
@@ -477,12 +519,15 @@ def main(argv=None) -> int:
     parser.add_argument("--native-reader", type=Path, help="absolute path to a local published reader")
     parser.add_argument("--scan-mib", type=int,
                         help="bounded first-span scan size (1-32 MiB; default 16)")
+    parser.add_argument("--include-selected-target", action="store_true",
+                        help="retain bounded native target name and level reads around the Lua packets")
     args = parser.parse_args(argv)
     if args.check_dependencies:
         if args.auto_map or any(value is not None for value in (args.seed_index, args.output, args.scan_mib)):
-            parser.error("--check-dependencies accepts only --expected-host and --native-reader")
+            parser.error("--check-dependencies accepts only --expected-host, --native-reader and --include-selected-target")
+        kinds = ("player-context", "selected-target", "target-name") if args.include_selected_target else "player-context"
         result = physical_rift.check_native_reader(
-            args.expected_host, args.native_reader, kind="player-context",
+            args.expected_host, args.native_reader, kind=kinds,
             additional_commands=(SCOUT_COMMAND, CAPTURE_COMMAND))
         print(json.dumps(dict(result, inputSent=False, readerBridgePublisher="unverified")))
         return 0 if result["status"] == "ready" else 2
@@ -491,7 +536,8 @@ def main(argv=None) -> int:
     try:
         print(json.dumps(acquire(args.expected_host, args.physical_pid, args.seed_index,
                                  args.output, scan_mib=16 if args.scan_mib is None else args.scan_mib,
-                                 native_reader=args.native_reader), allow_nan=False))
+                                 native_reader=args.native_reader,
+                                 include_selected_target=args.include_selected_target), allow_nan=False))
         return 0
     except (ValueError, OSError) as exc:
         print(json.dumps({"status": "blocked", "ready": False, "inputSent": False,
