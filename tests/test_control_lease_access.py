@@ -164,8 +164,11 @@ class HttpLeaseTests(unittest.TestCase):
                 self.assertEqual(len(self.guest.commands), before)
 
     def test_operator_authentication_is_required_before_lease_parsing(self):
-        status, _ = self.post("action", ACTION, self.access, authorized=False)
+        # An empty JSON body still exercises validation after authentication.
+        # It leaves no unread body for Winsock to abort on the early rejection.
+        status, _ = self.post("action", None, raw="", authorized=False)
         self.assertEqual(status, 401)
+        self.assertEqual(self.post("action", None, raw="")[0], 409)
         self.assertFalse(any(c["operation"] == "action" for c in self.guest.commands))
 
     def test_unknown_envelope_fields_and_duplicate_tokens_rejected(self):
