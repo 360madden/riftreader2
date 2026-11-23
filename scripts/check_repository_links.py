@@ -1,5 +1,6 @@
 """Check repository Markdown links and count missing, ignored local evidence."""
 
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -16,8 +17,10 @@ def ignored_artifacts(root, paths):
         return set()
     # Git's index keeps tracked artifacts required even if an ignore rule also matches.
     encoded = b"".join(path.encode("utf-8") + b"\0" for path in sorted(paths))
+    # On Windows an empty value restored through os.environ can be absent from
+    # native inheritance. Git requires the empty entries in GIT_CONFIG_COUNT.
     result = subprocess.run(["git", "check-ignore", "-z", "--stdin"], cwd=root,
-                            input=encoded, capture_output=True)
+                            input=encoded, capture_output=True, env=os.environ.copy())
     if result.returncode not in (0, 1):
         raise ValueError("Could not check Git ignore rules for local artifacts.")
     return set(result.stdout.decode("utf-8").split("\0")) - {""}
