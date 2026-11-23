@@ -1,4 +1,4 @@
-"""Compare two retained AMD-DESKTOP physical-RIFT player-context samples.
+"""Compare two retained physical-RIFT player-context samples.
 
 Offline only. This compares candidate identities/statuses; it never reads a
 process, sends input, or treats a stable key as qualified player identity.
@@ -126,7 +126,7 @@ def _target_sequence(before, after):
     }
 
 
-def compare(before, after, before_sha256, after_sha256):
+def compare(before, after, before_sha256, after_sha256, *, owner_host=None):
     _require(before_sha256 != after_sha256, "reused-source")
     a, a_id, a_start, a_end = _sample(before)
     b, b_id, b_start, b_end = _sample(after)
@@ -144,7 +144,7 @@ def compare(before, after, before_sha256, after_sha256):
         "status": "complete",
         "qualification": QUALIFICATION,
         "identity": {
-            "host": "AMD-DESKTOP", "processId": a_id["processId"],
+            "host": owner_host, "processId": a_id["processId"],
             "processStartUtcTicks": str(a_id["processStartUtcTicks"]),
             "executableSha256": a_id["executableSha256"].upper(),
         },

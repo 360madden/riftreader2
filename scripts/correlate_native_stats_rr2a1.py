@@ -21,7 +21,7 @@ from scripts import compare_physical_rr2a1_passes as lua
 from scripts import probe_physical_rr2r1 as probe
 from scripts import replay_physical_player_state as state
 from scripts import survival_state
-from scripts.physical_rift import _utc_tick_order_key
+from scripts.physical_rift import _utc_tick_order_key, valid_host_name
 
 MAX_EVIDENCE_GAP_TICKS = 10 * 60 * 10_000_000
 
@@ -68,10 +68,11 @@ def correlate(state_summary, rr2a1_summary):
 
     summary_path = Path(rr2a1_summary)
     retained, retained_sha = sources.load(summary_path)
+    host = retained.get("ownerHost")
     require(retained.get("schemaVersion") == 1
             and retained.get("evidenceKind") == "amd-physical-rr2a1-bracketed-two-pass/1"
             and retained.get("status") == "candidate-only"
-            and retained.get("ownerHost") == "AMD-DESKTOP"
+            and valid_host_name(host)
             and isinstance(retained.get("target"), dict),
             "invalid-lua-summary")
     owner = native["target"]
@@ -80,8 +81,8 @@ def correlate(state_summary, rr2a1_summary):
         if field == "executableSha256":
             lhs, rhs = str(lhs).upper(), str(rhs).upper()
         require(lhs == rhs, "process-epoch-or-build-mismatch")
-    require(owner.get("hostName") == retained["target"].get("hostName") ==
-            "AMD-DESKTOP", "wrong-owner-host")
+    require(owner.get("hostName") == retained["target"].get("hostName") == host,
+            "wrong-owner-host")
 
     root = summary_path.parent
     focus = retained.get("secondPassFocus")
@@ -113,7 +114,7 @@ def correlate(state_summary, rr2a1_summary):
             and replayed.get("coordinateAgreementScreen", {}).get("withinTolerance")
             is True, "lua-native-replay-disagreement")
     peer = replayed["identity"]
-    require(peer.get("host") == "AMD-DESKTOP"
+    require(peer.get("host") == host
             and peer.get("processId") == owner["processId"]
             and str(peer.get("processStartUtcTicks")) ==
             str(owner["processStartUtcTicks"])

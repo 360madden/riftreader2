@@ -21,7 +21,7 @@ if str(ROOT) not in sys.path:
 from scripts import compare_physical_rr2a1_passes as pair
 from scripts import compare_physical_player_brackets as native
 from scripts import compare_physical_player_context_pair as source
-from scripts.physical_rift import _utc_tick_order_key
+from scripts.physical_rift import _utc_tick_order_key, valid_host_name
 
 
 def require(condition, reason):
@@ -35,7 +35,7 @@ def replay_session(summary_path):
     require(saved.get("schemaVersion") == 1
             and saved.get("evidenceKind") == "amd-physical-rr2a1-bracketed-two-pass/1"
             and saved.get("status") == "candidate-only"
-            and saved.get("ownerHost") == "AMD-DESKTOP",
+            and valid_host_name(saved.get("ownerHost")),
             "invalid-summary")
     root = path.parent
     fallback = saved["secondPassFocus"]["fallbackUsed"]
@@ -64,7 +64,7 @@ def replay_session(summary_path):
     require(recalculated == saved["comparison"], "saved-comparison-mismatch")
     require(recalculated["status"] == "candidate-only"
             and recalculated["coordinateAgreementScreen"]["withinTolerance"]
-            and recalculated["identity"]["host"] == "AMD-DESKTOP",
+            and recalculated["identity"]["host"] == saved["ownerHost"],
             "unqualified-coordinate-agreement")
     identity = recalculated["identity"]
     target = saved["target"]

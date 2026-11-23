@@ -1,4 +1,4 @@
-"""Read-only bounded RR2R1 candidate search on verified AMD-DESKTOP physical RIFT.
+"""Read-only bounded RR2R1 candidate search on the verified local RIFT host.
 
 Reuses the existing C# scout-copy-typed-native collector. A prefix match is
 NOT a decoded, fresh Lua frame; use the existing typed inspector to qualify it.
@@ -30,7 +30,6 @@ from scripts.compare_physical_player_context_pair import BUILD_SHA
 UPDATED_SHA = "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"
 SUPPORTED_SHAS = frozenset((BUILD_SHA, UPDATED_SHA))
 
-HOST = "AMD-DESKTOP"
 MARKER = "RR2R1|"
 SCAN_BYTES = 256 * 1024 * 1024
 SCAN_MS = 15_000
@@ -54,13 +53,17 @@ def unique(pairs):
     return result
 
 
-def pinned_selection(pid):
-    require(socket.gethostname().upper() == HOST, "wrong-host")
-    selection = physical_rift.select_physical(HOST, pid)
-    require(selection.get("status") == "ready" and selection.get("ownerHost") == HOST,
+def pinned_selection(pid, expected_host=None):
+    host = socket.gethostname()
+    require(physical_rift.valid_host_name(host)
+            and (expected_host is None or (physical_rift.valid_host_name(expected_host)
+                 and expected_host.casefold() == host.casefold())), "wrong-host")
+    selection = physical_rift.select_physical(host, pid)
+    require(selection.get("status") == "ready" and selection.get("ownerHost") == host,
             "physical-selection-unavailable")
     identity = selection.get("target")
     require(isinstance(identity, dict) and identity.get("processId") == pid
+            and str(identity.get("hostName", "")).casefold() == host.casefold()
             and str(identity.get("executableSha256", "")).upper() in SUPPORTED_SHAS
             and str(identity.get("processStartUtcTicks", "")).isdecimal(),
             "physical-build-or-epoch-invalid")
@@ -185,7 +188,9 @@ def resume_cursor(path, selection, reader_sha):
                 "executableSha256": str(target["executableSha256"]).upper()}
     require(summary.get("schemaVersion") == 1 and
             summary.get("evidenceKind") == "amd-physical-rr2r1-prefix-scan/1" and
-            summary.get("ownerHost") == HOST and summary.get("target") == expected and
+            physical_rift.valid_host_name(summary.get("ownerHost")) and
+            summary["ownerHost"].casefold() == selection["ownerHost"].casefold()
+            and summary.get("target") == expected and
             summary.get("readerSha256") == reader_sha and
             summary.get("status") == "no-copied-candidate-in-bounded-scopes",
             "resume-epoch-reader-or-status-mismatch")
@@ -226,7 +231,6 @@ def assess_saved(summary_path, output_dir, session_id=None):
     """
     if session_id is not None:
         require_session_id(session_id)
-    require(socket.gethostname().upper() == HOST, "wrong-host")
     summary_path = Path(summary_path)
     raw = summary_path.read_bytes()
     require(len(raw) <= 1_000_000, "saved-summary-too-large")
@@ -234,7 +238,7 @@ def assess_saved(summary_path, output_dir, session_id=None):
     require(isinstance(summary, dict)
             and summary.get("schemaVersion") == 1
             and summary.get("evidenceKind") == "amd-physical-rr2r1-prefix-scan/1"
-            and summary.get("ownerHost") == HOST,
+            and physical_rift.valid_host_name(summary.get("ownerHost")),
             "saved-summary-invalid")
     target = summary.get("target")
     require(isinstance(target, dict)
@@ -313,7 +317,7 @@ def assess_saved(summary_path, output_dir, session_id=None):
         "schemaVersion": 1,
         "evidenceKind": "amd-physical-rr2r1-retained-assessment/1",
         "status": reference["status"],
-        "ownerHost": HOST,
+        "ownerHost": summary["ownerHost"],
         "historicalTarget": target,
         "sourceSummarySha256": hashlib.sha256(raw).hexdigest().upper(),
         "sourceVerifiedRuns": len(rows),
@@ -334,7 +338,7 @@ def assess_saved(summary_path, output_dir, session_id=None):
 
 def collect(pid, output_dir, *, scan_bytes=SCAN_BYTES, scan_ms=SCAN_MS,
             max_scans=SCAN_COUNT, gap_seconds=1.0, resume_summary=None,
-            session_id=None, start_address="0x10000"):
+            session_id=None, start_address="0x10000", expected_host=None):
     if session_id is not None:
         require_session_id(session_id)
     require(type(pid) is int and 0 < pid < 2**31, "explicit-pid-required")
@@ -349,7 +353,8 @@ def collect(pid, output_dir, *, scan_bytes=SCAN_BYTES, scan_ms=SCAN_MS,
             and type(max_scans) is int and 1 <= max_scans <= 16
             and type(gap_seconds) in (int, float) and 0 <= gap_seconds <= 10,
             "scan-bounds-invalid")
-    selection = pinned_selection(pid)
+    selection = pinned_selection(pid, expected_host)
+    host = selection["ownerHost"]
     reader = physical_rift.NATIVE_EXE
     require(reader.is_file(), "existing-dotnet-reader-unavailable")
     reader_sha = digest(reader)
@@ -372,13 +377,13 @@ def collect(pid, output_dir, *, scan_bytes=SCAN_BYTES, scan_ms=SCAN_MS,
         "maxCopiedCandidates": 8,
         "marker": MARKER,
     }
-    output_dir = Path(output_dir)
+    output_dir = Path(output_dir).absolute()
     output_dir.mkdir(parents=True, exist_ok=False)
     results = []
     cursor = resume[0] if resume else start_address
     initial_cursor = cursor
     for number in range(1, max_scans + 1):
-        require(pinned_selection(pid)["target"] == target, "epoch-changed-before-scan")
+        require(pinned_selection(pid, host)["target"] == target, "epoch-changed-before-scan")
         require(digest(reader) == reader_sha, "reader-changed")
         # No usable copied frame: advance the native reader's bounded cursor.
         # Copied candidates: resample the same scope to seek an advancing frame.
@@ -396,7 +401,7 @@ def collect(pid, output_dir, *, scan_bytes=SCAN_BYTES, scan_ms=SCAN_MS,
         # Exit 3 means the C# collector recorded a partial scope, not an error.
         require(process.returncode in (0, 3), "native-scanner-failed")
         result = check_index(directory / "index.json", request, request_sha, selection)
-        require(pinned_selection(pid)["target"] == target, "epoch-changed-after-scan")
+        require(pinned_selection(pid, host)["target"] == target, "epoch-changed-after-scan")
         require(digest(reader) == reader_sha, "reader-changed-after-scan")
         result["run"] = number
         result["requestSha256"] = request_sha
@@ -461,7 +466,7 @@ def collect(pid, output_dir, *, scan_bytes=SCAN_BYTES, scan_ms=SCAN_MS,
             "no loaded-addon attestation, native XYZ meaning, atomic freshness or movement causation"
             if session_id is not None else
             "prefix/snapshot evidence only; no decoded Lua frame, nonce/sequence, or freshness acceptance"),
-        "ownerHost": HOST,
+        "ownerHost": host,
         "target": request["target"],
         "readerSha256": reader_sha,
         "initialCursor": initial_cursor,
@@ -490,6 +495,7 @@ def main(argv=None):
     source.add_argument("--physical-pid", type=int)
     source.add_argument("--replay-summary", type=Path,
                         help="Offline source audit; --session-id optionally enables strict nonce-bound pair assessment")
+    parser.add_argument("--expected-host", help="require this local Windows hostname for capture")
     parser.add_argument("--output-dir", type=Path,
                         default=ROOT / "artifacts" / ("physical-rr2r1-" + uuid.uuid4().hex))
     parser.add_argument("--scan-bytes", type=int, default=SCAN_BYTES)
@@ -504,6 +510,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         if args.replay_summary is not None:
+            require(args.expected_host is None, "replay-does-not-select-live-host")
             require(args.resume_summary is None, "replay-cannot-resume-scanning")
             require(args.start_address == "0x10000", "replay-cannot-select-start-address")
             path, result = assess_saved(args.replay_summary, args.output_dir,
@@ -513,7 +520,8 @@ def main(argv=None):
                                    scan_bytes=args.scan_bytes, scan_ms=args.scan_ms,
                                    max_scans=args.max_scans,
                                    resume_summary=args.resume_summary,
-                                   session_id=args.session_id, start_address=args.start_address)
+                                   session_id=args.session_id, start_address=args.start_address,
+                                   expected_host=args.expected_host)
     except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:220]}))
         return 2

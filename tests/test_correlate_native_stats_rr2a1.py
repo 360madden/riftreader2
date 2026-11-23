@@ -18,6 +18,7 @@ from scripts import correlate_native_stats_rr2a1 as join
 PLAYER_KEY = "239816685251645959"
 PLAYER_ID = "u035400012FA2D207"
 BUILD = "A" * 64
+HOST = "RIFT-STATION"
 
 
 class LinkTests(unittest.TestCase):
@@ -35,7 +36,7 @@ class LinkTests(unittest.TestCase):
             file.write_text(file.name + str(file.parent), encoding="utf-8")
 
         self.owner = {
-            "hostName": "AMD-DESKTOP", "processId": 123,
+            "hostName": HOST, "processId": 123,
             "processStartUtcTicks": "638000000000000001",
             "executableSha256": BUILD,
         }
@@ -56,7 +57,7 @@ class LinkTests(unittest.TestCase):
         }
         self.paired = {
             "status": "candidate-only",
-            "identity": {"host": "AMD-DESKTOP", "processId": 123,
+            "identity": {"host": HOST, "processId": 123,
                          "processStartUtcTicks": "638000000000000001",
                          "executableSha256": BUILD},
             "luaPlayerIdCandidate": PLAYER_ID,
@@ -71,7 +72,7 @@ class LinkTests(unittest.TestCase):
         self.retained = {
             "schemaVersion": 1,
             "evidenceKind": "amd-physical-rr2a1-bracketed-two-pass/1",
-            "status": "candidate-only", "ownerHost": "AMD-DESKTOP",
+            "status": "candidate-only", "ownerHost": HOST,
             "target": deepcopy(self.owner),
             "secondPassFocus": {"fallbackUsed": False},
             "nativeBracketSha256": {
@@ -123,6 +124,8 @@ class LinkTests(unittest.TestCase):
              "native-lua-self-id-mismatch"),
             ("pid", lambda: self.retained["target"].update(processId=124),
              "process-epoch-or-build-mismatch"),
+            ("host", lambda: self.retained["target"].update(hostName="OTHER-PC"),
+             "wrong-owner-host"),
             ("build", lambda: self.retained["target"].update(
                 executableSha256="F" * 64),
              "process-epoch-or-build-mismatch"),

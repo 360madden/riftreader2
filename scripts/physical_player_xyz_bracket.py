@@ -1,4 +1,4 @@
-"""Read-only AMD physical-RIFT player identity -> XYZ -> identity bracket.
+"""Read-only physical-RIFT player identity -> XYZ -> identity bracket.
 
 Reuse the existing current-build native readers. No input, window focusing,
 addon commands, VM access, or semantic qualification. Every source is retained
@@ -21,9 +21,6 @@ if str(ROOT) not in sys.path:
 from scripts import compare_physical_player_context_pair as context
 from scripts import physical_rift, project_xyz_track
 
-EXPECTED_HOST = "AMD-DESKTOP"
-
-
 def require(condition, reason):
     if not condition:
         raise ValueError("physical-player-xyz-" + reason)
@@ -32,13 +29,16 @@ def require(condition, reason):
 def assess(before, position, after, hashes, selection):
     """Validate three caller-SHA-pinned source reports and return candidates only."""
     identity = selection.get("target")
+    host = selection.get("ownerHost")
     require(selection.get("status") == "ready" and
-            selection.get("ownerHost") == EXPECTED_HOST and
-            isinstance(identity, dict), "host-or-selection-unavailable")
+            physical_rift.valid_host_name(host) and isinstance(identity, dict) and
+            physical_rift.valid_host_name(identity.get("hostName")) and
+            identity["hostName"].casefold() == host.casefold(),
+            "host-or-selection-unavailable")
     require(all(isinstance(hashes.get(k), str) and len(hashes[k]) == 64
                 for k in ("before", "position", "after")) and
             len(set(hashes.values())) == 3, "source-pins-unavailable")
-    comparison = context.compare(before, after, hashes["before"], hashes["after"])
+    comparison = context.compare(before, after, hashes["before"], hashes["after"], owner_host=host)
     require(comparison["selfKey"]["unchangedCandidate"], "self-key-changed")
     projection = project_xyz_track.project(
         position, max_gap_seconds=300, max_speed_3d=1e100)
@@ -101,17 +101,20 @@ def review_files(before, position, after, selection):
     return assess(reports["before"], reports["position"], reports["after"], hashes, selection)
 
 
-def collect(pid, output_dir, *, samples=3, interval_ms=250):
-    require(socket.gethostname().upper() == EXPECTED_HOST, "wrong-host")
+def collect(pid, output_dir, *, samples=3, interval_ms=250, expected_host=None):
+    host = socket.gethostname()
+    require(physical_rift.valid_host_name(host)
+            and (expected_host is None or (physical_rift.valid_host_name(expected_host)
+                 and expected_host.casefold() == host.casefold())), "wrong-host")
     require(type(pid) is int and 0 < pid < 2**31, "pid-required")
     require(type(samples) is int and 1 <= samples <= 30 and
             type(interval_ms) is int and 0 <= interval_ms <= 2000,
             "sampling-bounds-invalid")
-    selection = physical_rift.select_physical(EXPECTED_HOST, pid)
+    selection = physical_rift.select_physical(host, pid)
     require(selection.get("status") == "ready", "initial-selection-" + str(selection.get("reason")))
     require(str(selection["target"].get("executableSha256", "")).upper() in context.SUPPORTED_BUILD_SHAS,
             "unexpected-build")
-    output_dir = Path(output_dir)
+    output_dir = Path(output_dir).absolute()
     output_dir.mkdir(parents=True, exist_ok=False)
     names = {"before": output_dir / "context-before.json",
              "position": output_dir / "position.json",
@@ -127,7 +130,7 @@ def collect(pid, output_dir, *, samples=3, interval_ms=250):
     summary = review_files(names["before"], names["position"], names["after"], selection)
     # Re-select the very same PID/epoch after the reads: an exited/replaced game
     # cannot be described as a complete current-process capture.
-    final = physical_rift.select_physical(EXPECTED_HOST, pid)
+    final = physical_rift.select_physical(host, pid)
     require(final.get("status") == "ready" and final.get("target") == selection["target"],
             "final-process-identity-changed")
     receipt = output_dir / "summary.json"
@@ -140,6 +143,7 @@ def collect(pid, output_dir, *, samples=3, interval_ms=250):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--physical-pid", required=True, type=int)
+    parser.add_argument("--expected-host", help="require this local Windows hostname")
     parser.add_argument("--output-dir", type=Path,
                         default=ROOT / "artifacts" / ("physical-player-xyz-bracket-" + uuid.uuid4().hex))
     parser.add_argument("--samples", type=int, default=3)
@@ -147,7 +151,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         receipt, result = collect(args.physical_pid, args.output_dir,
-                                  samples=args.samples, interval_ms=args.interval_ms)
+                                  samples=args.samples, interval_ms=args.interval_ms,
+                                  expected_host=args.expected_host)
     except (OSError, ValueError, KeyError, TypeError, OverflowError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:220]}))
         return 2

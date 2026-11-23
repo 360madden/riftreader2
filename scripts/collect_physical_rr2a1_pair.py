@@ -3,14 +3,13 @@
 Reuses the existing C# typed-memory scanner, native bracket and SHA-checked
 offline comparator. A completed result is candidate-only: unbound RR2A1 is
 neither a nonce-authenticated source nor proof of action-associated movement.
-Raw files survive failure, and every process read is confined to AMD-DESKTOP.
+Raw files survive failure. Every read uses the verified local RIFT process.
 """
 from __future__ import annotations
 
 import argparse
 import json
 from pathlib import Path
-import socket
 import subprocess
 import sys
 import uuid
@@ -24,7 +23,6 @@ from scripts import (compare_physical_rr2a1_passes as compare,
                      physical_rift,
                      probe_physical_rr2r1 as probe)
 
-HOST = "AMD-DESKTOP"
 MARKER = "RR2A1|"
 
 
@@ -34,7 +32,7 @@ def require(ok, reason):
 
 
 def same_process(pid, original, reader_sha):
-    current = probe.pinned_selection(pid)
+    current = probe.pinned_selection(pid, original["ownerHost"])
     require(current["target"] == original["target"], "process-epoch-changed")
     require(probe.digest(physical_rift.NATIVE_EXE) == reader_sha,
             "native-reader-changed")
@@ -100,8 +98,7 @@ def focused_second_pass(index_path, receipt):
 
 def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
             samples=3, interval_ms=150, focus_second_pass=False,
-            start_address="0x10000"):
-    require(socket.gethostname().upper() == HOST, "wrong-host")
+            start_address="0x10000", expected_host=None):
     require(type(pid) is int and 0 < pid < 2**31, "explicit-pid-required")
     probe.checked_cursor(start_address)
     require(start_address == f"0x{int(start_address[2:], 16):X}",
@@ -114,18 +111,19 @@ def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
             type(interval_ms) is int and 0 <= interval_ms <= 2000 and
             type(focus_second_pass) is bool,
             "invalid-collection-bounds")
-    selection = probe.pinned_selection(pid)
+    selection = probe.pinned_selection(pid, expected_host)
+    host = selection["ownerHost"]
     reader = physical_rift.NATIVE_EXE
     require(reader.is_file(), "native-reader-unavailable")
     reader_sha = probe.digest(reader)
-    output_dir = Path(output_dir)
+    output_dir = Path(output_dir).absolute()
     output_dir.mkdir(parents=True, exist_ok=False)
 
     # Both native brackets and both Lua scans carry the same rechecked PID,
     # process start, exact executable SHA and C# reader binary identity.
     before, _ = bracket.collect(
         pid, output_dir / "native-before", samples=samples,
-        interval_ms=interval_ms)
+        interval_ms=interval_ms, expected_host=host)
     same_process(pid, selection, reader_sha)
     first, first_receipt = scan_once(
         pid, selection, reader_sha, output_dir / "pass-01",
@@ -149,7 +147,7 @@ def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
             scan_bytes=scan_bytes, scan_ms=scan_ms, start_address=start_address)
     after, _ = bracket.collect(
         pid, output_dir / "native-after", samples=samples,
-        interval_ms=interval_ms)
+        interval_ms=interval_ms, expected_host=host)
     same_process(pid, selection, reader_sha)
 
     # Source replay must pass before we describe any Lua/native agreement.
@@ -173,7 +171,7 @@ def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
             scan_bytes=scan_bytes, scan_ms=scan_ms, start_address=start_address)
         after, _ = bracket.collect(
             pid, output_dir / "native-after-broad", samples=samples,
-            interval_ms=interval_ms)
+            interval_ms=interval_ms, expected_host=host)
         same_process(pid, selection, reader_sha)
         paired = compare.compare(first, second, before, after)
     paired["captureOrder"] = compare.verify_capture_order(first, second, before, after)
@@ -181,7 +179,7 @@ def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
         "schemaVersion": 1,
         "evidenceKind": "amd-physical-rr2a1-bracketed-two-pass/1",
         "status": paired["status"],
-        "ownerHost": HOST,
+        "ownerHost": host,
         "target": selection["target"],
         "readerSha256": reader_sha,
         "nativeBracketSha256": {
@@ -218,6 +216,7 @@ def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--physical-pid", type=int, required=True)
+    parser.add_argument("--expected-host", help="require this local Windows hostname")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "artifacts" /
                         ("physical-rr2a1-bracketed-" + uuid.uuid4().hex))
     parser.add_argument("--scan-bytes", type=int, default=268_435_456)
@@ -235,7 +234,7 @@ def main(argv=None):
             scan_bytes=args.scan_bytes, scan_ms=args.scan_ms,
             samples=args.samples, interval_ms=args.interval_ms,
             focus_second_pass=args.focus_second_pass,
-            start_address=args.start_address)
+            start_address=args.start_address, expected_host=args.expected_host)
     except (OSError, ValueError, KeyError, TypeError, OverflowError,
             subprocess.TimeoutExpired) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:220],

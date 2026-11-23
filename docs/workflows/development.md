@@ -103,6 +103,16 @@ python -B scripts/capture_physical_telemetry_target_series.py --expected-host $r
 python -B scripts/prepare_physical_npc_survey.py --expected-host $rr2Host --physical-pid CURRENT_PID --include-levels --output-dir artifacts/NEW_NPC_PLAN
 ```
 
+The RR2A1 collector compares advancing unbound addon coordinates with native
+position brackets. The RR2R1 probe can retain potential reference frames for
+offline replay. A strict RR2R1 assessment requires the exact active addon nonce.
+
+```powershell
+python -B scripts/collect_physical_rr2a1_pair.py --expected-host $rr2Host --physical-pid CURRENT_PID --output-dir artifacts/NEW_RR2A1_PAIR
+python -B scripts/probe_physical_rr2r1.py --expected-host $rr2Host --physical-pid CURRENT_PID --max-scans 1 --output-dir artifacts/NEW_RR2R1_SCAN
+python -B scripts/probe_physical_rr2r1.py --replay-summary artifacts/NEW_RR2R1_SCAN/summary.json --output-dir artifacts/NEW_RR2R1_REPLAY
+```
+
 The facing result includes `nativeValues.opticalCamera` for the supported selected
 view mode. It reports optical yaw/pitch and world eye position, or a camera-specific
 unavailable reason. The gameplay camera/aim-point snapshot is retained separately.

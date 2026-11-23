@@ -10,6 +10,8 @@ from unittest.mock import patch
 
 from scripts import physical_player_xyz_bracket as bracket
 
+HOST = "RIFT-STATION"
+
 ID = {
     "processId": 123, "processStartUtcTicks": 638000000000000001,
     "executablePath": r"C:\Games\RIFT\rift_x64.exe",
@@ -57,8 +59,8 @@ def fixture():
             row(2, "2026-11-11T00:00:02Z", "2026-11-11T00:00:02.100Z", 4.0, 1000),
         ],
     }
-    selection = {"status": "ready", "ownerHost": "AMD-DESKTOP",
-                 "target": {"processId": 123, "processStartUtcTicks": str(ID["processStartUtcTicks"]),
+    selection = {"status": "ready", "ownerHost": HOST,
+                 "target": {"hostName": HOST, "processId": 123, "processStartUtcTicks": str(ID["processStartUtcTicks"]),
                             "executableSha256": bracket.context.BUILD_SHA}}
     return before, position, after, selection
 
@@ -74,6 +76,7 @@ class BracketTests(unittest.TestCase):
         result = evaluate(*fixture())
         self.assertEqual(result["status"], "candidate-only")
         self.assertEqual(result["selfKeyCandidate"], OWNER)
+        self.assertEqual(result["identity"]["host"], HOST)
         self.assertEqual(result["sampleCount"], 2)
         self.assertEqual(result["withinBracketPlanarDisplacementCandidate"], 3.0)
         self.assertIsNone(result["targetCandidate"]["afterIdCandidate"])
@@ -124,7 +127,7 @@ class BracketTests(unittest.TestCase):
                 self.assertIs(selected, selection)
                 Path(output).write_text(json.dumps(next(reports)), encoding="utf-8")
                 return {"status": "complete"}
-            with patch.object(bracket.socket, "gethostname", return_value="AMD-DESKTOP"), \
+            with patch.object(bracket.socket, "gethostname", return_value=HOST), \
                  patch.object(bracket.physical_rift, "select_physical", return_value=selection) as probe, \
                  patch.object(bracket.physical_rift, "read_native", side_effect=reader) as read:
                 path, result = bracket.collect(123, destination, samples=2, interval_ms=500)
@@ -145,7 +148,7 @@ class BracketTests(unittest.TestCase):
             def reader(sel, kind, path, **kwargs):
                 Path(path).write_text(json.dumps(next(reports)), encoding="utf-8")
                 return {"status": "complete"}
-            with patch.object(bracket.socket, "gethostname", return_value="AMD-DESKTOP"), \
+            with patch.object(bracket.socket, "gethostname", return_value=HOST), \
                  patch.object(bracket.physical_rift, "select_physical", side_effect=(selection, changed)), \
                  patch.object(bracket.physical_rift, "read_native", side_effect=reader):
                 with self.assertRaisesRegex(ValueError, "final-process-identity-changed"):
@@ -158,9 +161,9 @@ class BracketTests(unittest.TestCase):
              patch.object(bracket.physical_rift, "select_physical") as probe, \
              tempfile.TemporaryDirectory() as temp:
             with self.assertRaisesRegex(ValueError, "wrong-host"):
-                bracket.collect(123, Path(temp) / "x")
+                bracket.collect(123, Path(temp) / "x", expected_host=HOST)
             probe.assert_not_called()
-        with patch.object(bracket.socket, "gethostname", return_value="AMD-DESKTOP"), \
+        with patch.object(bracket.socket, "gethostname", return_value=HOST), \
              patch.object(bracket.physical_rift, "select_physical") as probe, \
              tempfile.TemporaryDirectory() as temp:
             with self.assertRaisesRegex(ValueError, "pid-required"):

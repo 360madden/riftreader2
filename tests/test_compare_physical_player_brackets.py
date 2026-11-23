@@ -10,7 +10,7 @@ import unittest
 
 from scripts import compare_physical_player_brackets as pair
 from scripts import physical_player_xyz_bracket as bracket
-from test_physical_player_xyz_bracket import fixture
+from tests.test_physical_player_xyz_bracket import fixture
 
 
 class BracketPairTests(unittest.TestCase):

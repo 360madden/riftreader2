@@ -12,11 +12,13 @@ from unittest.mock import patch
 
 from scripts import probe_physical_rr2r1 as probe
 
+HOST = "RIFT-STATION"
+
 TARGET = {
     "processId": 123, "processStartUtcTicks": "639299470183328173",
-    "executableSha256": probe.BUILD_SHA, "hostName": probe.HOST,
+    "executableSha256": probe.BUILD_SHA, "hostName": HOST,
 }
-SELECTION = {"status": "ready", "ownerHost": probe.HOST, "target": TARGET}
+SELECTION = {"status": "ready", "ownerHost": HOST, "target": TARGET}
 
 
 class ProbeTests(unittest.TestCase):
@@ -217,7 +219,7 @@ class ProbeTests(unittest.TestCase):
         with patch.object(probe.socket, "gethostname", return_value="UNEXPECTED"), \
              patch.object(probe.physical_rift, "select_physical") as select:
             with self.assertRaisesRegex(ValueError, "wrong-host"):
-                probe.pinned_selection(123)
+                probe.pinned_selection(123, HOST)
             select.assert_not_called()
 
     def test_rejects_changed_epoch_and_build(self):
@@ -225,7 +227,7 @@ class ProbeTests(unittest.TestCase):
                          {"processId": 124}):
             selection = deepcopy(SELECTION)
             selection["target"].update(mutation)
-            with patch.object(probe.socket, "gethostname", return_value=probe.HOST), \
+            with patch.object(probe.socket, "gethostname", return_value=HOST), \
                  patch.object(probe.physical_rift, "select_physical",
                               return_value=selection):
                 with self.subTest(mutation=mutation), self.assertRaises(ValueError):
@@ -354,11 +356,15 @@ class ProbeTests(unittest.TestCase):
                 with patch.object(probe, "pinned_selection", return_value=changed), \
                      self.assertRaisesRegex(ValueError, "resume-epoch-reader-or-status-mismatch"):
                     probe.collect(123, root / "bad-epoch", resume_summary=prior)
+                moved = dict(SELECTION, ownerHost="OTHER-PC", target=dict(TARGET, hostName="OTHER-PC"))
+                with patch.object(probe, "pinned_selection", return_value=moved), \
+                     self.assertRaisesRegex(ValueError, "resume-epoch-reader-or-status-mismatch"):
+                    probe.collect(123, root / "bad-host", resume_summary=prior)
                 reader.write_bytes(b"changed-reader")
                 with self.assertRaisesRegex(ValueError, "resume-epoch-reader-or-status-mismatch"):
                     probe.collect(123, root / "bad-reader", resume_summary=prior)
                 self.assertEqual(scan.call_count, 1)
-                for name in ("bad-index", "bad-epoch", "bad-reader"):
+                for name in ("bad-index", "bad-epoch", "bad-host", "bad-reader"):
                     self.assertFalse((root / name).exists())
 
     def test_resume_rejects_false_initial_cursor_before_scanning(self):
@@ -489,7 +495,7 @@ class ProbeTests(unittest.TestCase):
                 return {"status": "advancing-reference-in-pairing-window",
                         "diagnostics": {"advancing": 1},
                         "pairingWindow": {"withinWindow": True}}
-            with patch.object(probe.socket, "gethostname", return_value=probe.HOST), \
+            with patch.object(probe.socket, "gethostname", return_value="REPLAY-PC"), \
                  patch.object(probe, "pinned_selection") as selection, \
                  patch.object(probe.subprocess, "run") as scanner, \
                  patch.object(probe.assess_typed_wire_runs, "assess", side_effect=assess) as decoder:
@@ -498,6 +504,7 @@ class ProbeTests(unittest.TestCase):
                 scanner.assert_not_called()
                 decoder.assert_called_once()
             self.assertEqual(result["sourceVerifiedRuns"], 2)
+            self.assertEqual(result["ownerHost"], HOST)
             self.assertEqual(result["runsWithCopiedSnapshots"], 2)
             self.assertEqual([r["sourceVerifiedSnapshots"] for r in result["runDiagnostics"]], [1, 1])
             self.assertEqual(result["status"], "advancing-reference-in-pairing-window")
@@ -505,7 +512,7 @@ class ProbeTests(unittest.TestCase):
             self.assertEqual(path.read_text(encoding="utf-8").strip(),
                              json.dumps(result, indent=2))
             # A nonce must never be invented merely to inspect retained sources.
-            with patch.object(probe.socket, "gethostname", return_value=probe.HOST), \
+            with patch.object(probe.socket, "gethostname", return_value=HOST), \
                  patch.object(probe, "pinned_selection") as selection, \
                  patch.object(probe.subprocess, "run") as scanner, \
                  patch.object(probe.assess_typed_wire_runs, "assess") as decoder:
@@ -520,7 +527,7 @@ class ProbeTests(unittest.TestCase):
             self.assertEqual(json.loads(source_only_path.read_text()), source_only)
             copied = root / "source/run-01/capture-01.snapshot.json"
             copied.write_bytes(copied.read_bytes() + b" ")
-            with patch.object(probe.socket, "gethostname", return_value=probe.HOST), \
+            with patch.object(probe.socket, "gethostname", return_value=HOST), \
                  patch.object(probe.assess_typed_wire_runs, "assess") as decoder:
                 with self.assertRaisesRegex(ValueError, "scan-copy-source-hash-mismatch"):
                     probe.assess_saved(prior, root / "tampered", "a" * 32)
@@ -544,7 +551,7 @@ class ProbeTests(unittest.TestCase):
                  patch.object(probe.subprocess, "run", side_effect=invoke):
                 prior, _ = probe.collect(123, root / "source", max_scans=1,
                                          gap_seconds=0)
-            with patch.object(probe.socket, "gethostname", return_value=probe.HOST), \
+            with patch.object(probe.socket, "gethostname", return_value=HOST), \
                  patch.object(probe, "pinned_selection") as selection, \
                  patch.object(probe.assess_typed_wire_runs, "assess") as decoder:
                 _, result = probe.assess_saved(prior, root / "offline", "a" * 32)
@@ -552,7 +559,7 @@ class ProbeTests(unittest.TestCase):
                 decoder.assert_not_called()
             self.assertEqual(result["status"], "insufficient-independent-copied-runs")
             self.assertEqual(result["runsWithCopiedSnapshots"], 0)
-            with patch.object(probe.socket, "gethostname", return_value=probe.HOST), \
+            with patch.object(probe.socket, "gethostname", return_value=HOST), \
                  patch.object(probe.assess_typed_wire_runs, "assess") as decoder:
                 _, no_nonce = probe.assess_saved(prior, root / "source-only")
                 decoder.assert_not_called()
@@ -584,7 +591,7 @@ class ProbeTests(unittest.TestCase):
             self.assertEqual(summary["initialCursor"], "0x10000")
             summary["initialCursor"] = "0x30000"
             summary_path.write_text(json.dumps(summary), encoding="utf-8")
-            with patch.object(probe.socket, "gethostname", return_value=probe.HOST), \
+            with patch.object(probe.socket, "gethostname", return_value=HOST), \
                  patch.object(probe, "pinned_selection") as selection, \
                  patch.object(probe.subprocess, "run") as scanner:
                 with self.assertRaisesRegex(ValueError, "saved-cursor-chain-mismatch"):
@@ -593,12 +600,12 @@ class ProbeTests(unittest.TestCase):
                 scanner.assert_not_called()
             self.assertFalse((root / "replay").exists())
 
-    def test_replay_bad_nonce_or_wrong_host_fails_before_file_reads(self):
-        with patch.object(probe.socket, "gethostname", return_value=probe.HOST):
+    def test_replay_checks_nonce_before_files_and_never_requires_capture_host(self):
+        with patch.object(probe.socket, "gethostname", return_value=HOST):
             with self.assertRaises(ValueError):
                 probe.assess_saved("absent.json", "output", "INVALID")
         with patch.object(probe.socket, "gethostname", return_value="WRONG"):
-            with self.assertRaisesRegex(ValueError, "wrong-host"):
+            with self.assertRaises(FileNotFoundError):
                 probe.assess_saved("absent.json", "output", "a" * 32)
 
 

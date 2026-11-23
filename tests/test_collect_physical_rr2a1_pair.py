@@ -12,12 +12,15 @@ from unittest.mock import patch, Mock
 from scripts import collect_physical_rr2a1_pair as capture
 
 
+HOST = "RIFT-STATION"
+
 TARGET = {
+    "hostName": HOST,
     "processId": 1234,
     "processStartUtcTicks": "639300391441133615",
     "executableSha256": "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8",
 }
-SELECTION = {"status": "ready", "ownerHost": "AMD-DESKTOP",
+SELECTION = {"status": "ready", "ownerHost": HOST,
              "target": TARGET}
 
 
@@ -59,12 +62,12 @@ class PhysicalRR2A1PairTests(unittest.TestCase):
     def test_rejects_wrong_host_or_bad_bounds_without_file_writes(self):
         with tempfile.TemporaryDirectory() as temp:
             dest = Path(temp) / "capture"
-            with patch.object(capture.socket, "gethostname", return_value="LEGION"):
+            with patch.object(capture.probe.socket, "gethostname", return_value="LEGION"):
                 with self.assertRaisesRegex(ValueError, "wrong-host"):
-                    capture.collect(1234, dest)
+                    capture.collect(1234, dest, expected_host=HOST)
             self.assertFalse(dest.exists())
-            with patch.object(capture.socket, "gethostname",
-                              return_value="AMD-DESKTOP"):
+            with patch.object(capture.probe.socket, "gethostname",
+                              return_value=HOST):
                 with self.assertRaisesRegex(ValueError, "invalid-collection-bounds"):
                     capture.collect(1234, dest, scan_bytes=1023)
             self.assertFalse(dest.exists())
@@ -76,8 +79,8 @@ class PhysicalRR2A1PairTests(unittest.TestCase):
             reader.write_bytes(b"test")
             prior, _ = report(root, "prior")
             target = root / "new-capture"
-            with patch.object(capture.socket, "gethostname",
-                              return_value="AMD-DESKTOP"), \
+            with patch.object(capture.probe.socket, "gethostname",
+                              return_value=HOST), \
                  patch.object(capture.physical_rift, "NATIVE_EXE", reader), \
                  patch.object(capture.probe, "digest", return_value="A"*64), \
                  patch.object(capture.probe, "pinned_selection",
@@ -102,8 +105,8 @@ class PhysicalRR2A1PairTests(unittest.TestCase):
             first = {"indexSha256": "1"*64, "publishedSnapshots": 3}
             second = {"indexSha256": "2"*64, "publishedSnapshots": 4}
             dest = root / "output"
-            with patch.object(capture.socket, "gethostname",
-                              return_value="AMD-DESKTOP"), \
+            with patch.object(capture.probe.socket, "gethostname",
+                              return_value=HOST), \
                  patch.object(capture.physical_rift, "NATIVE_EXE", reader), \
                  patch.object(capture.probe, "digest", return_value="A"*64), \
                  patch.object(capture.probe, "pinned_selection",
@@ -118,6 +121,7 @@ class PhysicalRR2A1PairTests(unittest.TestCase):
                                return_value={"status": "source-verified-order"}) as order:
                 path, output = capture.collect(1234, dest, samples=2, interval_ms=100)
                 self.assertEqual(brackets.call_count, 2)
+                self.assertTrue(all(call.kwargs["expected_host"] == HOST for call in brackets.call_args_list))
                 self.assertEqual(scanner.call_count, 2)
                 replay.assert_called_once_with(i1, i2, a[0], b[0])
                 order.assert_called_once_with(i1, i2, a[0], b[0])
@@ -198,8 +202,8 @@ class PhysicalRR2A1PairTests(unittest.TestCase):
             missing = {"indexSha256": "F"*64, "publishedSnapshots": 0}
             recovered = {"indexSha256": "2"*64, "publishedSnapshots": 4}
             dest = root / "output"
-            with patch.object(capture.socket, "gethostname",
-                              return_value="AMD-DESKTOP"), \
+            with patch.object(capture.probe.socket, "gethostname",
+                              return_value=HOST), \
                  patch.object(capture.physical_rift, "NATIVE_EXE", reader), \
                  patch.object(capture.probe, "digest", return_value="A"*64), \
                  patch.object(capture.probe, "pinned_selection",
@@ -242,7 +246,7 @@ class PhysicalRR2A1PairTests(unittest.TestCase):
             i1 = {"indexSha256": "1"*64, "publishedSnapshots": 8}
             old = {"indexSha256": "F"*64, "publishedSnapshots": 8}
             new = {"indexSha256": "2"*64, "publishedSnapshots": 4}
-            with patch.object(capture.socket, "gethostname", return_value="AMD-DESKTOP"), \
+            with patch.object(capture.probe.socket, "gethostname", return_value=HOST), \
                  patch.object(capture.physical_rift, "NATIVE_EXE", reader), \
                  patch.object(capture.probe, "digest", return_value="A"*64), \
                  patch.object(capture.probe, "pinned_selection", return_value=SELECTION), \
@@ -284,7 +288,7 @@ class PhysicalRR2A1PairTests(unittest.TestCase):
             before, after = (report(root, name) for name in ("before", "after"))
             first, focused = root / "first-index", root / "focused-index"
             receipt = {"indexSha256": "1"*64, "publishedSnapshots": 8}
-            with patch.object(capture.socket, "gethostname", return_value="AMD-DESKTOP"), \
+            with patch.object(capture.probe.socket, "gethostname", return_value=HOST), \
                  patch.object(capture.physical_rift, "NATIVE_EXE", reader), \
                  patch.object(capture.probe, "digest", return_value="A"*64), \
                  patch.object(capture.probe, "pinned_selection", return_value=SELECTION), \

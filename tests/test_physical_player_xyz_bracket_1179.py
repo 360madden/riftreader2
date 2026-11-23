@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts import physical_player_xyz_bracket as bracket
-from tests.test_physical_player_xyz_bracket import fixture, evaluate
+from tests.test_physical_player_xyz_bracket import HOST, fixture, evaluate
 
 SHA_1179 = bracket.context.UPDATED_BUILD_SHA
 
@@ -69,7 +69,7 @@ class UpdatedBuildNativeBracketTests(unittest.TestCase):
                 self.assertEqual(sel["target"]["executableSha256"], SHA_1179)
                 Path(output).write_text(json.dumps(next(source)), encoding="utf-8")
                 return {"status": "complete"}
-            with (patch.object(bracket.socket, "gethostname", return_value=bracket.EXPECTED_HOST),
+            with (patch.object(bracket.socket, "gethostname", return_value=HOST),
                   patch.object(bracket.physical_rift, "select_physical", return_value=selection) as selected,
                   patch.object(bracket.physical_rift, "read_native", side_effect=reader) as read):
                 receipt, result = bracket.collect(123, dest, samples=2, interval_ms=100)
@@ -83,7 +83,7 @@ class UpdatedBuildNativeBracketTests(unittest.TestCase):
         selection["target"]["executableSha256"] = "F" * 64
         with TemporaryDirectory() as tmp:
             dest = Path(tmp) / "out"
-            with (patch.object(bracket.socket, "gethostname", return_value=bracket.EXPECTED_HOST),
+            with (patch.object(bracket.socket, "gethostname", return_value=HOST),
                   patch.object(bracket.physical_rift, "select_physical", return_value=selection),
                   patch.object(bracket.physical_rift, "read_native") as read):
                 with self.assertRaisesRegex(ValueError, "unexpected-build"):

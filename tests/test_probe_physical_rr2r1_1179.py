@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts import probe_physical_rr2r1 as probe
-from tests.test_probe_physical_rr2r1 import ProbeTests, SELECTION
+from tests.test_probe_physical_rr2r1 import HOST, ProbeTests, SELECTION
 
 
 class UpdatedRr2r1ProbeTests(unittest.TestCase):
@@ -19,12 +19,12 @@ class UpdatedRr2r1ProbeTests(unittest.TestCase):
         self.selection["target"]["executableSha256"] = probe.UPDATED_SHA
 
     def test_exact_1179_can_be_pinned_without_admitting_unknown_shas(self):
-        with patch.object(probe.socket, "gethostname", return_value=probe.HOST), \
+        with patch.object(probe.socket, "gethostname", return_value=HOST), \
              patch.object(probe.physical_rift, "select_physical", return_value=self.selection):
             self.assertEqual(probe.pinned_selection(123), self.selection)
         unknown = deepcopy(self.selection)
         unknown["target"]["executableSha256"] = "F" * 64
-        with patch.object(probe.socket, "gethostname", return_value=probe.HOST), \
+        with patch.object(probe.socket, "gethostname", return_value=HOST), \
              patch.object(probe.physical_rift, "select_physical", return_value=unknown):
             with self.assertRaisesRegex(ValueError, "physical-build-or-epoch-invalid"):
                 probe.pinned_selection(123)
@@ -168,7 +168,7 @@ class UpdatedRr2r1ProbeTests(unittest.TestCase):
                       "executableSha256": probe.BUILD_SHA}
             summary = {"schemaVersion": 1,
                        "evidenceKind": "amd-physical-rr2r1-prefix-scan/1",
-                       "ownerHost": probe.HOST,
+                       "ownerHost": HOST,
                        "target": target,
                        "readerSha256": "0" * 64,
                        "status": "no-copied-candidate-in-bounded-scopes",
@@ -183,12 +183,12 @@ class UpdatedRr2r1ProbeTests(unittest.TestCase):
             path = Path(tmp) / "summary.json"
             data = {"schemaVersion": 1,
                     "evidenceKind": "amd-physical-rr2r1-prefix-scan/1",
-                    "ownerHost": probe.HOST,
+                    "ownerHost": HOST,
                     "target": {"processId": 123, "processStartUtcTicks": 123,
                                "executableSha256": "E" * 64},
                     "runs": [{"run": 1}]}
             path.write_text(json.dumps(data), encoding="utf-8")
-            with patch.object(probe.socket, "gethostname", return_value=probe.HOST):
+            with patch.object(probe.socket, "gethostname", return_value=HOST):
                 with self.assertRaisesRegex(ValueError, "saved-target-invalid"):
                     probe.assess_saved(path, Path(tmp) / "result")
 

@@ -1,4 +1,4 @@
-"""Strict offline comparison of two independently retained AMD physical self->XYZ brackets.
+"""Strict offline comparison of two independently retained physical self->XYZ brackets.
 
 Rechecks every native source and the saved summary, never reads a live process.
 A changed coordinate is a *candidate difference*, not movement causation or Lua proof.
@@ -17,7 +17,7 @@ if str(ROOT) not in sys.path:
 
 from scripts import compare_physical_player_context_pair as context
 from scripts import physical_player_xyz_bracket as bracket
-from scripts.physical_rift import _utc_tick_order_key
+from scripts.physical_rift import _utc_tick_order_key, valid_host_name
 
 
 def require(condition, reason):
@@ -34,10 +34,11 @@ def verified_bracket(summary_path):
             and isinstance(summary.get("identity"), dict)
             and isinstance(summary.get("sourceSha256"), dict), "summary-shape-invalid")
     identity = summary["identity"]
-    require(identity.get("host") == bracket.EXPECTED_HOST, "wrong-owner")
+    require(valid_host_name(identity.get("host")), "wrong-owner")
     selection = {
-        "status": "ready", "ownerHost": bracket.EXPECTED_HOST,
+        "status": "ready", "ownerHost": identity["host"],
         "target": {
+            "hostName": identity["host"],
             "processId": identity.get("processId"),
             "processStartUtcTicks": identity.get("processStartUtcTicks"),
             "executableSha256": identity.get("executableSha256"),

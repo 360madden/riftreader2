@@ -19,6 +19,7 @@ if str(ROOT) not in sys.path:
 
 from scripts import compare_physical_player_brackets as native
 from scripts import compare_physical_player_context_pair as context
+from scripts.physical_rift import valid_host_name
 from scripts import replay_physical_player_state as native_state
 
 PREFIX = b"RR2A1|"
@@ -111,8 +112,10 @@ def lua_health_trend(frames):
 def compare_native_health(lua_report, native_report):
     """Screen source-pinned, same-owner *non-atomic* HP candidate agreement."""
     identity, owner = lua_report["identity"], native_report.get("target")
+    host = identity.get("host")
     require(isinstance(owner, dict)
-            and owner.get("hostName") == identity["host"] == "AMD-DESKTOP"
+            and valid_host_name(host) and valid_host_name(owner.get("hostName"))
+            and owner["hostName"].casefold() == host.casefold()
             and owner.get("processId") == identity["processId"]
             and str(owner.get("processStartUtcTicks")) ==
                 str(identity["processStartUtcTicks"])
@@ -169,7 +172,7 @@ def replay(index_path, native_summary_path):
     bracket, native_sha, _, _ = native.verified_bracket(native_summary_path)
     identity = bracket["identity"]
     target = request["target"]
-    require(identity.get("host") == "AMD-DESKTOP"
+    require(valid_host_name(identity.get("host"))
             and identity.get("processId") == target.get("processId")
             and int(identity.get("processStartUtcTicks", "0")) == target.get("processStartUtcTicks")
             and identity.get("executableSha256") == target.get("executableSha256")

@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts import collect_physical_rr2a1_pair as capture
-from tests.test_collect_physical_rr2a1_pair import SELECTION, report, success
+from tests.test_collect_physical_rr2a1_pair import HOST, SELECTION, report, success
 
 UPDATED_SHA = capture.probe.UPDATED_SHA
 CURSOR = "0x14000000"
@@ -36,7 +36,7 @@ class ScopedRr2a1Tests(unittest.TestCase):
         with TemporaryDirectory() as temp:
             root = Path(temp)
             reader, before, after, scans = self._mocks(root)
-            with (patch.object(capture.socket, "gethostname", return_value=capture.HOST),
+            with (patch.object(capture.probe.socket, "gethostname", return_value=HOST),
                   patch.object(capture.physical_rift, "NATIVE_EXE", reader),
                   patch.object(capture.probe, "digest", return_value="A" * 64),
                   patch.object(capture.probe, "pinned_selection", return_value=self.selection),
@@ -57,7 +57,7 @@ class ScopedRr2a1Tests(unittest.TestCase):
         with TemporaryDirectory() as temp:
             root = Path(temp)
             reader, before, after, scans = self._mocks(root, fallback=True)
-            with (patch.object(capture.socket, "gethostname", return_value=capture.HOST),
+            with (patch.object(capture.probe.socket, "gethostname", return_value=HOST),
                   patch.object(capture.physical_rift, "NATIVE_EXE", reader),
                   patch.object(capture.probe, "digest", return_value="A" * 64),
                   patch.object(capture.probe, "pinned_selection", return_value=self.selection),
