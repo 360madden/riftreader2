@@ -13,8 +13,8 @@ import venv
 
 ROOT = Path(__file__).resolve().parents[1]
 ENTRY_POINT = """
-import json, sys
-print(json.dumps({'executable': sys.executable, 'arguments': sys.argv[1:]}))
+import json, os, sys
+print(json.dumps({'executable': sys.executable, 'arguments': sys.argv[1:], 'cwd': os.getcwd()}))
 raise SystemExit(17)
 """
 
@@ -45,7 +45,7 @@ class WindowsLauncherTests(unittest.TestCase):
                               text=True, timeout=15)
 
     def test_desktop_and_cli_preserve_arguments_and_explicit_interpreter(self):
-        args = ["--route", "Example route with spaces.json"]
+        args = ["--route", "Example route with spaces.json", "--basis", "Calibration folder"]
         for launcher, prefix in (("rr2-waypoints.cmd", []), ("Waypoints.cmd", ["--detach-window"])):
             with self.subTest(launcher=launcher):
                 result = self.run_launcher(launcher, args, override=sys.executable)
@@ -53,6 +53,7 @@ class WindowsLauncherTests(unittest.TestCase):
                 output = json.loads(result.stdout)
                 self.assertEqual(Path(output["executable"]), Path(sys.executable))
                 self.assertEqual(output["arguments"], prefix + args)
+                self.assertEqual(Path(output["cwd"]), self.root.parent)
 
     def test_checkout_uses_its_virtual_environment_by_default(self):
         environment = self.root / ".venv"

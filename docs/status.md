@@ -1,5 +1,7 @@
 # Current status
 
+**2026-11-23 — Waypoints preserves caller-relative route and calibration paths.** Both Windows launchers preserve the shell's working directory when starting Waypoints. On LEGION, **95 focused tests and 179 subtests passed**, including the real batch files invoked from outside a fixture checkout with relative paths containing spaces. [Waypoints launch and setup](workflows/physical-waypoints.md#local-calibration-and-dependency-checks)
+
 **2026-11-23 — Waypoints Qt markers accept a configured Python on LEGION.** `RR2_OVERLAY_PYTHON` selects a local Qt environment, with the checkout's overlay environment or native presenter still available by default. A missing explicit interpreter is refused before marker files or a child are created. LEGION loaded **Qt 6.12.0** and **Pillow 12.3.0**, and the overlay CLI started in help mode. **83 focused tests and 40 subtests passed.** [Waypoints visualization setup](workflows/physical-world-screen.md)
 
 **2026-11-23 — optional Rerun export and viewing accept a configured Python on LEGION.** `RR2_RERUN_PYTHON` selects the local visualization environment. From outside the checkout, the configured Rerun **0.43.1** environment exported the copied saved-view sources and verified the **97,895-byte** recording. **96 focused tests and 43 subtests passed.** The viewer command was verified without opening a window. [Recording](../artifacts/rerun-configured-legion-233f4a4d34/view.rrd) · [Save view and Rerun setup](workflows/physical-world-screen.md)

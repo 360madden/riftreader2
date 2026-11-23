@@ -19,8 +19,9 @@ from scripts.physical_waypoints import PhysicalAdapter, launch_window, movement_
 
 
 def start_window_process(arguments):
+    """Detach the helper with the caller's route and calibration path base."""
     command = [sys.executable, str(Path(__file__).resolve()), *arguments]
-    return subprocess.Popen(command, cwd=ROOT, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+    return subprocess.Popen(command, cwd=Path.cwd(), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL,
                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 

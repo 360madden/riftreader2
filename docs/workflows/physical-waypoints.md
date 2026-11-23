@@ -874,6 +874,7 @@ owners/facing. An explicit `--physical-pid` remains pinned to that process;
 changed builds or players and ambiguous processes are refused. Reconnection
 does not resume an interrupted trip or start movement.
 The launcher defaults to **Face, then walk**. `--route PATH` opens a saved route.
+Relative `--route` and `--basis` paths start from the shell that launched Waypoints.
 
 ### Local calibration and dependency checks
 

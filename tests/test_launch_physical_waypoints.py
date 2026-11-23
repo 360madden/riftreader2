@@ -55,12 +55,15 @@ class LauncherTests(unittest.TestCase):
 
     def test_desktop_launcher_detaches_using_the_selected_interpreter(self):
         route = self.root / "my route.json"
+        caller = self.root / "other working directory"
         with patch.object(launcher.subprocess, "Popen") as spawn, \
+             patch.object(launcher.Path, "cwd", return_value=caller), \
              patch.object(launcher.physical_rift, "select_physical") as select:
             self.assertEqual(launcher.main(["--detach-window", "--route", str(route)]), 0)
         command = spawn.call_args.args[0]
         self.assertEqual(command[0], sys.executable)
         self.assertEqual(command[2:], ["--route", str(route)])
+        self.assertEqual(spawn.call_args.kwargs["cwd"], caller)
         self.assertEqual(spawn.call_args.kwargs["creationflags"],
                          getattr(launcher.subprocess, "CREATE_NO_WINDOW", 0))
         select.assert_not_called()
