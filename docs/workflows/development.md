@@ -103,6 +103,38 @@ native read commands. Set `$env:RR2_NATIVE_READER = $rr2PublishedReader` to use
 it as the default for physical reads and Waypoints in this shell and its child
 processes. An explicit `--native-reader` takes precedence where supported.
 
+### Reuse local tools from a fresh checkout
+
+Set the paths you want to override in the shell that runs RR2. Keep the complete
+published folders and Python environments at their installed locations. Use a
+movement calibration measured on the Windows host that will run Waypoints.
+
+| Workflow | Setting | Local prerequisite |
+| --- | --- | --- |
+| Waypoints launcher and CLI | `RIFTREADER2_PYTHON` | Python with Tcl/Tk |
+| Native physical reads and Waypoints | `RR2_NATIVE_READER` | [Published Live reader](#publish-the-local-native-reader) |
+| Waypoints calibration | `RR2_WAYPOINTS_BASIS` | [Verified calibration folder](physical-waypoints.md#local-calibration-and-dependency-checks) |
+| WGC capture | `RR2_WGC_PROBE` | [Published WGC probe](../../tools/physical-wgc-probe/README.md), Python with Pillow, and the active deployment's desktop-evidence directory |
+| Qt waypoint markers | `RR2_OVERLAY_PYTHON` | Python with [overlay requirements](../../requirements-overlay.txt) |
+| DXcam capture | `RR2_DXCAM_PYTHON` | Python with [capture requirements](../../requirements-capture.txt) |
+| Rerun export and viewer | `RR2_RERUN_PYTHON` | Python with [visualization requirements](../../requirements-visualization.txt) |
+| Shared desktop evidence and Workbridge capture | `RR2_WORKBRIDGE_ROOT`, `RR2_WORKBRIDGE_CLI_ROOT` | [Active local deployment and matching CLI](target-observation.md#active-workflow-on-the-local-windows-host) |
+
+Run these checks from the checkout without selecting a RIFT process. To check
+Workbridge capture, replace `--native-facing` with
+`--physical-capture-backend workbridge`.
+
+```powershell
+$rr2Host = [Environment]::MachineName
+$rr2Python = $env:RIFTREADER2_PYTHON
+if (!$rr2Python) { $rr2Python = 'python' }
+.\rr2-waypoints.cmd doctor --local --dependencies-only
+& $rr2Python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies --native-facing
+.\scripts\validate.ps1 -CheckPrerequisites
+```
+
+### Read native telemetry
+
 ```powershell
 python scripts/physical_rift.py --expected-host $rr2Host --read-native vitals
 # Also: position, orientation, actor-pose, smoothed-scalar, player-context, selected-target, stats.

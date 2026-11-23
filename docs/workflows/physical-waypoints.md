@@ -874,6 +874,9 @@ owners/facing. An explicit `--physical-pid` remains pinned to that process;
 changed builds or players and ambiguous processes are refused. Reconnection
 does not resume an interrupted trip or start movement.
 The launcher defaults to **Face, then walk**. `--route PATH` opens a saved route.
+
+### Local calibration and dependency checks
+
 For a read-only readiness check, run `python scripts/launch_physical_waypoints.py --check`.
 Before opening the helper on a Windows host, use `rr2-waypoints.cmd doctor --local`.
 It reports Tkinter and Tcl, the native reader executable, the current RIFT
