@@ -31,17 +31,17 @@ def require(ok, reason):
         raise ValueError("physical-rr2a1-collect-" + reason)
 
 
-def same_process(pid, original, reader_sha):
+def same_process(pid, original, reader, reader_sha):
     current = probe.pinned_selection(pid, original["ownerHost"])
     require(current["target"] == original["target"], "process-epoch-changed")
-    require(probe.digest(physical_rift.NATIVE_EXE) == reader_sha,
+    require(probe.digest(reader) == reader_sha,
             "native-reader-changed")
     return current
 
 
-def scan_once(pid, selection, reader_sha, directory, *, scan_bytes, scan_ms,
+def scan_once(pid, selection, reader_sha, directory, *, reader, scan_bytes, scan_ms,
               start_address="0x10000"):
-    same_process(pid, selection, reader_sha)
+    same_process(pid, selection, reader, reader_sha)
     directory.mkdir(parents=True, exist_ok=False)
     target = selection["target"]
     request = {
@@ -65,7 +65,7 @@ def scan_once(pid, selection, reader_sha, directory, *, scan_bytes, scan_ms,
                             encoding="utf-8")
     scan_dir = directory / "scan"
     process = subprocess.run(
-        [str(physical_rift.NATIVE_EXE), "scout-copy-typed-native",
+        [str(reader), "scout-copy-typed-native",
          "--request", str(request_path), "--output", str(scan_dir)],
         cwd=ROOT, capture_output=True, text=True, timeout=scan_ms / 1000 + 30,
         check=False,
@@ -74,7 +74,7 @@ def scan_once(pid, selection, reader_sha, directory, *, scan_bytes, scan_ms,
             str(process.returncode))
     receipt = probe.check_index(
         scan_dir / "index.json", request, probe.digest(request_path), selection)
-    same_process(pid, selection, reader_sha)
+    same_process(pid, selection, reader, reader_sha)
     return scan_dir / "index.json", receipt
 
 
@@ -98,7 +98,7 @@ def focused_second_pass(index_path, receipt):
 
 def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
             samples=3, interval_ms=150, focus_second_pass=False,
-            start_address="0x10000", expected_host=None):
+            start_address="0x10000", expected_host=None, native_reader=None):
     require(type(pid) is int and 0 < pid < 2**31, "explicit-pid-required")
     probe.checked_cursor(start_address)
     require(start_address == f"0x{int(start_address[2:], 16):X}",
@@ -111,10 +111,10 @@ def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
             type(interval_ms) is int and 0 <= interval_ms <= 2000 and
             type(focus_second_pass) is bool,
             "invalid-collection-bounds")
+    reader = physical_rift._native_reader_path(native_reader)
+    require(reader.is_file(), "native-reader-unavailable")
     selection = probe.pinned_selection(pid, expected_host)
     host = selection["ownerHost"]
-    reader = physical_rift.NATIVE_EXE
-    require(reader.is_file(), "native-reader-unavailable")
     reader_sha = probe.digest(reader)
     output_dir = Path(output_dir).absolute()
     output_dir.mkdir(parents=True, exist_ok=False)
@@ -123,11 +123,11 @@ def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
     # process start, exact executable SHA and C# reader binary identity.
     before, _ = bracket.collect(
         pid, output_dir / "native-before", samples=samples,
-        interval_ms=interval_ms, expected_host=host)
-    same_process(pid, selection, reader_sha)
+        interval_ms=interval_ms, expected_host=host, native_reader=native_reader)
+    same_process(pid, selection, reader, reader_sha)
     first, first_receipt = scan_once(
         pid, selection, reader_sha, output_dir / "pass-01",
-        scan_bytes=scan_bytes, scan_ms=scan_ms,
+        reader=reader, scan_bytes=scan_bytes, scan_ms=scan_ms,
         start_address=start_address)
     focus = (focused_second_pass(first, first_receipt)
              if focus_second_pass else None)
@@ -135,7 +135,7 @@ def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
         focus = None  # Never exceed the caller's scan-byte budget.
     second, second_receipt = scan_once(
         pid, selection, reader_sha, output_dir / "pass-02",
-        scan_bytes=focus[1] if focus else scan_bytes, scan_ms=scan_ms,
+        reader=reader, scan_bytes=focus[1] if focus else scan_bytes, scan_ms=scan_ms,
         start_address=focus[0] if focus else start_address)
     failed_focused_index_sha = None
     if focus is not None and second_receipt["publishedSnapshots"] < 2:
@@ -144,11 +144,11 @@ def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
         failed_focused_index_sha = second_receipt["indexSha256"]
         second, second_receipt = scan_once(
             pid, selection, reader_sha, output_dir / "pass-02-broad",
-            scan_bytes=scan_bytes, scan_ms=scan_ms, start_address=start_address)
+            reader=reader, scan_bytes=scan_bytes, scan_ms=scan_ms, start_address=start_address)
     after, _ = bracket.collect(
         pid, output_dir / "native-after", samples=samples,
-        interval_ms=interval_ms, expected_host=host)
-    same_process(pid, selection, reader_sha)
+        interval_ms=interval_ms, expected_host=host, native_reader=native_reader)
+    same_process(pid, selection, reader, reader_sha)
 
     # Source replay must pass before we describe any Lua/native agreement.
     try:
@@ -168,11 +168,11 @@ def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
         failed_focused_index_sha = second_receipt["indexSha256"]
         second, second_receipt = scan_once(
             pid, selection, reader_sha, output_dir / "pass-02-broad",
-            scan_bytes=scan_bytes, scan_ms=scan_ms, start_address=start_address)
+            reader=reader, scan_bytes=scan_bytes, scan_ms=scan_ms, start_address=start_address)
         after, _ = bracket.collect(
             pid, output_dir / "native-after-broad", samples=samples,
-            interval_ms=interval_ms, expected_host=host)
-        same_process(pid, selection, reader_sha)
+            interval_ms=interval_ms, expected_host=host, native_reader=native_reader)
+        same_process(pid, selection, reader, reader_sha)
         paired = compare.compare(first, second, before, after)
     paired["captureOrder"] = compare.verify_capture_order(first, second, before, after)
     summary = {
@@ -217,6 +217,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--physical-pid", type=int, required=True)
     parser.add_argument("--expected-host", help="require this local Windows hostname")
+    parser.add_argument("--native-reader", type=Path,
+                        help="absolute local path to a published RiftReader2.Live.exe")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "artifacts" /
                         ("physical-rr2a1-bracketed-" + uuid.uuid4().hex))
     parser.add_argument("--scan-bytes", type=int, default=268_435_456)
@@ -234,7 +236,8 @@ def main(argv=None):
             scan_bytes=args.scan_bytes, scan_ms=args.scan_ms,
             samples=args.samples, interval_ms=args.interval_ms,
             focus_second_pass=args.focus_second_pass,
-            start_address=args.start_address, expected_host=args.expected_host)
+            start_address=args.start_address, expected_host=args.expected_host,
+            native_reader=args.native_reader)
     except (OSError, ValueError, KeyError, TypeError, OverflowError,
             subprocess.TimeoutExpired) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:220],

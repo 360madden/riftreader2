@@ -62,9 +62,11 @@ class PhysicalRR2A1PairTests(unittest.TestCase):
     def test_rejects_wrong_host_or_bad_bounds_without_file_writes(self):
         with tempfile.TemporaryDirectory() as temp:
             dest = Path(temp) / "capture"
+            reader = Path(temp) / "reader.exe"
+            reader.write_bytes(b"reader")
             with patch.object(capture.probe.socket, "gethostname", return_value="LEGION"):
                 with self.assertRaisesRegex(ValueError, "wrong-host"):
-                    capture.collect(1234, dest, expected_host=HOST)
+                    capture.collect(1234, dest, expected_host=HOST, native_reader=reader)
             self.assertFalse(dest.exists())
             with patch.object(capture.probe.socket, "gethostname",
                               return_value=HOST):
@@ -107,7 +109,6 @@ class PhysicalRR2A1PairTests(unittest.TestCase):
             dest = root / "output"
             with patch.object(capture.probe.socket, "gethostname",
                               return_value=HOST), \
-                 patch.object(capture.physical_rift, "NATIVE_EXE", reader), \
                  patch.object(capture.probe, "digest", return_value="A"*64), \
                  patch.object(capture.probe, "pinned_selection",
                               return_value=SELECTION), \
@@ -119,10 +120,15 @@ class PhysicalRR2A1PairTests(unittest.TestCase):
                               return_value=success()) as replay, \
                   patch.object(capture.compare, "verify_capture_order",
                                return_value={"status": "source-verified-order"}) as order:
-                path, output = capture.collect(1234, dest, samples=2, interval_ms=100)
+                path, output = capture.collect(1234, dest, samples=2, interval_ms=100,
+                                               native_reader=reader)
                 self.assertEqual(brackets.call_count, 2)
                 self.assertTrue(all(call.kwargs["expected_host"] == HOST for call in brackets.call_args_list))
+                self.assertEqual([call.kwargs["native_reader"] for call in brackets.call_args_list],
+                                 [reader, reader])
                 self.assertEqual(scanner.call_count, 2)
+                self.assertEqual([call.kwargs["reader"] for call in scanner.call_args_list],
+                                 [reader, reader])
                 replay.assert_called_once_with(i1, i2, a[0], b[0])
                 order.assert_called_once_with(i1, i2, a[0], b[0])
             self.assertTrue(path.is_file())
@@ -145,8 +151,7 @@ class PhysicalRR2A1PairTests(unittest.TestCase):
             path = root / "pass"
             lowered = dict(SELECTION, target=dict(
                 TARGET, executableSha256=TARGET["executableSha256"].lower()))
-            with patch.object(capture.physical_rift, "NATIVE_EXE", reader), \
-                 patch.object(capture.probe, "pinned_selection",
+            with patch.object(capture.probe, "pinned_selection",
                               return_value=lowered) as pinned, \
                  patch.object(capture.probe, "digest",
                               return_value="A"*64), \
@@ -156,7 +161,7 @@ class PhysicalRR2A1PairTests(unittest.TestCase):
                               return_value={"indexSha256": "B"*64}) as index:
                 saved, result = capture.scan_once(
                     1234, lowered, "A"*64, path,
-                    scan_bytes=1_048_576, scan_ms=1000)
+                    reader=reader, scan_bytes=1_048_576, scan_ms=1000)
                 request = json.loads((path / "request.json").read_text())
                 self.assertEqual(request["marker"], "RR2A1|")
                 self.assertEqual(request["target"]["processId"], 1234)
@@ -167,6 +172,7 @@ class PhysicalRR2A1PairTests(unittest.TestCase):
                 self.assertEqual(result["indexSha256"], "B"*64)
                 self.assertEqual(saved, path / "scan" / "index.json")
                 proc.assert_called_once()
+                self.assertEqual(proc.call_args.args[0][0], str(reader))
                 self.assertEqual(index.call_count, 1)
 
     def test_focus_uses_only_complete_markers_in_current_pinned_index(self):
@@ -312,15 +318,14 @@ class PhysicalRR2A1PairTests(unittest.TestCase):
             reader = root / "reader.exe"
             reader.write_bytes(b"reader")
             path = root / "pass"
-            with patch.object(capture.physical_rift, "NATIVE_EXE", reader), \
-                 patch.object(capture.probe, "pinned_selection",
+            with patch.object(capture.probe, "pinned_selection",
                               return_value=SELECTION), \
                  patch.object(capture.probe, "digest", return_value="A"*64), \
                  patch.object(capture.subprocess, "run",
                               return_value=Mock(returncode=5)):
                 with self.assertRaisesRegex(ValueError, "native-scanner-exit-5"):
                     capture.scan_once(1234, SELECTION, "A"*64, path,
-                                      scan_bytes=1_048_576, scan_ms=1000)
+                                      reader=reader, scan_bytes=1_048_576, scan_ms=1000)
                 self.assertTrue((path / "request.json").is_file())
 
 

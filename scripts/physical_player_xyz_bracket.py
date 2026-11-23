@@ -101,7 +101,8 @@ def review_files(before, position, after, selection):
     return assess(reports["before"], reports["position"], reports["after"], hashes, selection)
 
 
-def collect(pid, output_dir, *, samples=3, interval_ms=250, expected_host=None):
+def collect(pid, output_dir, *, samples=3, interval_ms=250, expected_host=None,
+            native_reader=None):
     host = socket.gethostname()
     require(physical_rift.valid_host_name(host)
             and (expected_host is None or (physical_rift.valid_host_name(expected_host)
@@ -110,6 +111,7 @@ def collect(pid, output_dir, *, samples=3, interval_ms=250, expected_host=None):
     require(type(samples) is int and 1 <= samples <= 30 and
             type(interval_ms) is int and 0 <= interval_ms <= 2000,
             "sampling-bounds-invalid")
+    read = physical_rift.bind_native_reader(physical_rift.read_native, native_reader)
     selection = physical_rift.select_physical(host, pid)
     require(selection.get("status") == "ready", "initial-selection-" + str(selection.get("reason")))
     require(str(selection["target"].get("executableSha256", "")).upper() in context.SUPPORTED_BUILD_SHAS,
@@ -121,7 +123,7 @@ def collect(pid, output_dir, *, samples=3, interval_ms=250, expected_host=None):
              "after": output_dir / "context-after.json"}
     for name, kind in (("before", "player-context"), ("position", "position"),
                        ("after", "player-context")):
-        result = physical_rift.read_native(
+        result = read(
             selection, kind, names[name],
             samples=samples if kind == "position" else None,
             interval_ms=interval_ms if kind == "position" else None)
@@ -144,6 +146,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--physical-pid", required=True, type=int)
     parser.add_argument("--expected-host", help="require this local Windows hostname")
+    parser.add_argument("--native-reader", type=Path,
+                        help="absolute local path to a published RiftReader2.Live.exe")
     parser.add_argument("--output-dir", type=Path,
                         default=ROOT / "artifacts" / ("physical-player-xyz-bracket-" + uuid.uuid4().hex))
     parser.add_argument("--samples", type=int, default=3)
@@ -152,7 +156,8 @@ def main(argv=None):
     try:
         receipt, result = collect(args.physical_pid, args.output_dir,
                                   samples=args.samples, interval_ms=args.interval_ms,
-                                  expected_host=args.expected_host)
+                                  expected_host=args.expected_host,
+                                  native_reader=args.native_reader)
     except (OSError, ValueError, KeyError, TypeError, OverflowError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:220]}))
         return 2

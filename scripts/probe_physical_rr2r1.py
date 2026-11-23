@@ -34,6 +34,7 @@ MARKER = "RR2R1|"
 SCAN_BYTES = 256 * 1024 * 1024
 SCAN_MS = 15_000
 SCAN_COUNT = 8
+DECODER_CLI = ROOT / "src/RiftReader2.Cli/bin/Release/net10.0/RiftReader2.Cli.dll"
 
 
 def require(condition, reason):
@@ -223,7 +224,8 @@ def resume_cursor(path, selection, reader_sha):
     return prior, hashlib.sha256(raw).hexdigest().upper()
 
 
-def assess_saved(summary_path, output_dir, session_id=None):
+def assess_saved(summary_path, output_dir, session_id=None, *,
+                 decoder_cli=DECODER_CLI, dotnet="dotnet"):
     """Audit retained RR2R1 sources offline; decode only with an authentic nonce.
 
     The saved capture identity is historical, never a current-process pin.
@@ -303,9 +305,9 @@ def assess_saved(summary_path, output_dir, session_id=None):
         result = assess_typed_wire_runs.assess(
             summary_path.parent / f"run-{earlier:02d}",
             summary_path.parent / f"run-{later:02d}",
-            ROOT / "src/RiftReader2.Cli/bin/Release/net10.0/RiftReader2.Cli.dll",
+            Path(decoder_cli),
             assessment_dir, maximum_run_gap_seconds=120.0,
-            session_id=session_id)
+            dotnet=dotnet, session_id=session_id)
         reference = {
             "status": result["status"],
             "runs": [earlier, later],
@@ -338,7 +340,8 @@ def assess_saved(summary_path, output_dir, session_id=None):
 
 def collect(pid, output_dir, *, scan_bytes=SCAN_BYTES, scan_ms=SCAN_MS,
             max_scans=SCAN_COUNT, gap_seconds=1.0, resume_summary=None,
-            session_id=None, start_address="0x10000", expected_host=None):
+            session_id=None, start_address="0x10000", expected_host=None,
+            native_reader=None, decoder_cli=DECODER_CLI, dotnet="dotnet"):
     if session_id is not None:
         require_session_id(session_id)
     require(type(pid) is int and 0 < pid < 2**31, "explicit-pid-required")
@@ -353,10 +356,10 @@ def collect(pid, output_dir, *, scan_bytes=SCAN_BYTES, scan_ms=SCAN_MS,
             and type(max_scans) is int and 1 <= max_scans <= 16
             and type(gap_seconds) in (int, float) and 0 <= gap_seconds <= 10,
             "scan-bounds-invalid")
+    reader = physical_rift._native_reader_path(native_reader)
+    require(reader.is_file(), "existing-dotnet-reader-unavailable")
     selection = pinned_selection(pid, expected_host)
     host = selection["ownerHost"]
-    reader = physical_rift.NATIVE_EXE
-    require(reader.is_file(), "existing-dotnet-reader-unavailable")
     reader_sha = digest(reader)
     target = selection["target"]
     resume = (resume_cursor(resume_summary, selection, reader_sha)
@@ -428,9 +431,9 @@ def collect(pid, output_dir, *, scan_bytes=SCAN_BYTES, scan_ms=SCAN_MS,
             assessment = assess_typed_wire_runs.assess(
                 output_dir / f"run-{earlier['run']:02d}",
                 output_dir / f"run-{later['run']:02d}",
-                ROOT / "src/RiftReader2.Cli/bin/Release/net10.0/RiftReader2.Cli.dll",
+                Path(decoder_cli),
                 assessment_dir, maximum_run_gap_seconds=120.0,
-                session_id=session_id)
+                dotnet=dotnet, session_id=session_id)
             reference_assessment = {
                 "status": assessment["status"],
                 "runs": [earlier["run"], later["run"]],
@@ -496,6 +499,8 @@ def main(argv=None):
     source.add_argument("--replay-summary", type=Path,
                         help="Offline source audit; --session-id optionally enables strict nonce-bound pair assessment")
     parser.add_argument("--expected-host", help="require this local Windows hostname for capture")
+    parser.add_argument("--native-reader", type=Path,
+                        help="absolute local path to a published RiftReader2.Live.exe for capture")
     parser.add_argument("--output-dir", type=Path,
                         default=ROOT / "artifacts" / ("physical-rr2r1-" + uuid.uuid4().hex))
     parser.add_argument("--scan-bytes", type=int, default=SCAN_BYTES)
@@ -507,21 +512,27 @@ def main(argv=None):
                         help="Prior exact-epoch scanner summary; its requests/index files are reverified")
     parser.add_argument("--session-id",
                         help="Exact already-bound RR2R1 reader nonce for offline pair assessment")
+    parser.add_argument("--cli", type=Path, default=DECODER_CLI,
+                        help="published RiftReader2.Cli.dll for nonce-bound assessment")
+    parser.add_argument("--dotnet", default="dotnet",
+                        help="local .NET host for nonce-bound assessment")
     args = parser.parse_args(argv)
     try:
         if args.replay_summary is not None:
             require(args.expected_host is None, "replay-does-not-select-live-host")
+            require(args.native_reader is None, "replay-does-not-select-native-reader")
             require(args.resume_summary is None, "replay-cannot-resume-scanning")
             require(args.start_address == "0x10000", "replay-cannot-select-start-address")
             path, result = assess_saved(args.replay_summary, args.output_dir,
-                                        args.session_id)
+                                        args.session_id, decoder_cli=args.cli, dotnet=args.dotnet)
         else:
             path, result = collect(args.physical_pid, args.output_dir,
                                    scan_bytes=args.scan_bytes, scan_ms=args.scan_ms,
                                    max_scans=args.max_scans,
                                    resume_summary=args.resume_summary,
                                    session_id=args.session_id, start_address=args.start_address,
-                                   expected_host=args.expected_host)
+                                   expected_host=args.expected_host, native_reader=args.native_reader,
+                                   decoder_cli=args.cli, dotnet=args.dotnet)
     except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:220]}))
         return 2

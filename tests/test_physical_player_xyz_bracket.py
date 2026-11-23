@@ -123,6 +123,8 @@ class BracketTests(unittest.TestCase):
         reports = iter((a, p, b))
         with tempfile.TemporaryDirectory() as temp:
             destination = Path(temp) / "capture"
+            published = Path(temp) / "RiftReader2.Live.exe"
+            published.write_bytes(b"reader")
             def reader(selected, kind, output, **kwargs):
                 self.assertIs(selected, selection)
                 Path(output).write_text(json.dumps(next(reports)), encoding="utf-8")
@@ -130,9 +132,12 @@ class BracketTests(unittest.TestCase):
             with patch.object(bracket.socket, "gethostname", return_value=HOST), \
                  patch.object(bracket.physical_rift, "select_physical", return_value=selection) as probe, \
                  patch.object(bracket.physical_rift, "read_native", side_effect=reader) as read:
-                path, result = bracket.collect(123, destination, samples=2, interval_ms=500)
+                path, result = bracket.collect(123, destination, samples=2, interval_ms=500,
+                                               native_reader=published)
             self.assertEqual(probe.call_count, 2)
             self.assertEqual(read.call_count, 3)
+            self.assertEqual([call.kwargs["native_reader"] for call in read.call_args_list],
+                             [published, published, published])
             self.assertEqual(read.call_args_list[1].args[1], "position")
             self.assertEqual(read.call_args_list[1].kwargs["samples"], 2)
             self.assertTrue(path.exists())

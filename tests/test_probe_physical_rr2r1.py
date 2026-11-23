@@ -72,6 +72,7 @@ class ProbeTests(unittest.TestCase):
             reader.write_bytes(b"synthetic-reader")
             calls = []
             def invoke(argv, **kwargs):
+                self.assertEqual(argv[0], str(reader))
                 self.assertEqual(argv[1], "scout-copy-typed-native")
                 self.assertEqual(argv[2], "--request")
                 self.assertEqual(argv[4], "--output")
@@ -87,11 +88,11 @@ class ProbeTests(unittest.TestCase):
                     request, request_path, published=len(calls) - 1))
                 (directory / "index.json").write_text(json.dumps(index))
                 return subprocess.CompletedProcess(argv, 0, "", "")
-            with patch.object(probe.physical_rift, "NATIVE_EXE", reader), \
-                 patch.object(probe, "pinned_selection", return_value=SELECTION) as select, \
+            with patch.object(probe, "pinned_selection", return_value=SELECTION) as select, \
                  patch.object(probe.subprocess, "run", side_effect=invoke) as run, \
                  patch.object(probe.time, "sleep") as sleep:
-                receipt, result = probe.collect(123, root / "capture", max_scans=2)
+                receipt, result = probe.collect(123, root / "capture", max_scans=2,
+                                                native_reader=reader)
             self.assertEqual(run.call_count, 2)
             self.assertEqual(select.call_count, 5)
             sleep.assert_called_once()
@@ -410,6 +411,8 @@ class ProbeTests(unittest.TestCase):
             reader = root / "RiftReader2.Live.exe"
             reader.write_bytes(b"synthetic-reader")
             nonce = "a" * 32
+            decoder = root / "published" / "RiftReader2.Cli.dll"
+            dotnet = str(root / "runtime" / "dotnet.exe")
 
             def invoke(argv, **_kwargs):
                 request_path, directory = Path(argv[3]), Path(argv[5])
@@ -425,7 +428,8 @@ class ProbeTests(unittest.TestCase):
                 self.assertEqual(after.name, "run-02")
                 self.assertEqual(kwargs["session_id"], nonce)
                 self.assertEqual(kwargs["maximum_run_gap_seconds"], 120.0)
-                self.assertEqual(cli.name, "RiftReader2.Cli.dll")
+                self.assertEqual(cli, decoder)
+                self.assertEqual(kwargs["dotnet"], dotnet)
                 output.mkdir()
                 (output / "summary.json").write_text('{"status":"advanced"}')
                 return {"status": "advancing-reference-in-pairing-window",
@@ -437,7 +441,8 @@ class ProbeTests(unittest.TestCase):
                  patch.object(probe.subprocess, "run", side_effect=invoke), \
                  patch.object(probe.assess_typed_wire_runs, "assess", side_effect=assess) as strict:
                 path, summary = probe.collect(123, root / "capture", max_scans=2,
-                                              gap_seconds=0, session_id=nonce)
+                                              gap_seconds=0, session_id=nonce,
+                                              decoder_cli=decoder, dotnet=dotnet)
             strict.assert_called_once()
             reference = summary["referenceAssessment"]
             self.assertEqual(reference["status"], "advancing-reference-in-pairing-window")
@@ -486,9 +491,11 @@ class ProbeTests(unittest.TestCase):
                  patch.object(probe.subprocess, "run", side_effect=invoke):
                 prior, _ = probe.collect(123, root / "source", max_scans=2,
                                          gap_seconds=0)
-            def assess(before, after, _cli, output, **kwargs):
+            decoder_cli = root / "RiftReader2.Cli.dll"
+            def assess(before, after, cli, output, **kwargs):
                 self.assertEqual(before.name, "run-01")
                 self.assertEqual(after.name, "run-02")
+                self.assertEqual(cli, decoder_cli)
                 self.assertEqual(kwargs["session_id"], "a" * 32)
                 output.mkdir()
                 (output / "summary.json").write_text('{"status":"advanced"}')
@@ -499,7 +506,8 @@ class ProbeTests(unittest.TestCase):
                  patch.object(probe, "pinned_selection") as selection, \
                  patch.object(probe.subprocess, "run") as scanner, \
                  patch.object(probe.assess_typed_wire_runs, "assess", side_effect=assess) as decoder:
-                path, result = probe.assess_saved(prior, root / "replayed", "a" * 32)
+                path, result = probe.assess_saved(prior, root / "replayed", "a" * 32,
+                                                  decoder_cli=decoder_cli)
                 selection.assert_not_called()
                 scanner.assert_not_called()
                 decoder.assert_called_once()

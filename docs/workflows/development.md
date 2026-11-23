@@ -158,10 +158,14 @@ python -B scripts/compare_physical_player_state_epochs.py --before artifacts/BEF
 The RR2A1 collector compares advancing unbound addon coordinates with native
 position brackets. The RR2R1 probe can retain potential reference frames for
 offline replay. A strict RR2R1 assessment requires the exact active addon nonce.
+Both capture commands accept `--native-reader $rr2PublishedReader`. RR2A1 uses
+the selected binary for every scan and native bracket. For a nonce-bound RR2R1
+assessment during capture or offline replay, `--cli` selects a published
+`RiftReader2.Cli.dll` and `--dotnet` selects the local .NET host.
 
 ```powershell
-python -B scripts/collect_physical_rr2a1_pair.py --expected-host $rr2Host --physical-pid CURRENT_PID --output-dir artifacts/NEW_RR2A1_PAIR
-python -B scripts/probe_physical_rr2r1.py --expected-host $rr2Host --physical-pid CURRENT_PID --max-scans 1 --output-dir artifacts/NEW_RR2R1_SCAN
+python -B scripts/collect_physical_rr2a1_pair.py --expected-host $rr2Host --physical-pid CURRENT_PID --native-reader $rr2PublishedReader --output-dir artifacts/NEW_RR2A1_PAIR
+python -B scripts/probe_physical_rr2r1.py --expected-host $rr2Host --physical-pid CURRENT_PID --native-reader $rr2PublishedReader --max-scans 1 --output-dir artifacts/NEW_RR2R1_SCAN
 python -B scripts/probe_physical_rr2r1.py --replay-summary artifacts/NEW_RR2R1_SCAN/summary.json --output-dir artifacts/NEW_RR2R1_REPLAY
 ```
 
