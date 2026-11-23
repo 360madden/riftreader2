@@ -487,7 +487,7 @@ pwsh -NoProfile -File .\scripts\validate.ps1 -CheckPrerequisites
 The manifest includes the Lua, control and overlay requirements plus NumPy and
 pytest. The prerequisites check verifies the selected SDK, Python imports,
 Tcl initialization and the Lua 5.1 runtime without starting a game or window.
-It prints the absolute .NET executable path selected for this checkout.
+It prints the selected .NET and Python executable paths.
 The Python test step runs both unittest cases and pytest functions with Qt set
 to offscreen. It uses the Release build of the standalone RIFT Update Analyzer
 and the .NET executable selected by validation. For Lua-only changes,
@@ -503,9 +503,12 @@ exact SDK from this checkout. An explicit `-DotNet PATH` or
 `RIFTREADER2_DOTNET` selects only that executable, so an incompatible override
 fails directly.
 
-For Lua Python, the order is explicit `-LuaPython PATH`, environment variable
-`RIFTREADER2_LUA_PYTHON`, `artifacts/tools/lua-python/Scripts/python.exe`, then
-`python` on `PATH`.
+Validation checks `artifacts/tools/lua-python/Scripts/python.exe`, the
+checkout's `.venv`, Python installations on `PATH`, then installations listed
+by the Windows `py` launcher. It selects the first interpreter that passes the
+Python package, Tcl and pinned Lua checks. Use `-LuaPython PATH` or
+`RIFTREADER2_LUA_PYTHON` to check and use one specific interpreter. If it fails,
+validation reports the missing dependencies for that interpreter.
 
 ```powershell
 pwsh -NoProfile -File .\scripts\validate.ps1 -LuaPython artifacts/tools/lua-python/Scripts/python.exe

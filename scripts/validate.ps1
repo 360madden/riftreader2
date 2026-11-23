@@ -8,24 +8,16 @@ param(
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'resolve-validation-dotnet.ps1')
+. (Join-Path $PSScriptRoot 'resolve-validation-python.ps1')
 Push-Location $repoRoot
 try {
-    if (-not $LuaPython) {
-        $localLuaPython = Join-Path $repoRoot 'artifacts/tools/lua-python/Scripts/python.exe'
-        $LuaPython = if (Test-Path -LiteralPath $localLuaPython) { $localLuaPython } else { 'python' }
-    }
-    if (-not (Get-Command -Name $LuaPython -CommandType Application -ErrorAction SilentlyContinue)) {
-        throw 'Python executable not found. Pass -LuaPython or set RIFTREADER2_LUA_PYTHON.'
-    }
-    & $LuaPython scripts/check_validation_python.py
-    if ($LASTEXITCODE -ne 0) { throw 'Host test dependencies unavailable. Install requirements-validation.txt in the selected Python and include Tcl/Tk.' }
-    & $LuaPython scripts/check_lua_runtime.py
-    if ($LASTEXITCODE -ne 0) { throw 'Lua 5.1 test runtime missing. Install requirements-lua-tests.txt or pass -LuaPython; see docs/workflows/development.md.' }
+    $LuaPython = Resolve-ValidationPython -RepositoryRoot $repoRoot -Python $LuaPython
     $pinnedSdk = (Get-Content -LiteralPath global.json -Raw | ConvertFrom-Json).sdk.version
     $DotNet = Resolve-ValidationDotNet -RepositoryRoot $repoRoot -PinnedSdk $pinnedSdk -DotNet $DotNet
     if ($CheckPrerequisites) {
         Write-Output "Validation prerequisites available on $([Environment]::MachineName): .NET SDK $pinnedSdk and host Python test dependencies."
         Write-Output "Selected .NET executable $DotNet"
+        Write-Output "Selected Python executable $LuaPython"
         return
     }
     $solution = 'RiftReader2.slnx'
