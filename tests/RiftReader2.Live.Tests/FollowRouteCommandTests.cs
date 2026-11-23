@@ -411,7 +411,7 @@ public sealed class FollowRouteCommandTests
         var input = new Input();
         var result = await FollowRouteCommand.FollowAsync(Options(z: 3),
             Reader(Pose(0, 0), Pose(0, 1.5), Pose(0, 2.6), Pose(0, 2.8), Pose(0, 2.8)),
-            input, () => null);
+            input, () => null, NoDelay);
         Assert.Equal("arrived", result.Status);
         Assert.Equal(1, input.Events.Count(x => x == "down:w"));
         Assert.Equal(1, input.Events.Count(x => x == "up:w"));
