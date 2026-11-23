@@ -271,6 +271,18 @@ visibility and traversal remain separate qualification gates.
 
 ### Offline screenshot-pixel to 3D mesh candidate surfaces (P1, November 16)
 
+Replay the two retained optical-edge views on a review machine by pointing the
+analyzer to the copied RiftReader2 `artifacts` directory and the RiftWorld root
+that contains the original mesh and anchor under `artifacts`.
+
+```powershell
+python -B scripts/physical_pixel_optical_edge_evidence.py --view both --dark-gradient --archive-dir $rr2Artifacts --riftworld-root $riftWorldRoot
+```
+
+Keep the archive filenames and directory layout when copying them. The analyzer
+checks the saved source hashes and capture identity, including AMD-DESKTOP as
+the original capture host. See the [optical evidence handoff](../handoff-2026-11-16-p1-composite-screen-world.md#p1-deliverables-now-merged).
+
 `scripts/physical_pixel_surface.py` extends the saved physical screenshot
 ray through a bounded triangular Wavefront OBJ (16 MiB, at most 250,000
 vertices and 400,000 triangles). A SHA256-pinned registration JSON declares

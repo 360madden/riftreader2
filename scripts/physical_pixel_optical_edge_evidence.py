@@ -23,11 +23,12 @@ from scripts import physical_pixel_composite as composite
 from scripts import physical_pixel_mesh_accel as accel
 from scripts import physical_pixel_ray
 
-TEMPLE_ROOT = Path(
-    "C:/work/RiftWorld/artifacts/p0-watch-temple-source-render-20261116-agent-iso-r1")
-TERRAIN = Path(
-    "C:/work/RiftWorld/artifacts/geometry-workflow-courtyard-20261114-r1/geometry.obj")
-TERRAIN_REG = ROOT / "artifacts/pixel-surface-p1-20261116/courtyard-identity-hypothesis.json"
+ARCHIVE_DIR = ROOT / "artifacts"
+RIFTWORLD_ROOT = ROOT.parent / "RiftWorld"
+TEMPLE_DIR = Path("artifacts/p0-watch-temple-source-render-20261116-agent-iso-r1")
+TEMPLE_ANCHOR = "atank-source-floor-anchor-exact-r2.json"
+TERRAIN_OBJ = Path("artifacts/geometry-workflow-courtyard-20261114-r1/geometry.obj")
+TERRAIN_REG = Path("pixel-surface-p1-20261116/courtyard-identity-hypothesis.json")
 TEMPLE_ANCHOR_SHA = "6be1402cb71e1f5ddae18cc8634aa5d479e414afdda640757d879aea5380a525"
 SCHEMA = "rr2.retained-wgc-bright-interior-edge-evidence/1"
 
@@ -256,22 +257,23 @@ def _projected_boundary(frame, layers, indices, y: int,
     return terrain_x + first_temple - 1, terrain_x + first_temple
 
 
-def analyze_view(view_name: str, *, dark_gradient: bool = False) -> dict:
+def analyze_view(view_name: str, *, dark_gradient: bool = False,
+                 archive_dir: Path = ARCHIVE_DIR,
+                 riftworld_root: Path = RIFTWORLD_ROOT) -> dict:
     if view_name not in VIEWS:
         raise ValueError("optical-edge-unknown-view")
     entry = VIEWS[view_name]
-    source_dir = ROOT / "artifacts"
-    image_path = source_dir / entry["capture"] / "image.png"
+    image_path = archive_dir / entry["capture"] / "image.png"
     receipt_path = image_path.with_name("image.png.json")
-    before_path = source_dir / entry["before"]
-    after_path = source_dir / entry["after"]
+    before_path = archive_dir / entry["before"]
+    after_path = archive_dir / entry["after"]
     _pinned(image_path, entry["imageSha"])
     frame = composite.load_frame(
         image_path, receipt_path, entry["receiptSha"], before_path, entry["beforeSha"],
-        after_path, entry["afterSha"], expected_host="AMD-DESKTOP")
-    layers = [composite.load_terrain(TERRAIN, TERRAIN_REG),
-              composite.load_temple(TEMPLE_ROOT / "geometry.obj",
-                                    TEMPLE_ROOT / "atank-source-floor-anchor-exact-r2.json",
+        after_path, entry["afterSha"], expected_host="AMD-DESKTOP", retained=True)
+    temple_dir = riftworld_root / TEMPLE_DIR
+    layers = [composite.load_terrain(riftworld_root / TERRAIN_OBJ, archive_dir / TERRAIN_REG),
+              composite.load_temple(temple_dir / "geometry.obj", temple_dir / TEMPLE_ANCHOR,
                                     TEMPLE_ANCHOR_SHA, frame["identity"])]
     indices = [accel.prepare(layer["vertices"], layer["faces"]) for layer in layers]
     results = []
@@ -361,12 +363,17 @@ def analyze_view(view_name: str, *, dark_gradient: bool = False) -> dict:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--view", choices=("first", "second", "both"), default="both")
+    parser.add_argument("--archive-dir", type=Path, default=ARCHIVE_DIR,
+                        help="RiftReader2 artifacts directory or a copy with the same layout")
+    parser.add_argument("--riftworld-root", type=Path, default=RIFTWORLD_ROOT,
+                        help="RiftWorld checkout or archive root containing its artifacts directory")
     parser.add_argument("--dark-gradient", action="store_true",
                         help="Opt-in retained-PNG dark-trough optical candidate profile")
     args = parser.parse_args(argv)
     try:
         names = list(VIEWS) if args.view == "both" else [args.view]
-        results = [analyze_view(name, dark_gradient=args.dark_gradient)
+        results = [analyze_view(name, dark_gradient=args.dark_gradient,
+                                archive_dir=args.archive_dir, riftworld_root=args.riftworld_root)
                    for name in names]
     except (ValueError, OSError, KeyError, TypeError) as error:
         print(json.dumps({"schema": SCHEMA, "status": "blocked", "reason": str(error),

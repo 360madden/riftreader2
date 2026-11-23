@@ -1,6 +1,9 @@
 """Independent pixel brightness edge evidence remains candidate-only and pinned."""
 from __future__ import annotations
 
+from contextlib import redirect_stdout
+from io import StringIO
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -52,17 +55,29 @@ class BrightInteriorMathTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "source-sha256-mismatch"):
                 edge._pinned(path, "0" * 64)
 
+    def test_cli_uses_explicit_archive_path_for_pinned_image(self):
+        archive = Path(self.enterContext(TemporaryDirectory(prefix="rr2-copied-archive-")))
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            code = edge.main(["--view", "first", "--archive-dir", str(archive)])
+        expected_image = archive / edge.VIEWS["first"]["capture"] / "image.png"
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(stdout.getvalue())["reason"],
+                         f"optical-edge-source-sha256-mismatch: {expected_image}")
+
 
 class RetainedRealImageOpticalTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        temple = edge.RIFTWORLD_ROOT / edge.TEMPLE_DIR
+        paths = [edge.RIFTWORLD_ROOT / edge.TERRAIN_OBJ, edge.ARCHIVE_DIR / edge.TERRAIN_REG,
+                 temple / "geometry.obj", temple / edge.TEMPLE_ANCHOR]
         for item in edge.VIEWS.values():
-            image = edge.ROOT / "artifacts" / item["capture"] / "image.png"
-            before = edge.ROOT / "artifacts" / item["before"]
-            after = edge.ROOT / "artifacts" / item["after"]
-            if not all(path.is_file() for path in (image, before, after, edge.TERRAIN,
-                                                   edge.TERRAIN_REG, edge.TEMPLE_ROOT / "geometry.obj")):
-                raise unittest.SkipTest("retained AMD-DESKTOP WGC/source files unavailable")
+            frame_dir = edge.ARCHIVE_DIR / item["capture"]
+            paths.extend((frame_dir / "image.png", frame_dir / "image.png.json",
+                          edge.ARCHIVE_DIR / item["before"], edge.ARCHIVE_DIR / item["after"]))
+        if not all(path.is_file() for path in paths):
+            raise unittest.SkipTest("retained AMD-DESKTOP WGC/source files unavailable")
         cls.first = edge.analyze_view("first")
         cls.second = edge.analyze_view("second")
         cls.first_dark = edge.analyze_view("first", dark_gradient=True)

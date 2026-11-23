@@ -61,8 +61,9 @@ def _iso(value):
 
 
 def load_frame(image_path, receipt_path, receipt_sha, native_before_path,
-               native_before_sha, native_path, native_sha, *, expected_host):
-    """Admit a preserved two-sided stable native/WGC/native camera bracket."""
+               native_before_sha, native_path, native_sha, *, expected_host,
+               retained=False):
+    """Admit a stable native/WGC/native camera bracket, including SHA-pinned copies."""
     from scripts import physical_rift
     from scripts.physical_turn_visual_pair import verified_frame
 
@@ -139,8 +140,13 @@ def load_frame(image_path, receipt_path, receipt_sha, native_before_path,
     # Existing verified_frame checks PNG decoding/IHDR dimensions, image byte count,
     # WGC receipt timing/quality and exact target-frame mapping.
     image_path = Path(image_path)
+    retained_frame = None
+    if retained:
+        # A copied frame can use the original path recorded in the verified receipt.
+        retained_frame = {"originalOutputPath": receipt.get("outputPath"),
+                          "receiptSha256": receipt_digest.upper()}
     verified_receipt, decoded, image_digest, checked_receipt_sha = verified_frame(
-        image_path, receipt_path)
+        image_path, receipt_path, retained_frame=retained_frame)
     decoded.close()
     surface._require(verified_receipt == receipt
                      and checked_receipt_sha.lower() == receipt_digest

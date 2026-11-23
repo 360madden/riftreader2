@@ -8,10 +8,15 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest import mock
 
+from PIL import Image
+
 from scripts import physical_pixel_mesh_accel as mesh_accel
 from scripts import physical_pixel_composite as composite
 from scripts import physical_pixel_ray
 from scripts import physical_pixel_surface as surface
+from tests.test_physical_facing import optical_camera, report
+from tests.test_physical_pixel_ray import mapping
+from tests.test_physical_turn_visual_pair import make_receipt
 
 
 RAY = {"status": "available-candidate", "nativeEyeXYZ": [0, 0, 0],
@@ -95,6 +100,59 @@ class CompositeMathTests(unittest.TestCase):
                 composite._json_pinned(path, digest, 1000, "receipt")
             with self.assertRaisesRegex(ValueError, "sha256-mismatch"):
                 composite._read_pinned(path, "0" * 64, 1000, "receipt")
+
+    def test_retained_frame_replays_after_its_image_moves(self):
+        root = Path(self.enterContext(TemporaryDirectory()))
+        original = root / "original.png"
+        Image.new("RGB", (320, 200), "gray").save(original)
+        receipt = root / "image.png.json"
+        frame = make_receipt(receipt, original, 0)
+        frame["clientFrameMapping"] = dict(mapping(), unavailableReason=None,
+                                           coordinateSpace="top-left-frame-physical-pixels",
+                                           basis="matching-dwm-visible-frame-size")
+        for target in (frame["targetBefore"], frame["targetAfter"]):
+            target.update(width=310, height=170, windowGeometry={
+                "coordinateSpace": "physical-screen-pixels", "visibleFrameLeft": 100,
+                "visibleFrameTop": 100, "visibleFrameRight": 420, "visibleFrameBottom": 300,
+                "clientScreenLeft": 105, "clientScreenTop": 125,
+                "clientWidth": 310, "clientHeight": 170})
+        native_files = []
+        for label, start, end in (("before", "18:59:59.8", "18:59:59.9"),
+                                  ("after", "19:00:00.3", "19:00:00.4")):
+            native = report()
+            row = native["observation"]
+            row.update(startedAtUtc=f"2026-11-11T{start}Z", completedAtUtc=f"2026-11-11T{end}Z",
+                       opticalCameraCandidate=optical_camera(),
+                       opticalCameraAfterTargetCandidate=optical_camera(),
+                       targetProjectionCameraStableCandidate=True)
+            row["targetPositionPairCandidate"] = dict(
+                identity=row["identity"], startedAtUtc=f"2026-11-11T{start}1Z",
+                completedAtUtc=f"2026-11-11T{start}2Z", acquisitionSpanMilliseconds=10,
+                self=dict(unitKey=row["playerKeyDecimal"], position=row["positionCandidate"]),
+                target=None, targetStatus="unavailable", beforeGuardStatus="fallback-key-candidate",
+                afterGuardStatus="fallback-key-candidate")
+            native.update(observations=[row], requestedSamples=1, completedSamples=1)
+            path = root / f"{label}.json"
+            path.write_text(json.dumps(native), encoding="utf-8")
+            native_files.extend((path, hashlib.sha256(path.read_bytes()).hexdigest()))
+        identity = native["identity"]
+        for target in (frame["targetBefore"], frame["targetAfter"]):
+            target.update(pid=identity["processId"], startTicks=identity["processStartUtcTicks"],
+                          sha256=identity["executableSha256"])
+        receipt.write_text(json.dumps(frame), encoding="utf-8")
+        receipt_sha = hashlib.sha256(receipt.read_bytes()).hexdigest()
+        moved = original.rename(root / "moved.png")
+
+        with self.assertRaisesRegex(ValueError, "visual-receipt-path-mismatch"):
+            composite.load_frame(moved, receipt, receipt_sha, *native_files, expected_host="AMD-DESKTOP")
+        replay = composite.load_frame(moved, receipt, receipt_sha, *native_files,
+                                      expected_host="AMD-DESKTOP", retained=True)
+        self.assertEqual(replay["source"]["imagePath"], str(moved))
+        self.assertEqual(replay["identity"]["host"], "AMD-DESKTOP")
+        Image.new("RGB", (320, 200), "black").save(moved)
+        with self.assertRaisesRegex(ValueError, "visual-image-hash-or-size-mismatch"):
+            composite.load_frame(moved, receipt, receipt_sha, *native_files,
+                                 expected_host="AMD-DESKTOP", retained=True)
 
 
 class RetainedSanctumWatchTests(unittest.TestCase):
