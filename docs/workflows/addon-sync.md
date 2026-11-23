@@ -22,6 +22,18 @@ For a reviewed local deployment, use `sync --target pc --expected-host $rr2Host`
 The historical `lab1`, `lab2`, and `all` targets select the old VMware workflow
 explicitly. When several targets are selected, each gets its own result.
 
+### Inspect addon metadata
+
+```powershell
+python scripts/rift_addon_inventory.py --expected-host $rr2Host --detail-addon RiftReader2
+```
+
+The inventory defaults to the local Windows Documents folder and reports file
+attributes without opening addon content. For a custom installation, pass its
+`AddOns` directory to `--pc-folder`. A partial inventory exits 3 and lists the
+directories it skipped. The selected addon's metadata appears under
+`detailFiles` when the directory could be inspected.
+
 ## Installation and guarantees
 
 - **PC:** `RIFT\Interface\AddOns\RiftReader2` under the current Windows user's
@@ -76,7 +88,7 @@ explicitly. When several targets are selected, each gets its own result.
 **Operational caution:** The safe-attribute check avoids known cloud-recall
 flags before hashing, but the Windows cloud state may change before opening
 a file. Do not run a content-hash check when **zero possibility of OneDrive
-hydration** is required. Use metadata-only `rift_addon_inventory.py` instead.
+hydration** is required. Use the [metadata inventory](#inspect-addon-metadata).
 
 Both VM guests and the main PC may sync portions of
 their Documents folders through OneDrive. A cloud sync conflict can produce

@@ -4,6 +4,8 @@ from __future__ import annotations
 import importlib.util
 from contextlib import redirect_stdout, redirect_stderr
 from io import StringIO
+import json
+import sys
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 import unittest
@@ -106,18 +108,59 @@ class InventoryTests(unittest.TestCase):
                 self.assertEqual(caught.exception.code, 2)
 
     def test_detail_main_reports_metadata_without_game_access(self):
-        data = report("PC", ["RiftReader2"])
+        data = report("RIFT-STATION", ["RiftReader2"])
         data["detailAddon"] = "RiftReader2"
         data["detailFound"] = True
         data["detailFiles"] = [self._detail_file()]
-        with TemporaryDirectory() as directory:
-            with patch.object(inventory, "ROOT", Path(directory)):
-                with patch.object(inventory, "run_pc", return_value=data):
-                    with redirect_stdout(StringIO()) as output:
-                        code = inventory.main(["--target", "pc", "--detail-addon", "RiftReader2"])
+        with (TemporaryDirectory() as directory,
+              patch.object(inventory, "ROOT", Path(directory)),
+              patch.object(inventory.socket, "gethostname", return_value="RIFT-STATION"),
+              patch.object(inventory, "run_pc", return_value=data) as pc,
+              patch.object(inventory, "run_lab") as lab,
+              redirect_stdout(StringIO()) as output):
+            code = inventory.main(["--expected-host", "rift-station", "--detail-addon", "RiftReader2"])
         self.assertEqual(code, 0)
-        self.assertIn('"detailFiles"', output.getvalue())
-        self.assertIn('"cloud-reparse-ambiguous"', output.getvalue())
+        targets = json.loads(output.getvalue())["targets"]
+        self.assertEqual(list(targets), ["pc"])
+        self.assertEqual(targets["pc"]["detailFiles"][0]["residency"], "cloud-reparse-ambiguous")
+        self.assertEqual(pc.call_args.kwargs["detail_addon"], "RiftReader2")
+        lab.assert_not_called()
+
+    def test_wrong_host_refuses_before_any_inventory_or_artifact(self):
+        with (TemporaryDirectory() as directory,
+              patch.object(inventory, "ROOT", Path(directory)),
+              patch.object(inventory.socket, "gethostname", return_value="RIFT-STATION"),
+              patch.object(inventory, "run_pc") as pc,
+              patch.object(inventory, "run_lab") as lab,
+              redirect_stdout(StringIO()) as output):
+            code = inventory.main(["--expected-host", "OTHER-PC"])
+            self.assertFalse((Path(directory) / "artifacts").exists())
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(output.getvalue())["targets"]["pc"]["error"], "host-mismatch")
+        pc.assert_not_called()
+        lab.assert_not_called()
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows PowerShell metadata inspection")
+    def test_pc_inventory_uses_redirected_documents_and_only_reports_metadata(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            documents = root / "Redirected Documents"
+            addon_root = documents / "RIFT" / "Interface" / "AddOns"
+            addon = addon_root / "RiftReader2"
+            addon.mkdir(parents=True)
+            data = b"content marker omitted from the metadata report"
+            (addon / "main.lua").write_bytes(data)
+            with patch.object(inventory.observe_physical, "_run",
+                              return_value=(0, str(documents) + "\r\n")) as folder:
+                result = inventory.run_pc(root, detail_addon="RiftReader2")
+            self.assertIn("[Environment]::GetFolderPath('MyDocuments')", folder.call_args.args[0][-1])
+            self.assertEqual(result["addonRoot"], str(addon_root))
+            self.assertTrue(result["complete"])
+            self.assertTrue(result["detailFound"])
+            self.assertEqual([entry["name"] for entry in result["detailFiles"]], ["main.lua"])
+            self.assertEqual(result["detailFiles"][0]["bytes"], len(data))
+            self.assertEqual(result["detailFiles"][0]["residency"], "regular-file")
+            self.assertNotIn(data, (root / "pc.json").read_bytes())
 
     def test_cloud_tag_mask_rejects_junctions(self):
         mask, cloud = 0xFFFF0FFF, 0x9000001A

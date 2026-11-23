@@ -20,7 +20,7 @@ function Test-CloudReparse([string]$Path) {
 $result = [ordered]@{
     schemaVersion = 1
     method = 'metadata-only'
-    machine = $env:COMPUTERNAME
+    machine = [Environment]::MachineName
     timestampUtc = [DateTime]::UtcNow.ToString('o')
     addonRoot = $AddonRoot
     rootReparse = $false

@@ -10,13 +10,19 @@ from datetime import datetime, timezone
 import json
 import re
 from pathlib import Path
+import socket
 import subprocess
 import sys
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts import observe_physical
+
 GUEST_SCRIPT = ROOT / "scripts" / "rift_addon_inventory_guest.ps1"
-HOST_PS = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+HOST_PS = str(observe_physical.POWERSHELL)
 GUEST_ADDONS = r"C:\Users\mrkoo\OneDrive\Documents\RIFT\Interface\AddOns"
 GUEST_LOCAL = r"C:\Users\mrkoo\AppData\Local\RiftReader2\addon-inventory"
 
@@ -121,8 +127,9 @@ def read_report(path: Path, target: str) -> dict:
 
 def run_pc(run_root: Path, folder: Path | None = None,
            *, detail_addon: str | None = None) -> dict:
-    addon_root = folder or (Path.home() / "OneDrive" / "Documents" / "RIFT"
-                            / "Interface" / "AddOns")
+    addon_root = observe_physical.local_rift_addons_root() if folder is None else folder.absolute()
+    if addon_root.drive.startswith(("\\", "/")):
+        raise InventoryError("pc-addon-root-must-be-local")
     report = run_root / "pc.json"
     command = [HOST_PS, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
                "-File", str(GUEST_SCRIPT), "-AddonRoot", str(addon_root),
@@ -133,7 +140,12 @@ def run_pc(run_root: Path, folder: Path | None = None,
                                timeout=90, check=False)
     if completed.returncode:
         raise InventoryError("pc-inspector-exited:" + str(completed.returncode))
-    return read_report(report, "pc")
+    result = read_report(report, "pc")
+    if result["machine"].casefold() != socket.gethostname().casefold():
+        raise InventoryError("unexpected-local-machine")
+    if Path(result["addonRoot"]) != addon_root:
+        raise InventoryError("unexpected-local-addon-root")
+    return result
 
 
 def run_lab(target: str, run_root: Path, *, detail_addon: str | None = None) -> dict:
@@ -256,12 +268,23 @@ def compare_toc_metadata(results: dict) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", choices=("pc", "lab1", "lab2", "all"), default="all")
-    parser.add_argument("--pc-folder", type=Path, help="Local test/alternate AddOns directory")
+    parser.add_argument("--target", choices=("pc", "lab1", "lab2", "all"), default="pc")
+    parser.add_argument("--pc-folder", type=Path, help="Override the detected local AddOns directory")
+    parser.add_argument("--expected-host", help="verify the requested Windows hostname for the pc target")
     parser.add_argument("--detail-addon", help="Inspect immediate file metadata of one addon")
     args = parser.parse_args(argv)
     if args.detail_addon and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", args.detail_addon):
         parser.error("detail-addon must be a single safe addon folder name")
+    if args.expected_host is not None:
+        if args.target != "pc" or not observe_physical.valid_host_name(args.expected_host):
+            parser.error("--expected-host requires the pc target and a valid Windows hostname")
+        actual_host = socket.gethostname()
+        if actual_host.casefold() != args.expected_host.casefold():
+            print(json.dumps({"schemaVersion": 1, "method": "metadata-only",
+                              "targets": {"pc": {"success": False, "error": "host-mismatch",
+                                                  "machine": actual_host, "expectedHost": args.expected_host}}},
+                             indent=2))
+            return 2
 
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8]
     run_root = ROOT / "artifacts" / "addon-inventory" / run_id
