@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts import physical_rift
+from scripts import physical_rift, physical_view_tools
 
 
 def workflow_commands(host):
@@ -41,15 +41,12 @@ def run_check(executable, args, *, cwd=None):
 def check_workflow(workflow, command):
     try:
         if workflow == "rerun":
-            from scripts.save_physical_route_view import check_rerun_viewer
-
-            viewer, _, version = check_rerun_viewer()
+            viewer, _, version = physical_view_tools.check_rerun_viewer()
             return {"status": "ready", "command": viewer, "version": version}
         if workflow == "qt":
-            from scripts.save_physical_route_view import _local_python
-
-            python = _local_python(os.environ.get("RR2_OVERLAY_PYTHON"),
-                                   ROOT / ".local/overlay-venv/Scripts/pythonw.exe", "invalid-overlay-python-path")
+            python = physical_view_tools.local_python(os.environ.get("RR2_OVERLAY_PYTHON"),
+                                                      ROOT / ".local/overlay-venv/Scripts/pythonw.exe",
+                                                      "invalid-overlay-python-path")
             if not python.is_file():
                 return {"status": "blocked", "pythonExecutable": str(python), "reason": "overlay-python-unavailable"}
             probe = run_check(python, ("-c", "from scripts import qt_waypoint_overlay"), cwd=ROOT)
@@ -58,9 +55,9 @@ def check_workflow(workflow, command):
 
         python = sys.executable
         if workflow == "dxcam":
-            from scripts.save_physical_route_view import CAPTURE_PYTHON, _local_python
-
-            python = _local_python(os.environ.get("RR2_DXCAM_PYTHON"), CAPTURE_PYTHON, "invalid-dxcam-python-path")
+            python = physical_view_tools.local_python(os.environ.get("RR2_DXCAM_PYTHON"),
+                                                      physical_view_tools.CAPTURE_PYTHON,
+                                                      "invalid-dxcam-python-path")
             if not python.is_file():
                 return {"status": "blocked", "pythonExecutable": str(python),
                         "reason": "desktop-capture-environment-unavailable"}

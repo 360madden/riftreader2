@@ -3,6 +3,7 @@ from contextlib import redirect_stdout
 from io import StringIO
 import json
 import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -60,3 +61,19 @@ class PhysicalDependenciesTests(unittest.TestCase):
         self.assertEqual(result, {"status": "blocked", "pythonExecutable": str(missing_python),
                                   "reason": "overlay-python-unavailable"})
         run.assert_not_called()
+
+    def test_optional_reports_work_without_site_packages_in_the_caller(self):
+        missing_python = str(preflight.ROOT / "missing-test-view-venv/Scripts/python.exe")
+        env = dict(preflight.os.environ, RR2_DXCAM_PYTHON=missing_python,
+                   RR2_OVERLAY_PYTHON=missing_python, RR2_RERUN_PYTHON=missing_python)
+        completed = subprocess.run(
+            [sys.executable, "-B", "-S", preflight.__file__, "--expected-host", preflight.socket.gethostname(),
+             "--workflow", "dxcam", "--workflow", "qt", "--workflow", "rerun"],
+            env=env, capture_output=True, text=True, timeout=10, check=False,
+        )
+        self.assertEqual(completed.returncode, 2, completed.stderr)
+        self.assertEqual({key: check["reason"] for key, check in json.loads(completed.stdout)["checks"].items()}, {
+            "dxcam": "desktop-capture-environment-unavailable",
+            "qt": "overlay-python-unavailable",
+            "rerun": "optional-rerun-viewer-not-installed",
+        })

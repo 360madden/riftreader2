@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 from PIL import Image
 
-from scripts import save_physical_route_view as saved
+from scripts import physical_view_tools, save_physical_route_view as saved
 from tests import test_plot_physical_waypoints as fixtures
 from tests.test_physical_zone_context import SHA_1177, report as zone_report
 from tests.test_physical_unit_positions import report as units_report
@@ -70,7 +70,7 @@ class SaveViewTests(unittest.TestCase):
         self.capture = patch.object(saved.observe_target, "observe", return_value=deepcopy(self.fixture.observation)).start()
         self.process = patch.object(saved.subprocess, "run", side_effect=AssertionError("No real subprocess allowed")).start()
         self.python = self.root / "optional-python.exe"
-        patch.object(saved, "VISUALIZATION_PYTHON", self.python).start()
+        patch.object(physical_view_tools, "VISUALIZATION_PYTHON", self.python).start()
         self.enterContext(patch.object(saved.os, "environ", dict(saved.os.environ, RR2_RERUN_PYTHON="")))
 
     def save(self, **kwargs):
@@ -519,8 +519,8 @@ class DesktopSaveViewTests(unittest.TestCase):
         self.enterContext(patch.object(saved.os, "environ", dict(saved.os.environ, RR2_RERUN_PYTHON="")))
         self.desktop_turn = self.enterContext(patch.object(saved.observe_physical, "require_clear_desktop_turn"))
         self.visualization_python = self.root / "visualization-python.exe"
-        patch.object(saved, "CAPTURE_PYTHON", self.capture_python).start()
-        patch.object(saved, "VISUALIZATION_PYTHON", self.visualization_python).start()
+        patch.object(physical_view_tools, "CAPTURE_PYTHON", self.capture_python).start()
+        patch.object(physical_view_tools, "VISUALIZATION_PYTHON", self.visualization_python).start()
         patch.object(saved.physical_rift, "select_physical", return_value=dict(status="ready", target=self.target)).start()
         self.context = patch.object(saved.physical_rift, "read_native", return_value=dict(
             status="blocked", reason="optional-zone-unavailable")).start()

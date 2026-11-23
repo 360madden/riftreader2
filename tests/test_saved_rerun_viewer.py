@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import Mock, patch
 
-from scripts import save_physical_route_view as saved
+from scripts import physical_view_tools, save_physical_route_view as saved
 
 
 class SavedRerunViewerTests(unittest.TestCase):
@@ -21,7 +21,7 @@ class SavedRerunViewerTests(unittest.TestCase):
         self.viewer.write_bytes(b"not-executed")
         self.enterContext(patch.object(os, "environ", dict(os.environ, RR2_RERUN_PYTHON="")))
         self.addCleanup(patch.stopall)
-        patch.object(saved, "VISUALIZATION_PYTHON", self.python).start()
+        patch.object(physical_view_tools, "VISUALIZATION_PYTHON", self.python).start()
         self.probe = patch.object(saved.subprocess, "run", return_value=subprocess.CompletedProcess(
             args=[], returncode=0, stdout="rerun-cli 0.43.1\n", stderr="")).start()
         self.process = patch.object(saved.subprocess, "Popen", return_value=Mock()).start()
@@ -93,7 +93,7 @@ class SavedRerunViewerTests(unittest.TestCase):
 
     def test_viewer_dependency_check_needs_no_recording_and_opens_no_window(self):
         self.recording.unlink()
-        viewer, _, version = saved.check_rerun_viewer()
+        viewer, _, version = physical_view_tools.check_rerun_viewer()
         self.assertEqual(viewer, [str(self.viewer)])
         self.assertEqual(version, "rerun-cli 0.43.1")
         self.assertEqual(self.probe.call_args.args[0], [str(self.viewer), "--version"])

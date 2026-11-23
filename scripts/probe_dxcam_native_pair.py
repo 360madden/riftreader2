@@ -16,7 +16,6 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from scripts import observe_physical, physical_rift as native
 from scripts.probe_dxcam import DXCAM_VERSION, _DXcamBackend, _output, _snapshot, require
-from scripts.plot_physical_units import _saved
 from scripts.waypoint_progress import write_json_atomic
 from scripts.live_physical_waypoints import _expected_target, _hwnd_argument
 
@@ -120,6 +119,8 @@ def probe(expected_host, physical_pid, display, output, *, timeout=10, select=No
     expected = _expected_target(expected_start_ticks, expected_sha256, expected_hwnd)
     output = Path(output).resolve()
     require(not output.exists() and output.parent.is_dir(), "fresh-output-required")
+    from scripts.plot_physical_units import _saved
+
     select, snapshot = select or native.select_physical, snapshot or _snapshot
     backend_loader = backend_loader or _DXcamBackend
     read_native = native.bind_native_reader(read_native or native.read_native, native_reader)

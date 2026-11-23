@@ -1,5 +1,7 @@
 # Current status
 
+**2026-11-23 — optional view preflight works with a plain caller Python.** On LEGION, a Python without Pillow checked the configured DXcam, Qt and Rerun environments from outside the checkout. Selecting the plain Python for DXcam returned its missing package list while Qt and Rerun still passed. **78 focused tests and 21 subtests passed.** [Separate-interpreter preflight](../artifacts/physical-preflight-bare-python-legion-20261123.json)
+
 **2026-11-23 — the physical preflight shares the Waypoints Python launcher selection.** On LEGION, `rr2-check-dependencies.cmd` passed the prepared-maps check from outside the checkout with only `py.exe` available for Python on `PATH`. With Git omitted, the check identified the executable needed to verify the pinned RiftAssetDumper revision. [Startup commands](workflows/development.md#reuse-local-tools-from-a-fresh-checkout) · [Launcher preflight](../artifacts/physical-preflight-py-launcher-legion-20261123.json)
 
 **2026-11-23 — physical addon checks accept a shared AddOns root.** On LEGION, the NPC survey and Telemetry preflight both passed with `RR2_RIFT_ADDONS_ROOT` pointing to copies of the installed files in a different directory with spaces. Both refused a relative override. **134 focused tests and 59 subtests passed.** [Addon setup](workflows/addon-sync.md#check-the-local-windows-installation) · [Copied addon preflight](../artifacts/physical-custom-addon-root-legion-20261123.json)
