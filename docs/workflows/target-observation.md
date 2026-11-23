@@ -68,6 +68,9 @@ for both reads around the frame.
 python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies --native-facing --native-reader $rr2PublishedReader
 ```
 
+Use the [native reader publish steps](development.md#publish-the-local-native-reader)
+to set `$rr2PublishedReader` on the local machine.
+
 The historical VMware material below is **archived**. The observation CLI now
 rejects `lab1`/`lab2` by default with `vmware-retired-use-physical-rift`;
 `--allow-historical-vm` is an explicit diagnostic-only opt-in for reproducing

@@ -74,9 +74,32 @@ to the checkout's Debug build. Use `--native-reader` with an absolute local path
 to select a published build for a dependency check or a `--read-native` command.
 
 ```powershell
-python scripts/physical_rift.py --expected-host $rr2Host --check-native-reader
-python scripts/physical_rift.py --expected-host $rr2Host --check-native-reader --native-reader $rr2PublishedReader
+python -B scripts/physical_rift.py --expected-host $rr2Host --check-native-reader
 ```
+
+### Publish the local native reader
+
+From the repository root, use the SDK pinned by `global.json`. If you already
+have a published build, set `$rr2PublishedReader` to its absolute executable path
+and run the last command below. Keep the published folder together when copying
+it to a new checkout or workstation.
+
+```powershell
+. .\scripts\resolve-validation-dotnet.ps1
+$rr2SdkVersion = (Get-Content global.json -Raw | ConvertFrom-Json).sdk.version
+$rr2DotNet = Resolve-ValidationDotNet -RepositoryRoot (Get-Location).Path -PinnedSdk $rr2SdkVersion
+$rr2LiveProject = 'src/RiftReader2.Live/RiftReader2.Live.csproj'
+$rr2Publish = Join-Path (Get-Location).Path 'artifacts/tools/native-published'
+& $rr2DotNet restore $rr2LiveProject --locked-mode
+if ($LASTEXITCODE -ne 0) { throw 'Native reader restore failed.' }
+& $rr2DotNet publish $rr2LiveProject -c Release --no-restore -o $rr2Publish
+if ($LASTEXITCODE -ne 0) { throw 'Native reader publish failed.' }
+$rr2PublishedReader = Join-Path $rr2Publish 'RiftReader2.Live.exe'
+python -B scripts/physical_rift.py --expected-host $rr2Host --check-native-reader --native-reader $rr2PublishedReader
+```
+
+Add `--native-reader $rr2PublishedReader` to use that build in the following
+native read commands.
 
 ```powershell
 python scripts/physical_rift.py --expected-host $rr2Host --read-native vitals
@@ -164,11 +187,23 @@ Both capture commands accept `--native-reader $rr2PublishedReader`. RR2A1 uses
 the selected binary for every scan and native bracket. For a nonce-bound RR2R1
 assessment during capture or offline replay, `--cli` selects a published
 `RiftReader2.Cli.dll` and `--dotnet` selects the local .NET host.
+Use the same SDK to publish the decoder when needed.
+
+```powershell
+$rr2DecoderProject = 'src/RiftReader2.Cli/RiftReader2.Cli.csproj'
+$rr2DecoderFolder = Join-Path (Get-Location).Path 'artifacts/tools/decoder-published'
+& $rr2DotNet restore $rr2DecoderProject --locked-mode
+if ($LASTEXITCODE -ne 0) { throw 'Decoder restore failed.' }
+& $rr2DotNet publish $rr2DecoderProject -c Release --no-restore -o $rr2DecoderFolder
+if ($LASTEXITCODE -ne 0) { throw 'Decoder publish failed.' }
+$rr2DecoderCli = Join-Path $rr2DecoderFolder 'RiftReader2.Cli.dll'
+```
 
 ```powershell
 python -B scripts/collect_physical_rr2a1_pair.py --expected-host $rr2Host --physical-pid CURRENT_PID --native-reader $rr2PublishedReader --output-dir artifacts/NEW_RR2A1_PAIR
 python -B scripts/probe_physical_rr2r1.py --expected-host $rr2Host --physical-pid CURRENT_PID --native-reader $rr2PublishedReader --max-scans 1 --output-dir artifacts/NEW_RR2R1_SCAN
 python -B scripts/probe_physical_rr2r1.py --replay-summary artifacts/NEW_RR2R1_SCAN/summary.json --output-dir artifacts/NEW_RR2R1_REPLAY
+# For nonce-bound replay, also pass --session-id ACTIVE_NONCE --cli $rr2DecoderCli --dotnet $rr2DotNet.
 ```
 
 The facing result includes `nativeValues.opticalCamera` for the supported selected
