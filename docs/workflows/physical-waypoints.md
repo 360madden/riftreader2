@@ -164,37 +164,20 @@ adoption. RiftWorld verifies the archive and all referenced patch files during
 restore. Use a registered local RiftWorld toolchain for the replay.
 
 From the RR2 checkout, set `$handoffDir` to the local folder containing the two
-files and `$run` to a fresh absolute output directory.
+files and `$run` to a fresh local output directory.
 
 ```powershell
-$rr2Root = (Get-Location).Path
 $mapTools = Get-Content -Raw .local/riftworld-toolchain.json | ConvertFrom-Json
-$handoffDir = (Resolve-Path -LiteralPath $handoffDir).Path
-$handoff = Get-Content -Raw (Join-Path $handoffDir 'handoff.json') | ConvertFrom-Json
-$restored = Join-Path $run 'restored'
-Push-Location -LiteralPath $mapTools.checkout
-try {
-    $restore = & $mapTools.python -B -m riftworld restore-patch `
-      --archive (Join-Path $handoffDir $handoff.archive) --sha256 $handoff.sha256 `
-      --patch $handoff.patch.path --patch-id $handoff.patch.patchId --out-dir $restored | ConvertFrom-Json
-    if ($LASTEXITCODE -ne 0) { throw 'Watch archive restore failed.' }
-} finally { Pop-Location }
-$replayFile = Join-Path $restored $handoff.replayInputs
-if ((Get-FileHash -LiteralPath $replayFile).Hash -ne $handoff.replayInputsSha256) { throw 'Replay instructions changed.' }
-$replay = Get-Content -LiteralPath $replayFile -Raw | ConvertFrom-Json
-$nativeArgs = foreach ($file in $replay.nativeReceipts) { '--native-receipt'; (Join-Path $restored $file) }
-& $mapTools.python -B (Join-Path $rr2Root 'scripts/waypoint_destination_plan.py') `
-  --patch $restore.patch --build (Join-Path $restored $replay.build) `
-  --catalog (Join-Path $restored $replay.catalog) --destination $replay.destination "--from=$($replay.from)" `
-  @nativeArgs --native-context (Join-Path $restored $replay.nativeContext) `
-  --native-start $replay.nativeStart --native-end $replay.nativeEnd `
-  --candidate-start $replay.candidateStart --candidate-end $replay.candidateEnd --out-dir (Join-Path $run 'plan')
+& $mapTools.python -B scripts/waypoint_destination_plan.py `
+  --replay-archive (Join-Path $handoffDir 'handoff.json') --out-dir $run
 ```
 
-The verified result is `adoptable`, with the same Detour candidate, six
-waypoints, and two stops. The replay uses the saved LEGION provenance and sends
-no input. The archive and verification are currently stored on LEGION.
-[Restore and replay results](../../artifacts/watch-waypoints-archive-legion-20261123/verification.json)
+The command writes `replay-verification.json` after it checks the restored files,
+the expected Detour candidate and the adopted route's owner, waypoint count and
+stops. The Watch archive reproduces six waypoints and two stops. The offline
+replay uses the saved LEGION provenance and sends no input. The package files
+are currently stored on LEGION.
+[Archive command results](../../artifacts/watch-waypoints-archive-legion-20261123/cli-verification.json)
 
 ## Waypoints workspace
 

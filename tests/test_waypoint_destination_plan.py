@@ -184,6 +184,82 @@ class DestinationPlanTests(unittest.TestCase):
         self.assertEqual(exits.exception.code, 2)
         check.assert_not_called()
 
+    def test_archive_cli_does_not_accept_live_options(self):
+        with patch.object(bridge, "replay_destination_archive") as replay, contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as error:
+                bridge.main(["--replay-archive", "handoff.json", "--out-dir", "fresh", "--execute"])
+        self.assertEqual(error.exception.code, 2)
+        replay.assert_not_called()
+
+    def test_archive_replay_checks_copied_members_and_expected_result(self):
+        upstream = self.world / "local asset dumper"
+        upstream.mkdir()
+        archive = self.root / "copied.zip"
+        archive.touch()
+        owner = {"machine": "ORIGINAL-HOST", "unitKey": "42"}
+        route = {"waypoints": [["Start", 0, 0]], "pointKinds": ["stop"],
+                 "candidateAdoption": {"owner": owner}}
+        expected = {"patchId": self.candidate["patchId"], "buildId": self.candidate["planner"]["buildId"],
+                    "candidateId": self.candidate["candidateId"], "routeOwner": owner,
+                    "waypointCount": 1, "stops": 1}
+        replay = {"build": "build.json", "catalog": "catalog.json", "destination": "fixture-end",
+                  "from": "0,0,0", "nativeReceipts": ["native.json"], "nativeContext": "context.json",
+                  "nativeStart": 0, "nativeEnd": 2, "candidateStart": 0, "candidateEnd": 1,
+                  "expected": expected}
+        names = ("patch.json", "geometry.obj", "build.json", "catalog.json", "context.json", "native.json")
+
+        for case in ("verified", "changed-member", "different-result"):
+            with self.subTest(case=case):
+                output = self.root / case
+                source = {**replay, "expected": dict(expected, stops=2) if case == "different-result" else expected}
+                replay_path = self.save("offline-replay.json", source)
+                for name in names:
+                    self.save(name, {"name": name})
+                hashes = {name: bridge._hash(self.root / name) for name in names}
+                handoff = self.save("archive-handoff.json", {
+                    "archive": archive.name, "sha256": bridge._hash(archive), "contents": hashes,
+                    "patch": {"patchId": expected["patchId"], "path": "patch.json",
+                              "geometrySha256": hashes["geometry.obj"]},
+                    "replayInputs": replay_path.name, "replayInputsSha256": bridge._hash(replay_path),
+                })
+
+                def restore(command, **kwargs):
+                    restored = Path(command[command.index("--out-dir") + 1])
+                    restored.mkdir(parents=True)
+                    for name in (*names, replay_path.name):
+                        (restored / name).write_bytes((self.root / name).read_bytes())
+                    if case == "changed-member":
+                        (restored / "native.json").write_bytes(b"changed")
+                    receipt = {"schema": "riftworld.patch-restore/1", "archiveSha256": bridge._hash(archive),
+                               "patchId": expected["patchId"], "outDirectory": str(restored),
+                               "memberCount": len(names) + 1, "patch": str(restored / "patch.json"),
+                               "geometry": str(restored / "geometry.obj")}
+                    return subprocess.CompletedProcess(command, 0, json.dumps(receipt), "")
+
+                def plan(output_directory, **options):
+                    self.assertNotIn("execute", options)
+                    self.assertEqual(options["native_receipts"], [output_directory.parent / "restored/native.json"])
+                    output_directory.mkdir()
+                    for filename, document in (("candidate.json", self.candidate), ("adopted-route.json", route),
+                                               ("plan.json", {})):
+                        bridge.write_json_atomic(output_directory / filename, document)
+                    return {"status": "adoptable", "inputSent": False, "currentRouteChanged": False,
+                            "destinationCovered": True, "candidate": bridge._reference(output_directory / "candidate.json"),
+                            "adoptedRoute": bridge._reference(output_directory / "adopted-route.json")}
+
+                with patch.object(bridge, "plan_destination", side_effect=plan) as planned:
+                    options = {"riftworld_root": self.world, "riftworld_python": sys.executable,
+                               "riftworld_upstream": upstream, "runner": restore}
+                    if case == "verified":
+                        result = bridge.replay_destination_archive(handoff, output, **options)
+                        self.assertEqual(result["status"], "replayed")
+                        self.assertEqual(result["verifiedResult"], expected)
+                    else:
+                        with self.assertRaisesRegex(ValueError, "destination-archive-.*-mismatch"):
+                            bridge.replay_destination_archive(handoff, output, **options)
+                    self.assertEqual(planned.call_count, 0 if case == "changed-member" else 1)
+                    self.assertEqual((output / "replay-verification.json").is_file(), case == "verified")
+
     def test_registered_toolchain_is_used_for_both_preflight_and_saved_build_queries(self):
         upstream, _ = self.retained_build()
         java = self.root / "JDK with spaces"

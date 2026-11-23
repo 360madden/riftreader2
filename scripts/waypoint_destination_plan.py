@@ -1190,6 +1190,125 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
         return publish()
 
 
+def _archive_local_path(value, reason):
+    path = _local_absolute_path(Path(value).absolute(), reason)
+    # The provider's extraction directory adds a temporary prefix to deep map paths.
+    if os.name == "nt":
+        path = Path("\\\\?\\" + str(path))
+        _plain_path(path)
+    return path
+
+
+def replay_destination_archive(handoff_path, output_directory, *, riftworld_root=None,
+                               riftworld_python=None, riftworld_upstream=None, runner=subprocess.run):
+    """Restore a checksummed map handoff and verify an offline adoption replay."""
+    handoff_path = _archive_local_path(handoff_path, "invalid-archive-handoff-path")
+    handoff, handoff_sha = _read(handoff_path)
+    archive = bundle_asset(handoff_path.parent, handoff["archive"])
+    if archive.parent != handoff_path.parent or archive.suffix.casefold() != ".zip":
+        raise ValueError("destination-archive-must-be-a-zip-beside-handoff")
+    _plain_path(archive)
+
+    output = _archive_local_path(output_directory, "invalid-archive-output-path")
+    if output.exists():
+        raise ValueError("destination-archive-replay-output-exists")
+    restored = output / "restored"
+    patch_info = handoff["patch"]
+    archive_sha = handoff["sha256"]
+    if not isinstance(archive_sha, str) or not re.fullmatch(r"[a-fA-F0-9]{64}", archive_sha):
+        raise ValueError("invalid-destination-archive-sha256")
+    patch = bundle_asset(restored, patch_info["path"])
+    replay_path = bundle_asset(restored, handoff["replayInputs"])
+    source_hashes = handoff["contents"]
+    if (not isinstance(source_hashes, dict) or patch_info["path"] not in source_hashes
+            or handoff["replayInputs"] in source_hashes):
+        raise ValueError("invalid-destination-archive-members")
+    members = {bundle_asset(restored, name): digest for name, digest in source_hashes.items()}
+    members[replay_path] = handoff["replayInputsSha256"]
+    if len(members) != len(source_hashes) + 1 or any(
+            not isinstance(digest, str) or not re.fullmatch(r"[a-fA-F0-9]{64}", digest)
+            for digest in members.values()):
+        raise ValueError("invalid-destination-archive-member-hash")
+
+    registered = _registered_riftworld()
+    world, _, python = _riftworld_tools(riftworld_root, riftworld_python, registered)
+    upstream = _configured_riftworld_upstream(riftworld_upstream, registered)
+    if upstream is None:
+        upstream = _configured_riftworld_upstream(world / "cache/RiftAssetDumper", registered)
+    command = [str(python), "-B", "-m", "riftworld", "restore-patch", "--archive", str(archive),
+               "--sha256", archive_sha, "--patch", patch_info["path"], "--patch-id", patch_info["patchId"],
+               "--out-dir", str(restored)]
+    restored_process = runner(command, cwd=world, text=True, capture_output=True, check=False, timeout=120,
+                              **_riftworld_environment(registered))
+    if restored_process.returncode != 0:
+        details = restored_process.stderr.strip().splitlines()
+        raise ValueError("destination-archive-restore-failed" + (": " + details[-1][:400] if details else ""))
+    restoration = json.loads(restored_process.stdout)
+    if (not isinstance(restoration, dict) or restoration.get("schema") != "riftworld.patch-restore/1"
+            or restoration.get("patchId") != patch_info["patchId"]
+            or str(restoration.get("archiveSha256", "")).casefold() != archive_sha.casefold()
+            or Path(restoration["patch"]) != patch or Path(restoration["outDirectory"]) != restored
+            or restoration.get("memberCount") != len(members)):
+        raise ValueError("destination-archive-restore-receipt-mismatch")
+
+    def verify_members():
+        for path, digest in members.items():
+            _plain_path(path)
+            if _hash(path).casefold() != digest.casefold():
+                raise ValueError("destination-archive-member-hash-mismatch: " + path.relative_to(restored).as_posix())
+
+    def replay_member(reference):
+        if not isinstance(reference, str) or reference not in source_hashes:
+            raise ValueError("destination-archive-replay-input-not-listed")
+        return bundle_asset(restored, reference)
+
+    verify_members()
+    geometry = Path(restoration["geometry"])
+    if geometry not in members or members[geometry].casefold() != patch_info["geometrySha256"].casefold():
+        raise ValueError("destination-archive-geometry-mismatch")
+    replay, replay_sha = _read(replay_path)
+    if replay_sha.casefold() != members[replay_path].casefold():
+        raise ValueError("destination-archive-replay-inputs-changed")
+    receipts = replay["nativeReceipts"]
+    if not isinstance(receipts, list) or not receipts:
+        raise ValueError("destination-archive-native-receipts-required")
+
+    plan_directory = output / "plan"
+    plan = plan_destination(
+        patch=patch, build=replay_member(replay["build"]), catalog=replay_member(replay["catalog"]),
+        destination=replay["destination"], start=replay["from"], output_directory=plan_directory,
+        native_receipts=[replay_member(name) for name in receipts], native_context=replay_member(replay["nativeContext"]),
+        native_start=replay["nativeStart"], native_end=replay["nativeEnd"],
+        candidate_start=replay["candidateStart"], candidate_end=replay["candidateEnd"],
+        search_extent=replay.get("searchExtent"),
+        riftworld_root=world, riftworld_python=python, riftworld_upstream=upstream, runner=runner,
+    )
+    if (plan["status"] != "adoptable" or plan.get("destinationCovered") is not True
+            or plan.get("inputSent") is not False or plan.get("currentRouteChanged") is not False):
+        blockers = plan.get("blockers", [])
+        raise ValueError("destination-archive-plan-not-adoptable" + (": " + blockers[0] if blockers else ""))
+
+    candidate, candidate_sha = _read(plan_directory / "candidate.json")
+    route, route_sha = _read(plan_directory / "adopted-route.json")
+    actual = {"patchId": candidate["patchId"], "buildId": candidate["planner"]["buildId"],
+              "candidateId": candidate["candidateId"], "routeOwner": route["candidateAdoption"]["owner"],
+              "waypointCount": len(route["waypoints"]), "stops": route["pointKinds"].count("stop")}
+    if (actual != replay["expected"] or actual["patchId"] != patch_info["patchId"]
+            or candidate_sha != plan["candidate"]["sha256"] or route_sha != plan["adoptedRoute"]["sha256"]):
+        raise ValueError("destination-archive-replay-result-mismatch")
+    verify_members()
+    if _hash(handoff_path) != handoff_sha:
+        raise ValueError("destination-archive-handoff-changed")
+
+    verification = output / "replay-verification.json"
+    report = {"schema": "rr2.destination-archive-replay/1", "status": "replayed", "ownerHost": platform.node(),
+              "handoff": {"path": str(handoff_path), "sha256": handoff_sha}, "restoration": restoration,
+              "plan": _reference(plan_directory / "plan.json"), "verifiedResult": actual,
+              "verification": str(verification), "inputSent": False, "currentRouteChanged": False}
+    write_json_atomic(verification, report)
+    return report
+
+
 def parser():
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--catalog", type=Path)
@@ -1198,6 +1317,8 @@ def parser():
                       help="check the local map preparation toolchain, or one saved build with --build")
     mode.add_argument("--register-dependencies", action="store_true",
                       help="verify and remember the local toolchain for this checkout")
+    mode.add_argument("--replay-archive", type=Path,
+                      help="restore and replay a checksummed destination archive handoff offline")
     result.add_argument("--expected-host", help="verified local Windows hostname for --register-dependencies")
     mode.add_argument("--patch", type=Path, help="Existing exact patch; requires --build")
     mode.add_argument("--prepare-request", type=Path,
@@ -1241,6 +1362,7 @@ def main(argv=None):
     checking = options.pop("check_dependencies")
     registering = options.pop("register_dependencies")
     expected_host = options.pop("expected_host")
+    archive = options.pop("replay_archive")
     if (expected_host is not None) != registering:
         cli.error("--register-dependencies and --expected-host must be supplied together")
     if checking or registering:
@@ -1253,6 +1375,19 @@ def main(argv=None):
         result = register_dependencies(expected_host, **paths) if registering else check_dependencies(**paths)
         print(json.dumps(result, indent=2, allow_nan=False))
         return 0 if result["status"] == "ready" else 2
+    if archive is not None:
+        allowed = {"riftworld_root", "riftworld_python", "riftworld_upstream", "output_directory"}
+        if args.output_directory is None or any(
+                value != cli.get_default(key) for key, value in options.items() if key not in allowed):
+            cli.error("archive replay requires --out-dir and accepts only local --riftworld-* overrides")
+        try:
+            result = replay_destination_archive(archive, **{key: options[key] for key in allowed})
+        except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as error:
+            print(json.dumps({"status": "blocked", "reason": str(error),
+                              "inputSent": False, "currentRouteChanged": False}), file=sys.stderr)
+            return 2
+        print(json.dumps(result, indent=2, allow_nan=False))
+        return 0
     if any(value is None for value in (args.catalog, args.destination, args.output_directory)):
         cli.error("planning requires --catalog, --destination and --out-dir")
     if args.start is None and not args.from_current and args.recovery_plan is None:
