@@ -2,6 +2,7 @@
 from copy import deepcopy
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta
+import hashlib
 import io
 import json
 import math
@@ -343,6 +344,7 @@ class PhysicalFacingTests(unittest.TestCase):
             self.assertEqual(0, code)
             result = json.loads(output.getvalue())
             self.assertEqual('complete', result['status'])
+            self.assertEqual(hashlib.sha256(destination.read_bytes()).hexdigest(), result['nativeSourceSha256'])
             self.assertAlmostEqual(.5, result['projectedWorldPointCandidate']['normalizedX'])
             self.assertAlmostEqual(.5, result['projectedWorldPointCandidate']['normalizedY'])
             self.assertEqual('available-candidate', result['nativeValues']['playerScreenPointCandidate']['status'])

@@ -889,6 +889,18 @@ offline `scripts/physical_move_basis.py` builder can consume saved move-key
 receipts from any Windows hostname and requires all samples from one host,
 process epoch, build and player.
 
+Before measuring a new basis, capture a local calibration preflight. It checks
+the exact native window and desktop input state, then saves a SHA-pinned settled
+facing burst. Keep the summary and its sibling `settled-facing.json` together.
+The preflight sends no keys and requests no focus change. Live trials still
+require their own review, target checks and input ownership.
+
+```powershell
+$rrHost = [Environment]::MachineName
+python -B scripts/prepare_physical_move_calibration.py --expected-host $rrHost --physical-pid CURRENT_PID `
+  --output-dir artifacts/NEW_CALIBRATION_PREFLIGHT
+```
+
 Once the translation and turn measurements have been saved, build the basis
 offline. For each A/D trial, supply settled native `facing` bursts before and
 after the bounded `move-key` receipt. Use `--read-native facing --samples 3`
@@ -900,6 +912,7 @@ ownership and action approval are checked separately during live use.
 ```powershell
 python -B scripts/physical_move_basis.py --forward w.json --backward s.json --left q.json --right e.json `
   --turn-a a-before.json a-pulse.json a-after.json --turn-d d-before.json d-pulse.json d-after.json `
+  --target-preflight artifacts/NEW_CALIBRATION_PREFLIGHT/calibration-preflight.json `
   --out artifacts/measured-movement-basis.json
 ```
 

@@ -29,6 +29,7 @@ def settled_facing(path):
             "owner": tuple(rows[-1][key] for key in ("playerKeyDecimal", "playerEntityDecimal", "playerSystemDecimal")),
             "start": _utc_tick_order_key(rows[0]["startedAtUtc"]),
             "end": _utc_tick_order_key(rows[-1]["completedAtUtc"]),
+            "completedAtUtc": rows[-1]["completedAtUtc"],
             "bearing": bearings[-1], "position": positions[-1]}
 
 
@@ -74,7 +75,7 @@ def measure_turn(key, paths, basis_identity):
     return candidate, (before["start"], start, end, after["end"])
 
 
-def turn_calibration(basis_identity, sources):
+def turn_calibration(basis_identity, sources, *, not_before=None):
     require(set(sources) == {"a", "d"}, "turn-basis-both-keys-required")
     rates = {}
     intervals = []
@@ -83,5 +84,6 @@ def turn_calibration(basis_identity, sources):
         intervals.append(interval)
     first, second = sorted(intervals, key=lambda interval: interval[1])
     require(first[2] <= second[0] and first[3] <= second[1], "turn-basis-overlapping-trials")
+    require(not_before is None or first[1] >= not_before, "turn-basis-measurement-predates-preflight")
     return {"method": "independent-exact-build-facing-samples-and-bounded-A-D-input-receipts",
             "turnResponseQualified": False, "headingQualified": False, "rates": rates}

@@ -92,6 +92,38 @@ def select_physical(expected_host=None, physical_pid=None):
                 "ownerHost": actual, "reason": str(exc)}
 
 
+def inspect_movement_target(target):
+    """Read the native input helper's exact-target inspection without taking ownership."""
+    if (not isinstance(target, dict) or not is_local_host(target.get("hostName"))
+            or type(target.get("processId")) is not int or target["processId"] <= 0
+            or type(target.get("hwnd")) is not int or target["hwnd"] <= 0):
+        raise ValueError("invalid-movement-inspection-target")
+    try:
+        completed = subprocess.run([
+            str(NATIVE_EXE), "move-key", "--inspect", "--pid", str(target["processId"]),
+            "--expect-start-ticks", target["processStartUtcTicks"],
+            "--expect-sha256", target["executableSha256"], "--expect-hwnd", hex(target["hwnd"]), "--json",
+        ], cwd=ROOT, capture_output=True, text=True, timeout=10,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        result = json.loads(completed.stdout.splitlines()[-1])
+        observed = result["target"]
+        inputs_down = result.get("desktopInputsDown")
+        matched = (completed.returncode == 0 and result["status"] == "inspected-target"
+                   and result["inputSent"] is False and result["focusRequested"] is False
+                   and observed["machineName"].casefold() == target["hostName"].casefold()
+                   and type(observed["processId"]) is int and observed["processId"] == target["processId"]
+                   and str(observed["processStartUtcTicks"]) == target["processStartUtcTicks"]
+                   and observed["executableSha256"].casefold() == target["executableSha256"].casefold()
+                   and observed["executablePath"].casefold() == target["executablePath"].casefold()
+                   and int(observed["windowHandle"], 16) == target["hwnd"]
+                   and isinstance(inputs_down, list) and all(isinstance(key, str) for key in inputs_down))
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError, KeyError, TypeError, AttributeError) as error:
+        raise ValueError("movement-inspection-unavailable") from error
+    if not matched:
+        raise ValueError("movement-inspection-identity-mismatch")
+    return result
+
+
 def _candidate_angle_steps(angles):
     """Shortest adjacent signed steps; an unavailable or 180-degree step is ambiguous."""
     if len(angles) < 2 or any(value is None for value in angles):
@@ -1743,7 +1775,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
                 nativeOutput=str(path), nativeSummary=summary, nativeValues=values,
                 qualification="candidate-only; changed-state/freshness/restart-unverified",
                 **({"nativeSourceSha256": hashlib.sha256(report_bytes).hexdigest()}
-                    if timed_read or kind in ("position", "stats", "selected-target", "selected-position") else {}),
+                    if timed_read or kind in ("facing", "position", "stats", "selected-target", "selected-position") else {}),
                 **({"nativeBurstSummary": burst_summary} if burst_summary is not None else {}),
                 **({"nativeBurstValues": selected_burst_values} if selected_burst_values is not None else {}))
 

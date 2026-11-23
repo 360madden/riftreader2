@@ -12,10 +12,12 @@ import struct
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from scripts import physical_move_basis as basis
 from scripts.physical_move_basis_waypoint import read_basis
 from scripts.physical_waypoints import PhysicalAdapter
+from scripts import prepare_physical_move_calibration as preflight
 from tests.test_analyze_physical_turn_pair import sample
 from tests.test_physical_facing import report as facing_report
 from tests.test_physical_move_key_calibration import receipt
@@ -175,6 +177,22 @@ class PhysicalMoveBasisTests(unittest.TestCase):
         d[1].write_text(json.dumps(pulse), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "turn-basis-bounded-hold-required"):
             self.analyze(turn_sources={"a": a, "d": d})
+
+    def test_measurements_must_match_and_follow_optional_target_preflight(self):
+        identity = self.analyze()["identity"]
+        target = {"hostName": identity["machine"], "processId": identity["processId"],
+                  "processStartUtcTicks": identity["processStartUtcTicks"],
+                  "executableSha256": identity["gameBuildSha256"]}
+        observed = {"unitKey": identity["unitKey"], "completedAtUtc": "2026-11-11T14:49:59Z"}
+        with patch.object(preflight, "verify_preflight", return_value=(target, observed, "B" * 64)):
+            report = basis.analyze(self.paths, target_preflight=Path("preflight.json"))
+            self.assertEqual(report["preflightSummarySha256"], "B" * 64)
+            observed["completedAtUtc"] = "2026-11-11T14:50:02Z"
+            with self.assertRaisesRegex(ValueError, "basis-measurement-predates-preflight"):
+                basis.analyze(self.paths, target_preflight=Path("preflight.json"))
+            target["processStartUtcTicks"] = "1"
+            with self.assertRaisesRegex(ValueError, "basis-calibration-preflight-target-mismatch"):
+                basis.analyze(self.paths, target_preflight=Path("preflight.json"))
 
     def test_basis_from_a_third_host_can_be_reopened_and_rejects_mixed_hosts(self):
         host = "RR2_FIELD-PC"

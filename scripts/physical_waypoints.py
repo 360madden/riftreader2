@@ -510,28 +510,10 @@ class PhysicalAdapter:
                             "unitKey": self.unit_key}}
 
     def identity(self):
-        completed = subprocess.run([str(physical_rift.NATIVE_EXE), "move-key", "--inspect",
-                                    "--pid", str(self.pid), "--expect-start-ticks",
-                                    self.target["processStartUtcTicks"], "--expect-sha256",
-                                    self.target["executableSha256"], "--expect-hwnd",
-                                    hex(self.target["hwnd"]), "--json"], cwd=ROOT,
-                                   capture_output=True, text=True,
-                                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         try:
-            result = json.loads(completed.stdout.splitlines()[-1])
-            target = result["target"]
-            same = (completed.returncode == 0 and result["status"] == "inspected-target"
-                    and result["inputSent"] is False and result["focusRequested"] is False
-                    and target["machineName"].casefold() == self.host.casefold()
-                    and target["processId"] == self.pid
-                    and str(target["processStartUtcTicks"]) == self.target["processStartUtcTicks"]
-                    and target["executableSha256"].casefold() == self.target["executableSha256"].casefold()
-                    and target["executablePath"].casefold() == self.target["executablePath"].casefold()
-                    and int(target["windowHandle"], 16) == self.target["hwnd"])
-        except (ValueError, IndexError, KeyError, TypeError):
-            same = False
-        if not same:
-            raise WaypointError("RIFT process or window identity changed")
+            physical_rift.inspect_movement_target(self.target)
+        except ValueError as error:
+            raise WaypointError("RIFT process or window identity changed") from error
         return self.pinned_identity()
 
     def pinned_identity(self):
