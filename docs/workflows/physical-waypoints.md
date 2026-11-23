@@ -111,6 +111,11 @@ a claim that the complete GUI suite is green.
 
 ## Waypoints workspace
 
+The Windows helper and CLI use the user's registered Local AppData folder for
+session files. A packaged launch still uses the shared profile folder. The CLI
+can discover helpers already running under the previous profile path after a
+local folder relocation.
+
 The desktop helper and console frontend share **Joey D's Waypoints v1.4.0**
 branding. The red panda in the header is also the window icon. Existing
 `Waypoints.cmd` and `rr2-waypoints.cmd` entry points stay compatible.

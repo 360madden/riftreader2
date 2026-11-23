@@ -34,6 +34,44 @@ def test_discovery_rejects_stale_epoch_and_ambiguous(tmp_path, monkeypatch):
     second.close()
 
 
+@pytest.mark.skipif(os.name != 'nt', reason='Windows known folder')
+def test_relocated_windows_profile_discovers_new_and_already_running_sessions(tmp_path, monkeypatch):
+    known = tmp_path / 'Registered Local Data'
+    legacy = tmp_path / 'Old profile data'
+    monkeypatch.setattr(p, '_windows_local_app_data', lambda: known)
+    monkeypatch.setattr(p, '_legacy_user_data', lambda: legacy)
+    monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'Packaged app data'))
+
+    modern = p.LocalSessionServer()
+    old = p.LocalSessionServer(root=legacy / 'RiftReader2' / 'helpers')
+    try:
+        assert modern.path.parent == known.resolve() / 'RiftReader2' / 'helpers' / 'waypoints'
+        assert p.resolve_session(modern.session_id)['path'] == str(modern.path)
+        assert p.resolve_session(old.session_id)['path'] == str(old.path)
+        with pytest.raises(p.CliError, match='Multiple'):
+            p.resolve_session()
+        # An explicit transport root stays isolated from default discovery.
+        assert p.discover_sessions(root=legacy / 'RiftReader2' / 'helpers') == [old.descriptor]
+        old.close()
+        assert p.resolve_session() == modern.descriptor
+
+        def unavailable_profile():
+            raise RuntimeError('The launcher did not provide a home directory')
+
+        monkeypatch.setattr(p, '_legacy_user_data', unavailable_profile)
+        assert p.resolve_session() == modern.descriptor
+    finally:
+        modern.close()
+        old.close()
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='Windows known folder')
+def test_unavailable_registered_folder_keeps_profile_default(tmp_path, monkeypatch):
+    monkeypatch.setattr(p, '_windows_local_app_data', lambda: None)
+    monkeypatch.setattr(p, '_legacy_user_data', lambda: tmp_path)
+    assert p._root('waypoints', None) == tmp_path.resolve() / 'RiftReader2' / 'helpers' / 'waypoints'
+
+
 def test_deferred_duplicate_and_completion(tmp_path):
     server = p.LocalSessionServer(root=tmp_path)
     submit(server, 'one')

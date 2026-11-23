@@ -60,14 +60,62 @@ def _process_start(pid):
         return None
 
 
+def _windows_local_drive(folder):
+    if not re.fullmatch(r'[A-Za-z]:\\', folder.anchor):
+        return False
+    try:
+        get_drive_type = ctypes.WinDLL('kernel32').GetDriveTypeW
+        get_drive_type.argtypes = (ctypes.c_wchar_p,)
+        get_drive_type.restype = ctypes.c_uint
+        return get_drive_type(folder.anchor) in (2, 3, 6)
+    except (AttributeError, OSError):
+        return False
+
+
+def _windows_local_app_data():
+    from ctypes import wintypes
+
+    try:
+        get_folder = ctypes.WinDLL('shell32').SHGetKnownFolderPath
+        get_folder.argtypes = (ctypes.c_void_p, wintypes.DWORD, wintypes.HANDLE,
+                               ctypes.POINTER(ctypes.c_void_p))
+        get_folder.restype = ctypes.c_long
+        free = ctypes.WinDLL('ole32').CoTaskMemFree
+        free.argtypes = (ctypes.c_void_p,)
+        free.restype = None
+    except (AttributeError, OSError):
+        return None
+
+    folder_id = (ctypes.c_uint32 * 4).from_buffer_copy(
+        uuid.UUID('F1B32785-6FBA-4FCF-9D55-7B8E7F157091').bytes_le)
+    location = ctypes.c_void_p()
+    # KF_FLAG_NO_PACKAGE_REDIRECTION | KF_FLAG_DONT_VERIFY keeps packaged
+    # launchers on the shared profile path and avoids touching the folder.
+    try:
+        if get_folder(ctypes.byref(folder_id), 0x14000, None, ctypes.byref(location)) != 0 or not location:
+            return None
+        folder = Path(ctypes.wstring_at(location))
+        return folder if _windows_local_drive(folder) else None
+    finally:
+        if location:
+            free(location)
+
+
+def _legacy_user_data():
+    return Path.home() / ('AppData/Local' if os.name == 'nt' else '.local/share')
+
+
 def _root(helper, root):
     if not _ID.fullmatch(helper):
         raise CliError('invalid-helper', 'Invalid helper name')
-    # A packaged terminal/desktop launch can redirect LOCALAPPDATA while its
-    # pythonw child sees the ordinary path. Keep discovery stable across both.
-    user_local = Path.home() / ('AppData/Local' if os.name == 'nt' else '.local/share')
-    base = Path(root) if root is not None else user_local / 'RiftReader2' / 'helpers'
-    return (base / helper).resolve()
+    if root is not None:
+        return (Path(root) / helper).resolve()
+    user_data = _windows_local_app_data() if os.name == 'nt' else None
+    if user_data is None:
+        user_data = _legacy_user_data()
+        if os.name == 'nt' and not _windows_local_drive(user_data):
+            raise CliError('session-profile-not-local', 'The Windows profile has no local session directory')
+    return (user_data / 'RiftReader2' / 'helpers' / helper).resolve()
 
 
 def _valid_id(value):
@@ -114,17 +162,32 @@ def _valid_descriptor(d, base):
 
 def discover_sessions(helper='waypoints', root=None):
     base = _root(helper, root)
-    if not base.is_dir():
-        return []
-    found = []
-    for child in base.iterdir():
-        if not child.is_dir() or child.is_symlink():
-            continue
+    bases = [base]
+    if root is None and os.name == 'nt':
+        registered_data = _windows_local_app_data()
         try:
-            descriptor = _read(child / 'session.json')
-            if _valid_descriptor(descriptor, base):
-                found.append(descriptor)
-        except (OSError, ValueError, TypeError):
+            legacy_data = _legacy_user_data()
+        except RuntimeError:
+            legacy_data = None
+        if (registered_data is not None and legacy_data is not None
+                and registered_data != legacy_data and _windows_local_drive(legacy_data)):
+            # An older helper may still be running under the profile default.
+            legacy_base = (legacy_data / 'RiftReader2' / 'helpers' / helper).resolve()
+            if legacy_base != base:
+                bases.append(legacy_base)
+    found = []
+    for base in bases:
+        try:
+            for child in base.iterdir():
+                try:
+                    if not child.is_dir() or child.is_symlink():
+                        continue
+                    descriptor = _read(child / 'session.json')
+                    if _valid_descriptor(descriptor, base):
+                        found.append(descriptor)
+                except (OSError, ValueError, TypeError):
+                    continue
+        except OSError:
             continue
     return sorted(found, key=lambda item: item['sessionId'])
 
