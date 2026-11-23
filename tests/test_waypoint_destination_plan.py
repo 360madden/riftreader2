@@ -80,6 +80,37 @@ class DestinationPlanTests(unittest.TestCase):
         receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
         return subprocess.CompletedProcess(command, 0, '{"status":"destination-query-published"}', "")
 
+    def test_configured_world_and_python_work_in_a_different_checkout(self):
+        python = self.root / "separate Python environment" / "python.exe"
+        python.parent.mkdir()
+        python.touch()
+        with patch.dict(bridge.os.environ, {"RR2_RIFTWORLD_ROOT": str(self.world),
+                                             "RR2_RIFTWORLD_PYTHON": str(python)}):
+            result = self.plan(native=False, riftworld_root=None, riftworld_python=None)
+        self.assertEqual(result["riftWorldRuntime"], {"checkout": str(self.world.resolve()),
+                                                       "python": str(python.resolve())})
+        command, kwargs = self.calls[0]
+        self.assertEqual(command[:2], [str(python.resolve()),
+                                       str(self.world.resolve() / "tools" / "query_destination.py")])
+        self.assertEqual(kwargs["cwd"], self.world.resolve())
+
+    def test_explicit_world_and_python_take_precedence_over_environment(self):
+        wrong_path = self.root / "missing"
+        with patch.dict(bridge.os.environ, {"RR2_RIFTWORLD_ROOT": str(wrong_path),
+                                             "RR2_RIFTWORLD_PYTHON": str(wrong_path)}):
+            result = self.plan(native=False)
+        self.assertEqual(result["riftWorldRuntime"]["checkout"], str(self.world.resolve()))
+        self.assertEqual(result["riftWorldRuntime"]["python"], str(Path(sys.executable).resolve()))
+
+    def test_missing_configured_world_python_does_not_prepare_a_plan(self):
+        missing = self.root / "missing Python.exe"
+        with patch.dict(bridge.os.environ, {"RR2_RIFTWORLD_ROOT": str(self.world),
+                                             "RR2_RIFTWORLD_PYTHON": str(missing)}):
+            with self.assertRaisesRegex(ValueError, "RiftWorld Python is unavailable at .*missing Python.exe"):
+                self.plan(native=False, riftworld_root=None, riftworld_python=None)
+        self.assertEqual(self.calls, [])
+        self.assertFalse((self.root / "plan").exists())
+
     def plan(self, *, native=True, **options):
         arguments = dict(catalog=self.catalog, destination=self.entry["id"], patch=self.patch,
             build=self.build, start=[0, 1, 2], output_directory=self.root / "plan",

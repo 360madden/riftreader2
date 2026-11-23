@@ -7,17 +7,25 @@ WorldPatch and persisted Detour build with RR2's native-corridor adoption. It
 writes a separate plan and route; it never loads over the current or unsaved
 Waypoints route. The default sends no game input.
 
-From `C:\work\riftreader2`, reproduce the retained courtyard pilot with a fresh
-output directory:
+Set `RR2_RIFTWORLD_ROOT` to the local RiftWorld checkout if it lives outside the
+sibling `RiftWorld` directory. Set `RR2_RIFTWORLD_PYTHON` to its Python executable
+when using an environment outside that checkout's `.venv`. The explicit options
+`--riftworld-root` and `--riftworld-python` take precedence. Each plan records the
+checkout and Python it used.
+
+From the RR2 checkout, reproduce the retained courtyard pilot with its saved
+inputs and a fresh output directory:
 
 ```powershell
-$worldRoot = 'C:\work\RiftWorld'
-.\.venv\Scripts\python.exe scripts\waypoint_destination_plan.py `
+$worldRoot = $env:RR2_RIFTWORLD_ROOT
+if (!$worldRoot) { $worldRoot = Join-Path (Split-Path -Parent (Get-Location).Path) 'RiftWorld' }
+python scripts\waypoint_destination_plan.py `
+  --riftworld-root $worldRoot `
   --catalog artifacts\destination-plan-20261115-r1\destinations.json `
   --destination courtyard-walked-pilot-end `
   --patch "$worldRoot\data\patches\44ce8571b899f2af91b5d60afec52dac31b809d512df6637d2083ea96b88452a\patch.json" `
   --build "$worldRoot\cache\navigation\A9ED98B59570C486693BF1DE2DBD3C3B42EF71E50609CAB369CE2865C2F1B7DF\navigation.json" `
-  --from 7421.43212890625,863.597412109375,2944.64013671875 `
+  --from '7421.43212890625,863.597412109375,2944.64013671875' `
   --native-receipt artifacts\movement-upgrade\10-unit-out-and-back.json `
   --native-context artifacts\candidate-native-trial-20261114\context.json `
   --native-start 0 --native-end 27 `

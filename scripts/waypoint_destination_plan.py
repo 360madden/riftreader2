@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import platform
 import re
@@ -614,7 +615,7 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
                      prepare_request=None, source_index=None, allow_partial_navigation=False,
                      prepare_profile=None, prepare_timeout_seconds=600,
                      start=None, from_current=False, recovery_plan=None,
-                     riftworld_root=RIFTWORLD_ROOT, riftworld_python=None,
+                     riftworld_root=None, riftworld_python=None,
                      native_receipts=(), native_context=None, native_start=None,
                      native_end=None, candidate_start=0, candidate_end=None,
                      execute=False, session=None, search_extent=None,
@@ -656,11 +657,16 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
     if search_extent is not None and (isinstance(search_extent, bool)
                                      or not math.isfinite(search_extent) or search_extent <= 0):
         raise ValueError("search extent must be finite and positive")
-    world_root = Path(riftworld_root).resolve()
-    python = Path(riftworld_python or world_root / ".venv" / "Scripts" / "python.exe").resolve()
+    world_root = Path(riftworld_root or os.environ.get("RR2_RIFTWORLD_ROOT") or RIFTWORLD_ROOT).resolve()
+    if not world_root.is_dir():
+        raise ValueError(f"RiftWorld checkout is unavailable at {world_root}")
     query_tool = world_root / "tools" / "query_destination.py"
-    if not python.is_file() or not query_tool.is_file():
-        raise ValueError("RiftWorld Python or destination query tool is unavailable")
+    if not query_tool.is_file():
+        raise ValueError(f"RiftWorld destination query tool is unavailable at {query_tool}")
+    configured_python = riftworld_python or os.environ.get("RR2_RIFTWORLD_PYTHON")
+    python = Path(configured_python or world_root / ".venv" / "Scripts" / "python.exe").resolve()
+    if not python.is_file():
+        raise ValueError(f"RiftWorld Python is unavailable at {python}")
     catalog = Path(catalog).resolve()
     inputs = {"catalog": _reference(catalog)}
     if preparing:
@@ -697,7 +703,8 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
             "status": "blocked", "destinationId": destination, "requestedStartXYZ": start,
             "startSource": ("verified-halt-recovery" if recovery_plan is not None else
                             "current-native" if from_current else "explicit-source-coordinates"),
-            "inputs": inputs, "stages": {"query": "not-started", "adoption": "not-requested",
+            "inputs": inputs, "riftWorldRuntime": {"checkout": str(world_root), "python": str(python)},
+            "stages": {"query": "not-started", "adoption": "not-requested",
                                           "execution": "not-requested"},
             "blockers": [], "inputSent": False, "currentRouteChanged": False,
             "qualification": "Prepared-map planning and corresponding walked-corridor reuse only; "
@@ -955,8 +962,10 @@ def parser():
     starts.add_argument("--from-recovery-plan", dest="recovery_plan", type=Path,
                         help="plan-only: verify a halted run and fresh same-player recovery pose; never resume input")
     result.add_argument("--out-dir", dest="output_directory", type=Path, required=True)
-    result.add_argument("--riftworld-root", type=Path, default=RIFTWORLD_ROOT)
-    result.add_argument("--riftworld-python", type=Path)
+    result.add_argument("--riftworld-root", type=Path,
+                        help="RiftWorld checkout (default: RR2_RIFTWORLD_ROOT or sibling RiftWorld)")
+    result.add_argument("--riftworld-python", type=Path,
+                        help="RiftWorld Python (default: RR2_RIFTWORLD_PYTHON or that checkout's .venv)")
     result.add_argument("--native-receipt", dest="native_receipts", type=Path, action="append", default=[])
     result.add_argument("--native-context", type=Path)
     for name, default in (("native-start", None), ("native-end", None),
