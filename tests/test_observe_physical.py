@@ -355,7 +355,8 @@ class PhysicalTests(unittest.TestCase):
                  NODE_VERSION, (0, json.dumps(catalog)), (0, json.dumps(windows))]) as run:
             service = physical.check_workbridge_capture_service(physical.workbridge_root())
             self.assertEqual(service, {"status": "available", "runtimeVersion": "0.16.4-dev", "cliPath": str(cli),
-                                       "nodeExecutable": str(self.node), "nodeVersion": "v24.20.0"})
+                                       "nodeExecutable": str(self.node), "nodeVersion": "v24.20.0",
+                                       "winapp": {"status": "not-checked", "reason": "desktop-workbridge-winapp-probe-unsupported"}})
             command = physical._workbridge_command(physical.workbridge_root())
             self.assertEqual(physical._call(command, "desktop_windows", {"app": "123"}, self.root), windows["result"])
         for call in run.call_args_list[1:]:
@@ -425,7 +426,8 @@ class PhysicalTests(unittest.TestCase):
         cases = (
             (0, {"ok": True, "discovery": "tools", "serverVersion": "0.16.5-dev",
                  "tools": [{"name": "desktop_windows"}, {"name": "desktop_capture_window"}, {"name": "other"}]},
-             {"status": "available", "runtimeVersion": "0.16.5-dev"}),
+             {"status": "available", "runtimeVersion": "0.16.5-dev",
+              "winapp": {"status": "not-checked", "reason": "desktop-workbridge-winapp-probe-unsupported"}}),
             (0, {"ok": True, "discovery": "tools", "serverVersion": "0.16.5-dev",
                  "tools": [{"name": "desktop_capture_window"}]},
              {"status": "blocked", "reason": "TOOL_NOT_FOUND", "runtimeVersion": "0.16.5-dev",
@@ -447,6 +449,42 @@ class PhysicalTests(unittest.TestCase):
                 self.assertEqual(command[1:], [cli, "--service-state", bridge / ".local",
                                                 "--list-tools", "--timeout", "6", "--json"])
                 self.assertEqual(run.call_args.args[1], 10)
+
+    def test_workbridge_winapp_check_uses_the_service_capability_without_listing_windows(self):
+        catalog = {"ok": True, "discovery": "tools", "serverVersion": "0.16.5-dev", "tools": [
+            {"name": "desktop_windows", "inputSchema": {"properties": {"checkDependencies": {"type": "boolean"}}}},
+            {"name": "desktop_capture_window"},
+        ]}
+        receipt = {"ok": True, "schemaVersion": 1, "readOnly": True, "backend": "Microsoft.WinAppCli",
+                   "operation": "check-dependencies"}
+        cases = (
+            ({"status": "available", "version": "0.7.1"}, {"status": "available", "version": "0.7.1"}),
+            ({"status": "blocked", "reason": "WINAPP_NOT_INSTALLED"},
+             {"status": "blocked", "reason": "WINAPP_NOT_INSTALLED"}),
+            ({"status": "available", "version": "0.7.1", "operation": "windows"},
+             {"status": "blocked", "reason": "desktop-workbridge-winapp-probe-failed"}),
+        )
+        for result, expected in cases:
+            with self.subTest(result=result):
+                def mock_run(argv, deadline):
+                    if argv[-1] == "--version":
+                        return NODE_VERSION
+                    if "--list-tools" in argv:
+                        return 0, json.dumps(catalog)
+                    request_file = argv[argv.index("--input") + 1]
+                    self.assertEqual(json.loads(request_file.read_text(encoding="utf-8")),
+                                     [{"tool": "desktop_windows", "arguments": {"checkDependencies": True}}])
+                    self.assertEqual(argv[-3:], ["--timeout", "23", "--json"])
+                    self.assertLess(deadline, 60)
+                    envelope = {"ok": True, "index": 0, "tool": "desktop_windows", "result": {**receipt, **result}}
+                    return 0, json.dumps(envelope)
+
+                with patch.object(physical, "_run", side_effect=mock_run) as run:
+                    readiness = physical.check_workbridge_capture_service(physical.BRIDGE)
+                self.assertEqual(run.call_count, 3)
+                self.assertEqual(readiness["status"], expected["status"])
+                self.assertEqual(readiness["winapp"], expected)
+                self.assertEqual(readiness.get("reason"), expected.get("reason"))
 
     def test_cli_error_code_preserved(self):
         response = {"schemaVersion": 1, "index": 0, "tool": "desktop_capture_window", "ok": False,

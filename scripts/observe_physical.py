@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BRIDGE = Path(r"C:\work\workbridge-mcp")
 NODE = Path(r"C:\Program Files\nodejs\node.exe")
 MIN_WORKBRIDGE_NODE_MAJOR = 24
+WORKBRIDGE_WINAPP_REASONS = ("WINAPP_NOT_INSTALLED", "UNSUPPORTED_WINAPP_VERSION", "WINAPP_VERSION_CHECK_FAILED")
 POWERSHELL = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
 MAX_OUTPUT = 12 * 1024 * 1024
 MAX_IMAGE = 8 * 1024 * 1024
@@ -187,8 +188,29 @@ def _missing_workbridge_capture_runners(bridge):
     return missing
 
 
+def _check_workbridge_winapp(command):
+    failure = {"status": "blocked", "reason": "desktop-workbridge-winapp-probe-failed"}
+    try:
+        with tempfile.TemporaryDirectory(prefix="rr2-winapp-") as request_dir:
+            result = _call(command, "desktop_windows", {"checkDependencies": True}, Path(request_dir), timeout=23)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return failure
+    if (result.get("ok") is not True or result.get("readOnly") is not True
+            or type(result.get("schemaVersion")) is not int or result["schemaVersion"] != 1
+            or result.get("operation") != "check-dependencies" or result.get("backend") != "Microsoft.WinAppCli"):
+        return failure
+    status = result.get("status")
+    version = result.get("version")
+    if status == "available" and isinstance(version, str) and re.fullmatch(r"[0-9]{1,3}(\.[0-9]{1,3}){2}", version):
+        return {"status": "available", "version": version}
+    reason = result.get("reason")
+    if status == "blocked" and reason in WORKBRIDGE_WINAPP_REASONS:
+        return {"status": "blocked", "reason": reason}
+    return failure
+
+
 def check_workbridge_capture_service(bridge):
-    """Check the authenticated tool catalog and the deployed desktop runner files."""
+    """Check deployed desktop files, catalog, and the service's WinApp when supported."""
     missing_files = _missing_workbridge_capture_runners(bridge)
     details = {"missingFiles": missing_files} if missing_files else {}
     try:
@@ -236,14 +258,25 @@ def check_workbridge_capture_service(bridge):
     if missing:
         return {**details, "status": "blocked", "reason": "TOOL_NOT_FOUND", "runtimeVersion": version,
                 "missingTools": missing}
-    return {**details, "status": "available", "runtimeVersion": version}
+    details["runtimeVersion"] = version
+    desktop = tools[names.index("desktop_windows")]
+    schema = desktop.get("inputSchema")
+    properties = schema.get("properties") if isinstance(schema, dict) else None
+    capability = properties.get("checkDependencies") if isinstance(properties, dict) else None
+    if isinstance(capability, dict) and capability.get("type") == "boolean":
+        winapp = _check_workbridge_winapp(command)
+        if winapp["status"] == "blocked":
+            return {**details, "status": "blocked", "reason": winapp["reason"], "winapp": winapp}
+    else:
+        winapp = {"status": "not-checked", "reason": "desktop-workbridge-winapp-probe-unsupported"}
+    return {**details, "status": "available", "winapp": winapp}
 
 
-def _call(command, tool, arguments, output):
+def _call(command, tool, arguments, output, *, timeout=100):
     request = output / (tool + "-request.json")
     with request.open("x", encoding="utf-8") as stream:
         json.dump([{"tool": tool, "arguments": arguments}], stream)
-    code, text = _run([*command, "--input", request, "--timeout", "100", "--json"])
+    code, text = _run([*command, "--input", request, "--timeout", str(timeout), "--json"], timeout + 20)
     entry = _workbridge_response(text)
     result = entry.get("result", {})
     _require(isinstance(result, dict), "invalid-backend-response")

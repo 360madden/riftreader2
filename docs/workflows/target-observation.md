@@ -60,7 +60,10 @@ check looks for `dist/desktop-ui.mjs`, `dist/desktop-capture.mjs`, and
 `dist/desktop-turn-admission.mjs` in the active deployment and checks the local
 Node version. With those prerequisites present,
 it checks registration of `desktop_windows` and `desktop_capture_window` on the
-running service. A `RUNTIME_MISMATCH` then gives the CLI and service versions.
+running service. When the catalog advertises the version-only WinApp check,
+the owner checks WinApp in its own environment and reports the result in
+`workbridgeService.winapp`. Older owners report `winapp.status` as `not-checked`.
+A `RUNTIME_MISMATCH` gives the CLI and service versions.
 `missingFiles` lists deployed runners even when the configured CLI or Node is
 unavailable. Missing runners also prevent a Workbridge capture from selecting a
 RIFT process. Restore them through Workbridge's staged update workflow.
