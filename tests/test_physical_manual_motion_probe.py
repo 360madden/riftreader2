@@ -71,9 +71,13 @@ class ManualMotionTests(unittest.TestCase):
             select.assert_not_called()
 
     def create_bundle(self, output, *, stale_hash=False):
-        def read(selection, kind, *, output, samples):
+        published = output.parent / "RiftReader2.Live.exe"
+        published.write_bytes(b"reader")
+
+        def read(selection, kind, *, output, samples, native_reader):
             self.assertEqual(selection, SELECTION)
             self.assertEqual((kind, samples), ("position", 1))
+            self.assertEqual(native_reader, published)
             source = native()
             index = probe.SOURCE_NAMES.index(output.name)
             source.update(requestedSamples=1, completedSamples=1, sourceBuildSha256=TARGET["executableSha256"])
@@ -86,8 +90,10 @@ class ManualMotionTests(unittest.TestCase):
 
         with patch.object(probe.physical_rift, "select_physical", return_value=SELECTION), \
              patch.object(probe.physical_rift, "read_native", side_effect=read), \
-             patch.object(probe, "_check_capability"), patch.object(probe.time, "sleep"):
-            return probe.probe(HOST, 123, 2, output=output)
+             patch.object(probe, "_check_capability") as check, patch.object(probe.time, "sleep"):
+            result = probe.probe(HOST, 123, 2, output=output, native_reader=published)
+            check.assert_called_once_with(published)
+            return result
 
     def test_moved_bundle_replays_without_a_live_host_and_rejects_edits(self):
         root = Path(self.enterContext(TemporaryDirectory()))

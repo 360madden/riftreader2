@@ -31,8 +31,8 @@ def _identity(selection):
             target["executableSha256"].casefold(), target["hwnd"])
 
 
-def _check_capability():
-    exe = physical_rift.NATIVE_EXE
+def _check_capability(native_reader=None):
+    exe = physical_rift._native_reader_path(native_reader)
     if not exe.is_file():
         raise ValueError("native-reader-not-built")
     try:
@@ -59,8 +59,8 @@ def _read_capture(path, target):
     return native, sha, str(path)
 
 
-def _capture(selection, output=None):
-    receipt = physical_rift.read_native(selection, "position", output=output, samples=1)
+def _capture(selection, output, *, read):
+    receipt = read(selection, "position", output=output, samples=1)
     if receipt.get("status") != "complete":
         raise ValueError(receipt.get("reason", "native-read-failed"))
     if receipt.get("target") != selection["target"] or receipt.get("nativeRead") != "position":
@@ -105,28 +105,29 @@ def _summarize(target, seconds, before, after):
     }
 
 
-def probe(host, pid, seconds, *, output=None):
+def probe(host, pid, seconds, *, output=None, native_reader=None):
     if not physical_rift.valid_host_name(host) or host.casefold() != socket.gethostname().casefold():
         raise ValueError("host-mismatch")
     if type(pid) is not int or not 1 <= pid <= 4294967295:
         raise ValueError("explicit-positive-pid-required")
     _validate_wait(seconds)
+    read = physical_rift.bind_native_reader(physical_rift.read_native, native_reader)
     selection = physical_rift.select_physical(host, pid)
     identity = _identity(selection)
     if identity[:2] != (host.casefold(), pid):
         raise ValueError("physical-selection-mismatch")
-    _check_capability()
+    _check_capability(native_reader)
     if output is not None:
         output = Path(output).absolute()
         output.mkdir()
-    first = _capture(selection, output / SOURCE_NAMES[0] if output else None)
+    first = _capture(selection, output / SOURCE_NAMES[0] if output else None, read=read)
     print(f"First candidate captured. Waiting {seconds:g} seconds for the next sample.",
           file=sys.stderr, flush=True)
     time.sleep(seconds)
     second_selection = physical_rift.select_physical(host, pid)
     if _identity(second_selection) != identity:
         raise ValueError("process-identity-changed")
-    second = _capture(second_selection, output / SOURCE_NAMES[1] if output else None)
+    second = _capture(second_selection, output / SOURCE_NAMES[1] if output else None, read=read)
     if _identity(physical_rift.select_physical(host, pid)) != identity:
         raise ValueError("process-identity-changed")
     result = _summarize(selection["target"], seconds, first, second)
@@ -178,16 +179,20 @@ def main(argv=None):
     parser.add_argument("--pid", type=int, help="exact local rift_x64 PID")
     parser.add_argument("--seconds", type=float, help="observation window, 1 to 30 seconds")
     parser.add_argument("--output", type=Path, help="fresh directory for both raw reports and the summary")
+    parser.add_argument("--native-reader", type=Path,
+                        help="absolute local path to a published RiftReader2.Live.exe")
     parser.add_argument("--replay", type=Path, help="verify a saved manual-motion.json without a live read")
     args = parser.parse_args(argv)
     if args.replay is not None:
-        if any(value is not None for value in (args.host, args.pid, args.seconds, args.output)):
+        if any(value is not None for value in (args.host, args.pid, args.seconds,
+                                               args.output, args.native_reader)):
             parser.error("--replay cannot be combined with capture options")
     elif any(value is None for value in (args.host, args.pid, args.seconds)):
         parser.error("capture requires --host, --pid and --seconds")
     try:
         result = (replay(args.replay) if args.replay is not None
-                  else probe(args.host, args.pid, args.seconds, output=args.output))
+                  else probe(args.host, args.pid, args.seconds, output=args.output,
+                             native_reader=args.native_reader))
         print(json.dumps(result, sort_keys=True, allow_nan=False))
         return 0
     except (ValueError, OSError, KeyError, TypeError) as exc:

@@ -104,7 +104,7 @@ identity and sampled player key consistent. Use a fresh output directory to
 retain both raw reports and replay the candidate displacement offline.
 
 ```powershell
-python -B scripts/physical_manual_motion_probe.py --host $rr2Host --pid CURRENT_PID --seconds 2 --output artifacts/NEW_MANUAL_MOTION
+python -B scripts/physical_manual_motion_probe.py --host $rr2Host --pid CURRENT_PID --seconds 2 --native-reader $rr2PublishedReader --output artifacts/NEW_MANUAL_MOTION
 python -B scripts/physical_manual_motion_probe.py --replay artifacts/NEW_MANUAL_MOTION/manual-motion.json
 ```
 
