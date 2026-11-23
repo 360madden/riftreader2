@@ -10,6 +10,7 @@ import math
 from pathlib import Path
 import shutil
 import struct
+import sys
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
@@ -17,6 +18,7 @@ from unittest.mock import patch
 
 from scripts import physical_move_basis as basis
 from scripts import launch_physical_waypoints as launcher
+from scripts import physical_waypoints as waypoints
 from scripts.physical_move_basis_waypoint import read_basis
 from scripts.physical_waypoints import PhysicalAdapter
 from scripts import prepare_physical_move_calibration as preflight
@@ -257,6 +259,49 @@ class PhysicalMoveBasisTests(unittest.TestCase):
             adapter = PhysicalAdapter(host, target["processId"])
             self.assertEqual(adapter.basis_sha, digest)
             self.assertEqual(adapter.binding["basisPath"], str(moved))
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows checkout calibration installation")
+    def test_install_bundle_selects_the_verified_copy_and_preserves_an_existing_default(self):
+        folder = self.calibration_folder()
+        basis.calibration_bundle(folder)
+        (folder / "unrelated.txt").touch()
+        checkout = self.root / "separate checkout"
+        host = "AMD-DESKTOP"
+        with patch.object(basis, "ROOT", checkout), patch.object(waypoints, "ROOT", checkout), \
+             patch.dict("os.environ", RR2_WAYPOINTS_BASIS=""), \
+             patch.object(launcher.socket, "gethostname", return_value=host):
+            installed = basis.install_calibration_bundle(host, folder)
+            path = Path(installed["basisPath"])
+            self.assertEqual(installed["status"], "calibration-bundle-installed")
+            self.assertEqual(waypoints.movement_basis_path(host), path)
+            self.assertEqual(launcher.read_waypoints_basis(path)[1], installed["basisSha256"])
+            self.assertFalse(installed["inputSent"])
+            self.assertFalse((path / "unrelated.txt").exists())
+            self.assertEqual(basis.install_calibration_bundle(host, folder)["status"], "calibration-bundle-already-installed")
+            report = path / basis.BUNDLE_REPORT
+            different = report.read_bytes() + b"\n"
+            report.write_bytes(different)
+            with self.assertRaisesRegex(ValueError, "different-default-calibration-already-installed"):
+                basis.install_calibration_bundle(host, folder)
+            self.assertEqual(report.read_bytes(), different)
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows checkout calibration installation")
+    def test_install_does_not_publish_a_foreign_or_incomplete_copy(self):
+        folder = self.calibration_folder()
+        basis.calibration_bundle(folder)
+        checkout = self.root / "separate checkout"
+        with patch.object(basis, "ROOT", checkout), \
+             patch.object(launcher.socket, "gethostname", return_value="OTHER-PC"):
+            with self.assertRaisesRegex(ValueError, "calibration-install-host-mismatch"):
+                basis.install_calibration_bundle("AMD-DESKTOP", folder)
+            with self.assertRaisesRegex(ValueError, "calibration-bundle-host-mismatch"):
+                basis.install_calibration_bundle("OTHER-PC", folder)
+        with patch.object(basis, "ROOT", checkout), \
+             patch.object(launcher.socket, "gethostname", return_value="AMD-DESKTOP"), \
+             patch.object(basis.shutil, "copyfile", side_effect=OSError("copy failed")):
+            with self.assertRaisesRegex(OSError, "copy failed"):
+                basis.install_calibration_bundle("AMD-DESKTOP", folder)
+        self.assertFalse(basis.local_calibration_folder(checkout, "AMD-DESKTOP").exists())
 
     def test_bundle_rejects_valid_json_edits_to_sources_and_saved_rates(self):
         folder = self.calibration_folder()

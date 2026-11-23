@@ -936,8 +936,9 @@ that build for Waypoints, its native movement commands and STOP recovery.
 [Native reader publish steps](development.md#publish-the-local-native-reader)
 
 Waypoints first uses `--basis PATH` or `RR2_WAYPOINTS_BASIS` when supplied. For
-automatic startup, copy the complete calibration folder to
-`.local/waypoints-calibration/<lowercase-host>`. Otherwise Waypoints looks for
+automatic startup, install the complete calibration bundle with
+`physical_move_basis.py --install-bundle`. It verifies the files and copies
+them to `.local/waypoints-calibration/<lowercase-host>`. Otherwise Waypoints looks for
 `config/physical-movement-basis.<lowercase-host>.json`. The checkout includes an
 AMD-DESKTOP basis at that path. The launcher, idle reconnect and local doctor
 use the same selection rule. Use a basis measured for the current host,
@@ -982,7 +983,12 @@ checked later.
 ```powershell
 python -B scripts/physical_move_basis.py --bundle artifacts/NEW_CALIBRATION_PREFLIGHT
 python -B scripts/physical_move_basis.py --verify-bundle artifacts/COPIED_CALIBRATION
+python -B scripts/physical_move_basis.py --install-bundle artifacts/COPIED_CALIBRATION --expected-host ([Environment]::MachineName)
 ```
+
+Installation works with RIFT closed. It preserves an existing default with a
+different hash. An installed bundle still needs to match the current build
+and player when Waypoints connects.
 
 For individually named receipts, supply the paths explicitly.
 

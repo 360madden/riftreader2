@@ -11,7 +11,9 @@ from datetime import datetime
 import json
 import math
 from pathlib import Path
+import shutil
 import sys
+from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -209,11 +211,24 @@ def _write_report(path, report):
         stream.write(rendered + "\n")
 
 
+def local_calibration_folder(root, host):
+    return root / ".local" / "waypoints-calibration" / host.lower()
+
+
+def _bundle_sources(directory):
+    from scripts.prepare_physical_move_calibration import FACING, SUMMARY
+
+    translations = {key: directory / f"{key}.json" for key in KEYS}
+    turns = {key: tuple(directory / f"{key}-{part}.json" for part in ("before", "pulse", "after"))
+             for key in ("a", "d")}
+    preflight = directory / SUMMARY
+    required = (preflight, directory / FACING, *translations.values(), *turns["a"], *turns["d"])
+    return translations, turns, preflight, required
+
+
 def calibration_bundle(directory, *, verify=False):
     """Build or independently replay a complete calibration kept in one directory."""
     from scripts.physical_move_basis_waypoint import read_basis
-    from scripts.prepare_physical_move_calibration import FACING, SUMMARY
-
     directory = Path(directory)
     require(directory.is_dir(), "calibration-bundle-directory-unavailable")
     destination = directory / BUNDLE_REPORT
@@ -223,11 +238,7 @@ def calibration_bundle(directory, *, verify=False):
     else:
         require(not destination.exists() and not destination.is_symlink(), "calibration-bundle-output-exists")
 
-    translations = {key: directory / f"{key}.json" for key in KEYS}
-    turns = {key: tuple(directory / f"{key}-{part}.json" for part in ("before", "pulse", "after"))
-             for key in ("a", "d")}
-    preflight = directory / SUMMARY
-    required = [preflight, directory / FACING, *translations.values(), *turns["a"], *turns["d"]]
+    translations, turns, preflight, required = _bundle_sources(directory)
     missing = [path.name for path in required if not path.is_file()]
     require(not missing, "calibration-bundle-missing: " + ", ".join(missing))
     report = analyze(translations, turn_sources=turns, target_preflight=preflight)
@@ -240,11 +251,47 @@ def calibration_bundle(directory, *, verify=False):
     return report
 
 
+def install_calibration_bundle(expected_host, directory):
+    """Install one verified same-host bundle as this checkout's Waypoints default."""
+    from scripts import observe_physical, physical_rift
+
+    require(sys.platform == "win32", "calibration-install-requires-windows")
+    require(physical_rift.is_local_host(expected_host), "calibration-install-host-mismatch")
+    source = observe_physical._local_absolute_path(Path(directory).absolute(), "invalid-calibration-source-path")
+    _, _, _, measurements = _bundle_sources(source)
+    files = (*measurements, source / BUNDLE_REPORT)
+    for path in files:
+        observe_physical._plain_path(path)
+    verified = calibration_bundle(source, verify=True)
+    require(verified["identity"]["machine"].casefold() == expected_host.casefold(), "calibration-bundle-host-mismatch")
+
+    destination = local_calibration_folder(ROOT, expected_host)
+    observe_physical._plain_path(destination)
+    if destination.exists():
+        installed = calibration_bundle(destination, verify=True)
+        require(installed["basisSha256"] == verified["basisSha256"], "different-default-calibration-already-installed")
+        status = "calibration-bundle-already-installed"
+    else:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with TemporaryDirectory(prefix="calibration-", dir=destination.parent) as temporary:
+            staged = Path(temporary) / "bundle"
+            staged.mkdir()
+            for path in files:
+                shutil.copyfile(path, staged / path.name)
+            copied = calibration_bundle(staged, verify=True)
+            require(copied["basisSha256"] == verified["basisSha256"], "calibration-bundle-changed-during-install")
+            staged.rename(destination)
+        status = "calibration-bundle-installed"
+    return {**verified, "status": status, "basisPath": str(destination), "inputSent": False}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--bundle", type=Path, help="build movement-basis.json in a complete local calibration folder")
     mode.add_argument("--verify-bundle", type=Path, help="recompute and verify the saved basis against its sibling files")
+    mode.add_argument("--install-bundle", type=Path, help="verify and copy a same-host bundle into this checkout")
+    parser.add_argument("--expected-host", help="required local Windows hostname for --install-bundle")
     for key, long_name in (("w", "--forward"), ("s", "--backward"),
                            ("q", "--left"), ("e", "--right")):
         parser.add_argument(long_name, type=Path, dest=key)
@@ -258,13 +305,19 @@ def main(argv=None):
     args = parser.parse_args(argv)
     translations = {key: getattr(args, key) for key in KEYS}
     turns = {key: paths for key, paths in (("a", args.turn_a), ("d", args.turn_d)) if paths is not None}
-    if args.bundle or args.verify_bundle:
+    if args.install_bundle is not None and args.expected_host is None:
+        parser.error("--install-bundle requires --expected-host")
+    if args.expected_host is not None and args.install_bundle is None:
+        parser.error("--expected-host applies only to --install-bundle")
+    if args.bundle or args.verify_bundle or args.install_bundle:
         if any(translations.values()) or turns or args.later_forward or args.target_preflight or args.out:
-            parser.error("Bundle modes use the folder's standard filenames. Supply only the bundle mode and folder.")
+            parser.error("Bundle modes use the folder's standard filenames and do not accept individual files.")
     elif not all(translations.values()):
         parser.error("Supply --forward, --backward, --left and --right, or choose a bundle mode.")
     try:
-        if args.bundle or args.verify_bundle:
+        if args.install_bundle is not None:
+            result = install_calibration_bundle(args.expected_host, args.install_bundle)
+        elif args.bundle or args.verify_bundle:
             result = calibration_bundle(args.bundle or args.verify_bundle, verify=args.verify_bundle is not None)
         else:
             result = analyze(translations, later_forward=args.later_forward, turn_sources=turns or None,
