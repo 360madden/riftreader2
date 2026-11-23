@@ -13,7 +13,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from scripts import prepare_physical_npc_survey as prep
+from scripts import npc_survey_live as npc, prepare_physical_npc_survey as prep
 
 PID = 37676
 START = "639308565554559088"
@@ -38,6 +38,7 @@ class NPCPreparationTests(unittest.TestCase):
                        "executableSha256": SHA}
         self.nearby = {
             "host": self.target["hostName"],
+            "selfKey": "1",
             "process": {"processId": PID, "processStartUtcTicks": START,
                         "executableSha256": SHA},
             "samples": [
@@ -94,11 +95,8 @@ class NPCPreparationTests(unittest.TestCase):
         self.assertTrue(result["inGameBindCommand"].startswith(
             "/rr2survey bind " + "a"*32))
         self.assertNotIn("u0000000000000007",result["inGameBindCommand"])
-        self.assertIn("--auto-map",result["captureCommand"])
-        self.assertIn("--expect-start-ticks " + prep._quote(START), result["captureCommand"])
-        self.assertIn("--expect-sha256 " + prep._quote(SHA), result["captureCommand"])
-        self.assertIn("--capture-deadline-utc " + prep._quote(result["nativeJoinDeadlineUtc"]),
-                      result["captureCommand"])
+        self.assertIn("--bind-plan " + prep._quote(path), result["captureCommand"])
+        self.assertIn("--output " + prep._quote(path.parent / "npc-api"), result["captureCommand"])
         self.assertIn(prep._quote(prep.ROOT / "scripts/npc_survey_live.py"), result["captureCommand"])
         self.assertTrue(result["captureCommand"].startswith("& " + prep._quote(sys.executable)))
         self.assertTrue(result["joinCommand"].startswith("& " + prep._quote(sys.executable)))
@@ -206,6 +204,23 @@ class NPCPreparationTests(unittest.TestCase):
         (path.parent / prep.ADDON_EVIDENCE / prep.MODULE_NAME).write_text("different bytes", encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "plan-addon-evidence-mismatch"):
             self.replay(path)
+
+    def test_capture_consumes_copied_plan_data_with_a_local_reader(self):
+        path, prepared = self.prepare()
+        copied = shutil.copytree(path.parent, self.dir / "copied plan") / path.name
+        output = self.dir / "new capture"
+        reader = self.dir / "new reader.exe"
+        with (patch.object(prep.join, "original_native_nearby",
+                           return_value=(deepcopy(self.nearby), "B" * 64, (AT, AT))),
+              patch.object(npc, "acquire", return_value={"status": "advancing"}) as acquire,
+              redirect_stdout(StringIO())):
+            code = npc.main(["--bind-plan", str(copied), "--output", str(output), "--native-reader", str(reader)])
+        self.assertEqual(code, 0)
+        acquire.assert_called_once_with(
+            "RIFT-STATION", PID, prepared["nonce"], prepared["unitIds"], output, attempts=5,
+            auto_map=True, native_reader=reader, expected_start_ticks=START, expected_sha256=SHA,
+            capture_deadline_utc=prepared["nativeJoinDeadlineUtc"], expected_player_key=self.nearby["selfKey"],
+        )
 
     def test_replay_refuses_edited_unit_selection_even_with_matching_command(self):
         path, report = self.prepare()

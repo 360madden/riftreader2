@@ -174,18 +174,13 @@ def prepare(host, pid, destination, *, radius=35.0, limit=12, include_levels=Fal
         command = "/rr2survey bind " + nonce + " " + ",".join(ids)
         require(len(command) <= 270, "in-game-command-too-long")
         capture_deadline = (observed + timedelta(seconds=120)).isoformat()
+        dest = output/"plan.json"
         npc_path = output/"npc-api"
         joined_path = output/"joined-native-api.json"
         capture_command = ("& " + _quote(sys.executable)
             + " -B " + _quote(ROOT / "scripts/npc_survey_live.py")
-            + " --expected-host " + _quote(host)
-            + " --physical-pid " + str(pid)
-            + " --expect-start-ticks " + _quote(identity["processStartUtcTicks"])
-            + " --expect-sha256 " + _quote(identity["executableSha256"].upper())
-            + " --capture-deadline-utc " + _quote(capture_deadline)
-            + " --session-id " + _quote(nonce)
-            + " --unit-ids " + _quote(",".join(ids))
-            + " --auto-map --max-attempts 5 --output " + _quote(npc_path)
+            + " --bind-plan " + _quote(dest)
+            + " --output " + _quote(npc_path)
             + " --native-reader " + _quote(native_reader))
         compare_command = ("& " + _quote(sys.executable)
             + " -B " + _quote(ROOT / "scripts/join_physical_nearby_npc_survey.py")
@@ -221,7 +216,6 @@ def prepare(host, pid, destination, *, radius=35.0, limit=12, include_levels=Fal
         for name, raw in ((MANIFEST_NAME, manifest), (MODULE_NAME, module)):
             with (evidence / name).open("xb") as stream:
                 stream.write(raw)
-        dest = output/"plan.json"
         with dest.open("x", encoding="utf-8", newline="\n") as stream:
             json.dump(report, stream, indent=2, allow_nan=False)
             stream.write("\n")
@@ -290,6 +284,7 @@ def replay_plan(path):
     planned = set(ids)
     return {"status": "replayed-plan-candidate", "planSha256": digest,
             "host": plan["ownerHost"], "process": owner, "nativeSourceSha256": native_sha,
+            "nonce": nonce, "playerKey": native["selfKey"],
             "unitIds": ids, "unitIdCount": len(ids),
             "nativeLevelCandidateCount": sum(row["unitIdCandidate"] in planned
                                              and row.get("numericLevelCandidate") is not None for row in native["samples"]),

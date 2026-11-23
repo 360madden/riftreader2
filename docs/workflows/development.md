@@ -219,9 +219,10 @@ For a published build, pass `--native-reader $rr2PublishedReader` to
 for all of its native samples. The Telemetry zone and target-series captures
 use the selected reader for the survey and both sides of every bracket,
 including a stale-scope retry. The NPC dependency check verifies the installed
-addon files and reader startup without selecting RIFT. Preparation carries the
-resolved reader path into the generated auto-map command, including when the
-reader was configured through `RR2_NATIVE_READER`.
+addon files and reader startup without selecting RIFT. The generated capture
+command uses the verified bind plan and selected reader. Use `--bind-plan` with
+the copied plan and a local reader path to run from another checkout on the
+capture host.
 
 Copy the player-state directory with its `summary.json` and native source files
 to replay it offline. Replay locates the sources beside the summary and checks

@@ -64,12 +64,19 @@ The dependency check verifies the installed addon and the reader's advertised
 nearby-position, name and player-context commands without selecting RIFT.
 `--include-levels` adds the keyed native level command, and `--check-addon`
 checks the installed files alone. Select a published reader with
-`--native-reader $rr2PublishedReader` or `RR2_NATIVE_READER`. Preparation
-includes absolute script and reader paths in the capture command, so it can run
-in another shell on the capture host. The command carries the plan's process
-start ticks, executable SHA-256 and existing native join deadline. Capture
-verifies the process and deadline at startup and checks the deadline again
-before retaining survey frames.
+`--native-reader $rr2PublishedReader` or `RR2_NATIVE_READER`. After the operator
+enters `inGameBindCommand`, run `captureCommand` or invoke the plan directly
+with the Python and published reader in the local checkout.
+
+```powershell
+& $rr2Python -B scripts/npc_survey_live.py --bind-plan artifacts/NEW_NPC_BIND_PLAN/plan.json --native-reader $rr2PublishedReader --output artifacts/NEW_NPC_BIND_PLAN/npc-api
+```
+
+The capture command replays the saved native and addon evidence, then checks
+the capture host, process start ticks, executable SHA-256, player key, and
+deadline. The deadline also applies to retained survey frames. A copied plan
+can use a different checkout or reader path on the same verified host while
+its original in-game binding is current.
 A direct capture with an explicit seed uses the reader option for its native
 scout and fragment reads.
 

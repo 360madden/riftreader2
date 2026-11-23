@@ -277,7 +277,8 @@ def _require_plan_time(deadline):
 
 def acquire(host, pid, nonce, ids, output, seed_index=None, scan_mib=16,
             attempts=5, page=None, auto_map=False, *, native_reader=None,
-            expected_start_ticks=None, expected_sha256=None, capture_deadline_utc=None):
+            expected_start_ticks=None, expected_sha256=None, capture_deadline_utc=None,
+            expected_player_key=None):
     require(isinstance(nonce, str) and re.fullmatch(r"[0-9a-f]{32}", nonce), "invalid-survey-nonce")
     require(type(auto_map) is bool and not (auto_map and seed_index is not None),
             "invalid-mapped-survey-options")
@@ -310,6 +311,9 @@ def acquire(host, pid, nonce, ids, output, seed_index=None, scan_mib=16,
     require(player.get("status") == "complete" and player.get("target") == owner,
             "survey-player-context-unavailable")
     player_id = survival_live._canonical_unit_key(player["nativeValues"]["unitKey"])
+    if expected_player_key is not None:
+        require(player_id == survival_live._canonical_unit_key(expected_player_key),
+                "survey-bind-plan-player-mismatch")
     seen, sources, previous = {}, [], None
     previous_at = previous_utc = None
     for index in range(1, attempts+1):
@@ -367,15 +371,32 @@ def acquire(host, pid, nonce, ids, output, seed_index=None, scan_mib=16,
     return report
 
 
+def acquire_bind_plan(path, output, *, native_reader=None, attempts=5):
+    """Verify the saved plan and survey its existing in-game binding."""
+    from scripts.prepare_physical_npc_survey import replay_plan
+
+    plan = replay_plan(path)
+    require(physical_rift.is_local_host(plan["host"]), "survey-bind-plan-host-mismatch")
+    process = plan["process"]
+    return acquire(plan["host"], process["processId"], plan["nonce"], plan["unitIds"], output,
+                   attempts=attempts, auto_map=True, native_reader=native_reader,
+                   expected_start_ticks=str(process["processStartUtcTicks"]),
+                   expected_sha256=process["executableSha256"],
+                   capture_deadline_utc=plan["nativeJoinDeadlineUtc"],
+                   expected_player_key=plan["playerKey"])
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--expected-host",required=True)
-    parser.add_argument("--physical-pid",type=int,required=True)
+    parser.add_argument("--expected-host")
+    parser.add_argument("--physical-pid", type=int)
     parser.add_argument("--expect-start-ticks", help="exact RIFT process start ticks from a prepared bind plan")
     parser.add_argument("--expect-sha256", help="exact RIFT executable SHA-256 from a prepared bind plan")
     parser.add_argument("--capture-deadline-utc", help="UTC capture deadline from a prepared bind plan")
-    parser.add_argument("--session-id",required=True)
+    parser.add_argument("--session-id")
     selection=parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--bind-plan", type=Path,
+                           help="verify a prepared plan and read its existing nonce-bound survey")
     selection.add_argument("--unit-ids",help="Comma-separated u-prefixed 16-hex unit IDs supplied to /rr2survey bind")
     selection.add_argument("--visible-page",type=int,help="Page selected with /rr2survey bind NONCE visible and /rr2survey page N")
     parser.add_argument("--output",type=Path,required=True)
@@ -388,13 +409,24 @@ def main(argv=None):
     parser.add_argument("--scan-mib",type=int,default=16)
     parser.add_argument("--max-attempts",type=int,default=5)
     args=parser.parse_args(argv)
+    if args.bind_plan is not None:
+        direct = (args.expected_host, args.physical_pid, args.session_id, args.seed_index,
+                  args.expect_start_ticks, args.expect_sha256, args.capture_deadline_utc)
+        if any(value is not None for value in direct):
+            parser.error("--bind-plan supplies the host, process, nonce and discovery mode")
+    elif any(value is None for value in (args.expected_host, args.physical_pid, args.session_id)):
+        parser.error("direct capture requires --expected-host, --physical-pid and --session-id")
     try:
-        ids=requested_ids(args.unit_ids) if args.unit_ids is not None else None
-        report=acquire(args.expected_host,args.physical_pid,args.session_id,ids,
-                       args.output,args.seed_index,args.scan_mib,args.max_attempts,
-                       args.visible_page,auto_map=args.auto_map,native_reader=args.native_reader,
-                       expected_start_ticks=args.expect_start_ticks, expected_sha256=args.expect_sha256,
-                       capture_deadline_utc=args.capture_deadline_utc)
+        if args.bind_plan is not None:
+            report = acquire_bind_plan(args.bind_plan, args.output, native_reader=args.native_reader,
+                                       attempts=args.max_attempts)
+        else:
+            ids = requested_ids(args.unit_ids) if args.unit_ids is not None else None
+            report = acquire(args.expected_host, args.physical_pid, args.session_id, ids,
+                             args.output, args.seed_index, args.scan_mib, args.max_attempts,
+                             args.visible_page, auto_map=args.auto_map, native_reader=args.native_reader,
+                             expected_start_ticks=args.expect_start_ticks, expected_sha256=args.expect_sha256,
+                             capture_deadline_utc=args.capture_deadline_utc)
     except (OSError,ValueError,CaptureError,RuntimeError,subprocess.SubprocessError) as error:
         report={"status":"blocked","inputSent":False,"reason":str(error)}
     print(json.dumps(report,ensure_ascii=True,allow_nan=False))

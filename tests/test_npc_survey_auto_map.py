@@ -232,6 +232,18 @@ class NPCMapScoutTests(unittest.TestCase):
         self.assertEqual(json.loads(output.getvalue())["reason"], "survey-bind-plan-expired")
         select.assert_not_called()
 
+    def test_plan_refuses_a_different_player_before_searching_for_lua_frames(self):
+        with (TemporaryDirectory() as temp,
+              patch.dict("os.environ", {"RR2_NATIVE_READER": ""}),
+              patch.object(npc.physical_rift, "select_physical", return_value=self.bind()),
+              patch.object(npc.physical_rift, "read_native", return_value={
+                  "status": "complete", "target": TARGET, "nativeValues": {"unitKey": "2"}}),
+              patch.object(npc, "scout_mapped") as scout):
+            with self.assertRaisesRegex(ValueError, "survey-bind-plan-player-mismatch"):
+                npc.acquire("AMD-DESKTOP", 37676, NONCE, [UNIT], Path(temp) / "run", auto_map=True,
+                            expected_player_key="1")
+        scout.assert_not_called()
+
     def test_expiry_during_a_scout_prevents_publishing_a_survey(self):
         start = datetime(2026, 11, 21, tzinfo=timezone.utc)
         deadline = start + timedelta(seconds=2)

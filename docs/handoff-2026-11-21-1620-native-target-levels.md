@@ -22,9 +22,9 @@ process epochs. The observations sent no input.
 LEGION passed the NPC survey's installed-addon and published-reader checks,
 including the keyed native level command. Preparation now verifies either the
 standalone addon or the Casting fallback. [Addon checks](../artifacts/npc-survey-addon-layouts-legion-20261123.json)
-The generated capture command keeps
-the reader path, process start ticks, executable hash and deadline from
-preparation. The live Lua comparison still needs an
+The generated capture command reads the verified plan for the process, player,
+unit IDs and deadline. The same plan can use a local reader from another
+checkout on the capture host. The live Lua comparison still needs an
 advancing nonce-bound survey. [NPC survey preparation](reference/physical-nearby-npc-correlation-2026-11-21.md#prepare-and-replay-a-saved-bind-plan)
 
 The current Windows workflow verifies the local host before using physical
