@@ -1,5 +1,5 @@
 import base64
-from contextlib import chdir, redirect_stderr, redirect_stdout
+from contextlib import chdir, nullcontext, redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta, timezone
 import hashlib
 from io import StringIO
@@ -12,11 +12,11 @@ from unittest.mock import Mock, patch
 
 from scripts import capture_readerbridge_v3 as capture
 from scripts.readerbridge_v3 import decode_packet
-from tests.test_readerbridge_v3 import NAME, PLAYER, STATS, packet, section
+from tests.test_readerbridge_v3 import EMPTY, NAME, PLAYER, STATS, packet, section, slot
 
 
-PACKET = packet(section("P", PLAYER.replace(b"name=6:" + NAME, b"name=5:Atank"))
-                + section("S", STATS))
+BODY = section("P", PLAYER.replace(b"name=6:" + NAME, b"name=5:Atank")) + section("S", STATS)
+PACKET = packet(BODY)
 DECODED = decode_packet(PACKET)
 TARGET = {"processId": 2468, "processStartUtcTicks": 123456789,
           "executableSha256": "A" * 64}
@@ -37,9 +37,12 @@ def snapshot(data):
 
 
 class FakeRunner:
-    def __init__(self, *, advancing=True, corrupt_capture_hash=False, scout_exit=3):
+    def __init__(self, *, sequence_offsets=(0, 1, 2), unmatched_header=False, malformed_companion=False,
+                 corrupt_capture_hash=False, scout_exit=3):
         self.calls = []
-        self.advancing = advancing
+        self.sequence_offsets = sequence_offsets
+        self.unmatched_header = unmatched_header
+        self.malformed_companion = malformed_companion
         self.corrupt_capture_hash = corrupt_capture_hash
         self.scout_exit = scout_exit
         self.scouts = 0
@@ -53,17 +56,24 @@ class FakeRunner:
         if command == "scout-values-native":
             self.scouts += 1
             output.mkdir()
-            # Use a synthetic CRC-valid packet. On the second successful attempt,
-            # advancing is represented by adjusting the first decoded result in
-            # the test's decoder shim while keeping the fixture bytes fixed.
-            companion = (f"RRAPICOORD1|schema=1|seq={DECODED['sequence']}|"
-                         f"sampledAt={DECODED['sourceTimeMs'] / 1000:.3f}|source=rift-api|"
+            delta = self.sequence_offsets[self.scouts - 1]
+            sequence = DECODED["sequence"] + delta
+            clock = DECODED["sourceTimeMs"] + delta * 1000
+            previous = slot(sequence - 1, clock - 1, 0, 129, BODY) if sequence > 1 else EMPTY
+            self.current_packet = packet(BODY, seq=sequence, clock=clock, previous=previous)
+            companion = (f"RRAPICOORD1|schema=1|seq={sequence}|"
+                         f"sampledAt={clock / 1000:.3f}|source=rift-api|"
                          "view=Inspect.Unit.Detail(player)|status=pass|x=7429.0|y=863.0|z=2935.0|"
                          f"playerId={SELF_ID}|name=Atank\0").encode().ljust(512, b"\0")
             entries = []
-            for index, (kind, data, address) in enumerate((
-                    ("readerbridge-prefix", PACKET[:512], "0x100000"),
-                    ("coord-prefix", companion, "0x200000")), 1):
+            records = [("readerbridge-prefix", self.current_packet[:512], "0x100000"),
+                       ("coord-prefix", companion, "0x200000")]
+            if self.unmatched_header:
+                unmatched = packet(BODY, seq=sequence + 1, clock=clock + 1000)
+                records.append(("readerbridge-prefix", unmatched[:512], "0x300000"))
+            if self.malformed_companion:
+                records.append(("coord-prefix", b"RRAPICOORD1|seq=123|", "0x400000"))
+            for index, (kind, data, address) in enumerate(records, 1):
                 name = f"capture-{index:03}.snapshot.json"
                 raw = json.dumps(snapshot(data)).encode()
                 (output / name).write_bytes(raw)
@@ -78,7 +88,7 @@ class FakeRunner:
             ranges = []
             offset = 0
             for item in request["ranges"]:
-                data = PACKET[offset:offset + item["byteLength"]]
+                data = self.current_packet[offset:offset + item["byteLength"]]
                 offset += len(data)
                 digest = hashlib.sha256(data).hexdigest().upper()
                 if self.corrupt_capture_hash:
@@ -129,30 +139,8 @@ class CaptureReaderBridgeTests(unittest.TestCase):
                                  "sampledAtUtc": datetime.now(timezone.utc).isoformat()}}
 
     def acquire_two_generations(self, runner, read_context):
-        calls = {"decode": 0}
-        original = capture.decode_packet
-
-        def advancing_decoder(packet):
-            value = dict(original(packet))
-            calls["decode"] += 1
-            if calls["decode"] == 2:
-                value["sequence"] += 1
-                value["sourceTimeMs"] += 1000
-            return value
-
-        # The second companion must track the generation produced by the shim.
-        original_companion = capture._companion
-
-        def advancing_companion(data):
-            value = original_companion(data)
-            if value and runner.scouts == 2:
-                value["sequence"] += 1
-                value["sampledAt"] = str(DECODED["sourceTimeMs"] / 1000 + 1)
-            return value
-
         sleeps = []
-        with patch.object(capture, "decode_packet", advancing_decoder), \
-                patch.object(capture, "_companion", advancing_companion), chdir(self.root):
+        with chdir(self.root):
             result = capture.acquire(HOST, TARGET["processId"], Path("seed.json"),
                                      Path("out"), runner=runner, sleep=sleeps.append,
                                      selector=self.selector, native_reader=self.reader,
@@ -230,6 +218,32 @@ class CaptureReaderBridgeTests(unittest.TestCase):
                          [r["value"] for r in scout_request["references"]])
         capture_request = json.loads((self.root / "out/attempt-1.capture.request.json").read_text())
         self.assertEqual([4096, 4096, 200], [r["byteLength"] for r in capture_request["ranges"]])
+
+    def test_reads_newest_packet_that_has_a_same_generation_companion(self):
+        result, _ = self.acquire_two_generations(
+            FakeRunner(unmatched_header=True, malformed_companion=True), self.read_context)
+        self.assertEqual(["0x100000", "0x100000"], [item["packetAddress"] for item in result["generations"]])
+        self.assertEqual([2, 2], [item["packetCandidateCount"] for item in result["attempts"]])
+        self.assertEqual([1, 1], [item["matchedPacketCandidateCount"] for item in result["attempts"]])
+        self.assertEqual([1, 1], [item["rejectedCompanionCount"] for item in result["attempts"]])
+
+    def test_finds_current_private_scope_without_a_seed_and_rechecks_owner(self):
+        address = 16 * capture.MIB
+        raw = PACKET.ljust(65536, b"\0")
+        mapped = Mock()
+        mapped.readable_private_regions.return_value = [(address, address + len(raw))]
+        mapped.read.side_effect = lambda start, count: raw[start - address:start - address + count]
+        selector = Mock(side_effect=self.selector)
+        factory = Mock(return_value=nullcontext(mapped))
+        output = self.root / "mapped"
+        result = capture.acquire(HOST, TARGET["processId"], None, output, runner=FakeRunner(),
+                                 sleep=lambda _: None, selector=selector, native_reader=self.reader,
+                                 read_context=self.read_context, progress=lambda _: None, reader_factory=factory)
+        factory.assert_called_once_with(TARGET["processId"])
+        self.assertEqual(selector.call_count, 2)
+        self.assertEqual(result["scope"]["candidateStartAddresses"], [f"0x{address:X}"])
+        self.assertEqual(json.loads((output / "scope-survey.json").read_bytes())["target"], TARGET)
+        self.assertFalse(result["inputSent"])
 
     def test_refuses_publication_when_the_native_player_changes(self):
         def changed_player(*args, **kwargs):
@@ -322,38 +336,8 @@ class CaptureReaderBridgeTests(unittest.TestCase):
         self.assertIsNone(capture._packet_control_sequence(b"RBRG" + b"\0" * 508))
 
     def test_stalled_second_attempt_does_not_block_advancing_third(self):
-        runner = FakeRunner()
-        deltas = (0, 0, 2)
-        calls = {"decode": 0}
-        original_decode = capture.decode_packet
-        original_companion = capture._companion
-
-        def decoder(packet):
-            value = dict(original_decode(packet))
-            delta = deltas[calls["decode"]]
-            calls["decode"] += 1
-            value["sequence"] += delta
-            value["sourceTimeMs"] += delta * 1000
-            return value
-
-        def companion(data):
-            value = original_companion(data)
-            if value:
-                delta = deltas[runner.scouts - 1]
-                value["sequence"] += delta
-                value["sampledAt"] = str(DECODED["sourceTimeMs"] / 1000 + delta)
-            return value
-
-        capture.decode_packet = decoder
-        capture._companion = companion
-        try:
-            result = capture.acquire(HOST, TARGET["processId"], self.seed,
-                                     self.root / "out", runner=runner, sleep=lambda _: None,
-                                     selector=self.selector, native_reader=self.reader, read_context=self.read_context,
-                                     progress=lambda _: None)
-        finally:
-            capture.decode_packet = original_decode
-            capture._companion = original_companion
+        runner = FakeRunner(sequence_offsets=(0, 0, 2))
+        result, _ = self.acquire_two_generations(runner, self.read_context)
         self.assertEqual(3, runner.scouts)
         self.assertEqual([DECODED["sequence"], DECODED["sequence"] + 2],
                          [item["sequence"] for item in result["generations"]])

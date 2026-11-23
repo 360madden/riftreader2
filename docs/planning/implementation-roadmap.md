@@ -192,15 +192,17 @@ python scripts/survival_state.py --summary PATH_TO_COMPOSITE_SUMMARY
 python scripts/readerbridge_v3.py --packet PATH_TO_RETAINED_PACKET
 $rr2Host = [Environment]::MachineName
 python scripts/capture_readerbridge_v3.py --expected-host $rr2Host --check-dependencies --native-reader $rr2PublishedReader
-python scripts/capture_readerbridge_v3.py --expected-host $rr2Host --physical-pid PID --seed-index PATH_TO_CURRENT_EPOCH_SCOUT_INDEX --output NEW_DIRECTORY --native-reader $rr2PublishedReader
+python scripts/capture_readerbridge_v3.py --expected-host $rr2Host --physical-pid PID --auto-map --output NEW_DIRECTORY --native-reader $rr2PublishedReader
 ```
 
 The acquisition uses the [local published reader](../workflows/development.md#publish-the-local-native-reader)
 for player identity and packet evidence. The dependency check starts the reader
 in help mode and verifies the player-context, scout, and capture commands.
 Acquisition verifies the same player before and after observing two advancing
-packet generations. A fresh same-process scout supplies the bounded scope.
-A seed from another process epoch is refused. A live
+packet generations. `--auto-map` searches bounded private memory for packet
+windows on the current process, then scouts for packets and their matching
+player records. A retained scout can still be supplied through `--seed-index`
+when it belongs to the current process epoch. A live
 pair matched two advancing packet generations to exact same-generation player
 identity companions and exposed HP 18208/18208 and Power 100. This foundation
 intake reports `ready: false` because its packet alone cannot establish changed

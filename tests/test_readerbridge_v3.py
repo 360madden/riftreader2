@@ -28,9 +28,9 @@ BODY = section("P", PLAYER) + section("S", STATS)
 EMPTY = slot(0, 0, 0, 0, b"")
 
 
-def packet(body=BODY, mask=129, flags=0, seq=1, previous=EMPTY, active="B"):
-    control = f"{active}|{seq:016X}|{123:012X}\n".encode()
-    latest = slot(seq, 123, flags, mask, body)
+def packet(body=BODY, mask=129, flags=0, seq=1, previous=EMPTY, active="B", *, clock=123):
+    control = f"{active}|{seq:016X}|{clock:012X}\n".encode()
+    latest = slot(seq, clock, flags, mask, body)
     return rb.MAGIC + control + (previous + latest if active == "B" else latest + previous)
 
 

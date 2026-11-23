@@ -22,7 +22,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts import physical_rift
+from scripts import physical_rift, telemetry_scope_locator
+from scripts.capture_physical_telemetry_zone import ReadOnlyWindowsProcess
 from scripts.readerbridge_v3 import CONTROL, MAGIC, PACKET_SIZE, decode_packet
 
 MIB = 1024 * 1024
@@ -198,6 +199,25 @@ def _packet_control_sequence(data: bytes) -> int | None:
     return int(match[2], 16) if match is not None else None
 
 
+def _locate_packet_scopes(pid, scan_bytes, reader_factory):
+    """Find bounded scout windows containing decodable packets in this process."""
+    window_latest = {}
+    with reader_factory(pid) as reader:
+        def validate_at(address):
+            try:
+                decoded = decode_packet(reader.read(address, PACKET_SIZE))
+            except ValueError:
+                return False
+            start = max(0x10000, (address // scan_bytes) * scan_bytes)
+            window_latest[start] = max(window_latest.get(start, 0), decoded["sequence"])
+            return True
+
+        survey = telemetry_scope_locator.discover(reader, marker=MAGIC, scan_bytes=scan_bytes,
+                                                  max_scopes=3, validate_at=validate_at)
+    starts = [int(start, 16) for start in survey["candidateStartAddresses"]]
+    return survey, sorted(starts, key=window_latest.__getitem__, reverse=True)
+
+
 def _require_advancing(decoded: dict, generations: list[dict]) -> None:
     if not generations:
         return
@@ -279,12 +299,13 @@ def _read_current_self(selection, reader, read_context):
     return _canonical_unit_key(values.get("unitKey"))
 
 
-def acquire(expected_host: str, physical_pid: int, seed_index: Path, output: Path,
+def acquire(expected_host: str, physical_pid: int, seed_index: Path | None, output: Path,
             *, scan_mib: int = 16, native_reader=None, runner=subprocess.run, sleep=time.sleep,
             selector=physical_rift.select_physical, read_context=physical_rift.read_native,
-            progress=_stderr_progress) -> dict:
+            progress=_stderr_progress, reader_factory=ReadOnlyWindowsProcess) -> dict:
     # Native commands run from the checkout, even when invoked from elsewhere.
-    seed_index, output = Path(seed_index).absolute(), Path(output).absolute()
+    seed_index = None if seed_index is None else Path(seed_index).absolute()
+    output = Path(output).absolute()
     if output.exists():
         raise CaptureError("output-already-exists")
     if type(scan_mib) is not int or not 1 <= scan_mib <= 32:
@@ -297,19 +318,36 @@ def acquire(expected_host: str, physical_pid: int, seed_index: Path, output: Pat
     selection = selector(expected_host=expected_host, physical_pid=physical_pid)
     if selection.get("status") != "ready":
         raise CaptureError("physical-selection-not-ready:" + str(selection.get("reason", "unknown")))
-    target = _target(selection.get("target", {}))
-    seed = _read_json(seed_index)
-    base, scan_bytes = _validate_seed(seed, target, scan_mib)
+    owner = selection.get("target", {})
+    target = _target(owner)
+    if seed_index is not None:
+        base, scan_bytes = _validate_seed(_read_json(seed_index), target, scan_mib)
+        starts = [base]
     self_id = _read_current_self(selection, reader, read_context)
     output.mkdir(parents=True, exist_ok=False)
+    scope = {"seedIndex": str(seed_index) if seed_index is not None else None, "maxAttempts": 3}
+    if seed_index is None:
+        scan_bytes = scan_mib * MIB
+        survey, starts = _locate_packet_scopes(physical_pid, scan_bytes, reader_factory)
+        if selector(expected_host=expected_host, physical_pid=physical_pid).get("target") != owner:
+            raise CaptureError("process-changed-during-readerbridge-discovery")
+        location_report = output / "scope-survey.json"
+        _write_json(location_report, dict(survey, host=expected_host, target=target, inputSent=False))
+        if not starts:
+            raise CaptureError("no-readerbridge-packet-scope-in-bounded-search")
+        scope.update(method="bounded-private-map", mapSurveyFile=str(location_report),
+                     candidateStartAddresses=[f"0x{start:X}" for start in starts])
+    scope.update(startAddress=f"0x{starts[0]:X}", maxScanBytes=scan_bytes)
     progress({"stage": "admitted", "processId": target["processId"],
-              "startAddress": f"0x{base:X}", "maxScanBytes": scan_bytes})
+              "startAddress": scope["startAddress"], "maxScanBytes": scan_bytes})
     generations = []
     attempts = []
+    window_index = 0
     for attempt in range(1, 4):
         if attempt > 1:
             sleep(1.1)
-        scout_request = _scout_request(target, base, scan_bytes)
+        previous_count = len(generations)
+        scout_request = _scout_request(target, starts[window_index], scan_bytes)
         scout_request_path = output / f"attempt-{attempt}.scout.request.json"
         scout_directory = output / f"attempt-{attempt}.scout"
         _write_json(scout_request_path, scout_request)
@@ -321,16 +359,30 @@ def acquire(expected_host: str, physical_pid: int, seed_index: Path, output: Pat
                              if "readerbridge-prefix" in c.get("referenceNames", [])
                              and (sequence := _packet_control_sequence(d)) is not None]
         packet_candidates.sort(key=lambda item: item[2], reverse=True)
-        companions = [value for _, data in candidates if (value := _companion(data)) is not None]
+        found_companions = []
+        rejected_companions = 0
+        for _, data in candidates:
+            try:
+                companion = _companion(data)
+            except CaptureError:
+                rejected_companions += 1
+                continue
+            if companion is not None:
+                found_companions.append(companion)
+        companions = [item for item in found_companions
+                      if item["status"] == "pass" and item["playerId"] == self_id]
+        companion_sequences = {item["sequence"] for item in companions}
+        matched_packets = [item for item in packet_candidates if item[2] in companion_sequences]
         attempt_summary = {"attempt": attempt, "scoutIndex": str(index_path),
+                           "startAddress": scout_request["startAddress"],
                            "packetCandidateCount": len(packet_candidates),
-                           "companionCandidateCount": len(companions)}
+                           "companionCandidateCount": len(found_companions),
+                           "rejectedCompanionCount": rejected_companions,
+                           "matchedPacketCandidateCount": len(matched_packets)}
         attempts.append(attempt_summary)
         progress({"stage": "scouted", **attempt_summary})
-        # One immediate packet read per bounded scout attempt.  A stale/recycled
-        # first candidate consumes the attempt; it never expands into an
-        # unbounded walk over every numeric prefix match.
-        for candidate, _, _ in packet_candidates[:1]:
+        # Read only the newest header with a matching self companion.
+        for candidate, _, _ in matched_packets[:1]:
             try:
                 address = int(candidate["address"], 16)
                 request = _capture_request(target, address)
@@ -342,9 +394,8 @@ def acquire(expected_host: str, physical_pid: int, seed_index: Path, output: Pat
                 packet = _packet_from_capture(report, target, request)
                 decoded = decode_packet(packet)
                 player = decoded["sections"]["P"]
-                same = [item for item in companions
-                        if item["status"] == "pass" and item["sequence"] == decoded["sequence"]
-                        and item["playerId"] == self_id and item["name"] == player["name"]]
+                same = [item for item in companions if item["sequence"] == decoded["sequence"]
+                        and item["name"] == player["name"]]
                 same = [item for item in same
                         if Decimal(item["sampledAt"]) * 1000 == decoded["sourceTimeMs"]]
                 if not same:
@@ -366,6 +417,8 @@ def acquire(expected_host: str, physical_pid: int, seed_index: Path, output: Pat
                 attempt_summary["candidateFailure"] = str(exc)
         if len(generations) == 2 and generations[1]["sequence"] > generations[0]["sequence"]:
             break
+        if len(generations) == previous_count:
+            window_index = (window_index + 1) % len(starts)
     if len(generations) != 2 or generations[1]["sequence"] <= generations[0]["sequence"]:
         raise CaptureError("two-advancing-generations-not-observed")
     if _read_current_self(selection, reader, read_context) != self_id:
@@ -373,8 +426,7 @@ def acquire(expected_host: str, physical_pid: int, seed_index: Path, output: Pat
     result = {"schemaVersion": 1, "evidenceKind": "readerbridge-v3-bounded-acquisition/1",
               "status": "captured", "ready": False, "inputSent": False,
               "guiStateChanged": False, "target": target, "selfId": self_id,
-              "scope": {"seedIndex": str(seed_index), "startAddress": f"0x{base:X}",
-                        "maxScanBytes": scan_bytes, "maxAttempts": 3},
+              "scope": scope,
               "generations": generations, "attempts": attempts, "limitations": LIMITATIONS}
     result["nextCheck"] = ("Independently correlate a controlled changed state before treating any "
                            "decoded field as qualified; reacquire from a fresh scout after every restart.")
@@ -392,21 +444,23 @@ def main(argv=None) -> int:
     mode.add_argument("--check-dependencies", action="store_true",
                       help="check the local native reader without selecting RIFT")
     parser.add_argument("--seed-index", type=Path)
+    parser.add_argument("--auto-map", action="store_true",
+                        help="find bounded scout windows in current readable private memory")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--native-reader", type=Path, help="absolute path to a local published reader")
     parser.add_argument("--scan-mib", type=int,
                         help="bounded first-span scan size (1-32 MiB; default 16)")
     args = parser.parse_args(argv)
     if args.check_dependencies:
-        if any(value is not None for value in (args.seed_index, args.output, args.scan_mib)):
+        if args.auto_map or any(value is not None for value in (args.seed_index, args.output, args.scan_mib)):
             parser.error("--check-dependencies accepts only --expected-host and --native-reader")
         result = physical_rift.check_native_reader(
             args.expected_host, args.native_reader, kind="player-context",
             additional_commands=(SCOUT_COMMAND, CAPTURE_COMMAND))
         print(json.dumps(dict(result, inputSent=False, readerBridgePublisher="unverified")))
         return 0 if result["status"] == "ready" else 2
-    if args.seed_index is None or args.output is None:
-        parser.error("--physical-pid requires --seed-index and --output")
+    if args.output is None or args.auto_map == (args.seed_index is not None):
+        parser.error("--physical-pid requires --output and exactly one of --seed-index or --auto-map")
     try:
         print(json.dumps(acquire(args.expected_host, args.physical_pid, args.seed_index,
                                  args.output, scan_mib=16 if args.scan_mib is None else args.scan_mib,

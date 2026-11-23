@@ -19,6 +19,12 @@ process epochs. The observations sent no input.
 [Native replay](../artifacts/physical-legion-p424-f27f0e44/independent-native-replay.json)
 · [Telemetry replay](../artifacts/physical-legion-p424-f27f0e44/independent-telemetry-replay.json)
 
+On the same LEGION process, ReaderBridge published two advancing frames with
+player level 45, matching both surrounding native reads. The independent replay
+verified the retained packet and player evidence. ReaderBridge reported no
+target in both frames, so the selected-target level comparison remains open.
+[Player-level replay](../artifacts/readerbridge-v3-current-epoch-legion-p424-2ee4e41b/independent-level-replay.json)
+
 LEGION passed the NPC survey's installed-addon and published-reader checks,
 including the keyed native level command. Preparation now verifies either the
 standalone addon or the Casting fallback. [Addon checks](../artifacts/npc-survey-addon-layouts-legion-20261123.json)
