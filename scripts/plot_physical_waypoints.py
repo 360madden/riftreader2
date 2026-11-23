@@ -10,7 +10,6 @@ from io import BytesIO
 import json
 import math
 from pathlib import Path
-import socket
 import sys
 
 from PIL import Image, ImageDraw, ImageFont, ImageStat
@@ -79,7 +78,7 @@ def render(observation_path, route_path, output):
     require(mapping.get("status") == "available-candidate", "available-client-frame-mapping-required")
     target, identity = observation["target"], reports[0]["identity"]
     host = frame["machine"]
-    require(host.casefold() == socket.gethostname().casefold()
+    require(physical.valid_host_name(host)
             and target["hostName"].casefold() == host.casefold()
             and observation["ownerHost"].casefold() == host.casefold(), "observation-host-mismatch")
     pinned = frame["targetBefore"]
@@ -128,7 +127,7 @@ def render_desktop_pair(pair_path, route_path, output):
             and pair.get("inputSent") is False and pair.get("focusChanged") is False
             and pair.get("cleanupErrors") == [], "stable-desktop-event-pair-required")
     host = pair.get("machine")
-    require(host == "AMD-DESKTOP" and host.casefold() == socket.gethostname().casefold(), "desktop-pair-host-mismatch")
+    require(physical.valid_host_name(host), "desktop-pair-host-mismatch")
     target = pair.get("targetBefore")
     require(isinstance(target, dict) and target == pair.get("targetAfter")
             and target.get("hostName", "").casefold() == host.casefold()

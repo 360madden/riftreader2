@@ -75,6 +75,7 @@ class PilotTests(unittest.TestCase):
         patcher = patch.object(probe.socket, "gethostname", return_value="AMD-DESKTOP")
         patcher.start()
         self.addCleanup(patcher.stop)
+        self.desktop_turn = self.enterContext(patch.object(probe.observe_physical, "require_clear_desktop_turn"))
 
     def select(self, host, pid):
         self.select_calls.append((host, pid))
@@ -85,11 +86,21 @@ class PilotTests(unittest.TestCase):
         return self.backend
 
     def run_probe(self, **kwargs):
-        return probe.probe("AMD-DESKTOP", 123, DISPLAY, self.root / "out",
+        return probe.probe(kwargs.pop("expected_host", "AMD-DESKTOP"), 123, DISPLAY, self.root / "out",
             frames=kwargs.pop("frames", 3), timeout=kwargs.pop("timeout", 1),
             select=kwargs.pop("select", self.select),
             snapshot=kwargs.pop("snapshot", lambda _: deepcopy(self.snapshot)),
             backend_loader=self.load, clock=self.clock, sleep=self.clock.sleep, **kwargs)
+
+    def test_third_host_checks_desktop_turn_before_and_after_capture(self):
+        self.target["hostName"] = "RIFT-STATION"
+        self.desktop_turn.side_effect = [None, ValueError("desktop-turn-recovery-required")]
+        with patch.object(probe.socket, "gethostname", return_value=self.target["hostName"]):
+            result = self.run_probe(expected_host="rift-station")
+        self.assertEqual(result["reason"], "desktop-turn-recovery-required")
+        self.assertEqual(result["acceptedFrames"], 3)
+        self.assertTrue(self.backend.camera.released)
+        self.assertFalse((self.root / "out" / "first.png").exists())
 
     def test_negative_origin_crop_new_ticks_rgb_receipt_cleanup(self):
         result = self.run_probe()

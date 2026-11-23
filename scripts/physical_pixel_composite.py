@@ -76,7 +76,7 @@ def load_frame(image_path, receipt_path, receipt_sha, native_before_path,
                      and receipt.get("requestedBackend") == "wgc"
                      and receipt.get("status") == "unqualified-gpu-window-frame"
                      and receipt.get("machine") == expected_host
-                     and expected_host in {"AMD-DESKTOP", "LEGION"},
+                     and physical_rift.valid_host_name(expected_host),
                      "wgc-host-or-backend-invalid")
     surface._require(receipt.get("inputSent") is False
                      and receipt.get("focusChangedByProbe") is False,

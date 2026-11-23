@@ -3,6 +3,7 @@ from copy import deepcopy
 import hashlib
 import json
 from pathlib import Path
+import socket
 import unittest
 from unittest.mock import patch
 
@@ -78,13 +79,13 @@ class UnitPlotTests(unittest.TestCase):
         self.assertEqual(result["drawnCount"], 0)
         self.assertEqual(result["rows"][1]["reason"], "unit-position-changed-across-frame")
 
-    def test_wgc_unit_overlay_accepts_third_local_host(self):
+    def test_wgc_unit_overlay_replays_on_a_different_analysis_host(self):
         host = "RIFT-STATION"
         self.frame["machine"] = host
         for section in ("before", "after", "frame"):
             self.bracket[section]["target"]["hostName"] = host
             self.bracket[section]["ownerHost"] = host
-        with patch.object(plot.socket, "gethostname", return_value=host):
+        with patch.object(socket, "gethostname", return_value="ANALYSIS-PC"):
             result = self.render()
         self.assertEqual(result["drawnCount"], 1)
 

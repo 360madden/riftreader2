@@ -13,7 +13,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from scripts import physical_rift as native
+from scripts import observe_physical, physical_rift as native
 from scripts.probe_dxcam import _DXcamBackend, _output, _snapshot, require
 from scripts.plot_physical_units import _saved
 from scripts.waypoint_progress import write_json_atomic
@@ -86,7 +86,8 @@ def compare(reports, target):
 def probe(expected_host, physical_pid, display, output, *, timeout=10, select=None, snapshot=None,
           backend_loader=None, read_native=None, qpc=None, perf_ns=None, clock=None, sleep=None, clock_info=None,
           expected_start_ticks=None, expected_sha256=None, expected_hwnd=None):
-    require(expected_host == "AMD-DESKTOP" and socket.gethostname().upper() == expected_host, "AMD-DESKTOP-host-required")
+    require(native.valid_host_name(expected_host)
+            and socket.gethostname().casefold() == expected_host.casefold(), "host-mismatch")
     require(type(physical_pid) is int and physical_pid > 0, "explicit-positive-pid-required")
     require(type(timeout) in (int, float) and math.isfinite(timeout) and 0 < timeout <= 30, "invalid-timeout")
     require(isinstance(display, str) and display, "explicit-display-required")
@@ -114,10 +115,12 @@ def probe(expected_host, physical_pid, display, output, *, timeout=10, select=No
     def check_deadline():
         require(clock() < deadline, "cooperative-deadline-expired")
     try:
+        observe_physical.require_clear_desktop_turn()
         selection = select(expected_host, physical_pid)
         require(selection.get("status") == "ready", "target-not-ready")
         target = selection["target"]
-        require(target["processId"] == physical_pid and target["hostName"].upper() == expected_host, "target-mismatch")
+        require(target["processId"] == physical_pid
+                and target["hostName"].casefold() == expected_host.casefold(), "target-mismatch")
         if expected is not None:
             require(str(target.get("processStartUtcTicks")) == expected["processStartUtcTicks"]
                     and str(target.get("executableSha256", "")).casefold() == expected["executableSha256"]
@@ -211,6 +214,7 @@ def probe(expected_host, physical_pid, display, output, *, timeout=10, select=No
                 if backend is not None and "selectedOutput" in result:
                     last, last_crop = _output(backend.outputs(), display, geometry["clientRect"])
                     require(last == selected and last_crop == crop, "final-output-changed")
+                observe_physical.require_clear_desktop_turn()
             except Exception as error:
                 result.update(status="withheld", reason=str(error))
     result.update(elapsedSeconds=clock()-started, report=str(output / "pair.json"))
@@ -226,7 +230,7 @@ def probe(expected_host, physical_pid, display, output, *, timeout=10, select=No
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--expected-host", required=True, choices=("AMD-DESKTOP",))
+    parser.add_argument("--expected-host", required=True, help="verified local Windows machine name")
     parser.add_argument("--physical-pid", required=True, type=int)
     parser.add_argument("--display", required=True)
     parser.add_argument("--output", required=True, type=Path)

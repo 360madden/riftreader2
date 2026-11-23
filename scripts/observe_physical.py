@@ -41,6 +41,18 @@ def _plain_path(path):
                      "reparse-path")
 
 
+def require_clear_desktop_turn():
+    """Check Workbridge admission without creating or releasing a lock."""
+    evidence = BRIDGE / ".tools" / "desktop-evidence"
+    _plain_path(evidence)
+    _require(evidence.is_dir(), "shared-gui-evidence-directory-missing")
+    for path in evidence.iterdir():
+        name = path.name.casefold()
+        _require(name not in ("desktop-input-turn.lock", "desktop-turn-admission.lock")
+                 and not (name.startswith("desktop-turn-quarantine-") and name.endswith(".json")),
+                 "desktop-turn-recovery-required")
+
+
 def _run(args, timeout=120):
     # File-backed bounded output avoids buffering base64 screenshots without a limit.
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:

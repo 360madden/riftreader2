@@ -63,8 +63,15 @@ when present; its existing native backend remains available without the optional
 environment. The CLI also accepts `--presenter qt` or `--presenter native`.
 See [world-to-screen usage](../workflows/physical-world-screen.md).
 
+Run the capture diagnostics on the verified Windows host that owns the selected
+RIFT process. Set `$rrDisplay` to the display device containing its whole client.
+The diagnostic expects RIFT already in the foreground. It checks the shared
+Workbridge desktop-evidence directory and refuses an active turn, pending
+admission or quarantine. The check repeats before publishing a frame.
+
 ```powershell
-.\.local\overlay-venv\Scripts\python.exe scripts/probe_dxcam.py --expected-host AMD-DESKTOP --physical-pid CURRENT_PID --display '\\.\DISPLAY5' --output artifacts/new-dxcam-probe --frames 30 --timeout 10
+$rrHost = [Environment]::MachineName
+.\.local\overlay-venv\Scripts\python.exe scripts/probe_dxcam.py --expected-host $rrHost --physical-pid CURRENT_PID --display $rrDisplay --output artifacts/new-dxcam-probe --frames 30 --timeout 10
 ```
 
 DXcam currently produces an explicit **diagnostic desktop-composite** report,
@@ -88,7 +95,7 @@ prevents a fresh-RIFT-render claim, and endpoint equality cannot exclude ABA
 changes. This does not replace authoritative WGC receipts.
 
 ```powershell
-.\.local\overlay-venv\Scripts\python.exe scripts/probe_dxcam_native_pair.py --expected-host AMD-DESKTOP --physical-pid CURRENT_PID --display '\\.\DISPLAY5' --output artifacts/new-native-event-pair --timeout 10
+.\.local\overlay-venv\Scripts\python.exe scripts/probe_dxcam_native_pair.py --expected-host $rrHost --physical-pid CURRENT_PID --display $rrDisplay --output artifacts/new-native-event-pair --timeout 10
 ```
 
 No generic workflow/agent framework, detection stack or navigation mesh was added.
@@ -120,7 +127,8 @@ not the default observation backend.
 ```powershell
 python -m venv .local/windows-capture-venv
 .\.local\windows-capture-venv\Scripts\python.exe -m pip install --only-binary=:all: -r requirements-window-capture.txt
-.\.local\windows-capture-venv\Scripts\python.exe scripts/probe_windows_capture.py --expected-host AMD-DESKTOP --physical-pid CURRENT_PID --output artifacts/new-hwnd-probe --timeout 5
+$rrHost = [Environment]::MachineName
+.\.local\windows-capture-venv\Scripts\python.exe scripts/probe_windows_capture.py --expected-host $rrHost --physical-pid CURRENT_PID --output artifacts/new-hwnd-probe --timeout 5
 ```
 
 [Win32CaptureSample](https://github.com/robmikh/Win32CaptureSample) is a maintained

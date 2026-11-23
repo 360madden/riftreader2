@@ -16,6 +16,7 @@ import time
 import uuid
 
 from PIL import Image, ImageDraw, ImageFont, ImageWin
+from scripts.observe_physical import valid_host_name
 from scripts.waypoint_marker_style import DEFAULT_STYLE, normalize_style
 from scripts.waypoint_height_context import height_context, height_cue
 
@@ -28,7 +29,7 @@ def _target(value):
     if not isinstance(value, dict) or any(k not in value for k in fields):
         raise ValueError("Missing pinned target identity")
     result = {k: value[k] for k in fields}
-    if (not isinstance(result["hostName"], str) or result["hostName"].upper() != "AMD-DESKTOP"
+    if (not valid_host_name(result["hostName"])
             or result["hostName"].casefold() != socket.gethostname().casefold()
             or any(type(result[k]) is not int or result[k] <= 0 for k in ("processId", "hwnd"))
             or not isinstance(result["processStartUtcTicks"], str)

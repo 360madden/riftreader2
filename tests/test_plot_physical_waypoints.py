@@ -3,6 +3,7 @@ from copy import deepcopy
 import hashlib
 import json
 from pathlib import Path
+import socket
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
@@ -21,7 +22,7 @@ class PlotTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.addCleanup(patch.stopall)
-        patch.object(plot.socket, "gethostname", return_value="AMD-DESKTOP").start()
+        patch.object(socket, "gethostname", return_value="AMD-DESKTOP").start()
         self.image = self.root / "image.png"
         Image.new("RGB", (320, 200), "#222222").save(self.image)
         self.receipt = self.root / "image.png.json"
@@ -234,6 +235,25 @@ class DesktopPairPlotTests(unittest.TestCase):
         self.assertEqual(3, len(result["points"]))
         self.assertTrue(Path(result["annotatedImage"]).is_file())
         self.assertEqual(str(self.image), result["originalImage"])
+
+    def test_desktop_pair_replays_on_an_unrelated_analysis_host(self):
+        host = "RIFT-STATION"
+        self.pair["machine"] = host
+        for side in ("targetBefore", "targetAfter"):
+            self.pair[side]["hostName"] = host
+        self.route["recording"]["identity"]["runtimeIdentity"]["machine"] = host
+        for side, source in zip(("nativeBeforeOutput", "nativeAfterOutput"), self.pair["nativeSources"]):
+            self.pair[side] = source["path"] = Path(source["path"]).name
+        self.pair["image"] = self.image.name
+        with patch.object(socket, "gethostname", return_value="ANALYSIS-PC"):
+            result = self.render_pair()
+        self.assertEqual(result["sourceKind"], "desktop-composite-event-candidate")
+
+    def test_desktop_pair_rejects_a_different_recorded_route_host(self):
+        self.route["recording"]["identity"]["runtimeIdentity"]["machine"] = "RIFT-STATION"
+        with self.assertRaisesRegex(ValueError, "route-host-build-player"):
+            self.render_pair()
+        self.assertFalse(self.output.exists())
 
     def test_desktop_timing_monitor_target_and_cleanup_mutations_refused_before_output(self):
         original = deepcopy(self.pair)

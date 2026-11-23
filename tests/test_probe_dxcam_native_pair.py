@@ -59,6 +59,7 @@ class PairTests(unittest.TestCase):
         self.native_calls = []
         self.select_calls = 0
         self.native_duration = 0
+        self.enterContext(patch.object(pair.observe_physical, "require_clear_desktop_turn"))
 
     def select(self, host, pid):
         self.select_calls += 1
@@ -73,11 +74,19 @@ class PairTests(unittest.TestCase):
         return {"status": "complete", "target": deepcopy(self.target), "nativeOutput": str(path)}
 
     def run_pair(self, **kwargs):
-        return pair.probe("AMD-DESKTOP", 123, device_fixture.DISPLAY, self.root / "out",
+        return pair.probe(kwargs.pop("expected_host", "AMD-DESKTOP"), 123, device_fixture.DISPLAY, self.root / "out",
             timeout=kwargs.pop("timeout", 1), select=kwargs.pop("select", self.select),
             snapshot=kwargs.pop("snapshot", lambda _: deepcopy(self.snap)), backend_loader=lambda: self.backend,
             read_native=self.read_native, qpc=self.qpc, perf_ns=self.qpc.perf_ns,
             clock=self.clock, sleep=self.clock.sleep, clock_info=self.info, **kwargs)
+
+    def test_fenced_pair_accepts_another_verified_local_host(self):
+        self.target["hostName"] = "RIFT-STATION"
+        with patch.object(pair.socket, "gethostname", return_value=self.target["hostName"]):
+            result = self.run_pair(expected_host="rift-station")
+        self.assertEqual(result["status"], "stable-native-composite-event-candidate")
+        self.assertEqual(result["targetBefore"]["hostName"], self.target["hostName"])
+        self.assertEqual(result["targetBefore"], result["targetAfter"])
 
     def test_fenced_event_order_age_calibration_pixels_hash_and_cleanup(self):
         result = self.run_pair()

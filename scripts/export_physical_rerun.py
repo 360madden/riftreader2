@@ -222,8 +222,7 @@ def default_blueprint(rr, rrb, captures, *, display_camera=None, nearby_samples=
 def prepare(route_path, observations, scratch, *, images=True, desktop_pairs=(), camera_rays=True):
     """Reuse the existing complete bracket/image/projection validator unchanged."""
     route = load_route(route_path)
-    plot.require(route["identity"]["machine"].casefold() == plot.socket.gethostname().casefold(),
-                 "route-host-mismatch")
+    plot.require(plot.physical.valid_host_name(route["identity"]["machine"]), "invalid-recorded-route-host")
     frames = []
     sources = [(source, False) for source in observations] + [(source, True) for source in desktop_pairs]
     for index, (source, desktop) in enumerate(sources):

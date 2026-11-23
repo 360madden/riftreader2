@@ -18,7 +18,7 @@ import re
 import socket
 import subprocess
 
-from scripts import observe_target, physical_rift, plot_physical_waypoints
+from scripts import observe_physical, observe_target, physical_rift, plot_physical_waypoints
 from scripts.live_physical_waypoints import load_route
 from scripts.waypoint_progress import write_json_atomic
 
@@ -246,6 +246,7 @@ def _monitor_name(hwnd):
 
 
 def _desktop_capture(host, pid, pinned, directory, result):
+    observe_physical.require_clear_desktop_turn()
     require(CAPTURE_PYTHON.is_file(), "desktop-capture-environment-unavailable")
     result.update(focusRequested=True, focusMayChange=True, focusChanged=None)
     command = [str(physical_rift.NATIVE_EXE), "move-key", "--focus-only", "--pid", str(pid),

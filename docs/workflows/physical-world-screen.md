@@ -463,7 +463,8 @@ recorded XYZ, native camera projector, identity/freshness checks and stop lifecy
 The waypoint window also has **Save view** and **Open view**. Save view snapshots
 the recorded route or independently measured points and defaults to focus-neutral WGC capture. Enable
 **Bring RIFT forward for capture** to explicitly choose the DXcam/native-bracket
-desktop path; that mode focuses the pinned RIFT window without keys. A successful
+desktop path. That mode checks the shared Workbridge admission state before
+focusing the pinned RIFT window without keys. A successful
 `artifacts/waypoint-view-*` bundle contains route, original PNG, copied native
 before/after reports with hashes, projection PNG/JSON and `view.json`. If the
 optional visualization environment is available, it also saves `view.rrd` without
@@ -471,6 +472,9 @@ starting a viewer. Open view opens only the last successfully saved projection.
 Failed capture or unstable camera blocks the projection and retains diagnostics.
 The desktop event has no exact capture UTC; Rerun explicitly labels its timeline
 placement as the native-after start upper bound. This remains separate from WGC.
+Offline projection and Rerun export use the recorded host identity. They can run
+on a different analysis machine when the retained image and native source paths
+resolve there. Host, process, build and source checks still apply to the evidence.
 The explicit desktop Save view/Open view buttons passed on PID17212 after normal relaunch
 restored game rendering: seven markers, exact retained native copies, a 2.050 s
 capture and 0.790 s native bracket. The resulting `view.rrd` passed upstream verify,

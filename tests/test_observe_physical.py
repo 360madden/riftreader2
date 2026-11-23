@@ -31,6 +31,23 @@ class PhysicalTests(unittest.TestCase):
         return physical.capture_physical("AMD-DESKTOP", self.root / "run",
                                          allow_foreground_change=True, **kwargs)
 
+    def test_desktop_turn_check_refuses_missing_directory_locks_and_quarantine(self):
+        evidence = self.root / ".tools" / "desktop-evidence"
+        with patch.object(physical, "BRIDGE", self.root):
+            with self.assertRaisesRegex(ValueError, "shared-gui-evidence-directory-missing"):
+                physical.require_clear_desktop_turn()
+            evidence.mkdir(parents=True)
+            for filename in ("desktop-input-turn.lock", "desktop-turn-admission.lock",
+                             "desktop-turn-quarantine-test.json"):
+                with self.subTest(filename=filename):
+                    blocker = evidence / filename
+                    blocker.touch()
+                    with self.assertRaisesRegex(ValueError, "desktop-turn-recovery-required"):
+                        physical.require_clear_desktop_turn()
+                    blocker.unlink()
+            physical.require_clear_desktop_turn()
+            self.assertEqual(list(evidence.iterdir()), [])
+
     def test_wrong_host_calls_nothing(self):
         with patch.object(physical.socket, "gethostname", return_value="LEGION"), \
              patch.object(physical, "_identity") as identity, patch.object(physical, "_call") as call:

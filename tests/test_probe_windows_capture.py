@@ -23,6 +23,7 @@ class ProbeTests(unittest.TestCase):
         self.temp = self.enterContext(TemporaryDirectory())
         self.output = Path(self.temp) / "probe"
         self.enterContext(patch.object(pilot.socket, "gethostname", return_value="AMD-DESKTOP"))
+        self.desktop_turn = self.enterContext(patch.object(pilot.observe_physical, "require_clear_desktop_turn"))
         self.geometry = dict(clientRect=[-1920, 404, 80, 64], foreground=True)
         self.buffer = np.zeros((70, 84, 4), dtype=np.uint8)
         self.buffer[:] = [3, 2, 1, 255]
@@ -45,9 +46,17 @@ class ProbeTests(unittest.TestCase):
         return dict(status="ready", target=deepcopy(TARGET))
 
     def run_probe(self, **kwargs):
-        return pilot.probe("AMD-DESKTOP", 123, self.output,
+        return pilot.probe(kwargs.pop("expected_host", "AMD-DESKTOP"), 123, self.output,
             select=kwargs.pop("select", self.select), snapshot=kwargs.pop("snapshot", lambda _: deepcopy(self.geometry)),
             backend_loader=lambda: self.backend, clock=lambda: self.time, **kwargs)
+
+    def test_third_host_without_desktop_turn_evidence_never_opens_capture(self):
+        self.desktop_turn.side_effect = ValueError("shared-gui-evidence-directory-missing")
+        with patch.object(pilot.socket, "gethostname", return_value="RIFT-STATION"):
+            result = self.run_probe(expected_host="rift-station")
+        self.assertEqual(result["reason"], "shared-gui-evidence-directory-missing")
+        self.assertEqual(self.select_calls, 0)
+        self.start.assert_not_called()
 
     def test_exact_hwnd_single_copied_frame_pixels_metadata_hash_cleanup(self):
         original = self.deliver

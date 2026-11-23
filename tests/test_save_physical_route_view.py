@@ -452,6 +452,7 @@ class DesktopSaveViewTests(unittest.TestCase):
         self.document = deepcopy(self.fixture.route)
         self.capture_python = self.root / "capture-python.exe"
         self.capture_python.write_bytes(b"not-executed")
+        self.desktop_turn = self.enterContext(patch.object(saved.observe_physical, "require_clear_desktop_turn"))
         self.visualization_python = self.root / "visualization-python.exe"
         patch.object(saved, "CAPTURE_PYTHON", self.capture_python).start()
         patch.object(saved, "VISUALIZATION_PYTHON", self.visualization_python).start()
@@ -473,6 +474,13 @@ class DesktopSaveViewTests(unittest.TestCase):
                       output=self.output, expected_target=self.target, capture_backend="desktop")
         values.update(kwargs)
         return saved.save_route_view(**values)
+
+    def test_desktop_turn_blocker_refuses_before_focus(self):
+        self.desktop_turn.side_effect = ValueError("desktop-turn-recovery-required")
+        result = self.save()
+        self.assertEqual(result["reason"], "desktop-turn-recovery-required")
+        self.assertFalse(result["focusChanged"])
+        self.process.assert_not_called()
 
     def subprocess(self, command, **kwargs):
         self.assertEqual(kwargs["creationflags"], getattr(subprocess, "CREATE_NO_WINDOW", 0))

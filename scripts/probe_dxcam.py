@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts import physical_rift
+from scripts import observe_physical, physical_rift
 from scripts.waypoint_progress import write_json_atomic
 
 
@@ -94,8 +94,8 @@ def _output(outputs, display, client):
 
 def probe(expected_host, physical_pid, display, output, *, frames=30, timeout=10,
           select=None, snapshot=None, backend_loader=None, clock=None, sleep=None):
-    require(expected_host == "AMD-DESKTOP" and socket.gethostname().upper() == expected_host,
-            "AMD-DESKTOP-host-required")
+    require(physical_rift.valid_host_name(expected_host)
+            and socket.gethostname().casefold() == expected_host.casefold(), "host-mismatch")
     require(type(physical_pid) is int and physical_pid > 0, "explicit-positive-pid-required")
     require(type(frames) is int and 1 <= frames <= 120, "frames-must-be-1-through-120")
     require(type(timeout) in (float, int) and math.isfinite(timeout) and 0 < timeout <= 30,
@@ -138,6 +138,7 @@ def probe(expected_host, physical_pid, display, output, *, frames=30, timeout=10
             require(value == before_snapshot, "target-client-or-foreground-changed")
         return value
     try:
+        observe_physical.require_clear_desktop_turn()
         initial = select(expected_host, physical_pid)
         require(initial.get("status") == "ready", "physical-target-not-ready")
         identity = initial["target"]
@@ -222,6 +223,7 @@ def probe(expected_host, physical_pid, display, output, *, frames=30, timeout=10
                         "final-target-identity-changed")
                 result["targetAfter"] = final["target"]
                 result["snapshotAfter"] = guard()
+                observe_physical.require_clear_desktop_turn()
             except Exception as error:
                 result.update(status="blocked", reason=str(error), finalIdentityVerified=False)
     result.update(acceptedFrames=len(accepted), frames=accepted, duplicatePolls=duplicate_polls,
@@ -247,7 +249,7 @@ def probe(expected_host, physical_pid, display, output, *, frames=30, timeout=10
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--expected-host", required=True, choices=("AMD-DESKTOP",))
+    parser.add_argument("--expected-host", required=True, help="verified local Windows machine name")
     parser.add_argument("--physical-pid", type=int, required=True)
     parser.add_argument("--display", required=True)
     parser.add_argument("--output", type=Path, required=True)

@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts import physical_rift
+from scripts import observe_physical, physical_rift
 from scripts.physical_turn_visual_pair import MAX_PNG_BYTES, require
 from scripts.probe_dxcam import _snapshot
 from scripts.waypoint_progress import write_json_atomic
@@ -52,7 +52,8 @@ def _image_quality(image):
 
 def probe(expected_host, physical_pid, output, *, timeout=5, select=None, snapshot=None,
           backend_loader=None, clock=None):
-    require(expected_host == "AMD-DESKTOP" and socket.gethostname().upper() == expected_host, "AMD-DESKTOP-host-required")
+    require(physical_rift.valid_host_name(expected_host)
+            and socket.gethostname().casefold() == expected_host.casefold(), "host-mismatch")
     require(type(physical_pid) is int and physical_pid > 0, "explicit-positive-pid-required")
     require(type(timeout) in (int, float) and math.isfinite(timeout) and 0 < timeout <= 30, "invalid-timeout")
     output = Path(output).resolve()
@@ -115,10 +116,11 @@ def probe(expected_host, physical_pid, output, *, timeout=5, select=None, snapsh
                 done.set()
 
     try:
+        observe_physical.require_clear_desktop_turn()
         selection = select(expected_host, physical_pid)
         require(selection.get("status") == "ready", "target-not-ready")
         target = selection["target"]
-        require(target.get("hostName", "").upper() == expected_host and target.get("processId") == physical_pid
+        require(target.get("hostName", "").casefold() == expected_host.casefold() and target.get("processId") == physical_pid
                 and type(target.get("hwnd")) is int and target["hwnd"] > 0, "target-mismatch")
         geometry = guard()
         result.update(targetBefore=target, snapshotBefore=geometry)
@@ -154,6 +156,7 @@ def probe(expected_host, physical_pid, output, *, timeout=5, select=None, snapsh
                 final = select(expected_host, physical_pid)
                 require(final.get("status") == "ready" and final["target"] == target, "final-target-identity-changed")
                 result.update(targetAfter=final["target"], snapshotAfter=guard())
+                observe_physical.require_clear_desktop_turn()
             except Exception as error:
                 result.update(status="withheld", reason=str(error))
     result.update(elapsedSeconds=clock()-started, deadlineExceeded=clock() >= deadline,
@@ -199,7 +202,7 @@ def probe(expected_host, physical_pid, output, *, timeout=5, select=None, snapsh
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--expected-host", required=True, choices=("AMD-DESKTOP",))
+    parser.add_argument("--expected-host", required=True, help="verified local Windows machine name")
     parser.add_argument("--physical-pid", required=True, type=int)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--timeout", type=float, default=5)

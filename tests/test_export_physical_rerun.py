@@ -64,7 +64,8 @@ class ExportTests(unittest.TestCase):
 
     def test_xyz_projection_and_distinct_actual_timestamps_preserved(self):
         original = self.fixture.image.read_bytes()
-        result = self.run_export()
+        with patch("socket.gethostname", return_value="ANALYSIS-PC"):
+            result = self.run_export()
         sink = self.sinks[0]
         route_event = next(event for event in sink.events if event[0] == "world/route/points")
         self.assertEqual(route_event[2]["positions"][0], [7427, 871, 2946])
