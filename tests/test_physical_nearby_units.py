@@ -92,6 +92,7 @@ class NearbyUnitTests(unittest.TestCase):
         level["rows"][0]["entityAddressDecimal"] = "200000000"
         self.selections = []
         self.reads = []
+        self.readers = []
 
     def choose(self, host, pid):
         self.selections.append((host, pid))
@@ -99,8 +100,9 @@ class NearbyUnitTests(unittest.TestCase):
                 "ownerHost": "AMD-DESKTOP"}
 
     def read(self, selection, kind, *, output, unit_limit=None,
-             unit_keys=None):
+             unit_keys=None, native_reader=None):
         self.reads.append((kind, unit_limit, unit_keys))
+        self.readers.append(native_reader)
         if kind == "unit-levels":
             raw, values = self.level_doc, level_projection(self.level_doc)
         else:
@@ -146,7 +148,10 @@ class NearbyUnitTests(unittest.TestCase):
         self.assertEqual(json.loads(path.read_text())["samples"], report["samples"])
 
     def test_levels_are_bound_to_entities_and_replayed_from_original(self):
-        path, report = self.invoke(include_levels=True)
+        published = self.dest.parent / "RiftReader2.Live.exe"
+        published.touch()
+        path, report = self.invoke(include_levels=True, native_reader=published)
+        self.assertEqual(self.readers, [published] * 3)
         self.assertEqual(self.reads[-1], ("unit-levels", None, ["43", "44"]))
         self.assertEqual(report["numericLevelCandidateCount"], 1)
         self.assertEqual(report["samples"][0]["numericLevelCandidate"], 10)

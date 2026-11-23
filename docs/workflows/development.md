@@ -125,6 +125,11 @@ python -B scripts/capture_physical_telemetry_target_series.py --expected-host $r
 python -B scripts/prepare_physical_npc_survey.py --expected-host $rr2Host --physical-pid CURRENT_PID --include-levels --output-dir artifacts/NEW_NPC_PLAN
 ```
 
+For a published build, pass `--native-reader $rr2PublishedReader` to
+`physical_nearby_units.py`, `physical_selected_target_profile.py`, or
+`collect_physical_player_state.py`. Each collector uses the selected executable
+for all of its native samples.
+
 Copy the player-state directory with its `summary.json` and native source files
 to replay it offline. Replay locates the sources beside the summary and checks
 each SHA-256, executable path and process identity recorded at capture. Pair

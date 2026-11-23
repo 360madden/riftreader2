@@ -132,7 +132,7 @@ def compare(first, second, selected, name, pos_values, pos_raw):
     }
 
 
-def capture(host, pid, destination, *,
+def capture(host, pid, destination, *, native_reader=None,
             select=physical_rift.select_physical,
             read=physical_rift.read_native):
     require(physical_rift.valid_host_name(host)
@@ -143,6 +143,7 @@ def capture(host, pid, destination, *,
         root = ROOT / root
     require(root.parent.is_dir() and not root.exists() and not root.is_symlink(),
             "output-directory-must-be-new")
+    read = physical_rift.bind_native_reader(read, native_reader)
     selection = select(host, pid)
     target = selection.get("target")
     require(selection.get("status") == "ready"
@@ -255,10 +256,12 @@ def main(argv=None):
     parser.add_argument("--expected-host",
                         required=True)
     parser.add_argument("--physical-pid", type=int, required=True)
+    parser.add_argument("--native-reader", type=Path, help="absolute path to a local published reader")
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
-        path, report = capture(args.expected_host, args.physical_pid, args.output_dir)
+        path, report = capture(args.expected_host, args.physical_pid, args.output_dir,
+                               native_reader=args.native_reader)
     except (OSError, ValueError, KeyError, TypeError, OverflowError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:240],
                           "gameplayInputSent": False}))

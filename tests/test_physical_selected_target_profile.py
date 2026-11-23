@@ -105,6 +105,7 @@ class SelectedTargetProfileTests(unittest.TestCase):
                      name_doc(), target_doc(8, 9)]
         self.calls = []
         self.selections = []
+        self.readers = []
 
     def choose(self, host, pid):
         self.selections.append((host, pid))
@@ -112,9 +113,10 @@ class SelectedTargetProfileTests(unittest.TestCase):
                 "target": deepcopy(PROCESS)}
 
     def read(self, selection, kind, *, output, samples=None,
-             interval_ms=None, unit_keys=None):
+             interval_ms=None, unit_keys=None, native_reader=None):
         i = len(self.calls)
         self.calls.append((kind, samples, interval_ms, unit_keys))
+        self.readers.append(native_reader)
         source = self.docs[i]
         output = Path(output)
         raw = json.dumps(source, separators=(",", ":")).encode()
@@ -128,15 +130,18 @@ class SelectedTargetProfileTests(unittest.TestCase):
                if kind == "selected-position" else {}),
         }
 
-    def execute(self):
+    def execute(self, **options):
         with patch.object(profile.physical_rift, "_native_values",
                           side_effect=lambda kind, document:
                           deepcopy(document["fakeProjection"])):
             return profile.capture("AMD-DESKTOP", PID, self.output,
-                                   select=self.choose, read=self.read)
+                                   select=self.choose, read=self.read, **options)
 
     def test_four_source_native_profile_candidate(self):
-        path, result = self.execute()
+        published = self.output.parent / "RiftReader2.Live.exe"
+        published.touch()
+        path, result = self.execute(native_reader=published)
+        self.assertEqual(self.readers, [published] * 4)
         self.assertTrue(path.is_file())
         self.assertEqual(result["status"], "selected-target-candidate")
         self.assertEqual(result["selectedUnitIdCandidate"], UNIT)

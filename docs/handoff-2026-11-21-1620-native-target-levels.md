@@ -100,6 +100,10 @@ Detailed exact source paths, hashes and limits:
 
 ### Quick safe commands (PowerShell on **AMD-DESKTOP** only)
 
+The paths below record the November 21 workstation. For current host-neutral
+commands and published-reader setup, use the
+[physical Windows workflow](workflows/development.md#current-live-workflow-on-physical-windows).
+
 ```powershell
 Set-Location C:\work\riftreader2
 [Environment]::MachineName

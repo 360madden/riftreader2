@@ -1,5 +1,7 @@
 # Current status
 
+**2026-11-22 — physical collectors accept a published reader.** The nearby-unit, selected-target profile, and player-state CLIs now accept `--native-reader`. Each uses the selected path for all component reads. On LEGION, a missing reader was refused by all three CLI entry points before output creation. **66 focused tests and 11 subtests passed, with one skip.** The keyed-level physical acceptance is pending. [Physical Windows workflow](workflows/development.md#current-live-workflow-on-physical-windows)
+
 **2026-11-22 — Waypoints can select a published reader for Save view.** The launcher and `rr2-waypoints.cmd app open` accept `--view-native-reader` for a new window. Save view forwards the selected path to the WGC facing bracket, zone context, nearby positions, and unit names. A missing reader fails before process selection or output creation. On LEGION, **163 focused tests and 199 subtests passed** using synthetic capture and GUI fixtures. [Save view workflow](workflows/physical-world-screen.md)
 
 **2026-11-22 — WGC native-facing checks accept a published reader on LEGION.** `observe_target.py --check-dependencies --native-facing` checks WGC and the selected facing reader without selecting a game process. A current and a previous published reader both passed. A missing path blocked the check. The same optional `--native-reader` path reaches both sides of the synthetic frame bracket. **119 focused tests and 138 subtests passed.** [Observation workflow](workflows/target-observation.md#active-workflow-on-the-local-windows-host)

@@ -66,11 +66,12 @@ def pin(pid, *, expected_host=None):
 
 
 def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False,
-            include_zone=False, expected_host=None):
+            include_zone=False, expected_host=None, native_reader=None):
     require(type(samples) is int and 2 <= samples <= 10
             and type(interval_ms) is int and 0 <= interval_ms <= 1000
             and type(include_stats) is bool and type(include_zone) is bool,
             "invalid-sampling-bounds")
+    read = physical_rift.bind_native_reader(physical_rift.read_native, native_reader)
     first = pin(pid, expected_host=expected_host)
     owner = first["target"]
     host = owner["hostName"]
@@ -92,7 +93,7 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False,
         # Zone and stats are one-shot readers; other sources support bursts.
         options = ({} if read_kind in ("stats", "zone-context") else
                    {"samples": samples, "interval_ms": interval_ms})
-        result = physical_rift.read_native(first, read_kind, path, **options)
+        result = read(first, read_kind, path, **options)
         require(result.get("status") == "complete"
                 and result.get("nativeRead") == read_kind
                 and result.get("target") == owner
@@ -198,6 +199,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--physical-pid", type=int, required=True)
     parser.add_argument("--expected-host", help="require this local Windows hostname")
+    parser.add_argument("--native-reader", type=Path, help="absolute path to a local published reader")
     parser.add_argument("--samples", type=int, default=3)
     parser.add_argument("--interval-ms", type=int, default=200)
     parser.add_argument("--include-stats", action="store_true",
@@ -211,7 +213,7 @@ def main(argv=None):
         path, report = collect(args.physical_pid, args.output_dir,
                                samples=args.samples, interval_ms=args.interval_ms,
                                include_stats=args.include_stats, include_zone=args.include_zone,
-                               expected_host=args.expected_host)
+                               expected_host=args.expected_host, native_reader=args.native_reader)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:240]}))
         return 2

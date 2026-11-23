@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
+from functools import partial
 import hashlib
 import json
 import math
@@ -69,6 +70,16 @@ def _native_reader_path(override):
         raise ValueError("invalid-native-reader-path")
     observe_physical._plain_path(path)
     return path
+
+
+def bind_native_reader(read, override):
+    """Use one explicit local reader throughout a multi-source collection."""
+    if override is None:
+        return read
+    path = _native_reader_path(override)
+    if not path.is_file():
+        raise ValueError("native-reader-not-built")
+    return partial(read, native_reader=path)
 
 
 def check_native_reader(expected_host=None, native_reader=None, *, kind=None):

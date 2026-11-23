@@ -25,7 +25,7 @@ SELECTION = {"status": "ready", "ownerHost": HOST, "target": OWNER}
 
 class StateTests(unittest.TestCase):
     def fake_read(self, selection, kind, path, *, samples, interval_ms,
-                  key="239816685251645959", module=123456, epoch=None):
+                  key="239816685251645959", module=123456, epoch=None, native_reader=None):
         identity = {
             "processId": OWNER["processId"],
             "processStartUtcTicks": int(epoch or OWNER["processStartUtcTicks"]),
@@ -53,10 +53,13 @@ class StateTests(unittest.TestCase):
              patch.object(state.physical_rift, "select_physical",
                           return_value=SELECTION) as select, \
              patch.object(state.physical_rift, "read_native", side_effect=self.fake_read) as read:
-            path, report = state.collect(123, Path(temp) / "result", samples=3)
+            published = Path(temp) / "RiftReader2.Live.exe"
+            published.touch()
+            path, report = state.collect(123, Path(temp) / "result", samples=3, native_reader=published)
             self.assertEqual(select.call_count, 7)
             self.assertEqual(read.call_count, 3)
             self.assertEqual([call.args[1] for call in read.call_args_list], list(state.KINDS))
+            self.assertEqual([call.kwargs["native_reader"] for call in read.call_args_list], [published] * 3)
             self.assertEqual(report["status"], "complete-candidate")
             self.assertEqual(report["selfKeyCandidate"], "239816685251645959")
             self.assertIn("NOT atomic", report["qualification"])

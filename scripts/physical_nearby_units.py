@@ -185,7 +185,7 @@ def add_level_candidates(report, position_raw, name_raw, level_raw, levels, sour
                                "Position, displayed level, hostility and combat suitability remain unqualified.")
 
 
-def capture(expected_host, pid, destination, *, radius=35.0, limit=18, include_levels=False,
+def capture(expected_host, pid, destination, *, radius=35.0, limit=18, include_levels=False, native_reader=None,
             choose=physical_rift.select_physical,
             read=physical_rift.read_native):
     """Acquire read-only native sources and save one joined candidate view."""
@@ -201,6 +201,7 @@ def capture(expected_host, pid, destination, *, radius=35.0, limit=18, include_l
     require(not destination.exists() and not destination.is_symlink()
             and destination.parent.is_dir(),
             "output-must-be-new-directory")
+    read = physical_rift.bind_native_reader(read, native_reader)
     selected_process = choose(expected_host, pid)
     target = selected_process.get("target", {})
     host = target.get("hostName")
@@ -285,12 +286,14 @@ def main(argv=None):
     parser.add_argument("--max-names", type=int, default=18)
     parser.add_argument("--include-levels", action="store_true",
                         help="read up to 12 nearby numeric-level candidates, named units first")
+    parser.add_argument("--native-reader", type=Path, help="absolute path to a local published reader")
     parser.add_argument("--output-dir", required=True, type=Path)
     args = parser.parse_args(argv)
     try:
         path, report = capture(args.expected_host, args.physical_pid,
                                args.output_dir, radius=args.radius,
-                               limit=args.max_names, include_levels=args.include_levels)
+                               limit=args.max_names, include_levels=args.include_levels,
+                               native_reader=args.native_reader)
     except (ValueError, OSError, TypeError, KeyError, AttributeError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:240],
                           "inputSent": False}))
