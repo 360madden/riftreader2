@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory=$true)][string]$TrialRoot,
     [Parameter(Mandatory=$true)][ValidatePattern('^[0-9A-F]{64}$')][string]$ExpectedBundleSha256,
     [ValidateSet('RR2R1|','RRAPIVAL2|')][string]$Marker = 'RR2R1|',
-    [string]$Python = 'C:\Python314\python.exe'
+    [string]$Python = $env:RIFTREADER2_LUA_PYTHON
 )
 $ErrorActionPreference = 'Stop'
 if (-not [Environment]::Is64BitProcess) { throw '64-bit PowerShell is required.' }
@@ -11,13 +11,19 @@ if (Test-Path -LiteralPath $TrialRoot) { throw 'Trial root already exists.' }
 if (-not (Test-Path -LiteralPath (Split-Path -Parent $TrialRoot) -PathType Container)) {
     throw 'Trial parent directory must exist.'
 }
-if (-not (Test-Path -LiteralPath $Executable -PathType Leaf) -or
-    -not (Test-Path -LiteralPath $Python -PathType Leaf)) {
-    throw 'Pinned executable or Python not found.'
+if (-not (Test-Path -LiteralPath $Executable -PathType Leaf)) {
+    throw 'Pinned executable not found.'
 }
 $expectedBundle = $ExpectedBundleSha256
 $bundle = (Get-FileHash -LiteralPath $Executable -Algorithm SHA256).Hash
 if ($bundle -ne $expectedBundle) { throw 'Published executable SHA-256 differs.' }
+
+$pythonName = if ($Python) { $Python } else { 'python' }
+$pythonCommand = Get-Command -Name $pythonName -CommandType Application -All -ErrorAction SilentlyContinue |
+    Where-Object { $_.Source -notmatch '(?i)[\\/]Microsoft[\\/]WindowsApps[\\/]python\.exe$' } |
+    Select-Object -First 1
+if (-not $pythonCommand) { throw "Python executable not found: $pythonName. Set -Python to an installed interpreter." }
+$verifier = Join-Path $PSScriptRoot 'verify_typed_inline_archive.py'
 
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 $allocBytes = 65536 + 8192
@@ -101,7 +107,7 @@ try {
     $archiveHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash
     $recovered = Join-Path $TrialRoot 'recovered'
     $reviewArgs = @(
-        '-m', 'scripts.verify_typed_inline_archive',
+        '-B', $verifier,
         '--archive', $archivePath,
         '--expected-sha256', $archiveHash,
         '--output', $recovered,
@@ -111,7 +117,7 @@ try {
         '--bundle-sha256', $expectedBundle,
         '--marker', $Marker
     )
-    $review = & $Python @reviewArgs 2>&1
+    $review = & $pythonCommand.Source @reviewArgs 2>&1
     if ($LASTEXITCODE -ne 0) { throw ('Archive verification failed: ' + ($review -join ' ')) }
     $proof = Get-Content -LiteralPath (Join-Path $recovered 'archive-proof.json') -Raw | ConvertFrom-Json
     if (@($proof.runs).Count -ne 2 -or
