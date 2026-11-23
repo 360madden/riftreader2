@@ -46,6 +46,7 @@ class ArchiveDestinationTests(unittest.TestCase):
             "inputSent": False, "currentRouteChanged": False, "destinationId": "fixture-end",
             "requestedStartXYZ": [1, 5, 2], "candidate": planner._reference(self.save("candidate.json", candidate)),
             "adoptedRoute": planner._reference(self.save("route.json", self.route)),
+            "endpointSnapLimits": {"maxHorizontalXZ": 0.1, "maxVerticalY": 0.2},
             "nativeContext": planner._reference(self.context), "inputs": {
                 "patch": planner._reference(patch_path), "build": planner._reference(build),
                 "catalog": planner._reference(self.save("catalog.json", {})),
@@ -66,6 +67,7 @@ class ArchiveDestinationTests(unittest.TestCase):
                 recipe = json.loads(files.read("replay.json"))
                 self.assertIn("patch/geometry.obj", files.namelist())
                 self.assertEqual(recipe["nativeReceipts"], ["evidence/receipt-0.jsonl"])
+                self.assertEqual(recipe["snapLimits"], {"maxHorizontalXZ": 0.1, "maxVerticalY": 0.2})
                 self.assertTrue(recipe["expected"]["routeGeometrySha256"])
             return {"ownerHost": "LOCAL-HOST", "verifiedResult": recipe["expected"]}
 

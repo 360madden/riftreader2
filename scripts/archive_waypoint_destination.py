@@ -140,6 +140,8 @@ def _archive_inputs(plan, native_context):
         "searchExtent": candidate.get("plannerResult", {}).get("searchExtent"),
         "expected": _archived_route_result(candidate, route, include_geometry=True),
     }
+    if "endpointSnapLimits" in plan:
+        replay["snapLimits"] = plan["endpointSnapLimits"]
     patch_info = {"path": patch_names[patch_source[0]], "patchId": patch["patchId"],
                   "geometrySha256": patch["files"]["geometry"]["sha256"]}
     return sources, patch_info, replay

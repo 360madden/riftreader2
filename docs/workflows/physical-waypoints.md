@@ -57,6 +57,15 @@ and Java environment. If a cached build records a different upstream path,
 Waypoints makes a verified copy with the selected path for that plan. Without
 an upstream setting, fresh preparation uses RiftWorld's default layout.
 
+For a copied retained map, restore the RiftWorld archive and rebuild its index
+with `build-source-index --retained-patch` and the copied model stores. Pass that
+index and the archive's request and destination catalog to `--prepare-request`.
+RR2 verifies the retained source patch and its scene through the preparation
+handoff. Pass the archive's limits with `--max-horizontal-snap` and
+`--max-vertical-snap` when reproducing its query. RR2 checks the limits in the
+returned candidate and preserves them when exporting a saved plan.
+[Retained Watch replay](../../artifacts/retained-watch-prepared-map-legion-20261123.json)
+
 From the RR2 checkout, reproduce the retained courtyard pilot with its saved
 inputs and a fresh output directory:
 

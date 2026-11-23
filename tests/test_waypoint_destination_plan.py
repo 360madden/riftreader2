@@ -957,6 +957,55 @@ class DestinationPlanTests(unittest.TestCase):
         self.assertIn("preparationHandoff", result["inputs"])
         self.assertIn("preparationRun", result)
 
+    def test_retained_preparation_binds_the_source_patch_for_the_query(self):
+        self.preparation_inputs()
+        retained_patch = self.save("retained-source-patch.json", {"patchId": "7" * 64})
+
+        def retained(handoff):
+            handoff["schema"] = "riftworld.prepared-navigation-handoff/2"
+            handoff.pop("sourceCatalog")
+            handoff["sourcePatch"] = {"descriptor": str(retained_patch),
+                                      "descriptorSha256": bridge._hash(retained_patch),
+                                      "patchId": "7" * 64, "sceneId": "8" * 64}
+
+        self.handoff_change = retained
+        result = self.automatic_plan(native=False)
+        self.assertEqual(result["status"], "planned")
+        self.assertEqual(result["inputs"]["sourcePatch"], bridge._reference(retained_patch))
+        self.assertNotIn("sourceCatalog", result["inputs"])
+        self.assertEqual(result["destinationValidation"]["binding"]["mode"], "source-index")
+
+        def ambiguous(handoff):
+            source_catalog = handoff["sourceCatalog"]
+            retained(handoff)
+            handoff["sourceCatalog"] = source_catalog
+
+        self.handoff_change = ambiguous
+        result = self.automatic_plan(native=False, output_directory=self.root / "ambiguous handoff")
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("prepared-handoff-source-reference-does-not-match-schema", result["blockers"])
+        self.assertEqual(len(self.calls), 1)
+
+    def test_requested_endpoint_snap_limits_must_be_returned_by_the_query(self):
+        self.preparation_inputs()
+        limits = {"maxHorizontalXZ": 0.125, "maxVerticalY": 0.25}
+        self.candidate = sign({**self.candidate, "plannerResult": {
+            **self.candidate["query"], "status": "complete", "cacheKey": self.candidate["planner"]["buildId"],
+            "waypoints": [{"pos": point["xyz"], "flags": point["flags"]} for point in self.candidate["points"]],
+            "endpointSnaps": {"limits": limits},
+        }})
+        result = self.automatic_plan(native=False, max_horizontal_snap=0.125, max_vertical_snap=0.25)
+        self.assertEqual(result["status"], "planned")
+        self.assertEqual(result["endpointSnapLimits"], limits)
+        query_command, _ = self.calls[0]
+        self.assertEqual(query_command[query_command.index("--max-horizontal-snap") + 1], "0.125")
+        self.assertEqual(query_command[query_command.index("--max-vertical-snap") + 1], "0.25")
+
+        result = self.automatic_plan(native=False, max_horizontal_snap=0.0625, max_vertical_snap=0.25,
+                                     output_directory=self.root / "different snap limits")
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("destination-query-snap-limits-mismatch", result["blockers"])
+
     def test_registered_java_is_passed_to_preparation_query_and_receipt_validation(self):
         self.preparation_inputs()
         java = self.root / "registered JDK"

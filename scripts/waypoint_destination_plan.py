@@ -28,7 +28,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.waypoint_candidate_adoption import adopt_receipt_candidate, _adoption_digest
-from scripts.waypoint_navigation_candidate import _read_document, inspect_candidate, MAX_CANDIDATE_BYTES
+from scripts.waypoint_navigation_candidate import _finite_number, _read_document, inspect_candidate, MAX_CANDIDATE_BYTES
 from scripts.waypoint_progress import write_json_atomic
 from scripts.waypoint_view_bundle import bundle_asset
 from scripts.observe_physical import _local_absolute_path, _plain_path, valid_host_name
@@ -37,6 +37,10 @@ from scripts.observe_physical import _local_absolute_path, _plain_path, valid_ho
 SCHEMA = "rr2.destination-plan/1"
 RIFTWORLD_ROOT = ROOT.parent / "RiftWorld"
 RIFTWORLD_REGISTRATION_SCHEMA = "rr2.riftworld-toolchain/1"
+PREPARED_SOURCE_REFERENCES = {
+    "riftworld.prepared-navigation-handoff/1": ("sourceCatalog", "catalogId"),
+    "riftworld.prepared-navigation-handoff/2": ("sourcePatch", "patchId"),
+}
 
 RIFTWORLD_STARTUP_PROBE = r"""
 from inspect import signature
@@ -374,10 +378,14 @@ def _inside_bounds(point, bounds):
 def _prepared_handoff(path, *, request_path, index_path, inputs, profile_path=None):
     """Read only the compact source-side contract; large descriptors are streamed."""
     handoff, _ = _read(path, 1024 * 1024)
-    if handoff.get("schema") != "riftworld.prepared-navigation-handoff/1":
+    source_reference = PREPARED_SOURCE_REFERENCES.get(handoff.get("schema"))
+    if source_reference is None:
         raise ValueError("unsupported-prepared-navigation-handoff")
+    source_name, _ = source_reference
+    if {"sourceCatalog", "sourcePatch"}.intersection(handoff) != {source_name}:
+        raise ValueError("prepared-handoff-source-reference-does-not-match-schema")
     for name, identity in (("preparation", "preparationId"), ("sourceIndex", "sourceIndexId"),
-                           ("sourceCatalog", "catalogId"), ("areaRequest", "areaRequestId"),
+                           source_reference, ("areaRequest", "areaRequestId"),
                            ("patch", "patchId"), ("navigation", "buildId")):
         ref = handoff.get(name)
         if (not isinstance(ref, dict) or not isinstance(ref.get("descriptor"), str)
@@ -385,6 +393,8 @@ def _prepared_handoff(path, *, request_path, index_path, inputs, profile_path=No
                 or str(ref.get("descriptorSha256", "")).casefold()
                    != _hash(ref["descriptor"]).casefold()):
             raise ValueError("prepared-handoff-reference-mismatch: " + name)
+    if source_name == "sourcePatch" and not re.fullmatch(r"[a-fA-F0-9]{64}", str(handoff[source_name].get("sceneId", ""))):
+        raise ValueError("prepared-handoff-source-scene-identity-invalid")
     for name, input_name, expected_path in (("areaRequest", "areaRequest", request_path),
                                              ("sourceIndex", "sourceIndex", index_path)):
         ref = handoff[name]
@@ -861,6 +871,7 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
                      native_receipts=(), native_context=None, native_start=None,
                      native_end=None, candidate_start=0, candidate_end=None,
                      execute=False, session=None, search_extent=None,
+                     max_horizontal_snap=None, max_vertical_snap=None,
                      runner=subprocess.run, preparation_runner=None):
     """Publish an offline destination plan, with optional scoped adoption/dispatch.
 
@@ -899,6 +910,10 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
     if search_extent is not None and (isinstance(search_extent, bool)
                                      or not math.isfinite(search_extent) or search_extent <= 0):
         raise ValueError("search extent must be finite and positive")
+    snap_limits = {"maxHorizontalXZ": max_horizontal_snap, "maxVerticalY": max_vertical_snap}
+    for name, limit in snap_limits.items():
+        if limit is not None and (not _finite_number(limit) or limit < 0):
+            raise ValueError(f"{name} snap limit must be finite and nonnegative")
     registered = _registered_riftworld()
     world_root, query_tool, python = _riftworld_tools(riftworld_root, riftworld_python, registered)
     environment = _riftworld_environment(registered)
@@ -1032,7 +1047,8 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
                 index_path=source_index, inputs=inputs, profile_path=prepare_profile)
             inputs.update(patch=_reference(patch), build=_reference(build),
                           preparationHandoff=_reference(handoff_path))
-            for name in ("preparation", "sourceCatalog"):
+            source_name, _ = PREPARED_SOURCE_REFERENCES[prepared["schema"]]
+            for name in ("preparation", source_name):
                 inputs[name] = {"path": str(Path(prepared[name]["descriptor"]).resolve()),
                                 "sha256": prepared[name]["descriptorSha256"].upper()}
             plan["preparedNavigation"] = prepared
@@ -1098,6 +1114,9 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
                    "--out", str(candidate_path), "--receipt", str(receipt_path)]
         if search_extent is not None:
             command += ["--search-extent", format(search_extent, ".17g")]
+        for option, limit in (("--max-horizontal-snap", max_horizontal_snap), ("--max-vertical-snap", max_vertical_snap)):
+            if limit is not None:
+                command += [option, format(limit, ".17g")]
         if prepared:
             command += ["--preparation", prepared["preparation"]["descriptor"]]
         plan["stages"]["query"] = "pending"
@@ -1115,6 +1134,11 @@ def plan_destination(*, catalog, destination, output_directory, patch=None, buil
         candidate, receipt, review = _publication(candidate_path, receipt_path,
             catalog_path=catalog, destination=destination, start=start, inputs=inputs,
             validator=validate_destination)
+        if any(limit is not None for limit in snap_limits.values()):
+            evidence = (candidate.get("plannerResult") or {}).get("endpointSnaps")
+            if not isinstance(evidence, dict) or evidence.get("limits") != snap_limits:
+                raise ValueError("destination-query-snap-limits-mismatch")
+            plan["endpointSnapLimits"] = snap_limits
         plan.update(candidate=_reference(candidate_path), destinationReceipt=_reference(receipt_path),
                     destination=deepcopy(receipt["destination"]), review=review)
         plan["stages"]["query"] = candidate["status"]
@@ -1289,6 +1313,9 @@ def replay_destination_archive(handoff_path, output_directory, *, riftworld_root
     receipts = replay["nativeReceipts"]
     if not isinstance(receipts, list) or not receipts:
         raise ValueError("destination-archive-native-receipts-required")
+    snap_limits = replay.get("snapLimits", {})
+    if not isinstance(snap_limits, dict) or set(snap_limits) - {"maxHorizontalXZ", "maxVerticalY"}:
+        raise ValueError("invalid-destination-archive-snap-limits")
 
     plan_directory = output / "plan"
     plan = plan_destination(
@@ -1297,7 +1324,8 @@ def replay_destination_archive(handoff_path, output_directory, *, riftworld_root
         native_receipts=[replay_member(name) for name in receipts], native_context=replay_member(replay["nativeContext"]),
         native_start=replay["nativeStart"], native_end=replay["nativeEnd"],
         candidate_start=replay["candidateStart"], candidate_end=replay["candidateEnd"],
-        search_extent=replay.get("searchExtent"),
+        search_extent=replay.get("searchExtent"), max_horizontal_snap=snap_limits.get("maxHorizontalXZ"),
+        max_vertical_snap=snap_limits.get("maxVerticalY"),
         riftworld_root=world, riftworld_python=python, riftworld_upstream=upstream, runner=runner,
     )
     if (plan["status"] != "adoptable" or plan.get("destinationCovered") is not True
@@ -1366,6 +1394,8 @@ def parser():
         result.add_argument("--" + name, type=int, default=default,
                             help="zero-based inclusive evidence index")
     result.add_argument("--search-extent", type=float)
+    result.add_argument("--max-horizontal-snap", type=float, help="maximum endpoint snap distance in XZ")
+    result.add_argument("--max-vertical-snap", type=float, help="maximum endpoint snap distance in Y")
     result.add_argument("--execute", action="store_true")
     result.add_argument("--session")
     return result
