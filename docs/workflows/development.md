@@ -131,21 +131,20 @@ movement calibration measured on the Windows host that will run Waypoints.
 | Rerun export and viewer | `RR2_RERUN_PYTHON` | Python with [visualization requirements](../../requirements-visualization.txt) |
 | Shared desktop evidence and Workbridge capture | `RR2_WORKBRIDGE_ROOT`, `RR2_WORKBRIDGE_CLI_ROOT`, `RR2_WORKBRIDGE_NODE` | [Active local deployment, matching CLI, and Node.js 24+](target-observation.md#active-workflow-on-the-local-windows-host) |
 
-Run the checks for the workflows you will use. The WGC check uses the selected
-Python for image verification and starts the native facing reader in help mode.
-The addon checks report installed or startup dependencies. Active publishers
-and a current process are verified during acquisition.
+Run the startup checks on the computer where you will use RR2. The command
+reports each workflow in JSON and exits with code 2 if a selected check is
+blocked. Repeat `--workflow` to check a subset. Qt imports the marker presenter
+and Rerun prints the viewer version without opening windows. Game process
+identity and live addon publishers are verified separately during acquisition.
 
 ```powershell
 $rr2Host = [Environment]::MachineName
 $rr2Python = $env:RIFTREADER2_PYTHON
 if (!$rr2Python) { $rr2Python = 'python' }
-.\rr2-waypoints.cmd doctor --local --dependencies-only
-& $rr2Python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies --physical-capture-backend wgc --native-facing
-& $rr2Python -B scripts/observe_target.py --target physical --expected-host $rr2Host --check-dependencies --physical-capture-backend workbridge
-& $rr2Python -B scripts/capture_readerbridge_v3.py --expected-host $rr2Host --check-dependencies
-& $rr2Python -B scripts/prepare_physical_npc_survey.py --expected-host $rr2Host --check-dependencies --include-levels
-& $rr2Python -B scripts/capture_physical_telemetry_target_series.py --expected-host $rr2Host --check-dependencies
+& $rr2Python -B scripts/check_physical_dependencies.py --expected-host $rr2Host
+# Check only WGC and prepared maps
+& $rr2Python -B scripts/check_physical_dependencies.py --expected-host $rr2Host --workflow wgc --workflow prepared-maps
+# Check the SDK and Python used by the development gate
 .\scripts\validate.ps1 -CheckPrerequisites
 ```
 

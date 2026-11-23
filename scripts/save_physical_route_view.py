@@ -45,12 +45,8 @@ def _local_python(override, default, reason):
     return executable
 
 
-def launch_saved_rerun(path):
-    """Explicit user action: open one local saved recording in the optional viewer."""
-    recording = Path(path)
-    require(recording.is_absolute() and recording.suffix.casefold() == ".rrd"
-            and not str(recording).startswith("\\\\"), "absolute-local-rerun-recording-required")
-    require(recording.is_file() and recording.stat().st_size > 0, "saved-rerun-recording-unavailable")
+def check_rerun_viewer():
+    """Probe the configured viewer in version mode without opening a window."""
     configured = os.environ.get("RR2_RERUN_PYTHON")
     if configured:
         executable = _local_python(configured, VISUALIZATION_PYTHON, "invalid-rerun-python-path")
@@ -71,10 +67,20 @@ def launch_saved_rerun(path):
         raise ValueError("optional-rerun-viewer-startup-timed-out") from error
     require(probe.returncode == 0 and probe.stdout.startswith("rerun-cli "),
             "optional-rerun-viewer-startup-failed: " + (probe.stderr.strip() or str(executable))[-300:])
+    return viewer, environment, probe.stdout.splitlines()[0]
+
+
+def launch_saved_rerun(path):
+    """Explicit user action: open one local saved recording in the optional viewer."""
+    recording = Path(path)
+    require(recording.is_absolute() and recording.suffix.casefold() == ".rrd"
+            and not str(recording).startswith("\\\\"), "absolute-local-rerun-recording-required")
+    require(recording.is_file() and recording.stat().st_size > 0, "saved-rerun-recording-unavailable")
+    viewer, environment, _ = check_rerun_viewer()
     return subprocess.Popen([*viewer, "--bind", "127.0.0.1", "--port", "auto", str(recording)],
                             cwd=ROOT, env=environment, stdin=subprocess.DEVNULL,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                            creationflags=creationflags)
+                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
 def _relative_fields(mapping, directory, *fields):

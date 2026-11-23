@@ -91,6 +91,14 @@ class SavedRerunViewerTests(unittest.TestCase):
             saved.launch_saved_rerun(self.recording)
         self.process.assert_not_called()
 
+    def test_viewer_dependency_check_needs_no_recording_and_opens_no_window(self):
+        self.recording.unlink()
+        viewer, _, version = saved.check_rerun_viewer()
+        self.assertEqual(viewer, [str(self.viewer)])
+        self.assertEqual(version, "rerun-cli 0.43.1")
+        self.assertEqual(self.probe.call_args.args[0], [str(self.viewer), "--version"])
+        self.process.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
