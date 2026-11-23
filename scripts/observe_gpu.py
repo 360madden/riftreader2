@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import socket
+import stat
 
 from scripts.observe_physical import (
     ROOT, _identity, _plain_path, _require, _run, published_physical_tool, valid_host_name, workbridge_root,
@@ -30,8 +31,38 @@ def _probe_path():
     return probe
 
 
+def _runtime_dependencies(probe):
+    def available(path):
+        try:
+            info = path.lstat()
+        except OSError:
+            return False
+        return (stat.S_ISREG(info.st_mode)
+                and not getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT)
+
+    manifest_path = probe.with_suffix(".deps.json")
+    sidecars = (manifest_path, probe.with_suffix(".runtimeconfig.json"))
+    missing = [path.name for path in sidecars if not available(path)]
+    if missing:
+        return {"reason": "gpu-probe-publish-incomplete", "missingFiles": missing}
+    try:
+        manifest = json.loads(manifest_path.read_bytes())
+        libraries = manifest["targets"][manifest["runtimeTarget"]["name"]]
+        files = set()
+        for library in libraries.values():
+            for group in ("runtime", "native"):
+                files.update(PureWindowsPath(asset).name for asset in library.get(group, {}).keys())
+        files.difference_update(("", "_._"))
+        if probe.with_suffix(".dll").name.casefold() not in {name.casefold() for name in files}:
+            raise ValueError("probe assembly not listed")
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return {"reason": "gpu-probe-runtime-manifest-invalid"}
+    missing = [name for name in sorted(files) if not available(probe.parent / name)]
+    return {"reason": "gpu-probe-publish-incomplete", "missingFiles": missing} if missing else {}
+
+
 def check_probe():
-    """Run the built probe's offline self-test without opening a target window."""
+    """Verify the probe's runtime files and offline self-test."""
     try:
         probe = _probe_path()
     except (OSError, ValueError) as error:
@@ -39,6 +70,9 @@ def check_probe():
     result = {"status": "blocked", "path": str(probe)}
     if not probe.is_file():
         return {**result, "reason": "gpu-probe-build-required"}
+    dependency_error = _runtime_dependencies(probe)
+    if dependency_error:
+        return {**result, **dependency_error}
     try:
         code, response = _run([probe, "--self-test"], 10,
                               env={**os.environ, "DOTNET_DISABLE_GUI_ERRORS": "1"})
@@ -83,6 +117,10 @@ def capture_gpu(expected_host, output, *, physical_pid=None):
         _require(not directory.exists() and directory.parent.is_dir(), "fresh-output-required")
         probe = _probe_path()
         _require(probe.is_file(), "gpu-probe-build-required")
+        dependency_error = _runtime_dependencies(probe)
+        if dependency_error:
+            return {"status": "blocked", "targetId": target_id, "workflow": "physical",
+                    "captureBackend": "Windows.Graphics.Capture", "foregroundMayChange": False, **dependency_error}
         frames = frame_tools()
         bridge = workbridge_root()
         before = _identity(physical_pid)

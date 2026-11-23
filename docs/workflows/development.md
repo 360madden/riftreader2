@@ -129,8 +129,9 @@ $rr2Host = [Environment]::MachineName
 `-UseForCheckout` records the verified bundle as the checkout's selection for
 later launches, including from Explorer. To reuse a copied bundle, run
 `publish-physical-tools.ps1 -ExpectedHost $rr2Host -RegisterBundle PATH` with
-its local path. Registration checks both tools and uses the current host's
-checkout settings. It needs PowerShell 7 and the published bundle.
+its local path. Registration checks the reader, the WGC runtime files listed
+by the probe, and its offline self-test. It uses the current host's checkout
+settings and needs PowerShell 7 and the published bundle.
 
 `RR2_PHYSICAL_TOOLS_ROOT` selects a different local bundle for the current shell
 or selects the checkout's Debug builds with the value `debug`.

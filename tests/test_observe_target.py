@@ -15,6 +15,20 @@ OFFLINE_PROBE_REPORT = {"status": "offline-self-test-passed", "passed": 31,
                         "outputCheckoutDiscovery": True, "inputSent": False, "frameCaptured": False}
 
 
+def _make_probe_bundle(probe, *, dependencies=()):
+    probe.touch()
+    assembly = probe.with_suffix(".dll")
+    assembly.touch()
+    probe.with_suffix(".runtimeconfig.json").write_text("{}", encoding="utf-8")
+    probe.with_suffix(".deps.json").write_text(json.dumps({
+        "runtimeTarget": {"name": "win-x64"},
+        "targets": {"win-x64": {
+            "probe": {"runtime": {assembly.name: {}}},
+            "capture": {"runtime": {asset: {} for asset in dependencies}},
+        }},
+    }), encoding="utf-8")
+
+
 class TargetRoutingTests(unittest.TestCase):
     def setUp(self):
         self.enterContext(patch.dict("os.environ", {"RR2_WGC_PROBE": "", "RR2_PHYSICAL_TOOLS_ROOT": "debug"}))
@@ -73,7 +87,7 @@ class TargetRoutingTests(unittest.TestCase):
              patch.object(observe_physical, "check_workbridge_capture_service") as service, \
              patch.object(observe_gpu, "_run", return_value=(0, json.dumps(OFFLINE_PROBE_REPORT))) as probe_runner:
             probe = Path(temp) / "wgc.exe"
-            probe.touch()
+            _make_probe_bundle(probe)
             with patch.object(observe_gpu, "PROBE", probe), redirect_stdout(io.StringIO()) as output:
                 service.return_value = {"status": "blocked", "reason": "RUNTIME_MISMATCH"}
                 args = ["--target", "physical", "--expected-host", "rift-station", "--check-dependencies"]
@@ -117,7 +131,7 @@ class TargetRoutingTests(unittest.TestCase):
                 self.assertNotIn("wgcProbe", result)
                 probe_runner.assert_not_called()
 
-            probe.touch()
+            _make_probe_bundle(probe)
             service.reset_mock()
             with patch.dict("os.environ", {"RR2_WGC_PROBE": str(probe)}), \
                  redirect_stdout(io.StringIO()) as output:
@@ -136,9 +150,10 @@ class TargetRoutingTests(unittest.TestCase):
             bundle = root / "Copied physical tools"
             reader = bundle / "native-reader" / "RiftReader2.Live.exe"
             probe = bundle / "wgc-probe" / "PhysicalWgcProbe.exe"
-            for tool_path in (reader, probe):
-                tool_path.parent.mkdir(parents=True)
-                tool_path.touch()
+            reader.parent.mkdir(parents=True)
+            reader.touch()
+            probe.parent.mkdir(parents=True)
+            _make_probe_bundle(probe)
             (root / ".tools" / "desktop-evidence").mkdir(parents=True)
             help_text = "RiftReader2.Live native tools\nsample-current-facing --pid N"
             with patch.dict("os.environ", {"RR2_NATIVE_READER": "", "RR2_PHYSICAL_TOOLS_ROOT": str(bundle)}), \
@@ -217,7 +232,7 @@ class TargetRoutingTests(unittest.TestCase):
             external = Path(temp) / "probe.exe"
             colocated = checkout / "probe.exe"
             for probe in (external, colocated):
-                probe.touch()
+                _make_probe_bundle(probe)
             with patch.object(observe_gpu, "ROOT", checkout), patch.object(observe_gpu, "PROBE", external):
                 self.assertEqual(observe_gpu.check_probe()["reason"], "gpu-probe-relocation-update-required")
             with patch.object(observe_gpu, "ROOT", checkout), patch.object(observe_gpu, "PROBE", colocated):
@@ -254,7 +269,7 @@ class TargetRoutingTests(unittest.TestCase):
             root = Path(temp)
             (root / ".tools" / "desktop-evidence").mkdir(parents=True)
             probe = root / "probe.exe"
-            probe.touch()
+            _make_probe_bundle(probe)
             for code, response, reason in (
                     (0x80008083, "", "gpu-probe-dotnet-runtime-unavailable"),
                     (-2147450730, "", "gpu-probe-dotnet-runtime-unavailable"),
@@ -274,6 +289,27 @@ class TargetRoutingTests(unittest.TestCase):
                 if code:
                     self.assertEqual(result["wgcProbe"]["exitCode"], code)
 
+    def test_missing_wgc_runtime_asset_blocks_before_launching_the_probe(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            probe = root / "probe.exe"
+            dependency = "Vortice.Direct3D11.dll"
+            _make_probe_bundle(probe, dependencies=(f"lib/net10.0/{dependency}",))
+            with patch.object(observe_gpu, "PROBE", probe), \
+                 patch.object(observe_gpu, "_identity") as identity, \
+                 patch.object(observe_gpu, "_run", return_value=(0, json.dumps(OFFLINE_PROBE_REPORT))) as run:
+                blocked = observe_gpu.check_probe()
+                self.assertEqual(blocked["reason"], "gpu-probe-publish-incomplete")
+                self.assertEqual(blocked["missingFiles"], [dependency])
+                capture = observe_gpu.capture_gpu("AMD-DESKTOP", root / "capture")
+                self.assertEqual(capture["missingFiles"], [dependency])
+                self.assertFalse((root / "capture").exists())
+                identity.assert_not_called()
+                run.assert_not_called()
+                (root / dependency).touch()
+                self.assertEqual(observe_gpu.check_probe()["status"], "available")
+                run.assert_called_once()
+
     def test_explicit_workbridge_capture_keeps_the_foreground_admission_check(self):
         result = tool.observe("physical", "AMD-DESKTOP", physical_capture_backend="workbridge")
         self.assertEqual(result["status"], "blocked")
@@ -289,7 +325,7 @@ class TargetRoutingTests(unittest.TestCase):
              patch.object(observe_gpu, "PROBE", Path(temp) / "probe.exe"), \
              patch.object(observe_gpu, "_run", return_value=(0, json.dumps(OFFLINE_PROBE_REPORT))), \
              patch.object(observe_gpu, "_identity") as identity:
-            observe_gpu.PROBE.touch()
+            _make_probe_bundle(observe_gpu.PROBE)
             (Path(temp) / ".tools" / "desktop-evidence").mkdir(parents=True)
             result = tool.observe("physical", "AMD-DESKTOP", check_dependencies=True)
             capture = observe_gpu.capture_gpu("AMD-DESKTOP", Path(temp) / "capture")
@@ -334,7 +370,7 @@ class TargetRoutingTests(unittest.TestCase):
         with TemporaryDirectory() as folder:
             root = Path(folder)
             probe = root / "probe.exe"
-            probe.touch()
+            _make_probe_bundle(probe)
             with patch.dict("os.environ", {"RR2_WGC_PROBE": str(probe)}), \
                  patch.object(observe_gpu.socket, "gethostname", return_value="RIFT-STATION"), \
                  patch.object(observe_gpu, "workbridge_root", return_value=root / "Registered Workbridge"), \
@@ -359,7 +395,7 @@ class TargetRoutingTests(unittest.TestCase):
         with TemporaryDirectory() as folder:
             root = Path(folder)
             probe = root / "probe.exe"
-            probe.touch()
+            _make_probe_bundle(probe)
             with patch.dict("os.environ", {"RR2_WGC_PROBE": str(probe)}), \
                  patch.object(observe_gpu.socket, "gethostname", return_value="RIFT-STATION"), \
                  patch.object(observe_gpu, "_identity", return_value=target), \

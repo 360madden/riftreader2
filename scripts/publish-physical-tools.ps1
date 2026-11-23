@@ -46,6 +46,47 @@ function Assert-PlainPath([string]$Path) {
     }
 }
 
+function Get-WgcRuntimeCheck([string]$Executable) {
+    $directory = [IO.Path]::GetDirectoryName($Executable)
+    $stem = [IO.Path]::GetFileNameWithoutExtension($Executable)
+
+    function Test-LocalRuntimeFile([string]$Name) {
+        $item = Get-Item -LiteralPath (Join-Path $directory $Name) -Force -ErrorAction SilentlyContinue
+        return $null -ne $item -and -not $item.PSIsContainer -and
+            -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)
+    }
+
+    $manifestName = "$stem.deps.json"
+    $missing = @($manifestName, "$stem.runtimeconfig.json" | Where-Object { -not (Test-LocalRuntimeFile $_) })
+    if ($missing.Count -gt 0) {
+        return @{status = 'blocked'; reason = 'gpu-probe-publish-incomplete'; missingFiles = $missing}
+    }
+    try {
+        $manifest = Get-Content -LiteralPath (Join-Path $directory $manifestName) -Raw | ConvertFrom-Json -AsHashtable
+        $target = $manifest.targets[$manifest.runtimeTarget.name]
+        if ($target -isnot [System.Collections.IDictionary]) { throw 'Missing runtime assets.' }
+        $files = @(
+            foreach ($library in $target.Values) {
+                foreach ($group in $library.runtime, $library.native) {
+                    foreach ($asset in $group.Keys) {
+                        $name = [IO.Path]::GetFileName($asset)
+                        if ($name -and $name -ne '_._') { $name }
+                    }
+                }
+            }
+        ) | Sort-Object -Unique
+        if ("$stem.dll" -notin $files) { throw 'Probe assembly is absent from the runtime manifest.' }
+    }
+    catch {
+        return @{status = 'blocked'; reason = 'gpu-probe-runtime-manifest-invalid'}
+    }
+    $missing = @($files | Where-Object { -not (Test-LocalRuntimeFile $_) })
+    if ($missing.Count -gt 0) {
+        return @{status = 'blocked'; reason = 'gpu-probe-publish-incomplete'; missingFiles = $missing}
+    }
+    return @{status = 'ready'}
+}
+
 function Register-PhysicalTools([string]$Path, [string]$BundleRoot, [string]$ComputerName) {
     Assert-PlainPath $Path
     $directory = [IO.Path]::GetDirectoryName($Path)
@@ -91,6 +132,11 @@ try {
     $readerHelp = & $reader --help
     if ($LASTEXITCODE -ne 0 -or $readerHelp[0] -cne 'RiftReader2.Live native tools') {
         throw 'Published native reader failed its startup check.'
+    }
+    $runtime = Get-WgcRuntimeCheck $probe
+    if ($runtime.status -ne 'ready') {
+        $detail = if ($runtime.missingFiles) { " Missing files: $($runtime.missingFiles -join ', ')." } else { '' }
+        throw "Published WGC probe failed its runtime check ($($runtime.reason)).$detail"
     }
     $probeOutput = & $probe --self-test
     if ($LASTEXITCODE -ne 0) { throw 'Published WGC probe failed its offline self-test.' }

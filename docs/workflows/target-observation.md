@@ -63,15 +63,17 @@ $rr2Host = [Environment]::MachineName
 ```
 
 The check covers both backends by default. Choose a backend to check its
-requirements and the shared desktop-turn directory and guard files. WGC runs
-the probe's offline self-test and loads its Python image verifier. Use the
+requirements and the shared desktop-turn directory and guard files. WGC checks
+the files listed in the probe's runtime manifest, runs its offline self-test,
+and loads its Python image verifier. Use the
 complete published folder. A self-contained publish includes its .NET Desktop
 Runtime. Set `RR2_WGC_PROBE` to the absolute path of a locally published
 `PhysicalWgcProbe.exe` to use it for dependency checks and captures. The output
 includes the probe exit code and identifies the Python interpreter for Pillow.
 If the probe reports `gpu-probe-dotnet-runtime-unavailable`, use an installed
 x64 .NET 10 Desktop Runtime or set `DOTNET_ROOT_X64` to its private installation
-directory. For `gpu-probe-publish-incomplete`, use the complete published probe
+directory. For `gpu-probe-publish-incomplete`, the report lists the missing
+runtime files when a copy is incomplete. Use the complete published probe
 folder. The Workbridge check looks for `dist/desktop-ui.mjs`,
 `dist/desktop-capture.mjs`, and `dist/desktop-turn-admission.mjs` in the active
 deployment and checks the local Node version. With a compatible Node and local
