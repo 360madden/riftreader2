@@ -35,9 +35,12 @@ the executable script used for Workbridge calls. The running deployment still
 provides the service state, desktop evidence, and capture runner files.
 
 Workbridge capture needs Node.js 24 or newer. Set `RR2_WORKBRIDGE_NODE` to the
-absolute local path of `node.exe` to choose an installation for RR2. Without
-an override, RR2 checks the standard installation and then PATH. The dependency
-report includes the executable and version it checked.
+absolute local path of `node.exe` to choose an installation for RR2. With
+automatic discovery, RR2 uses the first compatible Node from the standard
+installation or an absolute local PATH directory. Discovery skips installations
+that fail the version check. An explicit or registered Node path must pass its
+own version check. The dependency report includes the selected executable and
+version.
 
 To reuse the selected deployment, CLI, and Node from a new shell, register the
 client after setting any needed overrides above.

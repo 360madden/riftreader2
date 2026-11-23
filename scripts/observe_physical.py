@@ -7,7 +7,6 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import socket
 import subprocess
 import tempfile
@@ -16,7 +15,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 BRIDGE = Path(r"C:\work\workbridge-mcp")
-NODE = Path(r"C:\Program Files\nodejs\node.exe")
+NODE = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "nodejs" / "node.exe"
 MIN_WORKBRIDGE_NODE_MAJOR = 24
 WORKBRIDGE_WINAPP_REASONS = ("WINAPP_NOT_INSTALLED", "UNSUPPORTED_WINAPP_VERSION", "WINAPP_VERSION_CHECK_FAILED")
 POWERSHELL = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
@@ -242,7 +241,28 @@ def _identity(physical_pid=None, *, require_window=True):
     return value
 
 
+def _workbridge_node_candidates(configured_node):
+    if configured_node is not None:
+        node = _local_absolute_path(configured_node, "invalid-workbridge-node-path")
+        _require(node.suffix.casefold() == ".exe", "invalid-workbridge-node-path")
+        _require(node.is_file(), "desktop-node-runtime-unavailable")
+        yield node
+        return
+
+    path_nodes = (Path(directory.strip('"')) / "node.exe" for directory in os.get_exec_path())
+    for node in dict.fromkeys((NODE, *path_nodes)):
+        if not node.is_absolute() or node.drive.startswith(("\\", "/")) or ".." in node.parts:
+            continue
+        try:
+            exists = node.is_file()
+        except OSError:
+            continue
+        if exists:
+            yield node
+
+
 def _workbridge_command(bridge, *, use_registered=True):
+    """Return the command and version check for the selected local Node runtime."""
     cli_root = os.environ.get("RR2_WORKBRIDGE_CLI_ROOT")
     configured_node = os.environ.get("RR2_WORKBRIDGE_NODE")
     if use_registered and (cli_root is None or configured_node is None):
@@ -256,18 +276,20 @@ def _workbridge_command(bridge, *, use_registered=True):
     state = bridge / ".local"
     _plain_path(cli)
     _plain_path(state)
-    if configured_node is not None:
-        node = _local_absolute_path(configured_node, "invalid-workbridge-node-path")
-        _require(node.suffix.casefold() == ".exe", "invalid-workbridge-node-path")
-        _require(node.is_file(), "desktop-node-runtime-unavailable")
-    else:
-        node = NODE if NODE.is_file() else shutil.which("node")
-    _require(node is not None, "desktop-node-runtime-unavailable")
     _require(cli.is_file(), "desktop-workbridge-cli-unavailable")
     _require(state.is_dir(), "desktop-workbridge-service-state-unavailable")
     # The running owner keeps service state and desktop evidence in its deployment.
     # The CLI may come from a separate, compatible local build.
-    return [node, cli, "--service-state", state]
+    first_failure = None
+    for node in _workbridge_node_candidates(configured_node):
+        command = [node, cli, "--service-state", state]
+        details = _check_workbridge_node(command)
+        if details.get("status") != "blocked":
+            return command, details
+        if first_failure is None:
+            first_failure = command, details
+    _require(first_failure is not None, "desktop-node-runtime-unavailable")
+    return first_failure
 
 
 def _workbridge_response(text):
@@ -367,12 +389,12 @@ def register_workbridge_client(expected_host):
     evidence = bridge / ".tools" / "desktop-evidence"
     _plain_path(evidence)
     _require(evidence.is_dir(), "shared-gui-evidence-directory-missing")
-    command = _workbridge_command(bridge, use_registered=False)
-    node = _local_absolute_path(command[0], "invalid-workbridge-node-path")
+    command, node_status = _workbridge_command(bridge, use_registered=False)
     result = {"workbridgeRoot": str(bridge), "captureAttempted": False, "inputSent": False,
-              **_check_workbridge_node(command)}
+              **node_status}
     if result.get("status") == "blocked":
         return result
+    node = _local_absolute_path(command[0], "invalid-workbridge-node-path")
     catalog, _ = _check_workbridge_catalog(command)
     result["toolCatalog"] = catalog
     if catalog["status"] != "available":
@@ -392,10 +414,10 @@ def check_workbridge_capture_service(bridge):
     missing_files = _missing_workbridge_capture_runners(bridge)
     details = {"missingFiles": missing_files} if missing_files else {}
     try:
-        command = _workbridge_command(bridge)
+        command, node_status = _workbridge_command(bridge)
     except ValueError as error:
         return {**details, "status": "blocked", "reason": str(error)}
-    details.update(_check_workbridge_node(command))
+    details.update(node_status)
     if details.get("status") == "blocked":
         return details
 
@@ -441,7 +463,7 @@ def _call(command, tool, arguments, output, *, timeout=100):
 
 def capture_physical(expected_host, output, *, allow_foreground_change=False,
                      physical_pid=None):
-    """No fallback, guest authentication, input injection, service startup, or retry."""
+    """Capture only the selected local target through the installed service."""
     target_id = "physical-" + str(expected_host).lower()
     try:
         _require(valid_host_name(expected_host), "invalid-host")
@@ -456,8 +478,9 @@ def capture_physical(expected_host, output, *, allow_foreground_change=False,
         _plain_path(output)
         _require(not output.exists() and output.parent.is_dir(), "fresh-output-required")
         bridge = workbridge_root()
-        command = _workbridge_command(bridge)
         _require(not _missing_workbridge_capture_runners(bridge), "desktop-workbridge-runner-files-missing")
+        command, node_status = _workbridge_command(bridge)
+        _require(node_status.get("status") != "blocked", node_status.get("reason"))
         output.mkdir()
         before = _identity(physical_pid)
         _require(physical_pid is None or before.get("processId") == physical_pid,
