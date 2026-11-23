@@ -1,7 +1,7 @@
-"""Compare nine ApiAtlas code files on the PC and both labs, read-only.
+"""Compare nine installed ApiAtlas code files with a local source folder, read-only.
 
 Installed files are read, never modified. Pinned OneDrive files may hydrate.
-Guest staging uses local AppData; no game interaction or restart is performed.
+Historical VMware targets are available through explicit selection.
 """
 from __future__ import annotations
 
@@ -11,11 +11,12 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import socket
 import subprocess
 import sys
 import uuid
 
-from rift_addon_inventory import GUEST_ADDONS, HOST_PS
+from rift_addon_inventory import GUEST_ADDONS, HOST_PS, observe_physical
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = Path(r"C:\work\API Atlas\addon\ApiAtlas")
@@ -62,7 +63,11 @@ def validate_report(data: dict, target: str) -> dict:
         raise HashError("missing-machine:" + target)
     if target in ("lab1", "lab2") and machine.casefold() != ("RIFT-LAB-" + target[-1]).casefold():
         raise HashError("wrong-guest-machine:" + target)
+    if type(data.get("complete")) is not bool or not isinstance(data.get("timestampUtc"), str):
+        raise HashError("invalid-provenance:" + target)
     records = data.get("files")
+    if records == [] and not data["complete"] and isinstance(data.get("error"), str):
+        return data
     if not isinstance(records, list) or len(records) != len(FILES):
         raise HashError("invalid-count:" + target)
     if [r.get("name") for r in records if isinstance(r, dict)] != list(FILES):
@@ -77,8 +82,8 @@ def validate_report(data: dict, target: str) -> dict:
                 raise HashError("invalid-hash:" + target)
         elif sha is not None:
             raise HashError("unexpected-hash:" + target)
-    if type(data.get("complete")) is not bool or not isinstance(data.get("timestampUtc"), str):
-        raise HashError("invalid-provenance:" + target)
+    if data["complete"] != all(row["status"] == "hashed" for row in records):
+        raise HashError("invalid-completeness:" + target)
     return data
 
 
@@ -91,8 +96,10 @@ def read_report(path: Path, target: str) -> dict:
 
 
 def run_pc(run_root: Path, folder: Path | None = None) -> dict:
-    addon = folder or (Path.home() / "OneDrive" / "Documents" / "RIFT" /
-                       "Interface" / "AddOns" / "ApiAtlas")
+    addon = (observe_physical.local_rift_addons_root() / "ApiAtlas"
+             if folder is None else folder.absolute())
+    if addon.drive.startswith(("\\", "/")):
+        raise HashError("pc-addon-folder-must-be-local")
     report = run_root / "pc.json"
     args = [HOST_PS, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
             "-File", str(GUEST_SCRIPT), "-AddonDirectory", str(addon),
@@ -100,7 +107,13 @@ def run_pc(run_root: Path, folder: Path | None = None) -> dict:
     job = subprocess.run(args, capture_output=True, text=True, timeout=120, check=False)
     if job.returncode:
         raise HashError("pc-helper-exit:" + str(job.returncode))
-    return read_report(report, "pc")
+    result = read_report(report, "pc")
+    if result["machine"].casefold() != socket.gethostname().casefold():
+        raise HashError("unexpected-local-machine")
+    addon_directory = result.get("addonDirectory")
+    if not isinstance(addon_directory, str) or Path(addon_directory) != addon:
+        raise HashError("unexpected-local-addon-directory")
+    return result
 
 
 def run_lab(target: str, run_root: Path) -> dict:
@@ -147,18 +160,39 @@ def compare(source: dict, results: dict) -> dict:
             "distinctInstalledHashes": len(unique),
         })
     return {"files": rows,
+            "allCheckedTargetsMatchSource": bool(results) and all(
+                result.get("complete") is True and all(
+                    row["matchesSource"].get(target) is True for row in rows)
+                for target, result in results.items()),
             "allMachinesMatchSource": all(row["threeMachineParity"] and
                                          all(row["matchesSource"].values()) for row in rows)}
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--target", choices=("pc", "lab1", "lab2", "all"), default="all")
-    parser.add_argument("--pc-folder", type=Path, help="Test alternate PC AddOns folder")
+    parser.add_argument("--target", choices=("pc", "lab1", "lab2", "all"), default="pc")
+    parser.add_argument("--expected-host", help="Verify the requested Windows hostname for the pc target")
+    parser.add_argument("--pc-folder", type=Path, help="Override the detected local ApiAtlas addon folder")
     parser.add_argument("--source", type=Path, default=SOURCE,
-                        help="Test alternate development source")
+                        help="Local ApiAtlas source folder containing RiftAddon.toc")
     args = parser.parse_args(argv)
-    source = source_manifest(args.source)
+    if args.expected_host is not None:
+        if args.target != "pc" or not observe_physical.valid_host_name(args.expected_host):
+            parser.error("--expected-host requires the pc target and a valid Windows hostname")
+        actual_host = socket.gethostname()
+        if actual_host.casefold() != args.expected_host.casefold():
+            print(json.dumps({"targets": {"pc": {"complete": False, "error": "host-mismatch",
+                                                "machine": actual_host, "expectedHost": args.expected_host}}}))
+            return 2
+
+    try:
+        source_folder = args.source.absolute()
+        if source_folder.drive.startswith(("\\", "/")):
+            raise HashError("source-folder-must-be-local")
+        source = source_manifest(source_folder)
+    except (HashError, OSError, subprocess.SubprocessError) as error:
+        print(json.dumps({"source": str(args.source), "error": str(error)}))
+        return 2
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8]
     run_root = ROOT / "artifacts" / "addon-hash" / run_id
     run_root.mkdir(parents=True, exist_ok=False)

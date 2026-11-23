@@ -21,6 +21,16 @@ function Test-CloudReparse([string]$Path) {
     return (([uint64]$tag -band [uint64]4294905855) -eq [uint64]2415919130)
 }
 
+function Get-AddonFileHash([string]$Path, [long]$ExpectedLength) {
+    $stream = [IO.File]::OpenRead($Path)
+    try {
+        if ($stream.Length -ne $ExpectedLength) { return $null }
+        $hasher = [Security.Cryptography.SHA256]::Create()
+        try { return [BitConverter]::ToString($hasher.ComputeHash($stream)).Replace('-', '') }
+        finally { $hasher.Dispose() }
+    } finally { $stream.Dispose() }
+}
+
 $result = [ordered]@{
     schemaVersion = 1
     method = 'sha256-read-only'
@@ -90,9 +100,9 @@ try {
             } else {
                 try {
                     # Pinned cloud files may still hydrate; read only this bounded file.
-                    $row.sha256 = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToUpperInvariant()
+                    $row.sha256 = Get-AddonFileHash $item.FullName $row.bytes
                     $after = Get-Item -LiteralPath $item.FullName -Force
-                    if ($after.Length -ne $row.bytes -or
+                    if ($null -eq $row.sha256 -or $after.Length -ne $row.bytes -or
                         $after.LastWriteTimeUtc.Ticks -ne $item.LastWriteTimeUtc.Ticks -or
                         $after.Attributes -ne $item.Attributes) {
                         $row.sha256 = $null

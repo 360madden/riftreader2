@@ -36,6 +36,23 @@ attributes without opening addon content. For a custom installation, pass its
 directories it skipped. The selected addon's metadata appears under
 `detailFiles` when the directory could be inspected.
 
+### Compare installed ApiAtlas code
+
+Set `$rr2ApiAtlasSource` to the local development `ApiAtlas` folder containing
+`RiftAddon.toc`. From the RR2 checkout, run the read-only comparison against the
+installed copy in Windows' configured Documents folder.
+
+```powershell
+& $rr2Python -B scripts/rift_addon_hash.py --expected-host $rr2Host --source $rr2ApiAtlasSource
+```
+
+For a custom installation, pass the installed `ApiAtlas` folder itself to
+`--pc-folder`. The report checks nine Lua and TOC files. Exit code 0 means all
+nine hashes were collected. Use `comparison.allCheckedTargetsMatchSource` and
+the per-file results to check parity. Exit code 2 reports an incomplete check.
+Reading pinned cloud files may hydrate them. Use the metadata inventory when
+you only need file attributes.
+
 ## Installation and guarantees
 
 - **PC:** `RIFT\Interface\AddOns\RiftReader2` under the current Windows user's

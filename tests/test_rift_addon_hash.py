@@ -1,5 +1,8 @@
 """Offline checks for bounded ApiAtlas hash comparison."""
+from contextlib import redirect_stdout
 import hashlib
+from io import StringIO
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -44,6 +47,71 @@ class HashTests(unittest.TestCase):
                           for name in module.FILES]}
         with self.assertRaisesRegex(module.HashError, "wrong-guest-machine"):
             module.validate_report(data, "lab1")
+
+    def test_wrong_cli_host_is_refused_before_source_or_installation_read(self):
+        with (patch.object(module.socket, "gethostname", return_value="RIFT-STATION"),
+              patch.object(module, "source_manifest") as source,
+              patch.object(module, "run_pc") as pc,
+              redirect_stdout(StringIO()) as report):
+            self.assertEqual(module.main(["--expected-host", "OTHER-HOST"]), 2)
+        source.assert_not_called()
+        pc.assert_not_called()
+        self.assertEqual(json.loads(report.getvalue())["targets"]["pc"]["error"], "host-mismatch")
+
+    def test_cli_defaults_to_one_verified_local_installation(self):
+        source = {"files": {name: {"bytes": 1, "sha256": "A" * 64} for name in module.FILES}}
+        installed = {"complete": True, "machine": "RIFT-STATION", "files": [
+            {"name": name, "status": "hashed", "sha256": "A" * 64} for name in module.FILES]}
+        with (tempfile.TemporaryDirectory() as root,
+              patch.object(module, "ROOT", Path(root)),
+              patch.object(module.socket, "gethostname", return_value="RIFT-STATION"),
+              patch.object(module, "source_manifest", return_value=source),
+              patch.object(module, "run_pc", return_value=installed) as pc,
+              patch.object(module, "run_lab") as lab,
+              redirect_stdout(StringIO()) as report):
+            self.assertEqual(module.main(["--expected-host", "rift-station"]), 0)
+        pc.assert_called_once()
+        lab.assert_not_called()
+        result = json.loads(report.getvalue())
+        self.assertEqual(list(result["targets"]), ["pc"])
+        self.assertTrue(result["comparison"]["allCheckedTargetsMatchSource"])
+
+    def test_local_helper_uses_registered_folder_and_checks_report_identity(self):
+        with tempfile.TemporaryDirectory() as root:
+            folder = Path(root) / "Redirected Documents" / "RIFT" / "Interface" / "AddOns"
+            data = {"machine": "OTHER-HOST", "addonDirectory": str(folder / "ApiAtlas")}
+            with (patch.object(module.observe_physical, "local_rift_addons_root", return_value=folder),
+                  patch.object(module.socket, "gethostname", return_value="RIFT-STATION"),
+                  patch.object(module.subprocess, "run") as run,
+                  patch.object(module, "read_report", return_value=data)):
+                run.return_value.returncode = 0
+                with self.assertRaisesRegex(module.HashError, "unexpected-local-machine"):
+                    module.run_pc(Path(root))
+                command = run.call_args.args[0]
+                self.assertEqual(command[command.index("-AddonDirectory") + 1], data["addonDirectory"])
+                data["machine"] = "RIFT-STATION"
+                data["addonDirectory"] = str(folder / "Unrelated")
+                with self.assertRaisesRegex(module.HashError, "unexpected-local-addon-directory"):
+                    module.run_pc(Path(root))
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows PowerShell addon hashing")
+    def test_local_helper_hashes_copied_files_and_leaves_them_intact(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            addons = root / "Redirected Documents" / "RIFT" / "Interface" / "AddOns"
+            folder = addons / "ApiAtlas"
+            folder.mkdir(parents=True)
+            files = {name: name.encode() for name in module.FILES}
+            for name, contents in files.items():
+                (folder / name).write_bytes(contents)
+            with patch.object(module.observe_physical, "local_rift_addons_root", return_value=addons):
+                installed = module.run_pc(root)
+            self.assertTrue(installed["complete"])
+            self.assertEqual(
+                {row["name"]: row["sha256"] for row in installed["files"]},
+                {name: hashlib.sha256(contents).hexdigest().upper() for name, contents in files.items()},
+            )
+            self.assertEqual({path.name: path.read_bytes() for path in folder.iterdir()}, files)
 
     def test_drift_even_when_three_installs_match(self):
         source = {"files": {name: {"bytes": 1, "sha256": "A" * 64}

@@ -149,7 +149,9 @@ Matching metadata is **not** proof of identical Lua files or loaded behavior.
 
 ## Selected ApiAtlas code-hash comparison (read-only)
 
-From `C:\work\riftreader2`: `C:\Python314\python.exe scripts\rift_addon_hash.py --target all`.
+For current use, follow the [local ApiAtlas comparison](addon-sync.md#compare-installed-apiatlas-code).
+The November 5 run used `C:\Python314\python.exe scripts\rift_addon_hash.py --target all`
+from `C:\work\riftreader2`.
 Only nine explicitly listed ApiAtlas Lua/TOC files are hashed against
 `C:\work\API Atlas\addon\ApiAtlas`; the `fonts` subtree is excluded.
 The helper checks size (128 KiB/file, 256 KiB total), file-recall attributes,
