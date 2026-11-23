@@ -450,6 +450,8 @@ def main(argv=None):
     parser.add_argument("--image", type=Path, required=True)
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--receipt-sha256", required=True)
+    parser.add_argument("--retained-frame", action="store_true",
+                        help="use a copied image with its original SHA-pinned capture receipt")
     parser.add_argument("--native-before", type=Path, required=True)
     parser.add_argument("--native-before-sha256", required=True)
     parser.add_argument("--native-after", type=Path, required=True)
@@ -482,7 +484,7 @@ def main(argv=None):
         frame = load_frame(args.image, args.receipt, args.receipt_sha256,
                            args.native_before, args.native_before_sha256,
                            args.native_after, args.native_after_sha256,
-                           expected_host=args.expected_host)
+                           expected_host=args.expected_host, retained=args.retained_frame)
         layers = [load_terrain(args.terrain_obj, args.terrain_registration),
                   load_temple(args.temple_obj, args.temple_anchor,
                               args.temple_anchor_sha256, frame["identity"])]

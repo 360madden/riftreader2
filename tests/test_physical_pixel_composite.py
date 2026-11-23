@@ -147,7 +147,7 @@ class CompositeMathTests(unittest.TestCase):
             composite.load_frame(moved, receipt, receipt_sha, *native_files, expected_host="AMD-DESKTOP")
         replay = composite.load_frame(moved, receipt, receipt_sha, *native_files,
                                       expected_host="AMD-DESKTOP", retained=True)
-        self.assertEqual(replay["source"]["imagePath"], str(moved))
+        self.assertEqual(Path(replay["source"]["imagePath"]), moved.resolve())
         self.assertEqual(replay["identity"]["host"], "AMD-DESKTOP")
         Image.new("RGB", (320, 200), "black").save(moved)
         with self.assertRaisesRegex(ValueError, "visual-image-hash-or-size-mismatch"):

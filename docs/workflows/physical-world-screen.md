@@ -283,6 +283,10 @@ Keep the archive filenames and directory layout when copying them. The analyzer
 checks the saved source hashes and capture identity, including AMD-DESKTOP as
 the original capture host. See the [optical evidence handoff](../handoff-2026-11-16-p1-composite-screen-world.md#p1-deliverables-now-merged).
 
+For the direct `physical_pixel_composite.py` command, add `--retained-frame`
+with the copied `--image` and `--receipt` paths. Use the original receipt SHA
+and capture hostname.
+
 `scripts/physical_pixel_surface.py` extends the saved physical screenshot
 ray through a bounded triangular Wavefront OBJ (16 MiB, at most 250,000
 vertices and 400,000 triangles). A SHA256-pinned registration JSON declares

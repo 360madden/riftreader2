@@ -69,6 +69,13 @@ def mocked_cli(argv, result):
 
 
 class CompositeJsonTransportTests(unittest.TestCase):
+    def test_cli_opts_in_to_relocated_frame_validation(self):
+        for option, retained in (([], False), (["--retained-frame"], True)):
+            with self.subTest(retained=retained), redirect_stdout(StringIO()), \
+                 mock.patch.object(composite, "load_frame", side_effect=ValueError("fixture")) as load:
+                self.assertEqual(composite.main([*args_for(), *option]), 2)
+                self.assertIs(load.call_args.kwargs["retained"], retained)
+
     def test_small_stdout_remains_exact_legacy_json(self):
         result = candidate_report()
         code, stdout = mocked_cli(args_for(), result)
