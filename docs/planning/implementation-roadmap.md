@@ -203,7 +203,9 @@ Acquisition verifies the same player before and after observing two advancing
 packet generations. `--auto-map` searches bounded private memory for packet
 windows on the current process, then scouts for packets and their matching
 player records. A retained scout can still be supplied through `--seed-index`
-when it belongs to the current process epoch. If packets and player records
+when it belongs to the current process epoch. If the retained window stops
+producing packets within that same epoch, use `--auto-map` to find the current
+allocation. If packets and player records
 fall in adjacent 16 MiB windows, use `--scan-mib 32` for the capture.
 Copy the whole output directory for offline replay. Replay verifies the
 packet bytes, original scout records, native level samples and capture order.
