@@ -106,16 +106,17 @@ internal static class Program
         Console.WriteLine("""
             RiftUpdateAnalyzer — standalone read-only RIFT game-update comparator (.NET 10)
             Commands:
-              capture --expected-host AMD-DESKTOP --source game=C:\path\rift_x64.exe
+              capture --expected-host VERIFIED_LOCAL_HOST --source game=C:\path\rift_x64.exe
                       --source saved=C:\path\Saved --out C:\path\before.json
                       [--max-files 5000] [--max-bytes 536870912]
               compare --before before.json --after after.json --out changes.json
               report  --comparison changes.json --out changes.md
-              run --expected-host AMD-DESKTOP --baseline-dir C:\path\prepatch
+              run --expected-host VERIFIED_LOCAL_HOST --baseline-dir C:\path\prepatch
                   --game-exe C:\path\rift_x64.exe --interface-dir C:\path\Interface
                   --routes-dir C:\path\waypoint-routes --out-dir C:\path\new-report
                   [--max-files 5000] [--max-bytes 536870912]
 
+            In PowerShell, get the local hostname with [Environment]::MachineName.
             'run' compares the selected prepatch game executable, SavedVariables, named
             backed-up addon folders and waypoint route files against current locations.
             File content is NEVER modified. No RIFT input, update, or memory reading occurs.

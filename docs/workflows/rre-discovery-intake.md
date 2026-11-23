@@ -1,6 +1,11 @@
 # Consume RRE/REA findings in RR2
 
-**Single discovery-priority coordinator:** the existing RRE manager. **Independent implementation owner:** RR2. On the verified **AMD-DESKTOP only**, consult the read-only source at `C:\work\rre\docs\RR2-DISCOVERY-HANDOFF.md` for newly verified, high-leverage pointer/structure/navigation discoveries. RRE and RR2 retain separate Git ownership; no cross-host or RIFT-input action follows from a feed entry.
+The RRE manager coordinates discovery priorities. RR2 implements changes in its
+own repository. On the verified local Windows host, read
+`docs/RR2-DISCOVERY-HANDOFF.md` from the local RRE checkout or use a retained
+local copy. For example, the file is `C:\work\rre\docs\RR2-DISCOVERY-HANDOFF.md`
+when RRE is checked out under `C:\work\rre`. If both are absent, continue the
+current RR2 milestone. A handoff entry grants no RIFT input authority.
 
 Practical loop:
 

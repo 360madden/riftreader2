@@ -4,17 +4,20 @@ Standalone **read-only file comparison** for RR2 game-update preparation. It nev
 
 ## Build and verify on Windows
 
-From PowerShell in the RiftReader2 checkout:
+From PowerShell in the RiftReader2 checkout, select the tools for all examples
+below. Use the SDK pinned in `global.json`. If it is outside `PATH`, set
+`RIFTREADER2_DOTNET` to the full local executable path. Set `RIFTREADER2_PYTHON`
+to use a configured Python environment. The full repository validation builds
+this tool and passes its selected .NET executable to the tests.
 
 ```powershell
-dotnet build tools\RiftUpdateAnalyzer\RiftUpdateAnalyzer.csproj -c Release -p:RestoreLockedMode=true
-python -m unittest tests.test_rift_update_analyzer -v
+$rrDotNet = $env:RIFTREADER2_DOTNET
+if (!$rrDotNet) { $rrDotNet = 'dotnet' }
+$rrPython = $env:RIFTREADER2_PYTHON
+if (!$rrPython) { $rrPython = 'python' }
+& $rrDotNet build tools\RiftUpdateAnalyzer\RiftUpdateAnalyzer.csproj -c Release -p:RestoreLockedMode=true
+& $rrPython -m unittest tests.test_rift_update_analyzer -v
 ```
-
-Use the SDK pinned in `global.json`. When it is outside `PATH`, set
-`RIFTREADER2_DOTNET` to its executable for the Python tests and invoke that
-executable for the build. The full repository validation builds this tool
-and passes its selected .NET executable to the tests.
 
 ## One-command comparison after the patch
 
@@ -24,7 +27,7 @@ the local paths for this comparison.
 
 ```powershell
 $rrHost = [Environment]::MachineName
-dotnet tools\RiftUpdateAnalyzer\bin\Release\net10.0\RiftUpdateAnalyzer.dll run --expected-host $rrHost --baseline-dir $rrBaseline --game-exe $rrGameExe --interface-dir $rrInterface --routes-dir $rrRoutes --out-dir $rrOutput
+& $rrDotNet tools\RiftUpdateAnalyzer\bin\Release\net10.0\RiftUpdateAnalyzer.dll run --expected-host $rrHost --baseline-dir $rrBaseline --game-exe $rrGameExe --interface-dir $rrInterface --routes-dir $rrRoutes --out-dir $rrOutput
 ```
 
 Choose a **new, not-yet-existing** output directory each time. Four immutable artifacts are written there:
@@ -42,9 +45,9 @@ Create snapshots from arbitrary explicit sources (use a new output filename for 
 
 ```powershell
 $rrHost = [Environment]::MachineName
-dotnet tools\RiftUpdateAnalyzer\bin\Release\net10.0\RiftUpdateAnalyzer.dll capture --expected-host $rrHost --source "game=$rrGameExe" --source "routes=$rrRoutes" --out artifacts\example-current.json
-dotnet tools\RiftUpdateAnalyzer\bin\Release\net10.0\RiftUpdateAnalyzer.dll compare --before C:\path\baseline.json --after C:\path\current.json --out C:\path\changes.json
-dotnet tools\RiftUpdateAnalyzer\bin\Release\net10.0\RiftUpdateAnalyzer.dll report --comparison C:\path\changes.json --out C:\path\changes.md
+& $rrDotNet tools\RiftUpdateAnalyzer\bin\Release\net10.0\RiftUpdateAnalyzer.dll capture --expected-host $rrHost --source "game=$rrGameExe" --source "routes=$rrRoutes" --out artifacts\example-current.json
+& $rrDotNet tools\RiftUpdateAnalyzer\bin\Release\net10.0\RiftUpdateAnalyzer.dll compare --before C:\path\baseline.json --after C:\path\current.json --out C:\path\changes.json
+& $rrDotNet tools\RiftUpdateAnalyzer\bin\Release\net10.0\RiftUpdateAnalyzer.dll report --comparison C:\path\changes.json --out C:\path\changes.md
 ```
 
 Source groups create stable logical keys (such as `game/rift_x64.exe` or `routes/silverwood.json`) independent of absolute machine path. SHA-256 + byte length decides change, not timestamps.
