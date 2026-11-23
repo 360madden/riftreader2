@@ -95,6 +95,16 @@ class PhysicalDependenciesTests(unittest.TestCase):
             self.assertEqual(report, dict(receipt, pythonExecutable=str(interpreter), exitCode=2))
             run.assert_called_once_with(interpreter, ("-m", "scripts.qt_waypoint_overlay"), cwd=preflight.ROOT)
 
+    def test_rerun_viewer_availability_does_not_make_export_ready(self):
+        with patch.object(preflight.physical_view_tools, "check_rerun_viewer",
+                          return_value=(["rerun.exe"], {}, "rerun-cli 0.43.1")), \
+                patch.object(preflight.physical_view_tools, "check_rerun_exporter",
+                             side_effect=ValueError("visualization-environment-unavailable")):
+            result = preflight.check_workflow("rerun", None)
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["viewer"]["status"], "ready")
+        self.assertEqual(result["exporter"], {"status": "blocked", "reason": "visualization-environment-unavailable"})
+
     def test_optional_reports_work_without_site_packages_in_the_caller(self):
         missing_python = str(preflight.ROOT / "missing-test-view-venv/Scripts/python.exe")
         env = dict(preflight.os.environ, RR2_DXCAM_PYTHON=missing_python,

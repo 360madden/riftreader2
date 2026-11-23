@@ -1,4 +1,5 @@
 """Resolve optional physical view tools without importing image or GUI libraries."""
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -9,6 +10,11 @@ from scripts.observe_physical import _plain_path
 ROOT = Path(__file__).resolve().parents[1]
 VISUALIZATION_PYTHON = ROOT / ".local/visualization-venv/Scripts/python.exe"
 CAPTURE_PYTHON = ROOT / ".local/overlay-venv/Scripts/python.exe"
+RERUN_EXPORT_PROBE = (
+    "import json; from scripts.export_physical_rerun import check_export_dependencies; "
+    "result = check_export_dependencies(); print(json.dumps(result)); "
+    "raise SystemExit(0 if result['status'] == 'ready' else 2)"
+)
 
 
 def prepared_python(root, environment, executable="python.exe"):
@@ -45,6 +51,41 @@ def rerun_python():
                         "invalid-rerun-python-path")
 
 
+def rerun_export_python():
+    return rerun_python() or VISUALIZATION_PYTHON
+
+
+def rerun_environment():
+    environment = dict(os.environ, CI="1")
+    environment.pop("FORCE_RERUN_ANALYTICS", None)
+    return environment
+
+
+def check_rerun_exporter():
+    executable = rerun_export_python()
+    if not executable.is_file():
+        raise ValueError("visualization-environment-unavailable")
+    try:
+        probe = subprocess.run([str(executable), "-B", "-c", RERUN_EXPORT_PROBE],
+                               cwd=ROOT, env=rerun_environment(), stdin=subprocess.DEVNULL,
+                               capture_output=True, text=True, encoding="utf-8", errors="replace",
+                               timeout=45, check=False, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except subprocess.TimeoutExpired as error:
+        raise ValueError("rerun-exporter-startup-timed-out") from error
+    try:
+        report = json.loads(probe.stdout)
+    except ValueError:
+        report = None
+    if isinstance(report, dict):
+        size = report.get("recordingBytes")
+        if probe.returncode == 0 and report.get("status") == "ready" and type(size) is int and size > 0:
+            return {"pythonExecutable": str(executable), "recordingBytes": size}
+        if probe.returncode == 2 and report.get("status") == "blocked" and isinstance(report.get("reason"), str):
+            raise ValueError(report["reason"])
+    detail = probe.stderr.strip() or str(executable)
+    raise ValueError("rerun-exporter-startup-failed: " + detail[-300:])
+
+
 def check_rerun_viewer():
     """Probe the configured viewer in version mode without opening a window."""
     executable = rerun_python()
@@ -55,8 +96,7 @@ def check_rerun_viewer():
         viewer = [str(executable)]
     if not executable.is_file():
         raise ValueError("optional-rerun-viewer-not-installed")
-    environment = dict(os.environ, CI="1")
-    environment.pop("FORCE_RERUN_ANALYTICS", None)
+    environment = rerun_environment()
     try:
         probe = subprocess.run([*viewer, "--version"], cwd=ROOT, env=environment,
                                stdin=subprocess.DEVNULL, capture_output=True, text=True,

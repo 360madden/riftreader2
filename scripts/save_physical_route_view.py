@@ -12,7 +12,6 @@ import ctypes
 from ctypes import wintypes as W
 import hashlib
 import json
-import os
 from pathlib import Path
 import re
 import shutil
@@ -255,10 +254,9 @@ def _optional_rerun(route_path, observation_path, directory, enabled, *, desktop
     if not enabled:
         return {"status": "unavailable", "reason": "not-requested"}
     output = directory / "view.rrd"
-    environment = dict(os.environ, CI="1")
-    environment.pop("FORCE_RERUN_ANALYTICS", None)
+    environment = physical_view_tools.rerun_environment()
     try:
-        python = physical_view_tools.rerun_python() or physical_view_tools.VISUALIZATION_PYTHON
+        python = physical_view_tools.rerun_export_python()
         if not python.is_file():
             return {"status": "unavailable", "reason": "visualization-environment-unavailable"}
         command = [str(python), str(ROOT / "scripts/export_physical_rerun.py"),

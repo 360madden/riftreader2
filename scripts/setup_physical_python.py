@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts import observe_physical, physical_rift
+from scripts import observe_physical, physical_rift, physical_view_tools
 
 
 INTERPRETERS = {
@@ -66,11 +66,11 @@ def _check_environment(name, python):
               "from scripts.probe_dxcam import require_capture_python; require_capture_python()"],
              "Check Qt startup and DXcam installation")
     elif name == "rerun":
-        env = dict(os.environ, CI="1")
-        env.pop("FORCE_RERUN_ANALYTICS", None)
+        env = physical_view_tools.rerun_environment()
         version = _run([*command, "-m", "rerun", "--version"], "Check Rerun startup", env=env)
         if not version.startswith("rerun-cli "):
             raise ValueError("Rerun returned an unrecognized version response")
+        _run([*command, "-c", physical_view_tools.RERUN_EXPORT_PROBE], "Check Rerun recording export", env=env)
     elif name == "validation":
         _run([*command, str(ROOT / "scripts/check_validation_python.py")], "Check validation Python imports")
         _run([*command, str(ROOT / "scripts/check_lua_runtime.py")], "Check validation Lua 5.1 runtime")

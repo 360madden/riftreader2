@@ -663,6 +663,21 @@ class ExportTests(unittest.TestCase):
         recording.flush.assert_called_once_with(timeout_sec=30)
         recording.disconnect.assert_called_once()
 
+    def test_export_dependency_probe_flushes_and_removes_a_synthetic_recording(self):
+        sink = Mock()
+
+        def make_sink(path):
+            sink.flush.side_effect = lambda: path.write_bytes(b"synthetic recording")
+            return sink
+
+        with patch.object(exporter, "RerunSink", side_effect=make_sink) as factory:
+            result = exporter.check_export_dependencies()
+        self.assertEqual(result, {"status": "ready", "recordingBytes": len(b"synthetic recording")})
+        self.assertFalse(factory.call_args.args[0].parent.exists())
+        sink.configure_view.assert_called_once_with([])
+        sink.flush.assert_called_once()
+        sink.close.assert_called_once()
+
     def test_blueprint_uses_y_up_two_panes_and_latest_capture_without_retiming(self):
         def constructor(name):
             return Mock(side_effect=lambda *args, **kwargs: dict(kind=name, args=args, kwargs=kwargs))

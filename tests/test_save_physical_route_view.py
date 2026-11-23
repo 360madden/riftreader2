@@ -72,7 +72,7 @@ class SaveViewTests(unittest.TestCase):
         self.process = patch.object(saved.subprocess, "run", side_effect=AssertionError("No real subprocess allowed")).start()
         self.python = self.root / "optional-python.exe"
         patch.object(physical_view_tools, "VISUALIZATION_PYTHON", self.python).start()
-        self.enterContext(patch.object(saved.os, "environ", dict(saved.os.environ, RR2_RERUN_PYTHON="")))
+        self.enterContext(patch.dict("os.environ", RR2_RERUN_PYTHON=""))
 
     def save(self, **kwargs):
         values = dict(expected_host="AMD-DESKTOP", physical_pid=self.target["processId"],
@@ -470,7 +470,7 @@ class SaveViewTests(unittest.TestCase):
             return types.SimpleNamespace(returncode=0, stdout=json.dumps(dict(
                 status="offline-rerun-evidence-export", output=str(output))))
         self.process.side_effect = export
-        with patch.object(saved.os, "environ", dict(saved.os.environ, RR2_RERUN_PYTHON=str(configured_python))):
+        with patch.dict("os.environ", RR2_RERUN_PYTHON=str(configured_python)):
             result = self.save()
         self.assertEqual(result["status"], "saved-route-view-candidate")
         self.assertEqual(result["rerun"], dict(status="saved", path=str(self.output / "view.rrd")))
@@ -518,7 +518,7 @@ class DesktopSaveViewTests(unittest.TestCase):
         self.view_reader = None
         self.dependencies = dict(status="ready", workflow="dxcam", dxcamVersion="0.3.0")
         self.enterContext(patch.dict("os.environ", {"RR2_DXCAM_PYTHON": ""}))
-        self.enterContext(patch.object(saved.os, "environ", dict(saved.os.environ, RR2_RERUN_PYTHON="")))
+        self.enterContext(patch.dict("os.environ", RR2_RERUN_PYTHON=""))
         self.desktop_turn = self.enterContext(patch.object(saved.observe_physical, "require_clear_desktop_turn"))
         self.visualization_python = self.root / "visualization-python.exe"
         patch.object(physical_view_tools, "CAPTURE_PYTHON", self.capture_python).start()

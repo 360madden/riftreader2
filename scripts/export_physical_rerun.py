@@ -190,6 +190,26 @@ class RerunSink:
                     os.environ[key] = value
 
 
+def check_export_dependencies():
+    """Exercise the pinned SDK with a temporary synthetic recording."""
+    try:
+        with TemporaryDirectory(prefix="rr2-rerun-check-") as scratch:
+            output = Path(scratch) / "startup.rrd"
+            sink = RerunSink(output)
+            try:
+                sink.configure_view([])
+                sink.log("world/startup-check", "points3d",
+                         {"positions": [[0.0, 0.0, 0.0]], "labels": ["Startup check"]}, at=0)
+                sink.flush()
+            finally:
+                sink.close()
+            size = output.stat().st_size
+            plot.require(size > 0, "empty-rerun-output")
+    except (ImportError, OSError, ValueError, RuntimeError, TypeError) as error:
+        return {"status": "blocked", "reason": str(error) or "rerun-exporter-startup-failed"}
+    return {"status": "ready", "recordingBytes": size}
+
+
 def default_blueprint(rr, rrb, captures, *, display_camera=None, nearby_samples=False, later_samples=()):
     """File-only 0.43.1 blueprint: explicit views and latest-data following.
 

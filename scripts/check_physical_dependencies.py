@@ -38,11 +38,26 @@ def run_check(executable, args, *, cwd=None):
                           check=False, timeout=45, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
+def check_rerun_dependencies():
+    try:
+        command, _, version = physical_view_tools.check_rerun_viewer()
+        viewer = {"status": "ready", "command": command, "version": version}
+    except (OSError, ValueError) as error:
+        viewer = {"status": "blocked", "reason": str(error)}
+    try:
+        exporter = {"status": "ready", **physical_view_tools.check_rerun_exporter()}
+    except (OSError, ValueError) as error:
+        exporter = {"status": "blocked", "reason": str(error)}
+    result = {**viewer, "viewer": viewer, "exporter": exporter}
+    if viewer["status"] == "ready" and exporter["status"] == "blocked":
+        result.update(status="blocked", reason=exporter["reason"])
+    return result
+
+
 def check_workflow(workflow, command):
     try:
         if workflow == "rerun":
-            viewer, _, version = physical_view_tools.check_rerun_viewer()
-            return {"status": "ready", "command": viewer, "version": version}
+            return check_rerun_dependencies()
         if workflow == "qt":
             python = physical_view_tools.overlay_python(ROOT)
             if not python.is_file():
