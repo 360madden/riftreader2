@@ -150,45 +150,57 @@ Detailed exact source paths, hashes and limits:
 - [NPC cross-source correlation](reference/physical-nearby-npc-correlation-2026-11-21.md)
 - [Nearby native units](reference/physical-native-nearby-units-2026-11-21.md)
 
-## 6. Highest-value immediate continuation
+## 6. Current continuation on the verified Windows host
 
-1. **P0 — First live acceptance of keyed native unit levels on a *fresh* game epoch.** At the 16:20 preflight, physical RIFT had **new PID 48468**, but verify again. Obtain a **fresh** nearby-unit list and exact unit keys; select ≤12 names/keys and run `--read-native unit-levels`, preserving the native source file. Do not copy old PID 37676 or old unit IDs into a new run without discovery. Confirm at least one current unit's numeric-level candidate against the guarded selected-target profile, using matching exact unit ID and updated evidence. Be prepared for benign `unavailable` statuses if units despawn, and don't imply all loaded units or exact threat semantics.
-2. **P1 — Positive changed-state target qualification.** In a real advancing Lua telemetry session, perform A→B→A target changes **only under a separately authorized controller/operator action**. Use the existing bounded `capture_physical_telemetry_target_series.py --recover-stale-scope --stop-on-aba`, then independent replay; accept only original source-hashed observations. A same-target beginning/end profile **does not** rule out an intermediate switch.
-3. **P1 — Live NPC Lua relation/level.** Generate a **new** `prepare_physical_npc_survey.py` plan for this new process, verify installed Casting module and active addon, enter the generated `/rr2survey bind` in-game (not issued by any read-only CLI), then capture advancing nonce-bound frames with `npc_survey_live.py --auto-map` and replay/join against native IDs within its bounded time window. Previous unbound negative scans are not proof of addon absence.
-4. **P1 — Threat assessment for hunt/navigation.** Only after enough genuine named-unit/level/relation and path evidence exists, integrate candidate fields into existing `target_selection` / `hunt_mission` / `waypoint_navigation_candidate` with their lane owner. Avoid assuming every named unit is hostile or climbable/reachable. Do not overwrite pre-existing uncommitted work.
-5. **P2 — Actor heading, height/collision and whole-route acceptance** following real selected target/world-state checks. Current actor matrix copy is a useful clue, not verified navigation control.
+1. **P0 — Confirm a numeric level through independent evidence.** The native comparison already replayed at level 14 on LEGION. For the next comparison, pin a fresh local game epoch and compare the exact selected unit with an operator-observed RIFT level or an advancing nonce-bound NPC survey. Keep the source reports and match the unit, process and build.
+2. **P1 — Verify a changed target during an advancing Telemetry session.** Under a separately authorized controller or operator action, observe A → B → A with `capture_physical_telemetry_target_series.py --recover-stale-scope --stop-on-aba`. Replay the original source-hashed observations. A same-target profile covers its two endpoints.
+3. **P1 — Bind a live NPC survey.** Prepare a fresh plan for the current game process. Verify the installed standalone survey addon or Casting fallback. An authorized operator enters the generated `/rr2survey bind` in-game. Capture advancing nonce-bound frames with `npc_survey_live.py --auto-map` and replay the join against native IDs within the plan's time window.
+4. **P1 — Qualify threat inputs for hunt and navigation.** Use genuine named-unit, level, relation and path evidence before feeding candidate fields into target selection, hunt missions, or waypoint navigation.
+5. **P2 — Qualify actor heading, height/collision and whole-route behavior.** The actor-matrix evidence supports further testing of heading.
 
-### Quick safe commands (PowerShell on **AMD-DESKTOP** only)
+### Read-only native capture and offline replay
 
-The paths below record the November 21 workstation. For current host-neutral
-commands and published-reader setup, use the
-[physical Windows workflow](workflows/development.md#current-live-workflow-on-physical-windows).
+From the RR2 checkout on the verified Windows host, select the local Python
+and [publish or select the native reader](workflows/development.md#publish-the-local-native-reader)
+as `$rr2PublishedReader`. First check the reader and list the current local game
+processes.
 
 ```powershell
-Set-Location C:\work\riftreader2
-[Environment]::MachineName
-git status --short --branch
-git log -4 --oneline
+$rr2Host = [Environment]::MachineName
+$rr2Python = $env:RIFTREADER2_PYTHON
+if (!$rr2Python) { $rr2Python = 'python' }
 
-# Reacquire game PID, start, on-disk SHA, window before EACH live test:
-C:\Python314\python.exe -B scripts\physical_rift.py --expected-host AMD-DESKTOP
-
-# Replace placeholders with NEW verified PID and a unique unused output folder:
-C:\Python314\python.exe -B scripts\physical_nearby_units.py --expected-host AMD-DESKTOP --physical-pid NEW_VERIFIED_PID --radius 35 --max-names 12 --output-dir artifacts\NEW_NEARBY
-# Read unitKey strings from NEW_NEARBY\nearby-report.json.
-# Unit keys MUST be exact fresh decimal key strings, at most 12:
-C:\Python314\python.exe -B scripts\physical_rift.py --expected-host AMD-DESKTOP --physical-pid NEW_VERIFIED_PID --read-native unit-levels --unit-keys FRESH_DECIMAL_KEYS_COMMA_SEPARATED --output artifacts\NEW_UNIT_LEVELS.json
-
-# If a target is selected and the process remains the same:
-C:\Python314\python.exe -B scripts\physical_selected_target_profile.py --expected-host AMD-DESKTOP --physical-pid NEW_VERIFIED_PID --output-dir artifacts\NEW_TARGET_PROFILE
-C:\Python314\python.exe -B scripts\replay_physical_selected_target_profile.py --profile artifacts\NEW_TARGET_PROFILE\profile.json
-
-# Focused offline regressions (no game required):
-C:\Python314\python.exe -m unittest -q tests.test_native_unit_level_projection tests.test_physical_selected_target_profile tests.test_replay_physical_selected_target_profile
-dotnet test RiftReader2.slnx --no-restore --configuration Release --verbosity quiet
+& $rr2Python -B scripts/physical_rift.py --expected-host $rr2Host --check-native-reader --native-reader $rr2PublishedReader
+& $rr2Python -B scripts/physical_rift.py --expected-host $rr2Host
 ```
 
-`NEW_VERIFIED_PID`, `NEW_NEARBY`, `FRESH_DECIMAL_KEYS_COMMA_SEPARATED` and `NEW_TARGET_PROFILE` are **placeholders**, not working literal arguments. Use new output paths, never overwrite source evidence. No live command should be attempted if process/window/start/SHA changes or the operator has not authorized gameplay actions.
+Set `$rr2Pid` to the freshly verified process ID. Choose a new output directory
+for each capture. Nearby capture includes up to 12 nearby name candidates and
+retains a keyed level report when it finds candidates. The selected-target
+profile records a level candidate when both endpoint reads agree for the same
+selected unit.
+
+```powershell
+$rr2Run = [guid]::NewGuid().ToString('N')
+$rr2Nearby = Join-Path artifacts "nearby-$rr2Run"
+$rr2Profile = Join-Path artifacts "target-profile-$rr2Run"
+
+& $rr2Python -B scripts/physical_nearby_units.py --expected-host $rr2Host --physical-pid $rr2Pid --native-reader $rr2PublishedReader --radius 35 --max-names 12 --include-levels --output-dir $rr2Nearby
+& $rr2Python -B scripts/physical_selected_target_profile.py --expected-host $rr2Host --physical-pid $rr2Pid --native-reader $rr2PublishedReader --output-dir $rr2Profile
+```
+
+Replay either saved capture without a reader or game process. Set the variables
+to the directories holding the original reports or verified copies.
+
+```powershell
+& $rr2Python -B scripts/physical_nearby_units.py --replay-report (Join-Path $rr2Nearby 'nearby-report.json')
+& $rr2Python -B scripts/replay_physical_selected_target_profile.py --profile (Join-Path $rr2Profile 'profile.json')
+```
+
+To compare the profile with a keyed level report, add `--keyed-levels` and
+`--keyed-levels-sha256` to the profile replay command. Use the original report
+and its retained hash. Replay checks the same process, player, unit and entity
+within a 30-second comparison window.
 
 ## 7. Protect concurrent developer work
 
