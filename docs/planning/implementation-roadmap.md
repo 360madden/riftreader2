@@ -193,6 +193,7 @@ python scripts/readerbridge_v3.py --packet PATH_TO_RETAINED_PACKET
 $rr2Host = [Environment]::MachineName
 python scripts/capture_readerbridge_v3.py --expected-host $rr2Host --check-dependencies --native-reader $rr2PublishedReader
 python scripts/capture_readerbridge_v3.py --expected-host $rr2Host --physical-pid PID --auto-map --output NEW_DIRECTORY --native-reader $rr2PublishedReader
+python scripts/replay_readerbridge_v3.py --summary COPIED_DIRECTORY/result.json
 ```
 
 The acquisition uses the [local published reader](../workflows/development.md#publish-the-local-native-reader)
@@ -202,7 +203,12 @@ Acquisition verifies the same player before and after observing two advancing
 packet generations. `--auto-map` searches bounded private memory for packet
 windows on the current process, then scouts for packets and their matching
 player records. A retained scout can still be supplied through `--seed-index`
-when it belongs to the current process epoch. A live
+when it belongs to the current process epoch. If packets and player records
+fall in adjacent 16 MiB windows, use `--scan-mib 32` for the capture.
+Copy the whole output directory for offline replay. Replay verifies the
+packet bytes, original scout records, native level samples and capture order.
+Older captures with a separate `native-bracket.json` can pass it with
+`--native-bracket`, together with its adjacent native samples. A live
 pair matched two advancing packet generations to exact same-generation player
 identity companions and exposed HP 18208/18208 and Power 100. This foundation
 intake reports `ready: false` because its packet alone cannot establish changed

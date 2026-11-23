@@ -5,13 +5,16 @@ import hashlib
 from io import StringIO
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
 from scripts import capture_readerbridge_v3 as capture
+from scripts import replay_readerbridge_v3 as replay
 from scripts.readerbridge_v3 import decode_packet
+from tests.test_physical_player_context_projection import report as native_context_report
 from tests.test_readerbridge_v3 import EMPTY, NAME, PLAYER, STATS, packet, section, slot
 
 
@@ -98,9 +101,11 @@ class FakeRunner:
                                "requestedByteLength": item["byteLength"], "status": "success",
                                "bytesRead": len(data), "bytesBase64": base64.b64encode(data).decode(),
                                "bytesSha256": digest})
+            sampled_at = datetime.now(timezone.utc).isoformat()
             report = {"evidenceKind": "native-memory-semantic-unqualified", "request": request,
                       "capture": {"status": "complete", "identity": TARGET,
-                                  "samples": [{"ranges": ranges}]}}
+                                  "samples": [{"ranges": ranges, "startedAtUtc": sampled_at,
+                                               "completedAtUtc": sampled_at}]}}
             output.write_text(json.dumps(report))
         else:
             raise AssertionError(command)
@@ -226,6 +231,36 @@ class CaptureReaderBridgeTests(unittest.TestCase):
         self.assertEqual([2, 2], [item["packetCandidateCount"] for item in result["attempts"]])
         self.assertEqual([1, 1], [item["matchedPacketCandidateCount"] for item in result["attempts"]])
         self.assertEqual([1, 1], [item["rejectedCompanionCount"] for item in result["attempts"]])
+
+    def test_replays_copied_packets_companions_and_native_level_sources(self):
+        def native_context(selection, kind, *, native_reader):
+            result = self.read_context(selection, kind, native_reader=native_reader)
+            document = native_context_report()
+            timestamp = result["nativeValues"]["sampledAtUtc"]
+            document["observation"].update(identity=TARGET, startedAtUtc=timestamp, completedAtUtc=timestamp)
+            source = self.root / f"player-context-{len(self.context_reads)}.json"
+            source.write_text(json.dumps(document), encoding="utf-8")
+            return dict(result, nativeOutput=str(source),
+                        nativeValues=capture.physical_rift._native_values(kind, document))
+
+        self.acquire_two_generations(FakeRunner(), native_context)
+        copied = shutil.copytree(self.root / "out", self.root / "copied capture")
+        (self.root / "out").rename(self.root / "prior capture")
+        result = replay.replay(copied / "result.json")
+        self.assertEqual(result["playerLevelComparison"]["status"], "matching-native-and-lua-player-level-candidates")
+        self.assertEqual([45, 45], [row["level"] for row in result["generations"]])
+        self.assertFalse(result["ready"] or result["inputSent"])
+        for name, reason in (("native-player-after.json", "native-context-sha-mismatch"),
+                             ("generation-2.bin", "packet-bytes-mismatch")):
+            with self.subTest(source=name):
+                source = copied / name
+                raw = source.read_bytes()
+                source.write_bytes(b"X" + raw[1:])
+                try:
+                    with self.assertRaisesRegex(ValueError, reason):
+                        replay.replay(copied / "result.json")
+                finally:
+                    source.write_bytes(raw)
 
     def test_finds_current_private_scope_without_a_seed_and_rechecks_owner(self):
         address = 16 * capture.MIB

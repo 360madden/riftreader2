@@ -150,6 +150,8 @@ def _validate_scout(index: dict, target: dict, directory: Path) -> list[tuple[di
         if not isinstance(name, str) or Path(name).name != name:
             raise CaptureError("invalid-scout-snapshot-name")
         raw_file = directory / name
+        if raw_file.is_symlink():
+            raise CaptureError("invalid-scout-snapshot-path")
         raw = raw_file.read_bytes()
         if hashlib.sha256(raw).hexdigest().upper() != candidate.get("snapshotSha256"):
             raise CaptureError("scout-snapshot-hash-mismatch")
@@ -296,7 +298,25 @@ def _read_current_self(selection, reader, read_context):
         raise CaptureError("invalid-player-context-time") from exc
     if not -0.1 <= age <= 2:
         raise CaptureError("stale-player-context")
-    return _canonical_unit_key(values.get("unitKey"))
+    return _canonical_unit_key(values.get("unitKey")), readout
+
+
+def _retain_player_context(readout, destination):
+    source = readout.get("nativeOutput")
+    if source is None:
+        return None
+    raw = Path(source).read_bytes()
+    sha = hashlib.sha256(raw).hexdigest().upper()
+    recorded_sha = readout.get("nativeSourceSha256")
+    if recorded_sha is not None and recorded_sha.upper() != sha:
+        raise CaptureError("native-player-context-source-changed")
+    document = _loads_json(raw, "native-player-context")
+    if (not _same_target(document.get("observation", {}).get("identity", {}), readout["target"])
+            or physical_rift._native_values("player-context", document) != readout["nativeValues"]):
+        raise CaptureError("native-player-context-source-mismatch")
+    with destination.open("xb") as stream:
+        stream.write(raw)
+    return {"file": destination.name, "sha256": sha}
 
 
 def acquire(expected_host: str, physical_pid: int, seed_index: Path | None, output: Path,
@@ -323,8 +343,9 @@ def acquire(expected_host: str, physical_pid: int, seed_index: Path | None, outp
     if seed_index is not None:
         base, scan_bytes = _validate_seed(_read_json(seed_index), target, scan_mib)
         starts = [base]
-    self_id = _read_current_self(selection, reader, read_context)
+    self_id, before = _read_current_self(selection, reader, read_context)
     output.mkdir(parents=True, exist_ok=False)
+    before_ref = _retain_player_context(before, output / "native-player-before.json")
     scope = {"seedIndex": str(seed_index) if seed_index is not None else None, "maxAttempts": 3}
     if seed_index is None:
         scan_bytes = scan_mib * MIB
@@ -382,7 +403,7 @@ def acquire(expected_host: str, physical_pid: int, seed_index: Path | None, outp
         attempts.append(attempt_summary)
         progress({"stage": "scouted", **attempt_summary})
         # Read only the newest header with a matching self companion.
-        for candidate, _, _ in matched_packets[:1]:
+        for candidate, _, expected_sequence in matched_packets[:1]:
             try:
                 address = int(candidate["address"], 16)
                 request = _capture_request(target, address)
@@ -393,6 +414,8 @@ def acquire(expected_host: str, physical_pid: int, seed_index: Path | None, outp
                 report = _read_json(report_path)
                 packet = _packet_from_capture(report, target, request)
                 decoded = decode_packet(packet)
+                if decoded["sequence"] != expected_sequence:
+                    raise CaptureError("readerbridge-packet-changed-after-scout")
                 player = decoded["sections"]["P"]
                 same = [item for item in companions if item["sequence"] == decoded["sequence"]
                         and item["name"] == player["name"]]
@@ -421,13 +444,17 @@ def acquire(expected_host: str, physical_pid: int, seed_index: Path | None, outp
             window_index = (window_index + 1) % len(starts)
     if len(generations) != 2 or generations[1]["sequence"] <= generations[0]["sequence"]:
         raise CaptureError("two-advancing-generations-not-observed")
-    if _read_current_self(selection, reader, read_context) != self_id:
+    final_id, after = _read_current_self(selection, reader, read_context)
+    if final_id != self_id:
         raise CaptureError("player-changed-during-readerbridge-acquisition")
+    after_ref = _retain_player_context(after, output / "native-player-after.json")
     result = {"schemaVersion": 1, "evidenceKind": "readerbridge-v3-bounded-acquisition/1",
               "status": "captured", "ready": False, "inputSent": False,
-              "guiStateChanged": False, "target": target, "selfId": self_id,
+              "guiStateChanged": False, "host": selection["ownerHost"], "target": target, "selfId": self_id,
               "scope": scope,
               "generations": generations, "attempts": attempts, "limitations": LIMITATIONS}
+    if before_ref is not None and after_ref is not None:
+        result["nativePlayerContext"] = {"before": before_ref, "after": after_ref}
     result["nextCheck"] = ("Independently correlate a controlled changed state before treating any "
                            "decoded field as qualified; reacquire from a fresh scout after every restart.")
     _write_json(output / "result.json", result)

@@ -23,7 +23,9 @@ On the same LEGION process, ReaderBridge published two advancing frames with
 player level 45, matching both surrounding native reads. The independent replay
 verified the retained packet and player evidence. ReaderBridge reported no
 target in both frames, so the selected-target level comparison remains open.
-[Player-level replay](../artifacts/readerbridge-v3-current-epoch-legion-p424-2ee4e41b/independent-level-replay.json)
+New captures save the native context samples alongside the packets so that
+`replay_readerbridge_v3.py` can verify the comparison from a copied folder.
+[Player-level replay](../artifacts/readerbridge-replay-legion-wide-736cbfee/independent-replay.json)
 
 LEGION passed the NPC survey's installed-addon and published-reader checks,
 including the keyed native level command. Preparation now verifies either the
