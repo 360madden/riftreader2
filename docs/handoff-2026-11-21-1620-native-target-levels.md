@@ -8,7 +8,8 @@ comparison in P0. Independent RIFT UI or Lua evidence remains pending.
 
 LEGION passed the NPC survey's installed-addon and published-reader checks,
 including the keyed native level command. The generated capture command keeps
-the reader path used for preparation. The live Lua comparison still needs an
+the reader path, process start ticks, executable hash and deadline from
+preparation. The live Lua comparison still needs an
 advancing nonce-bound survey. [NPC survey preparation](reference/physical-nearby-npc-correlation-2026-11-21.md#prepare-and-replay-a-saved-bind-plan)
 
 The current Windows workflow verifies the local host before using physical

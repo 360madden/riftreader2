@@ -95,6 +95,10 @@ class NPCPreparationTests(unittest.TestCase):
             "/rr2survey bind " + "a"*32))
         self.assertNotIn("u0000000000000007",result["inGameBindCommand"])
         self.assertIn("--auto-map",result["captureCommand"])
+        self.assertIn("--expect-start-ticks " + prep._quote(START), result["captureCommand"])
+        self.assertIn("--expect-sha256 " + prep._quote(SHA), result["captureCommand"])
+        self.assertIn("--capture-deadline-utc " + prep._quote(result["nativeJoinDeadlineUtc"]),
+                      result["captureCommand"])
         self.assertIn(prep._quote(prep.ROOT / "scripts/npc_survey_live.py"), result["captureCommand"])
         self.assertTrue(result["captureCommand"].startswith("& " + prep._quote(sys.executable)))
         self.assertTrue(result["joinCommand"].startswith("& " + prep._quote(sys.executable)))

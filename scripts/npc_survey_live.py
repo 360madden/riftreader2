@@ -1,6 +1,6 @@
 """Read advancing, nonce-bound RIFT API observations by unit ID or visible page."""
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import math
@@ -250,8 +250,34 @@ def _retain_qualified_source(candidates, source, folder, slot):
     return str(path)
 
 
+def _plan_expectations(pid, start_ticks, sha256, deadline_utc):
+    if start_ticks is None and sha256 is None and deadline_utc is None:
+        return None, None
+    require(start_ticks is not None and sha256 is not None, "survey-process-pins-required-together")
+    require(isinstance(start_ticks, str) and re.fullmatch(r"[1-9][0-9]{0,18}", start_ticks)
+            and int(start_ticks) <= 3155378975999999999, "invalid-survey-expected-start-ticks")
+    require(isinstance(sha256, str) and re.fullmatch(r"[0-9A-Fa-f]{64}", sha256),
+            "invalid-survey-expected-sha256")
+    expected = {"processId": pid, "processStartUtcTicks": int(start_ticks),
+                "executableSha256": sha256.upper()}
+    if deadline_utc is None:
+        return expected, None
+    require(isinstance(deadline_utc, str) and len(deadline_utc) <= 40, "invalid-survey-deadline")
+    try:
+        deadline = datetime.fromisoformat(deadline_utc.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValueError("invalid-survey-deadline") from error
+    require(deadline.utcoffset() == timedelta(0), "invalid-survey-deadline")
+    return expected, deadline
+
+
+def _require_plan_time(deadline):
+    require(deadline is None or datetime.now(timezone.utc) < deadline, "survey-bind-plan-expired")
+
+
 def acquire(host, pid, nonce, ids, output, seed_index=None, scan_mib=16,
-            attempts=5, page=None, auto_map=False, *, native_reader=None):
+            attempts=5, page=None, auto_map=False, *, native_reader=None,
+            expected_start_ticks=None, expected_sha256=None, capture_deadline_utc=None):
     require(isinstance(nonce, str) and re.fullmatch(r"[0-9a-f]{32}", nonce), "invalid-survey-nonce")
     require(type(auto_map) is bool and not (auto_map and seed_index is not None),
             "invalid-mapped-survey-options")
@@ -261,6 +287,8 @@ def acquire(host, pid, nonce, ids, output, seed_index=None, scan_mib=16,
         require(type(page) is int and 1<=page<=342,"invalid-visible-page")
     else:
         require(page is None and ids == requested_ids(",".join(ids)), "invalid-survey-selection")
+    expected, deadline = _plan_expectations(pid, expected_start_ticks, expected_sha256, capture_deadline_utc)
+    _require_plan_time(deadline)
     read_native = physical_rift.bind_native_reader(physical_rift.read_native, native_reader)
     scout_options = {"native_reader": native_reader} if native_reader is not None else {}
     selection = physical_rift.select_physical(expected_host=host, physical_pid=pid)
@@ -270,10 +298,12 @@ def acquire(host, pid, nonce, ids, output, seed_index=None, scan_mib=16,
             and owner["hostName"].casefold() == host.casefold(), "survey-host-mismatch")
     host = owner["hostName"]
     target = _target(owner)
+    require(expected is None or target == expected, "survey-bind-plan-process-mismatch")
     seed = None if auto_map else (Path(seed_index) if seed_index
                                   else survival_live.autodiscover_seed(target))
     if not auto_map:
         base, length = _validate_seed(_read_json(seed), target, scan_mib)
+    _require_plan_time(deadline)
     output = Path(output).absolute()
     output.mkdir(parents=True, exist_ok=False)
     player = read_native(selection, "player-context", output=output / "native-player-context.json")
@@ -283,6 +313,7 @@ def acquire(host, pid, nonce, ids, output, seed_index=None, scan_mib=16,
     seen, sources, previous = {}, [], None
     previous_at = previous_utc = None
     for index in range(1, attempts+1):
+        _require_plan_time(deadline)
         start = time.monotonic()
         candidates = (scout_mapped(
             target, nonce, player_id, ids, page=page,
@@ -293,6 +324,7 @@ def acquire(host, pid, nonce, ids, output, seed_index=None, scan_mib=16,
         if not auto_map:
             require(physical_rift.select_physical(host, pid).get("target") == owner,
                     "survey-process-changed")
+        _require_plan_time(deadline)
         elapsed = time.monotonic()-start
         if elapsed <= (locator.MAX_SECONDS + 1 if auto_map else 5):
             selected = newest(candidates, nonce, player_id, ids, seen, previous, page)
@@ -300,6 +332,7 @@ def acquire(host, pid, nonce, ids, output, seed_index=None, scan_mib=16,
                 frame, source = selected
                 now = time.monotonic()
                 captured_at = datetime.now(timezone.utc)
+                require(deadline is None or captured_at < deadline, "survey-bind-plan-expired")
                 retained = _retain_qualified_source(
                     candidates, source, output, len(sources) + 1)
                 sources.append(dict(source, epoch=frame["epoch"], sequence=frame["sequence"],
@@ -338,6 +371,9 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--expected-host",required=True)
     parser.add_argument("--physical-pid",type=int,required=True)
+    parser.add_argument("--expect-start-ticks", help="exact RIFT process start ticks from a prepared bind plan")
+    parser.add_argument("--expect-sha256", help="exact RIFT executable SHA-256 from a prepared bind plan")
+    parser.add_argument("--capture-deadline-utc", help="UTC capture deadline from a prepared bind plan")
     parser.add_argument("--session-id",required=True)
     selection=parser.add_mutually_exclusive_group(required=True)
     selection.add_argument("--unit-ids",help="Comma-separated u-prefixed 16-hex unit IDs supplied to /rr2survey bind")
@@ -356,7 +392,9 @@ def main(argv=None):
         ids=requested_ids(args.unit_ids) if args.unit_ids is not None else None
         report=acquire(args.expected_host,args.physical_pid,args.session_id,ids,
                        args.output,args.seed_index,args.scan_mib,args.max_attempts,
-                       args.visible_page,auto_map=args.auto_map,native_reader=args.native_reader)
+                       args.visible_page,auto_map=args.auto_map,native_reader=args.native_reader,
+                       expected_start_ticks=args.expect_start_ticks, expected_sha256=args.expect_sha256,
+                       capture_deadline_utc=args.capture_deadline_utc)
     except (OSError,ValueError,CaptureError,RuntimeError,subprocess.SubprocessError) as error:
         report={"status":"blocked","inputSent":False,"reason":str(error)}
     print(json.dumps(report,ensure_ascii=True,allow_nan=False))

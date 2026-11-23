@@ -51,8 +51,12 @@ nearby-position, name and player-context commands without selecting RIFT.
 checks the installed files alone. Select a published reader with
 `--native-reader $rr2PublishedReader` or `RR2_NATIVE_READER`. Preparation
 includes absolute script and reader paths in the capture command, so it can run
-in another shell on the capture host. A direct capture with an explicit seed
-uses the reader option for its native scout and fragment reads.
+in another shell on the capture host. The command carries the plan's process
+start ticks, executable SHA-256 and existing native join deadline. Capture
+verifies the process and deadline at startup and checks the deadline again
+before retaining survey frames.
+A direct capture with an explicit seed uses the reader option for its native
+scout and fragment reads.
 
 Copy the entire plan folder, including `plan.json`, `native/` and `addon-evidence/`, to run the offline check from any checkout. Replay verifies the original capture identity and times, reconstructs the selected IDs, checks the saved bind text and verifies the retained manifest and Lua file. Older plans still replay with addon evidence reported as `recorded-only`.
 

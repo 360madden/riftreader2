@@ -154,12 +154,16 @@ def prepare(host, pid, destination, *, radius=35.0, limit=12, include_levels=Fal
                 "native-observation-no-longer-fresh")
         command = "/rr2survey bind " + nonce + " " + ",".join(ids)
         require(len(command) <= 270, "in-game-command-too-long")
+        capture_deadline = (observed + timedelta(seconds=120)).isoformat()
         npc_path = output/"npc-api"
         joined_path = output/"joined-native-api.json"
         capture_command = ("& " + _quote(sys.executable)
             + " -B " + _quote(ROOT / "scripts/npc_survey_live.py")
             + " --expected-host " + _quote(host)
             + " --physical-pid " + str(pid)
+            + " --expect-start-ticks " + _quote(identity["processStartUtcTicks"])
+            + " --expect-sha256 " + _quote(identity["executableSha256"].upper())
+            + " --capture-deadline-utc " + _quote(capture_deadline)
             + " --session-id " + _quote(nonce)
             + " --unit-ids " + _quote(",".join(ids))
             + " --auto-map --max-attempts 5 --output " + _quote(npc_path)
@@ -179,7 +183,7 @@ def prepare(host, pid, destination, *, radius=35.0, limit=12, include_levels=Fal
             "nativePositionCaptureStartedAtUtc": native_started,
             "nativeSampledAtUtc": native_at,
             "preparedAtUtc": created.isoformat(),
-            "nativeJoinDeadlineUtc": (observed + timedelta(seconds=120)).isoformat(),
+            "nativeJoinDeadlineUtc": capture_deadline,
             "nonce": nonce, "unitIds": ids,
             "installedAddon": addon,
             "inGameBindCommand": command,

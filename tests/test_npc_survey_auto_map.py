@@ -1,6 +1,9 @@
 """Bounded read-only NPC source relocation without a saved scout seed."""
 from __future__ import annotations
 
+from contextlib import redirect_stdout
+from datetime import datetime, timedelta, timezone
+from io import StringIO
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -175,15 +178,16 @@ class NPCMapScoutTests(unittest.TestCase):
             published.touch()
             with (patch.object(npc.physical_rift, "select_physical",
                                return_value={"status": "ready", "target": target}),
-                  patch.object(npc, "_target", side_effect=lambda v: v),
-                  patch.object(npc, "_same_target", return_value=True),
                   patch.object(npc.physical_rift, "read_native", return_value={
                       "status": "complete", "target": target, "nativeValues": {"unitKey": "1"}}) as read,
                   patch.object(npc, "scout_mapped", side_effect=candidates) as scout,
                   patch.object(npc.survival_live, "autodiscover_seed") as seeded,
                   patch.object(npc.time, "sleep")):
                 report = npc.acquire("rift-station", 37676, NONCE, [UNIT],
-                                     saved, attempts=2, auto_map=True, native_reader=published)
+                                     saved, attempts=2, auto_map=True, native_reader=published,
+                                     expected_start_ticks=target["processStartUtcTicks"],
+                                     expected_sha256=target["executableSha256"].lower(),
+                                     capture_deadline_utc=(datetime.now(timezone.utc) + timedelta(seconds=120)).isoformat())
                 self.assertEqual(read.call_args.kwargs["native_reader"], published)
                 seeded.assert_not_called()
             self.assertEqual(report["status"], "advancing")
@@ -195,6 +199,57 @@ class NPCMapScoutTests(unittest.TestCase):
             self.assertTrue((saved/"frame-01.wire").is_file())
             self.assertEqual((saved/"frame-02.wire").read_bytes(), wire(11))
             self.assertEqual(replay_npc_survey.replay(saved/"result.json")["confirmedUnitIds"], [UNIT])
+
+    def test_plan_refuses_recycled_pid_or_changed_build_before_any_survey_read(self):
+        with TemporaryDirectory() as temp:
+            dest = Path(temp) / "run"
+            for changes in ({"processStartUtcTicks": "639308565554559089"}, {"executableSha256": "A" * 64}):
+                with (self.subTest(changes=changes),
+                      patch.dict("os.environ", {"RR2_NATIVE_READER": ""}),
+                      patch.object(npc.physical_rift, "select_physical", return_value=self.bind(**changes)),
+                      patch.object(npc.physical_rift, "read_native") as read,
+                      patch.object(npc, "scout_mapped") as scout):
+                    with self.assertRaisesRegex(ValueError, "survey-bind-plan-process-mismatch"):
+                        npc.acquire("AMD-DESKTOP", 37676, NONCE, [UNIT], dest, auto_map=True,
+                                    expected_start_ticks=TARGET["processStartUtcTicks"],
+                                    expected_sha256=TARGET["executableSha256"])
+                    read.assert_not_called()
+                    scout.assert_not_called()
+                    self.assertFalse(dest.exists())
+
+    def test_expired_plan_command_refuses_before_selecting_rift(self):
+        with (TemporaryDirectory() as temp,
+              patch.object(npc.physical_rift, "select_physical") as select,
+              redirect_stdout(StringIO()) as output):
+            dest = Path(temp) / "run"
+            code = npc.main(["--expected-host", "AMD-DESKTOP", "--physical-pid", "37676",
+                             "--session-id", NONCE, "--unit-ids", UNIT, "--auto-map",
+                             "--expect-start-ticks", TARGET["processStartUtcTicks"],
+                             "--expect-sha256", TARGET["executableSha256"],
+                             "--capture-deadline-utc", "2000-01-01T00:00:00Z", "--output", str(dest)])
+            self.assertFalse(dest.exists())
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(output.getvalue())["reason"], "survey-bind-plan-expired")
+        select.assert_not_called()
+
+    def test_expiry_during_a_scout_prevents_publishing_a_survey(self):
+        start = datetime(2026, 11, 21, tzinfo=timezone.utc)
+        deadline = start + timedelta(seconds=2)
+        with (TemporaryDirectory() as temp,
+              patch.dict("os.environ", {"RR2_NATIVE_READER": ""}),
+              patch.object(npc.physical_rift, "select_physical", return_value=self.bind()),
+              patch.object(npc.physical_rift, "read_native", return_value={
+                  "status": "complete", "target": TARGET, "nativeValues": {"unitKey": "1"}}),
+              patch.object(npc, "scout_mapped", return_value=[]) as scout,
+              patch.object(npc, "datetime", wraps=datetime) as clock):
+            clock.now.side_effect = [start, start, start, deadline]
+            dest = Path(temp) / "run"
+            with self.assertRaisesRegex(ValueError, "survey-bind-plan-expired"):
+                npc.acquire("AMD-DESKTOP", 37676, NONCE, [UNIT], dest, auto_map=True,
+                            expected_start_ticks=TARGET["processStartUtcTicks"],
+                            expected_sha256=TARGET["executableSha256"], capture_deadline_utc=deadline.isoformat())
+            scout.assert_called_once()
+            self.assertFalse((dest / "result.json").exists())
 
     def test_reject_auto_map_and_old_seed_without_creating_output(self):
         with TemporaryDirectory() as temp:
