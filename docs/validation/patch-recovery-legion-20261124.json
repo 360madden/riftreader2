@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "expectedHost": "LEGION",
+  "sharedBefore": "C:\\work\\Update Helper\\before-20261124-legion.json",
+  "sharedBeforeSha256": "6612cab5ad31162cc0eab21266ed3839c4a2ef1e12e3a2aa82536d5b195c983e",
+  "rr2Before": "artifacts/prepatch-20261124-legion-rr2.json",
+  "rr2BeforeSha256": "23fa92e2b6b9793d018c26996de94289e783a7562444b08918534627239f3d0c",
+  "beforeExeSha256": "df954b798331e18359be62a31cc74b49fc3f50b87385ebb080a5448256322c01",
+  "archivedExe": "C:\\work\\Update Helper\\.local\\prepatch\\df954b798331e18359be62a31cc74b49fc3f50b87385ebb080a5448256322c01\\rift_x64.exe",
+  "dotnet": "C:\\work\\tools\\dotnet\\10.0.302\\dotnet.exe",
+  "sdkVersion": "10.0.302",
+  "installedAddonReceipt": "artifacts/prepatch-20261124-legion-installed-addon/receipt.json",
+  "installedAddonReceiptSha256": "7df4996e1080b32317625cca00b3791fe5674208df1765374057b56c1ecbfaaf"
+}

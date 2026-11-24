@@ -25,31 +25,20 @@ Zone-context does not accept burst sampling; the initial two-sample invocation w
 
 ## After Glyph finishes
 
-Use PowerShell 7 on LEGION. Do not run while the installer is changing files.
+Use PowerShell 7 on LEGION. After Glyph has finished updating and the installation is stable, the new launcher coordinates the existing shared Update Helper and RR2 analyzer:
 
 ```powershell
-Set-Location -LiteralPath 'C:\work\Update Helper'
-python -B post_patch.py --expected-host LEGION --before before-20261124-legion.json --prefix patch-20261124-attempt-01
-if ($LASTEXITCODE -ne 0) { throw 'Shared patch capture incomplete; inspect and use a new attempt prefix' }
-
 Set-Location -LiteralPath 'C:\work\riftreader2'
-$sdk = 'C:\work\tools\dotnet\10.0.302\dotnet.exe'
-$dll = Join-Path $PWD 'tools\RiftUpdateAnalyzer\bin\Release\net10.0\RiftUpdateAnalyzer.dll'
-& $sdk build tools/RiftUpdateAnalyzer/RiftUpdateAnalyzer.csproj -c Release -p:RestoreLockedMode=true
-if ($LASTEXITCODE -ne 0) { throw 'Analyzer build failed' }
-$sources = @('--source','game=C:\Program Files (x86)\Glyph\Games\RIFT\Live\rift_x64.exe','--source',"rr2-addon=$PWD\addon",'--source',"rr2-config=$PWD\config",'--source',"rr2-calibration=$PWD\.local\waypoints-calibration")
-$before = Join-Path $PWD 'artifacts\prepatch-20261124-legion-rr2.json'
-$after = Join-Path $PWD 'artifacts\postpatch-20261124-legion-rr2-attempt-01.json'
-$diff = Join-Path $PWD 'artifacts\postpatch-20261124-legion-rr2-attempt-01-diff.json'
-if ((Get-FileHash -Algorithm SHA256 -LiteralPath $before).Hash -ne '23FA92E2B6B9793D018C26996DE94289E783A7562444B08918534627239F3D0C') { throw 'Unexpected baseline hash' }
-& $sdk $dll capture --expected-host LEGION @sources --out $after
-if ($LASTEXITCODE -ne 0) { throw 'RR2 capture failed' }
-& $sdk $dll compare --before $before --after $after --out $diff
-if ($LASTEXITCODE -notin @(0,1)) { throw 'RR2 comparison failed' }
-Get-Content -LiteralPath $diff
+python -B scripts/patch_recovery.py --checkpoint docs/validation/patch-recovery-legion-20261124.json --attempt patch-20261124-01
 ```
 
-Use a new output suffix for retries, never overwrite the baseline. Exit 1 from the analyzer compare means a detected change, not a tool failure.
+If another repo has already completed the **same post-patch** shared capture using Update Helper's pinned-baseline workflow, reuse its exact prefix with `--reuse-shared-prefix <completed-prefix>` and a new RR2 attempt name. The launcher replays the shared reports with Update Helper, checks the current installation inventory and metadata against the captured manifest, and independently hashes the current executable. Metadata checks do not constitute a second full-content rehash. Use a fresh shared scan if there is any doubt. Never reuse the pre-patch rehearsal as post-patch evidence.
+
+All attempts write new receipts and command logs under `artifacts/patch-recovery/<attempt>/`, with `summary.json` published after completion. A missing summary means the workflow did not complete. The selected-file comparison may legitimately report changes; the launcher handles analyzer exit code 1. It never launches RIFT, deploys an addon, or grants runtime compatibility.
+
+The installed-addon baseline is separately preserved at `artifacts/prepatch-20261124-legion-installed-addon/`: seven exact startup file copies plus a check receipt (SHA-256 `7DF4996E1080B32317625CCA00B3791FE5674208DF1765374057B56C1ECBFAAF`). All seven files were present, pinned and readable; four had line-ending-only differences from the repository (`RiftAddon.toc`, `reference.lua`, `live.lua`, `main.lua`). No addon was redeployed. The launcher distinguishes a subsequent installed-file change from the already-known repository byte mismatch.
+
+The original RR2 baseline remains immutable. The independently pinned shared baseline SHA is supplied to Update Helper by the launcher, as required by its updated CLI.
 
 ## Recovery order
 
@@ -60,3 +49,11 @@ Use a new output suffix for retries, never overwrite the baseline. Exit 1 from t
 5. Commit tested scoped changes and push; preserve concurrent edits and local baseline receipts. No new gameplay automation is needed for this recovery preparation.
 
 No actual post-patch compatibility has yet been established.
+
+## 2026-11-24 00:15 EST — recovery launcher rehearsal
+
+- Seven focused launcher regression tests passed on LEGION. The earlier hardened analyzer passed 13/13 tests.
+- A fresh full-install rehearsal (`artifacts/patch-recovery/rehearsal-20261124-01/summary.json`) completed in 167.5 seconds, with two consistent full captures, 266/266 installation files unchanged, and no selected RR2 changes.
+- A second rehearsal using the same shared prefix (`artifacts/patch-recovery/rehearsal-20261124-02/summary.json`) completed in 4.7 seconds. It replayed the shared comparison, rechecked current inventory and metadata, independently hashed the executable, and captured two consistent current RR2 selections. All seven installed addon startup files matched their independently preserved pre-patch copies, with four known line-ending-only differences versus the repository.
+- The second rehearsal used the final checkpoint and launcher including the installed-addon baseline and metadata guards. Both are pre-patch rehearsals, not post-patch evidence or proof of live compatibility. The new-build copy path remains unexercised against an actual changed game executable.
+- Shared evidence prefix `rr2-rehearsal-20261124-01`, report SHA-256 `ea4101a2e0418ab8052da7818920d7efe930523e101ed7e89114e10e884f9a48`. Reused RR2 report SHA-256 `74613994425fa9e895f5744cb17335f76b9c491b9fc5d7950cbba0009e4683c0`.
