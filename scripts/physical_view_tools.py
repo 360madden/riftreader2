@@ -17,18 +17,29 @@ RERUN_EXPORT_PROBE = (
 )
 
 
+def _python_starts(python):
+    # Probe the console executable even when the workflow uses pythonw.exe.
+    try:
+        probe = subprocess.run([str(python.with_name("python.exe")), "-I", "-S", "-B", "-c", "pass"],
+                               stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               timeout=5, check=False, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return probe.returncode == 0
+
+
 def prepared_python(root, environment, executable="python.exe"):
     for name in ("physical-python-link", "physical-python"):
         setup = root / ".local" / name
         python = setup / environment / "Scripts" / executable
-        if (setup / ".ready").is_file() and python.is_file():
+        if (setup / ".ready").is_file() and python.is_file() and _python_starts(python):
             return python
     return None
 
 
-def local_python(override, default, reason):
+def local_python(override, reason):
     if not override:
-        return default
+        return None
     executable = Path(override)
     if not executable.is_absolute() or executable.anchor.startswith(("\\\\", "//")):
         raise ValueError(reason)
@@ -37,18 +48,18 @@ def local_python(override, default, reason):
 
 
 def overlay_python(root):
-    default = prepared_python(root, "overlay", "pythonw.exe") or root / ".local/overlay-venv/Scripts/pythonw.exe"
-    return local_python(os.environ.get("RR2_OVERLAY_PYTHON"), default, "invalid-overlay-python-path")
+    explicit = local_python(os.environ.get("RR2_OVERLAY_PYTHON"), "invalid-overlay-python-path")
+    return explicit or prepared_python(root, "overlay", "pythonw.exe") or root / ".local/overlay-venv/Scripts/pythonw.exe"
 
 
 def dxcam_python():
-    default = prepared_python(ROOT, "overlay") or CAPTURE_PYTHON
-    return local_python(os.environ.get("RR2_DXCAM_PYTHON"), default, "invalid-dxcam-python-path")
+    explicit = local_python(os.environ.get("RR2_DXCAM_PYTHON"), "invalid-dxcam-python-path")
+    return explicit or prepared_python(ROOT, "overlay") or CAPTURE_PYTHON
 
 
 def rerun_python():
-    return local_python(os.environ.get("RR2_RERUN_PYTHON"), prepared_python(ROOT, "rerun"),
-                        "invalid-rerun-python-path")
+    explicit = local_python(os.environ.get("RR2_RERUN_PYTHON"), "invalid-rerun-python-path")
+    return explicit or prepared_python(ROOT, "rerun")
 
 
 def rerun_export_python():

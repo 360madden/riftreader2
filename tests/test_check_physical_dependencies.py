@@ -2,11 +2,13 @@
 from contextlib import redirect_stdout
 from io import StringIO
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
 import unittest
+import venv
 from unittest.mock import patch
 
 from scripts import check_physical_dependencies as preflight
@@ -104,6 +106,37 @@ class PhysicalDependenciesTests(unittest.TestCase):
         self.assertEqual(result["status"], "blocked")
         self.assertEqual(result["viewer"]["status"], "ready")
         self.assertEqual(result["exporter"], {"status": "blocked", "reason": "visualization-environment-unavailable"})
+
+    @unittest.skipUnless(os.name == "nt", "Windows virtual environments")
+    def test_optional_tools_skip_copied_environments_with_missing_base_python(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            copied = root / ".local/physical-python-link"
+            prepared = root / ".local/physical-python"
+            for setup in (copied, prepared):
+                for name in ("overlay", "rerun"):
+                    venv.create(setup / name)
+                    if setup == copied:
+                        (setup / name / "pyvenv.cfg").write_text(
+                            f"home = {root / 'missing base'}\n", encoding="utf-8")
+                (setup / ".ready").touch()
+            tools = preflight.physical_view_tools
+            with patch.object(tools, "ROOT", root), patch.dict(
+                os.environ, RR2_OVERLAY_PYTHON="", RR2_DXCAM_PYTHON="", RR2_RERUN_PYTHON=""
+            ):
+                self.assertEqual(tools.overlay_python(root), prepared / "overlay/Scripts/pythonw.exe")
+                self.assertEqual(tools.dxcam_python(), prepared / "overlay/Scripts/python.exe")
+                self.assertEqual(tools.rerun_export_python(), prepared / "rerun/Scripts/python.exe")
+
+            overlay = copied / "overlay/Scripts/pythonw.exe"
+            dxcam = copied / "overlay/Scripts/python.exe"
+            rerun = copied / "rerun/Scripts/python.exe"
+            with patch.dict(os.environ, RR2_OVERLAY_PYTHON=str(overlay), RR2_DXCAM_PYTHON=str(dxcam),
+                            RR2_RERUN_PYTHON=str(rerun)), patch.object(tools.subprocess, "run") as run:
+                self.assertEqual(tools.overlay_python(root), overlay)
+                self.assertEqual(tools.dxcam_python(), dxcam)
+                self.assertEqual(tools.rerun_export_python(), rerun)
+            run.assert_not_called()
 
     def test_optional_reports_work_without_site_packages_in_the_caller(self):
         missing_python = str(preflight.ROOT / "missing-test-view-venv/Scripts/python.exe")
