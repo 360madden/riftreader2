@@ -134,6 +134,88 @@ class UpdateAnalyzerTests(unittest.TestCase):
             "--out", self.root / "dupcompare.json", expected=3,
         )
 
+    def test_incompatible_source_coverage_is_not_unchanged(self):
+        one = self.root / "one"
+        two = self.root / "two"
+        one.mkdir()
+        two.mkdir()
+        before = self.capture("before", ("first", one))
+        after = self.capture("after", ("different", two))
+        output = self.root / "mismatch.json"
+        result = self.run_cli("compare", "--before", before, "--after", after,
+                              "--out", output, expected=3)
+        self.assertIn("source coverage mismatch", result.stderr)
+        self.assertFalse(output.exists())
+
+        file_source = self.write("file.txt", "content")
+        after = self.capture("other-kind", ("first", file_source))
+        self.run_cli("compare", "--before", before, "--after", after,
+                     "--out", output, expected=3)
+        self.assertFalse(output.exists())
+
+    def test_missing_empty_source_is_a_change_even_without_file_deltas(self):
+        source = self.root / "source"
+        source.mkdir()
+        before = self.capture("before", ("addon-example", source))
+        snapshot = json.loads(before.read_text(encoding="utf-8"))
+        snapshot["Sources"][0]["Status"] = "missing"
+        after = self.write("after.json", json.dumps(snapshot))
+        result = self.compare(before, after, expected=1)
+        self.assertEqual(result["Deltas"], [])
+        self.assertTrue(result["SourceCoverageChanged"])
+        self.assertTrue(result["RuntimeRequalificationRequired"])
+        self.assertFalse(result["GameExecutableObserved"])
+        self.assertFalse(result["GameExecutableChanged"])
+        report = self.root / "coverage.md"
+        self.run_cli("report", "--comparison", self.root / "comparison.json",
+                     "--out", report, expected=1)
+        self.assertIn("Source presence changed:** YES", report.read_text(encoding="utf-8"))
+        self.assertIn("Executable changed:** NOT COVERED", report.read_text(encoding="utf-8"))
+
+    def test_case_insensitive_logical_keys_and_executable_lookup(self):
+        one = self.write("before/RIFT_X64.EXE", "same")
+        two = self.write("after/rift_x64.exe", "same")
+        before = self.capture("before", ("GAME", one))
+        after = self.capture("after", ("game", two))
+        result = self.compare(before, after)
+        self.assertEqual(result["Deltas"], [])
+        self.assertEqual(result["UnchangedFiles"], 1)
+        self.assertTrue(result["GameExecutableObserved"])
+        self.assertFalse(result["GameExecutableChanged"])
+
+    def test_rejects_invalid_source_facts_and_null_hashes(self):
+        src = self.write("source/data.txt", "data")
+        before = self.capture("before", ("saved", src.parent))
+        for label, edit in (
+            ("unknown-group", lambda doc: doc["Sources"][0].update(Group="other")),
+            ("duplicate-group", lambda doc: doc["Sources"].append(dict(doc["Sources"][0], Group="SAVED"))),
+            ("missing-source-with-file", lambda doc: doc["Sources"][0].update(Status="missing")),
+            ("bad-source-kind", lambda doc: doc["Sources"][0].update(Kind="unknown")),
+            ("null-hash", lambda doc: doc["Files"]["saved/data.txt"].update(Sha256=None)),
+            ("missing-sources", lambda doc: doc.pop("Sources")),
+            ("no-file-fact", lambda doc: (doc["Sources"][0].update(Kind="file"), doc["Files"].clear())),
+        ):
+            with self.subTest(label=label):
+                snapshot = json.loads(before.read_text(encoding="utf-8"))
+                edit(snapshot)
+                invalid = self.write(f"{label}.json", json.dumps(snapshot))
+                out = self.root / f"{label}-result.json"
+                self.run_cli("compare", "--before", invalid, "--after", before,
+                             "--out", out, expected=3)
+                self.assertFalse(out.exists())
+
+    def test_rejects_nested_case_insensitive_duplicate_json_properties(self):
+        src = self.write("source/data.txt", "data")
+        before = self.capture("before", ("saved", src.parent))
+        original = before.read_text(encoding="utf-8")
+        duplicate = original.replace('"Bytes": 4,', '"Bytes": 4, "bytes": 5,', 1)
+        self.assertNotEqual(original, duplicate)
+        invalid = self.write("duplicate-nested.json", duplicate)
+        out = self.root / "duplicate-nested-result.json"
+        self.run_cli("compare", "--before", invalid, "--after", before,
+                     "--out", out, expected=3)
+        self.assertFalse(out.exists())
+
     def test_scan_limits_fail_closed(self):
         source = self.root / "source"
         self.write("source/a.txt", "1234")

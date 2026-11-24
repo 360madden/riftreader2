@@ -53,6 +53,8 @@ public sealed class Comparison
     public List<SourceFact> BeforeSources { get; set; } = [];
     public List<SourceFact> AfterSources { get; set; } = [];
     public List<FileDelta> Deltas { get; set; } = [];
+    public bool? GameExecutableObserved { get; set; }
+    public bool SourceCoverageChanged { get; set; }
     public bool GameExecutableChanged { get; set; }
     public bool DataOnlyChangePossible { get; set; }
     public bool RuntimeRequalificationRequired { get; set; }
@@ -212,7 +214,7 @@ internal static class Program
         var result = Compare(before, after);
         WriteJson(Require(options, "out"), result);
         OutputComparison(result, Require(options, "out"));
-        return result.Deltas.Count == 0 ? 0 : 1;
+        return result.RuntimeRequalificationRequired ? 1 : 0;
     }
 
     private static int ReportCommand(Dictionary<string, List<string>> options)
@@ -221,7 +223,7 @@ internal static class Program
         var comparison = LoadComparison(Require(options, "comparison"));
         WriteText(Require(options, "out"), RenderMarkdown(comparison));
         Console.WriteLine(JsonSerializer.Serialize(new { status = "reported", changes = comparison.Deltas.Count, output = Require(options, "out") }));
-        return comparison.Deltas.Count == 0 ? 0 : 1;
+        return comparison.RuntimeRequalificationRequired || comparison.Deltas.Count > 0 ? 1 : 0;
     }
 
     private static int RunCommand(Dictionary<string, List<string>> options)
@@ -273,7 +275,7 @@ internal static class Program
         WriteJson(System.IO.Path.Combine(output, "changes.json"), comparison);
         WriteText(System.IO.Path.Combine(output, "REPORT.md"), RenderMarkdown(comparison));
         OutputComparison(comparison, System.IO.Path.Combine(output, "REPORT.md"));
-        return comparison.Deltas.Count == 0 ? 0 : 1;
+        return comparison.RuntimeRequalificationRequired || comparison.Deltas.Count > 0 ? 1 : 0;
     }
 
     private static string FullPath(string path)
@@ -385,6 +387,11 @@ internal static class Program
     {
         if (!string.Equals(before.Machine, after.Machine, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Cross-host snapshots refused: " + before.Machine + " vs " + after.Machine);
+        // Different groups or source kinds are not comparable, even if both contain zero files.
+        var oldSources = before.Sources.ToDictionary(x => x.Group, StringComparer.OrdinalIgnoreCase);
+        var newSources = after.Sources.ToDictionary(x => x.Group, StringComparer.OrdinalIgnoreCase);
+        if (oldSources.Count != newSources.Count || oldSources.Any(x => !newSources.TryGetValue(x.Key, out var source) || source.Kind != x.Value.Kind))
+            throw new InvalidDataException("Snapshot source coverage mismatch: compare the same logical groups and source kinds.");
         var result = new Comparison
         {
             ComparedUtc = DateTimeOffset.UtcNow.ToString("O"),
@@ -395,7 +402,8 @@ internal static class Program
             BeforeFiles = before.Files.Count,
             AfterFiles = after.Files.Count,
             BeforeSources = before.Sources,
-            AfterSources = after.Sources
+            AfterSources = after.Sources,
+            SourceCoverageChanged = oldSources.Any(x => x.Value.Status != newSources[x.Key].Status)
         };
         foreach (var key in before.Files.Keys.Union(after.Files.Keys, StringComparer.OrdinalIgnoreCase).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
         {
@@ -409,11 +417,15 @@ internal static class Program
         var exeBefore = before.Files.GetValueOrDefault(ExeKey);
         var exeAfter = after.Files.GetValueOrDefault(ExeKey);
         result.UnchangedFiles = before.Files.Count - result.Deltas.Count(x => x.Kind is "removed" or "modified");
-        result.GameExecutableChanged = exeBefore is null || exeAfter is null ||
-            !string.Equals(exeBefore.Sha256, exeAfter.Sha256, StringComparison.OrdinalIgnoreCase);
-        result.RuntimeRequalificationRequired = result.Deltas.Count > 0;
-        result.DataOnlyChangePossible = !result.GameExecutableChanged &&
-            result.Deltas.Any(delta => !delta.Key.Equals(ExeKey, StringComparison.OrdinalIgnoreCase));
+        // Generic selected-file comparisons may omit the executable altogether.
+        // Absence from both snapshots is unknown coverage, not a changed binary.
+        result.GameExecutableObserved = exeBefore is not null || exeAfter is not null;
+        result.GameExecutableChanged = result.GameExecutableObserved == true &&
+            (exeBefore is null || exeAfter is null || exeBefore.Bytes != exeAfter.Bytes ||
+             !string.Equals(exeBefore.Sha256, exeAfter.Sha256, StringComparison.OrdinalIgnoreCase));
+        result.RuntimeRequalificationRequired = result.Deltas.Count > 0 || result.SourceCoverageChanged;
+        result.DataOnlyChangePossible = result.GameExecutableObserved == true && !result.GameExecutableChanged &&
+            result.RuntimeRequalificationRequired;
         return result;
     }
 
@@ -423,28 +435,43 @@ internal static class Program
         if (snapshot.SchemaVersion != 1 || string.IsNullOrWhiteSpace(snapshot.Machine) ||
             snapshot.Files is null || snapshot.Sources is null || snapshot.Files.Count > MaxManifestEntries)
             throw new InvalidDataException("Invalid or unsupported snapshot schema.");
-        ValidateFileKeys(path, snapshot.Files);
+        if (!DateTimeOffset.TryParse(snapshot.CapturedUtc, out _) || snapshot.Sources.Count == 0)
+            throw new InvalidDataException("Snapshot capture timestamp or source coverage missing.");
+        var sources = new Dictionary<string, SourceFact>(StringComparer.OrdinalIgnoreCase);
+        foreach (var source in snapshot.Sources)
+        {
+            if (source is null || string.IsNullOrWhiteSpace(source.Group) || string.IsNullOrWhiteSpace(source.Origin) ||
+                source.Kind is not ("file" or "directory") || source.Status is not ("present" or "missing") ||
+                (source.Status == "missing" && source.Kind != "directory") || !sources.TryAdd(source.Group, source))
+                throw new InvalidDataException("Invalid or duplicate snapshot source.");
+        }
+        // JSON deserialization may replace the initialized dictionary comparer.
+        // Restore case-insensitive lookup to match capture and union semantics.
+        snapshot.Files = new SortedDictionary<string, FileFact>(snapshot.Files, StringComparer.OrdinalIgnoreCase);
+        ValidateFileKeys(snapshot.Files, sources);
         return snapshot;
     }
 
-    private static void ValidateFileKeys(string path, SortedDictionary<string, FileFact> facts)
+    private static void ValidateFileKeys(SortedDictionary<string, FileFact> facts, Dictionary<string, SourceFact> sources)
     {
-        using var document = JsonDocument.Parse(File.ReadAllText(FullPath(path)));
-        if (!document.RootElement.TryGetProperty("Files", out var fileObject) || fileObject.ValueKind != JsonValueKind.Object)
-            throw new InvalidDataException("Snapshot Files object is missing.");
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var property in fileObject.EnumerateObject())
-            if (!seen.Add(property.Name)) throw new InvalidDataException("Duplicate manifest key: " + property.Name);
+        var counts = sources.Keys.ToDictionary(key => key, _ => 0, StringComparer.OrdinalIgnoreCase);
         foreach (var (key, fact) in facts)
         {
             if (key.StartsWith('/') || key.Contains('\\') || key.Split('/').Length < 2 ||
                 key.Split('/').Any(p => p is "" or "." or ".."))
                 throw new InvalidDataException("Invalid manifest path: " + key);
-            if (fact is null || fact.Bytes < 0 || fact.Sha256.Length != 64 ||
+            var group = key.Split('/')[0];
+            if (!sources.TryGetValue(group, out var source) || source.Status != "present")
+                throw new InvalidDataException("File fact outside present source coverage: " + key);
+            counts[group]++;
+            if (fact is null || fact.Bytes < 0 || fact.Sha256 is null || fact.Sha256.Length != 64 ||
                 fact.Sha256.Any(c => !Uri.IsHexDigit(c)) ||
                 !DateTimeOffset.TryParse(fact.ModifiedUtc, out _))
                 throw new InvalidDataException("Invalid manifest file hash, length or timestamp: " + key);
         }
+        foreach (var source in sources.Values)
+            if (source.Kind == "file" && counts[source.Group] != 1)
+                throw new InvalidDataException("File source must contain exactly one file fact: " + source.Group);
     }
 
     private static Comparison LoadComparison(string path)
@@ -467,8 +494,32 @@ internal static class Program
         path = FullPath(path);
         CheckNoReparse(path);
         if (new FileInfo(path).Length > MaxManifestBytes) throw new InvalidDataException("Manifest too large.");
-        return JsonSerializer.Deserialize<T>(File.ReadAllText(path), JsonOptions) ??
+        // Parse and validate the exact same bytes that are deserialized. A second
+        // file read could validate different content during a concurrent replacement.
+        using var document = JsonDocument.Parse(File.ReadAllText(path));
+        if (document.RootElement.ValueKind != JsonValueKind.Object)
+            throw new InvalidDataException("Manifest root must be an object.");
+        RejectDuplicateProperties(document.RootElement);
+        if (typeof(T) == typeof(Snapshot) &&
+            (!document.RootElement.TryGetProperty("Files", out var files) || files.ValueKind != JsonValueKind.Object))
+            throw new InvalidDataException("Snapshot Files object is missing.");
+        return document.RootElement.Deserialize<T>(JsonOptions) ??
             throw new InvalidDataException("Empty or invalid JSON manifest.");
+    }
+
+    private static void RejectDuplicateProperties(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var property in element.EnumerateObject())
+            {
+                if (!seen.Add(property.Name)) throw new InvalidDataException("Duplicate manifest key: " + property.Name);
+                RejectDuplicateProperties(property.Value);
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+            foreach (var item in element.EnumerateArray()) RejectDuplicateProperties(item);
     }
 
     private static void WriteJson<T>(string path, T value) => WriteText(path, JsonSerializer.Serialize(value, JsonOptions) + Environment.NewLine);
@@ -488,7 +539,7 @@ internal static class Program
     {
         Console.WriteLine(JsonSerializer.Serialize(new
         {
-            status = comparison.Deltas.Count == 0 ? "unchanged" : "changes-detected",
+            status = comparison.RuntimeRequalificationRequired ? "changes-detected" : "unchanged",
             host = comparison.AfterMachine,
             beforeFiles = comparison.BeforeFiles,
             afterFiles = comparison.AfterFiles,
@@ -496,6 +547,8 @@ internal static class Program
             added = comparison.Deltas.Count(x => x.Kind == "added"),
             removed = comparison.Deltas.Count(x => x.Kind == "removed"),
             modified = comparison.Deltas.Count(x => x.Kind == "modified"),
+            exeObserved = comparison.GameExecutableObserved,
+            sourceCoverageChanged = comparison.SourceCoverageChanged,
             exeChanged = comparison.GameExecutableChanged,
             dataOnlyChangePossible = comparison.DataOnlyChangePossible,
             requalificationNeeded = comparison.RuntimeRequalificationRequired,
@@ -514,7 +567,8 @@ internal static class Program
         sb.AppendLine("- Baseline captured UTC: " + c.BeforeCapturedUtc);
         sb.AppendLine("- Current captured UTC: " + c.AfterCapturedUtc);
         sb.AppendLine("- Coverage: " + c.Scope);
-        sb.AppendLine("- **Executable changed:** " + (c.GameExecutableChanged ? "YES or missing" : "NO"));
+        sb.AppendLine("- **Executable changed:** " + (c.GameExecutableObserved == false ? "NOT COVERED" : c.GameExecutableChanged ? "YES or missing" : "NO"));
+        sb.AppendLine("- **Source presence changed:** " + (c.SourceCoverageChanged ? "YES" : "NO"));
         sb.AppendLine("- **Other selected files changed while executable stayed identical:** " + (c.DataOnlyChangePossible ? "YES" : "NO"));
         sb.AppendLine("- **Runtime/native-reader requalification:** " + (c.RuntimeRequalificationRequired ? "REQUIRED before trusting affected live readers" : "No selected-file differences; this is NOT proof of runtime compatibility"));
         sb.AppendLine();
@@ -544,7 +598,7 @@ internal static class Program
         sb.AppendLine();
         sb.AppendLine("## Operational interpretation");
         sb.AppendLine();
-        sb.AppendLine("- This compares **only** the executable, SavedVariables, addon names represented in the prepatch backup, and waypoint routes. It does **not** inspect the full RIFT installation or game data archives.");
+        sb.AppendLine("- Coverage is limited to the logical sources listed above. Unselected installation files and game data archives are not compared.");
         sb.AppendLine("- A matching executable SHA-256 does **not** prove that the patch changed nothing: unselected game data can change.");
         sb.AppendLine("- Changed executable bytes invalidate any assumption that historical native offsets/pointers or runtime semantic evidence still apply. Rebind to a fresh exact process/build and requalify before resuming affected live automation.");
         sb.AppendLine("- Game update installation state is not established by this report. Addon or route file changes can also come from user/project activity.");

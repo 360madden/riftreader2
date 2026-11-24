@@ -37,7 +37,7 @@ Choose a **new, not-yet-existing** output directory each time. Four immutable ar
 - `changes.json`: added, removed and modified selected files; executable-change and requalification flags.
 - `REPORT.md`: readable summary, SHA-256 changes and source coverage.
 
-The exit code is `0` when the selected content is unchanged, `1` when any selected file changes, `2` for bad arguments and `3` when a scan is incomplete, unsafe or inaccessible. **Exit 1 is an expected comparison result, not a crash.**
+The exit code is `0` when selected content and source presence are unchanged, `1` when any selected file or source presence changes, `2` for bad arguments and `3` when a scan is incomplete, unsafe, inaccessible or the snapshots have incompatible logical source groups or source kinds. **Exit 1 is an expected comparison result, not a crash.**
 
 ## Reusable three-step CLI
 
@@ -45,12 +45,12 @@ Create snapshots from arbitrary explicit sources (use a new output filename for 
 
 ```powershell
 $rrHost = [Environment]::MachineName
-& $rrDotNet tools\RiftUpdateAnalyzer\bin\Release\net10.0\RiftUpdateAnalyzer.dll capture --expected-host $rrHost --source "game=$rrGameExe" --source "routes=$rrRoutes" --out artifacts\example-current.json
+& $rrDotNet tools\RiftUpdateAnalyzer\bin\Release\net10.0\RiftUpdateAnalyzer.dll capture --expected-host $rrHost --source "game=$rrGameExe" --source "routes=$rrRoutes" --out (Join-Path $PWD 'artifacts\example-current.json')
 & $rrDotNet tools\RiftUpdateAnalyzer\bin\Release\net10.0\RiftUpdateAnalyzer.dll compare --before C:\path\baseline.json --after C:\path\current.json --out C:\path\changes.json
 & $rrDotNet tools\RiftUpdateAnalyzer\bin\Release\net10.0\RiftUpdateAnalyzer.dll report --comparison C:\path\changes.json --out C:\path\changes.md
 ```
 
-Source groups create stable logical keys (such as `game/rift_x64.exe` or `routes/silverwood.json`) independent of absolute machine path. SHA-256 + byte length decides change, not timestamps.
+Source groups create stable logical keys (such as `game/rift_x64.exe` or `routes/silverwood.json`) independent of absolute machine path. SHA-256 + byte length decides file change, not timestamps. Compare the same logical groups and source kinds; different roots are allowed. A formerly present empty source becoming missing still requires requalification. When the executable is not included in either snapshot, the report explicitly marks it as not covered, rather than asserting a binary change. All paths passed to the analyzer must be absolute.
 
 The scan rejects the wrong computer, traversal or reparse links, duplicate groups/keys, malformed manifests, incomplete concurrent source writes, inaccessible files and exceeded file/byte limits (default 5,000 files / 512 MiB per snapshot). File handles are closed promptly.
 
