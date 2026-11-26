@@ -37,7 +37,8 @@ CONFIGS = {
 PORTS = {"lab1": 49813, "lab2": 49923}
 BIND = "192.168.56.1"
 SOURCE = ROOT / "scripts" / "observation_receiver.py"
-SOURCE_SHA256 = "9D054B6A4EF183607EBCCAC8EF3662F28314214E9BD74B115724BD8AEDD95038"
+# Exact shipped LF bytes; the cross-platform receiver test enforces this pin.
+SOURCE_SHA256 = "0381F680127D545E67B95F3DBDC1376C3EAED8618C365DD8AAC55A278AA8E096"
 MANAGER = ROOT / "scripts" / "Manage-RR2HelperTask.ps1"
 LEGACY_INSPECTOR = ROOT / "scripts" / "Verify-RR2LegacyHelperTask.ps1"
 ENTRY = ROOT / "scripts" / "receiver_task_entry.py"
