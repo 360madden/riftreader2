@@ -25,6 +25,35 @@ SUPPORTED_BUILDS = frozenset((BUILD_SHA,
 KINDS = ("player-context", "position", "vitals")
 
 
+def source_kinds(*, include_stats, include_zone, include_power):
+    """Shared acquisition/replay ordering for optional source groups."""
+    return ((("zone-before",) if include_zone else ()) + KINDS
+            + (("stats",) if include_stats else ())
+            + (("power", "player-context-after") if include_power else ())
+            + (("zone-after",) if include_zone else ()))
+
+
+def native_kind(kind):
+    if kind.startswith("zone-"):
+        return "zone-context"
+    return "player-context" if kind == "player-context-after" else kind
+
+
+def power_context_bracket(values, hashes, self_key):
+    """Attribute the process-scoped candidate to matching surrounding context only."""
+    before, after = (values[name] for name in ("player-context", "player-context-after"))
+    require(all(row.get("unitKey") == self_key
+                and row.get("calling", {}).get("nameCandidate") == "warrior"
+                for row in (before, after)), "power-player-context-mismatch")
+    return {"status": "matching-warrior-context-candidates",
+            "selfKeyCandidate": self_key,
+            "nativePowerUnitKeyStatus": "unavailable",
+            "beforeContextSha256": hashes["player-context"],
+            "powerSourceSha256": hashes["power"],
+            "afterContextSha256": hashes["player-context-after"],
+            "qualification": "Matching sequential player context, not an independent Power unit key."}
+
+
 def require(ok, reason):
     if not ok:
         raise ValueError("physical-player-state-" + reason)
@@ -66,16 +95,19 @@ def pin(pid, *, expected_host=None):
 
 
 def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False,
-            include_zone=False, expected_host=None, native_reader=None):
+             include_zone=False, include_power=False, expected_host=None, native_reader=None):
     require(type(samples) is int and 2 <= samples <= 10
             and type(interval_ms) is int and 0 <= interval_ms <= 1000
-            and type(include_stats) is bool and type(include_zone) is bool,
+             and type(include_stats) is bool and type(include_zone) is bool
+             and type(include_power) is bool,
             "invalid-sampling-bounds")
     read = physical_rift.bind_native_reader(physical_rift.read_native, native_reader)
     first = pin(pid, expected_host=expected_host)
     owner = first["target"]
     host = owner["hostName"]
     build_sha = str(owner["executableSha256"]).upper()
+    require(not include_power or build_sha in physical_rift.POWER_RECIPES,
+            "power-build-unsupported")
     # Standalone stats are now separately qualified for both exact builds.
     output_dir = Path(output_dir)
     if not output_dir.is_absolute():
@@ -84,12 +116,12 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False,
             "new-output-directory-required")
     output_dir.mkdir()
     results, module, self_key = {}, None, None
-    kinds = (("zone-before",) if include_zone else ()) + KINDS + \
-            (("stats",) if include_stats else ()) + (("zone-after",) if include_zone else ())
+    kinds = source_kinds(include_stats=include_stats, include_zone=include_zone,
+                         include_power=include_power)
     for kind in kinds:
         require(pin(pid, expected_host=host)["target"] == owner, "epoch-changed-before-read")
         path = output_dir / (kind + ".json")
-        read_kind = "zone-context" if kind.startswith("zone-") else kind
+        read_kind = native_kind(kind)
         # Zone and stats are one-shot readers; other sources support bursts.
         options = ({} if read_kind in ("stats", "zone-context") else
                    {"samples": samples, "interval_ms": interval_ms})
@@ -120,21 +152,29 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False,
                          and report.get("contractVersion") == "native-current-zone-seed-candidate/1"
                          and isinstance(observation, dict)
                          and result.get("nativeSourceSha256", "").upper() == source_sha)
-                     or (read_kind not in ("stats", "zone-context")
-                         and report.get("completedSamples") == samples)),
+                      or (read_kind == "power"
+                          and report.get("contractVersion") == "native-power-samples/1"
+                          and report.get("requestedSamples") == samples
+                          and result.get("nativeSourceSha256", "").upper() == source_sha)
+                      or (read_kind not in ("stats", "zone-context", "power")
+                          and report.get("completedSamples") == samples)),
                 kind + "-source-identity-invalid")
         current_module = (identity["moduleBaseAddress"], identity["moduleSize"])
         if module is None:
             module = current_module
         require(current_module == module, "module-owner-changed")
         values = result.get("nativeValues")
-        unit_key = (values.get("selfKey") if read_kind == "zone-context" else values.get("unitKey")) \
-            if isinstance(values, dict) else None
-        require(isinstance(unit_key, str) and unit_key.isdecimal() and int(unit_key) > 0,
-                kind + "-self-key-unavailable")
-        if self_key is None:
-            self_key = unit_key
-        require(unit_key == self_key, "self-key-changed")
+        if read_kind == "power":
+            require(physical_rift._native_values("power", report) == values,
+                    "power-native-values-mismatch")
+        else:
+            unit_key = (values.get("selfKey") if read_kind == "zone-context" else values.get("unitKey")) \
+                if isinstance(values, dict) else None
+            require(isinstance(unit_key, str) and unit_key.isdecimal() and int(unit_key) > 0,
+                    kind + "-self-key-unavailable")
+            if self_key is None:
+                self_key = unit_key
+            require(unit_key == self_key, "self-key-changed")
         if read_kind == "zone-context":
             require(observation.get("selfKey") == int(unit_key)
                     and observation.get("rawZoneKey") == values.get("rawZoneKey")
@@ -178,6 +218,10 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False,
                         "worldInstanceStatus": "unavailable",
                         "qualification": "Matching zone endpoints only; a transient change between samples, "
                                          "independent API agreement and world-instance identity remain unverified."}
+    power_bracket = (power_context_bracket(
+        {k: v["candidateValues"] for k, v in results.items()},
+        {k: v["sourceSha256"] for k, v in results.items()}, self_key)
+        if include_power else None)
     # Preserve the historical evidenceKind token for existing bundle consumers.
     summary = {
         "schemaVersion": 1, "evidenceKind": "amd-physical-player-state-candidate/1",
@@ -185,10 +229,17 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False,
         "moduleBaseAddress": module[0], "moduleSize": module[1],
         "selfKeyCandidate": self_key, "sources": results,
         **({"zoneBracketCandidate": zone_bracket} if zone_bracket is not None else {}),
+        **({"powerBracketCandidate": power_bracket} if power_bracket is not None else {}),
         "qualification": ("Sequential read-only exact-PID/epoch/build/module/self-key "
                           "candidate correlation; NOT atomic, passive-fresh, independently "
-                          "Lua-qualified, changed-state or restart-qualified."),
+                          "Lua-qualified, changed-state or restart-qualified."
+                          + (" Power is process-scoped and context-bracketed, not independently unit-keyed."
+                             if include_power else "")),
     }
+    if include_power:
+        # Run the same strict offline verification before publishing the new bundle.
+        from scripts.replay_physical_player_state import verify_receipt
+        verify_receipt(summary, None, output_dir)
     destination = output_dir / "summary.json"
     destination.write_text(json.dumps(summary, indent=2, allow_nan=False) + "\n",
                            encoding="utf-8")
@@ -206,6 +257,8 @@ def main(argv=None):
                         help="also acquire one source-pinned 20-stat native candidate snapshot")
     parser.add_argument("--include-zone", action="store_true",
                         help="bracket all other reads with two guarded native zone candidates")
+    parser.add_argument("--include-power", action="store_true",
+                        help="also acquire supported Warrior Power and recheck player context")
     parser.add_argument("--output-dir", type=Path,
                         default=ROOT / "artifacts" / ("physical-state-" + uuid.uuid4().hex))
     args = parser.parse_args(argv)
@@ -213,6 +266,7 @@ def main(argv=None):
         path, report = collect(args.physical_pid, args.output_dir,
                                samples=args.samples, interval_ms=args.interval_ms,
                                include_stats=args.include_stats, include_zone=args.include_zone,
+                                include_power=args.include_power,
                                expected_host=args.expected_host, native_reader=args.native_reader)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:240]}))
@@ -237,6 +291,8 @@ def main(argv=None):
                if k in vitals},
         },
         **({"statsCandidate": values["stats"]} if "stats" in values else {}),
+        **({"powerCandidate": values["power"], "powerBracketCandidate": report["powerBracketCandidate"]}
+           if "power" in values else {}),
         **({"zoneBracketCandidate": report["zoneBracketCandidate"]}
            if "zoneBracketCandidate" in report else {}),
         "sources": {k: v["sourceSha256"] for k, v in report["sources"].items()},

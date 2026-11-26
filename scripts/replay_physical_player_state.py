@@ -37,6 +37,11 @@ def _health_candidate(entry):
 def verified_state(filename):
     filename = Path(filename)
     receipt, receipt_sha = context.load(filename)
+    return verify_receipt(receipt, receipt_sha, filename.parent)
+
+
+def verify_receipt(receipt, receipt_sha, directory):
+    """Validate original sources for both saved replay and prepublication checks."""
     owner = receipt.get("target")
     host = receipt.get("ownerHost")
     build_sha = str(owner.get("executableSha256", "")).upper() if isinstance(owner, dict) else ""
@@ -44,9 +49,11 @@ def verified_state(filename):
     has_zone = (isinstance(sources, dict)
                 and ("zone-before" in sources or "zone-after" in sources
                      or "zoneBracketCandidate" in receipt))
-    kinds = (("zone-before",) if has_zone else ()) + state.KINDS + (
-        ("stats",) if isinstance(sources, dict) and "stats" in sources else ()) + (
-        ("zone-after",) if has_zone else ())
+    has_power = (isinstance(sources, dict)
+                 and ("power" in sources or "player-context-after" in sources
+                      or "powerBracketCandidate" in receipt))
+    kinds = state.source_kinds(include_stats=isinstance(sources, dict) and "stats" in sources,
+                               include_zone=has_zone, include_power=has_power)
     require(receipt.get("schemaVersion") == 1
             and receipt.get("evidenceKind") == "amd-physical-player-state-candidate/1"
             and receipt.get("status") == "complete-candidate"
@@ -78,7 +85,7 @@ def verified_state(filename):
                 and ntpath.basename(saved["path"]) == kind + ".json",
                 kind + "-invalid-source-pin")
         # Resolve fixed local filenames, NOT arbitrary absolute paths from receipts.
-        report, actual_sha = context.load(filename.parent / (kind + ".json"),
+        report, actual_sha = context.load(directory / (kind + ".json"),
                                           saved["sourceSha256"])
         one_shot = kind in ("stats", "zone-before", "zone-after")
         if one_shot:
@@ -86,24 +93,29 @@ def verified_state(filename):
             identity = observation.get("identity") if isinstance(observation, dict) else None
             rows = [observation] if isinstance(observation, dict) else None
         else:
-            identity, rows = report.get("identity"), report.get("observations")
+            identity = report.get("identity")
+            rows = report.get("samples" if kind == "power" else "observations")
         require(state.source_matches_target(identity, owner)
                 and (identity.get("moduleBaseAddress"), identity.get("moduleSize")) == module
                 and report.get("status") == "complete"
                 and ((kind == "stats" and report.get("contractVersion") == "native-current-stats-candidate/1")
                      or (kind in ("zone-before", "zone-after")
                          and report.get("contractVersion") == "native-current-zone-seed-candidate/1")
-                     or (not one_shot and report.get("requestedSamples") == saved["samples"]
-                         and report.get("completedSamples") == saved["samples"]))
+                      or (kind == "power" and report.get("contractVersion") == "native-power-samples/1"
+                          and report.get("requestedSamples") == saved["samples"])
+                      or (not one_shot and kind != "power"
+                          and report.get("requestedSamples") == saved["samples"]
+                          and report.get("completedSamples") == saved["samples"]))
                 and isinstance(rows, list) and len(rows) == saved["samples"]
-                and (report.get("observation") == rows[-1] if kind != "position"
-                     else report.get("observation") is None),
+                 and (report.get("observation") == rows[-1] if kind not in ("position", "power")
+                      else report.get("observation") is None),
                 kind + "-invalid-source-owner")
         for sample in rows:
             require(isinstance(sample, dict)
-                    and (kind == "position" or sample.get("identity") == identity)
-                    and str(sample.get("selfKey" if kind.startswith("zone-") else "unitKey"))
-                        == receipt["selfKeyCandidate"],
+                    and (kind in ("position", "power") or sample.get("identity") == identity)
+                    and (kind == "power" or
+                         str(sample.get("selfKey" if kind.startswith("zone-") else "unitKey"))
+                         == receipt["selfKeyCandidate"]),
                     kind + "-sample-owner")
             start = _utc_tick_order_key(sample.get("startedAtUtc"))
             end = _utc_tick_order_key(sample.get("completedAtUtc"))
@@ -117,7 +129,7 @@ def verified_state(filename):
         if kind == "vitals":
             health_samples = [_health_candidate(_native_values(
                 "vitals", {"observation": sample})["health"]) for sample in rows]
-        projected = _native_values("zone-context" if kind.startswith("zone-") else kind, report)
+        projected = _native_values(state.native_kind(kind), report)
         recorded = saved.get("candidateValues")
         if kind == "vitals" and "unavailableReasonProvenance" in projected and isinstance(recorded, dict):
             # Acquisition context is not part of the native values. A saved receipt
@@ -126,7 +138,7 @@ def verified_state(filename):
             if field not in recorded or recorded[field] in (
                     "current-reader-contract-checked", projected[field]):
                 recorded = {**recorded, field: projected[field]}
-        if kind == "vitals" or kind.startswith("zone-"):
+        if kind in ("vitals", "power", "player-context-after") or kind.startswith("zone-"):
             # Ordinary dict equality treats 1, 1.0 and True as interchangeable.
             # Compare typed JSON values regardless of object key order.
             def canonical(value):
@@ -168,12 +180,20 @@ def verified_state(filename):
         require(json.dumps(receipt.get("zoneBracketCandidate"), sort_keys=True, allow_nan=False)
                 == json.dumps(zone_bracket, sort_keys=True, allow_nan=False),
                 "zone-bracket-summary-mismatch")
+    power_bracket = None
+    if has_power:
+        power_bracket = state.power_context_bracket(
+            values, {k: row["sha256"] for k, row in hashes.items()}, receipt["selfKeyCandidate"])
+        require(json.dumps(receipt.get("powerBracketCandidate"), sort_keys=True, allow_nan=False)
+                == json.dumps(power_bracket, sort_keys=True, allow_nan=False),
+                "power-bracket-summary-mismatch")
     return {
         "schemaVersion": 1, "evidenceKind": "amd-physical-player-state-replay/1",
         "status": "candidate-only", "summarySha256": receipt_sha, "target": owner,
         "moduleBaseAddress": module[0], "moduleSize": module[1],
         "selfKeyCandidate": receipt["selfKeyCandidate"], "sources": hashes,
         **({"zoneBracketCandidate": zone_bracket} if zone_bracket is not None else {}),
+        **({"powerBracketCandidate": power_bracket} if power_bracket is not None else {}),
         "firstStartedAtUtc": first_time, "lastCompletedAtUtc": last_time,
         "candidateValues": values, "healthSampleCandidates": health_samples,
         "qualification": "Pinned sequential native replay; not atomic, passive-fresh, Lua-correlated or restart-qualified.",

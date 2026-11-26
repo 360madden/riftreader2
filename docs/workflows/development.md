@@ -323,6 +323,8 @@ Run the capture command after the operator binds the nonce in RIFT.
 ```powershell
 & $rr2Python -B scripts/physical_nearby_units.py --expected-host $rr2Host --physical-pid CURRENT_PID --include-levels --output-dir artifacts/NEW_NEARBY
 & $rr2Python -B scripts/collect_physical_player_state.py --expected-host $rr2Host --physical-pid CURRENT_PID --include-stats --include-zone --output-dir artifacts/NEW_PLAYER_STATE
+# Optional exact-build Warrior Power plus a second player-context check:
+& $rr2Python -B scripts/collect_physical_player_state.py --expected-host $rr2Host --physical-pid CURRENT_PID --include-stats --include-zone --include-power --output-dir artifacts/NEW_POWER_STATE
 & $rr2Python -B scripts/capture_physical_telemetry_target_series.py --expected-host $rr2Host --physical-pid CURRENT_PID --native-reader $rr2PublishedReader --output-dir artifacts/NEW_TARGET_SERIES
 & $rr2Python -B scripts/prepare_physical_npc_survey.py --check-dependencies --expected-host $rr2Host --include-levels
 & $rr2Python -B scripts/prepare_physical_npc_survey.py --expected-host $rr2Host --physical-pid CURRENT_PID --include-levels --output-dir artifacts/NEW_NPC_PLAN
@@ -343,6 +345,10 @@ Copy the player-state directory with its `summary.json` and native source files
 to replay it offline. Replay locates the sources beside the summary and checks
 each SHA-256, executable path and process identity recorded at capture. Pair
 and history reports retain the capture host, process identity and sample times.
+The opt-in Power source is process-scoped: matching Warrior context before
+and after the burst is required, but its native unit key remains unavailable.
+Power-enabled bundles must pass source replay before summary publication.
+Unsupported builds or unavailable Power refuse the opt-in collection.
 `--after` compares two ordered captures from the same process on the same host.
 
 ```powershell
