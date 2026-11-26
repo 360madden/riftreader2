@@ -20,8 +20,9 @@ internal static class CurrentBuildExperienceValuesCandidateReader
         Func<IReadOnlyNativeMemorySession, ExperienceSeedObservation> seedReader, Func<IReadOnlyList<NativeThreadEpoch>> threads)
     {
         var start = DateTimeOffset.UtcNow; var id = session.Identity; var seed = seedReader(session);
+        var updated = CurrentBuildPlayerLookup.IsUpdatedBuild(id.ExecutableSha256);
         if (seed.Identity != id || id.ProcessId <= 0 || id.ProcessStartUtcTicks <= 0 || id.ModuleSize < 0x3590000 ||
-            !string.Equals(id.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256, StringComparison.OrdinalIgnoreCase))
+            !CurrentBuildPlayerLookup.IsCoreBuild(id.ExecutableSha256))
             throw new InvalidDataException("Invalid experience identity.");
         var anchors = new Dictionary<(ulong, int), byte[]>(); var budget = 0;
         byte[] ReadBytes(ulong a, int n, bool remember = true)
@@ -41,16 +42,20 @@ internal static class CurrentBuildExperienceValuesCandidateReader
         IReadOnlyList<NativeThreadEpoch>? epochs = null;
         string restedStatus = "unavailable"; byte? restedFlag = null; uint? restedBits = null; long? rested = null;
         if (seed.Branch == "indexed-raw-candidate" && seed.Selected is not null &&
-           !Type(Ptr(seed.Owner, 0x168), 0x2A46738, 0x1C48CC0, 0x34C9670, 0x2A4B760, 0x1C84130))
+            !(updated
+                ? Type(Ptr(seed.Owner, 0x168), 0x2A31740, 0x1C503E0, 0x34DABC0, 0x2A5A880, 0x1C89BE0)
+                : Type(Ptr(seed.Owner, 0x168), 0x2A46738, 0x1C48CC0, 0x34C9670, 0x2A4B760, 0x1C84130)))
             status = "owner-type-unavailable";
         else if (seed.Branch == "indexed-raw-candidate" && seed.Selected is not null)
         {
             var selected = seed.Selected; var r = Ptr(selected.Address, 0x28);
-            if (!Type(r, 0x2BD4388, 0x201A050, 0x3548720, 0x2BE0EF8, 0x20482A0)) status = "progress-type-unavailable";
+            if (!(updated
+                ? Type(r, 0x2BDF520, 0x201A040, 0x355B0C0, 0x2BF12B8, 0x204C3D0)
+                : Type(r, 0x2BD4388, 0x201A050, 0x3548720, 0x2BE0EF8, 0x20482A0))) status = "progress-type-unavailable";
             else
             {
                 var raw = BinaryPrimitives.ReadInt64LittleEndian(ReadBytes(r + 0x18, 8)); var l = I(r + 0x24); level = l;
-                var restedRoot = Q(id.ModuleBaseAddress + 0x33E0B08);
+                var restedRoot = Q(id.ModuleBaseAddress + (updated ? 0x33F22C8UL : 0x33E0B08UL));
                 if (restedRoot != 0)
                 {
                     restedRoot = Ptr(restedRoot, 0x88); restedFlag = ReadBytes(restedRoot + 0x87, 1)[0];
@@ -62,61 +67,84 @@ internal static class CurrentBuildExperienceValuesCandidateReader
                 }
                 else restedStatus = "provider-uninitialized";
                 if (raw != selected.RawInt64_18 || unchecked((uint)l) != selected.RawDword24) throw new InvalidDataException("Progress seed changed.");
-                var g = Ptr(Q(id.ModuleBaseAddress + 0x33E0AB0), 0x880); var cb = Q(g + 0x870); var ce = Q(g + 0x878);
-                if (ce < cb || (ce - cb) % 8 != 0 || (ce - cb) / 8 > 4096 || cb == 0 || ce == cb) throw new InvalidDataException("Cap vector unavailable.");
-                Ptr(cb, checked((int)(ce - cb))); var count = (ce - cb) / 8;
-                var mi = unchecked((int)seed.RawDword160); var which = mi < 0 ? 0UL : (ulong)mi >= count ? count - 1 : (ulong)mi;
-                var cap = Ptr(Q(checked(cb + which * 8)), 0x38);
-                if (!Type(cap, 0x2BA1608, 0x1FA64F0, 0x3538760, 0x2BADC68, 0x1FCBC00)) status = "cap-type-unavailable";
+                // The updated cap helper and shared limit were independently decoded.
+                // Read only an already initialized provider; never call its initializer.
+                var capRoot = Q(id.ModuleBaseAddress + (updated ? 0x33F2270UL : 0x33E0AB0UL));
+                if (updated && capRoot == 0)
+                {
+                    status = "cap-provider-uninitialized";
+                }
                 else
                 {
-                    var capValue = I(cap + 0x34); var vb = Q(id.ModuleBaseAddress + 0x33E0C98); var ve = Q(id.ModuleBaseAddress + 0x33E0CA0);
-                    if (ve < vb || (ve - vb) % 8 != 0 || (ve - vb) / 8 > 65536 || (vb == 0) != (ve == 0)) throw new InvalidDataException("Invalid baseline vector.");
-                    var n = (ve - vb) / 8; if (n > 0) Ptr(vb, checked((int)(n * 8)));
-                    var lim = n == 0 ? capValue : Math.Min(capValue, checked((int)n - 1)); limit = lim;
-                    if (l >= lim) status = "native-minus-one-level-cap";
-                    else if (l < 1 || (ulong)l >= n) status = "baseline-unavailable";
+                    var g = Ptr(capRoot, 0x880); var cb = Q(g + 0x870); var ce = Q(g + 0x878);
+                    if (ce < cb || (ce - cb) % 8 != 0 || (ce - cb) / 8 > 4096 || cb == 0 || ce == cb) throw new InvalidDataException("Cap vector unavailable.");
+                    Ptr(cb, checked((int)(ce - cb))); var count = (ce - cb) / 8;
+                    var mi = unchecked((int)seed.RawDword160); var which = mi < 0 ? 0UL : (ulong)mi >= count ? count - 1 : (ulong)mi;
+                    var cap = Ptr(Q(checked(cb + which * 8)), 0x38);
+                    if (!(updated
+                        ? Type(cap, 0x2BB7430, 0x1FB15F0, 0x35497F0, 0x2BBD010, 0x1FD09D0)
+                        : Type(cap, 0x2BA1608, 0x1FA64F0, 0x3538760, 0x2BADC68, 0x1FCBC00))) status = "cap-type-unavailable";
                     else
                     {
-                        baseline = BinaryPrimitives.ReadInt64LittleEndian(ReadBytes(checked(vb + (ulong)l * 8), 8));
-                        var provider = Q(id.ModuleBaseAddress + 0x33E0D88);
-                        if (provider == 0) status = "provider-uninitialized";
+                        var capValue = I(cap + 0x34);
+                        var vb = Q(id.ModuleBaseAddress + (updated ? 0x33F2458UL : 0x33E0C98UL));
+                        var ve = Q(id.ModuleBaseAddress + (updated ? 0x33F2460UL : 0x33E0CA0UL));
+                        if (ve < vb || (ve - vb) % 8 != 0 || (ve - vb) / 8 > 65536 || (vb == 0) != (ve == 0)) throw new InvalidDataException("Invalid baseline vector.");
+                        var n = (ve - vb) / 8; if (n > 0) Ptr(vb, checked((int)(n * 8)));
+                        var lim = n == 0 ? capValue : Math.Min(capValue, checked((int)n - 1)); limit = lim;
+                        if (l >= lim) status = "native-minus-one-level-cap";
+                        else if (l < 1 || (ulong)l >= n) status = "baseline-unavailable";
                         else
                         {
-                            provider = Ptr(provider, 0x42); var selector = BinaryPrimitives.ReadUInt16LittleEndian(ReadBytes(provider + 0x40, 2));
-                            var wrapper = Ptr(Q(id.ModuleBaseAddress + 0x3372C18)); var owner = Ptr(Q(wrapper), 0x278);
-                            var tls = BinaryPrimitives.ReadUInt32LittleEndian(ReadBytes(owner + 0x274, 4)); if (tls > 1087) throw new InvalidDataException("Invalid TLS index.");
-                            epochs = threads(); if (epochs.Count is < 1 or > 256 || epochs.Select(t => t.Id).Distinct().Count() != epochs.Count || epochs.Select(t => t.Teb).Distinct().Count() != epochs.Count) throw new InvalidDataException("Invalid thread set.");
-                            ulong? collection = null;
-                            foreach (var t in epochs)
+                            baseline = BinaryPrimitives.ReadInt64LittleEndian(ReadBytes(checked(vb + (ulong)l * 8), 8));
+                            // The 1179 required-XP cache traversal is not yet qualified.
+                            // Retain the independently guarded baseline, not a guessed needed value.
+                            if (updated)
                             {
-                                Ptr(t.Teb, 0x1788); var identity = ReadBytes(t.Teb + 0x30, 32);
-                                if (t.Id <= 0 || t.Created <= 0 || BinaryPrimitives.ReadUInt64LittleEndian(identity) != t.Teb || BinaryPrimitives.ReadUInt64LittleEndian(identity.AsSpan(16)) != (ulong)id.ProcessId || BinaryPrimitives.ReadUInt64LittleEndian(identity.AsSpan(24)) != (ulong)t.Id) throw new InvalidDataException("TEB identity mismatch.");
-                                ulong value; if (tls < 64) value = Q(t.Teb + 0x1480 + tls * 8UL); else { var expansion = Q(t.Teb + 0x1780); value = expansion == 0 ? 0 : Q(checked(Ptr(expansion) + (tls - 64) * 8UL)); }
-                                var c = value == 0 ? checked(owner + 0x200) : Ptr(value); if (collection.HasValue && collection != c) throw new InvalidDataException("TLS collections disagree."); collection = c;
+                                status = "needed-recipe-unqualified";
                             }
-                            var header = ReadBytes(checked(collection!.Value + 0x20), 32); var bucket = Ptr(BinaryPrimitives.ReadUInt64LittleEndian(header)); var stride = BinaryPrimitives.ReadUInt64LittleEndian(header.AsSpan(8)); var countBuckets = BinaryPrimitives.ReadUInt64LittleEndian(header.AsSpan(16));
-                            if (stride != 24 || countBuckets is < 1 or > 4096) throw new InvalidDataException("Invalid cache header."); Ptr(bucket, checked((int)(countBuckets * 24)));
-                            var address = checked(bucket + CurrentBuildAbilityRecordsCandidateReader.Hash(CurrentBuildAbilityRecordsCandidateReader.Hash(unchecked((uint)l))) % countBuckets * 24);
-                            var seen = new HashSet<ulong>(); bool head = true; ulong record = 0;
-                            for (var i = 0; i <= 128; i++)
-                            {
-                                Ptr(address, 24); if (!seen.Add(address)) throw new InvalidDataException("Cache cycle."); var node = ReadBytes(address, 24); var link = BinaryPrimitives.ReadUInt64LittleEndian(node);
-                                if ((!head || (link & 1) == 0) && BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(8)) == selector && BinaryPrimitives.ReadUInt32LittleEndian(node.AsSpan(12)) == unchecked((uint)l))
-                                { var holder = BinaryPrimitives.ReadUInt64LittleEndian(node.AsSpan(16)); if (holder != 0) record = Q(checked(Ptr(holder, 0x20) + 0x18)); break; }
-                                var next = link & ~1UL; if (next == 0) break; if (i == 128) throw new InvalidDataException("Cache chain budget exceeded."); address = next; head = false;
-                            }
-                            if (record == 0) status = "cold-cache-or-null";
-                            else if (!Type(Ptr(record, 0x2C), 0x2C04110, 0x208AF40, 0x3557780, 0x2C0DC80, 0x20AFB30)) status = "needed-type-unavailable";
                             else
                             {
-                                var m = I(id.ModuleBaseAddress + 0x2F95CF4); mode = m; var offset = m switch { 1 => 0x28UL, 2 => 0x20UL, 3 => 0x18UL, 4 => 0x1CUL, _ => 0x24UL }; var nval = I(record + offset); needed = nval;
-                                if (nval == -1) status = "native-minus-one-needed";
-                                else { try { accumulated = checked(checked(raw - baseline.Value) + nval); status = "raw-values-candidate"; } catch (OverflowException) { status = "arithmetic-overflow"; } }
-                            }
+                                var provider = Q(id.ModuleBaseAddress + 0x33E0D88);
+                                if (provider == 0) status = "provider-uninitialized";
+                                else
+                                {
+                                    provider = Ptr(provider, 0x42); var selector = BinaryPrimitives.ReadUInt16LittleEndian(ReadBytes(provider + 0x40, 2));
+                                    var wrapper = Ptr(Q(id.ModuleBaseAddress + 0x3372C18)); var owner = Ptr(Q(wrapper), 0x278);
+                                    var tls = BinaryPrimitives.ReadUInt32LittleEndian(ReadBytes(owner + 0x274, 4)); if (tls > 1087) throw new InvalidDataException("Invalid TLS index.");
+                                    epochs = threads(); if (epochs.Count is < 1 or > 256 || epochs.Select(t => t.Id).Distinct().Count() != epochs.Count || epochs.Select(t => t.Teb).Distinct().Count() != epochs.Count) throw new InvalidDataException("Invalid thread set.");
+                                    ulong? collection = null;
+                                    foreach (var t in epochs)
+                                    {
+                                        Ptr(t.Teb, 0x1788); var identity = ReadBytes(t.Teb + 0x30, 32);
+                                        if (t.Id <= 0 || t.Created <= 0 || BinaryPrimitives.ReadUInt64LittleEndian(identity) != t.Teb || BinaryPrimitives.ReadUInt64LittleEndian(identity.AsSpan(16)) != (ulong)id.ProcessId || BinaryPrimitives.ReadUInt64LittleEndian(identity.AsSpan(24)) != (ulong)t.Id) throw new InvalidDataException("TEB identity mismatch.");
+                                        ulong value; if (tls < 64) value = Q(t.Teb + 0x1480 + tls * 8UL); else { var expansion = Q(t.Teb + 0x1780); value = expansion == 0 ? 0 : Q(checked(Ptr(expansion) + (tls - 64) * 8UL)); }
+                                        var c = value == 0 ? checked(owner + 0x200) : Ptr(value); if (collection.HasValue && collection != c) throw new InvalidDataException("TLS collections disagree."); collection = c;
+                                    }
+                                    var header = ReadBytes(checked(collection!.Value + 0x20), 32); var bucket = Ptr(BinaryPrimitives.ReadUInt64LittleEndian(header)); var stride = BinaryPrimitives.ReadUInt64LittleEndian(header.AsSpan(8)); var countBuckets = BinaryPrimitives.ReadUInt64LittleEndian(header.AsSpan(16));
+                                    if (stride != 24 || countBuckets is < 1 or > 4096) throw new InvalidDataException("Invalid cache header."); Ptr(bucket, checked((int)(countBuckets * 24)));
+                                    var address = checked(bucket + CurrentBuildAbilityRecordsCandidateReader.Hash(CurrentBuildAbilityRecordsCandidateReader.Hash(unchecked((uint)l))) % countBuckets * 24);
+                                    var seen = new HashSet<ulong>(); bool head = true; ulong record = 0;
+                                    for (var i = 0; i <= 128; i++)
+                                    {
+                                        Ptr(address, 24); if (!seen.Add(address)) throw new InvalidDataException("Cache cycle."); var node = ReadBytes(address, 24); var link = BinaryPrimitives.ReadUInt64LittleEndian(node);
+                                        if ((!head || (link & 1) == 0) && BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(8)) == selector && BinaryPrimitives.ReadUInt32LittleEndian(node.AsSpan(12)) == unchecked((uint)l))
+                                        { var holder = BinaryPrimitives.ReadUInt64LittleEndian(node.AsSpan(16)); if (holder != 0) record = Q(checked(Ptr(holder, 0x20) + 0x18)); break; }
+                                        var next = link & ~1UL; if (next == 0) break; if (i == 128) throw new InvalidDataException("Cache chain budget exceeded."); address = next; head = false;
+                                    }
+                                    if (record == 0) status = "cold-cache-or-null";
+                                    else if (!Type(Ptr(record, 0x2C), 0x2C04110, 0x208AF40, 0x3557780, 0x2C0DC80, 0x20AFB30)) status = "needed-type-unavailable";
+                                    else
+                                    {
+                                        var m = I(id.ModuleBaseAddress + 0x2F95CF4); mode = m; var offset = m switch { 1 => 0x28UL, 2 => 0x20UL, 3 => 0x18UL, 4 => 0x1CUL, _ => 0x24UL }; var nval = I(record + offset); needed = nval;
+                                        if (nval == -1) status = "native-minus-one-needed";
+                                        else { try { accumulated = checked(checked(raw - baseline.Value) + nval); status = "raw-values-candidate"; } catch (OverflowException) { status = "arithmetic-overflow"; } }
+                                    }
+                                }
+                            } // Historical needed-value recipe only.
                         }
                     }
-                }
+                } // Initialized cap provider.
             }
         }
         foreach (var a in anchors) CurrentBuildPlayerLookup.RequireSame(ReadBytes(a.Key.Item1, a.Key.Item2, false), a.Value);
@@ -130,11 +158,22 @@ internal static class CurrentBuildExperienceValuesCandidateReader
 }
 internal static class CurrentBuildExperienceValuesSampleCommand
 {
-    internal static Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken ct) =>
-        RunAsync(options, output, ct,
-            static async (pid, ticks, token) => await NativeReadFileLease.AcquireAsync(pid, ticks, CurrentBuildPlayerLookup.GameSha256, TimeSpan.FromSeconds(1), token),
-            static async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(pid, ticks, CurrentBuildPlayerLookup.GameSha256, token),
+    internal static Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken ct)
+    {
+        var sha = ExpectedSha(options);
+        return RunAsync(options, output, ct,
+            async (pid, ticks, token) => await NativeReadFileLease.AcquireAsync(pid, ticks, sha, TimeSpan.FromSeconds(1), token),
+            async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(pid, ticks, sha, token),
             CurrentBuildExperienceValuesCandidateReader.Read);
+    }
+
+    private static string ExpectedSha(IReadOnlyDictionary<string, string> options)
+    {
+        var sha = options.TryGetValue("--sha256", out var requested) ? requested : CurrentBuildPlayerLookup.GameSha256;
+        if (!CurrentBuildPlayerLookup.IsCoreBuild(sha))
+            throw new ArgumentException("Unqualified executable SHA256 for experience values.");
+        return sha;
+    }
 
     // Explicit offline test seam; production always supplies the real lease.
     internal static async Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken ct,
@@ -143,9 +182,22 @@ internal static class CurrentBuildExperienceValuesSampleCommand
         Func<IReadOnlyNativeMemorySession, ExperienceValuesObservation> read)
     {
         if (!options.TryGetValue("--pid", out var p) || !int.TryParse(p, NumberStyles.None, CultureInfo.InvariantCulture, out var pid) || pid <= 0 || !options.TryGetValue("--start-ticks", out var t) || !long.TryParse(t, NumberStyles.None, CultureInfo.InvariantCulture, out var ticks) || ticks <= 0 || !options.TryGetValue("--output", out var path) || string.IsNullOrWhiteSpace(path)) throw new ArgumentException("--pid, --start-ticks and --output required.");
-        if (File.Exists(path)) throw new IOException("Output exists."); await using var lease = await acquireLease(pid, ticks, ct); ct.ThrowIfCancellationRequested(); await using var session = await open(pid, ticks, ct); ct.ThrowIfCancellationRequested();
-        var observation = read(session); if (await session.RevalidateAsync(ct) is not null) throw new InvalidDataException("Process identity invalidated."); ct.ThrowIfCancellationRequested();
-        var report = new { schemaVersion = 1, contractVersion = "native-current-experience-values-candidate/1", status = "complete", observation, limitations = new[] { "Candidate values lack API agreement, freshness and restart proof.", "Sequential reads are non-atomic and cannot exclude ABA.", "Executable hash identifies on-disk bytes, not independently hashed loaded pages.", "No getter, initializer, refcount operation or memory write." } };
-        await JsonReportWriter.WriteNewAsync(path, report, ct); await output.WriteLineAsync(JsonSerializer.Serialize(new { status = "complete", observation.ValueStatus, output = Path.GetFullPath(path) }, new JsonSerializerOptions(JsonFormat.Options) { WriteIndented = false })); return 0;
+        var sha = ExpectedSha(options);
+        if (File.Exists(path)) throw new IOException("Output exists.");
+        await using var lease = await acquireLease(pid, ticks, ct);
+        ct.ThrowIfCancellationRequested();
+        await using var session = await open(pid, ticks, ct);
+        ct.ThrowIfCancellationRequested();
+        if (session.Identity.ProcessId != pid || session.Identity.ProcessStartUtcTicks != ticks ||
+            !string.Equals(session.Identity.ExecutableSha256, sha, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Experience source identity mismatch.");
+        var observation = read(session);
+        if (observation.Identity != session.Identity)
+            throw new InvalidDataException("Experience observation identity mismatch.");
+        if (await session.RevalidateAsync(ct) is not null) throw new InvalidDataException("Process identity invalidated.");
+        ct.ThrowIfCancellationRequested();
+        var report = new { schemaVersion = 1, contractVersion = "native-current-experience-values-candidate/1", status = "complete", observation, limitations = new[] { "Candidate values lack API agreement, freshness and restart proof.", "Sequential reads are non-atomic and cannot exclude ABA.", "Executable hash identifies on-disk bytes, not independently hashed loaded pages.", "No getter, initializer, refcount operation or memory write.", "Build 1179 required and accumulated experience remain unqualified." } };
+        await JsonReportWriter.WriteNewAsync(path, report, ct);
+        await output.WriteLineAsync(JsonSerializer.Serialize(new { status = "complete", observation.ValueStatus, output = Path.GetFullPath(path) }, new JsonSerializerOptions(JsonFormat.Options) { WriteIndented = false })); return 0;
     }
 }

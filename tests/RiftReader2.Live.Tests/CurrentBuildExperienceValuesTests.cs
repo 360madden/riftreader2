@@ -34,8 +34,80 @@ public sealed class CurrentBuildExperienceValuesTests
         f = Fixture(); f.Q(M + 0x33E0D88, 0); Assert.Equal("provider-uninitialized", Run(f).ValueStatus);
         f = Fixture(); f.Changed = (DATA + 0x20, 4); Assert.Throws<InvalidDataException>(() => Run(f));
     }
+    [Fact]
+    public void UpdatedBuildReturnsGuardedBaselineWithoutReadingUnqualifiedNeededCache()
+    {
+        var f = UpdatedFixture();
+        var result = RunUpdated(f);
+        Assert.Equal("needed-recipe-unqualified", result.ValueStatus);
+        Assert.Equal(43, result.Level);
+        Assert.Equal(51, result.Limit);
+        Assert.Equal(1000L, result.Baseline);
+        Assert.Null(result.Needed);
+        Assert.Null(result.AccumulatedCandidate);
+        Assert.Equal("provider-uninitialized", result.RestedStatus);
+        Assert.Null(result.RestedCandidate);
+    }
+
+    [Fact]
+    public void UpdatedProviderRefusalsAndMutationStayExplicit()
+    {
+        var f = UpdatedFixture();
+        f.Q(M + 0x33F2270, 0);
+        var result = RunUpdated(f);
+        Assert.Equal("cap-provider-uninitialized", result.ValueStatus);
+        Assert.Null(result.Baseline);
+        Assert.Null(result.Limit);
+        f = UpdatedFixture();
+        f.Q(C, M + 0x1000);
+        Assert.Equal("cap-type-unavailable", RunUpdated(f).ValueStatus);
+        f = UpdatedFixture();
+        f.D(C + 0x34, 43);
+        Assert.Equal("native-minus-one-level-cap", RunUpdated(f).ValueStatus);
+        f = UpdatedFixture();
+        f.Changed = (BV + 43 * 8, 8);
+        Assert.Throws<InvalidDataException>(() => RunUpdated(f));
+    }
+
+    [Fact]
+    public void UpdatedTypeGuardsDoNotInheritOldBuildTypes()
+    {
+        var f = UpdatedFixture();
+        f.Q(O, M + 0x2A46738);
+        Assert.Equal("owner-type-unavailable", RunUpdated(f).ValueStatus);
+        f = UpdatedFixture();
+        f.Q(R, M + 0x2BD4388);
+        Assert.Equal("progress-type-unavailable", RunUpdated(f).ValueStatus);
+    }
+
+    static ExperienceValuesObservation RunUpdated(Fake f) =>
+        CurrentBuildExperienceValuesCandidateReader.Read(f, _ => Seed(f),
+            () => throw new InvalidOperationException("Unqualified cache must not be read."));
+
+    static Fake UpdatedFixture()
+    {
+        var f = new Fake(updated: true);
+        f.Type(O, 0x2A31740, 0x1C503E0, 0x34DABC0, 0x2A5A880, 0x1C89BE0);
+        f.Type(R, 0x2BDF520, 0x201A040, 0x355B0C0, 0x2BF12B8, 0x204C3D0);
+        f.Q(R + 0x18, 3507422); f.D(R + 0x24, 43);
+        f.Q(M + 0x33F22C8, 0); f.Q(M + 0x33F2270, G);
+        f.Q(G + 0x870, CV); f.Q(G + 0x878, CV + 8); f.Q(CV, C);
+        f.Type(C, 0x2BB7430, 0x1FB15F0, 0x35497F0, 0x2BBD010, 0x1FD09D0);
+        f.D(C + 0x34, 51); f.Q(M + 0x33F2458, BV);
+        f.Q(M + 0x33F2460, BV + 52 * 8); f.Q(BV + 43 * 8, 1000);
+        return f;
+    }
+
     static ExperienceValuesObservation Run(Fake f) => CurrentBuildExperienceValuesCandidateReader.Read(f, _ => Seed(f), () => [new(7, 8, TEB)]);
-    static ExperienceSeedObservation Seed(Fake f) => new(f.Identity, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, 1, 0x21000000, 0x21010000, O, 0x2A46738, 0x1C48CC0, 0, 0, 0, 0x21020000, 0x21020008, [R], "indexed-raw-candidate", new(R, 0x2BD4388, 0x201A050, 3507422, 43, 0, 0), null, null);
+    static ExperienceSeedObservation Seed(Fake f)
+    {
+        var updated = CurrentBuildPlayerLookup.IsUpdatedBuild(f.Identity.ExecutableSha256);
+        return new(f.Identity, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, 1, 0x21000000, 0x21010000, O,
+            updated ? 0x2A31740UL : 0x2A46738UL, updated ? 0x1C503E0UL : 0x1C48CC0UL,
+            0, 0, 0, 0x21020000, 0x21020008, [R], "indexed-raw-candidate",
+            new(R, updated ? 0x2BDF520UL : 0x2BD4388UL, updated ? 0x201A040UL : 0x201A050UL,
+                3507422, 43, 0, 0), null, null);
+    }
     static Fake Fixture()
     {
         var f = new Fake(); f.Type(O, 0x2A46738, 0x1C48CC0, 0x34C9670, 0x2A4B760, 0x1C84130); f.Type(R, 0x2BD4388, 0x201A050, 0x3548720, 0x2BE0EF8, 0x20482A0);
@@ -47,10 +119,12 @@ public sealed class CurrentBuildExperienceValuesTests
         var node = new byte[24]; BinaryPrimitives.WriteUInt16LittleEndian(node.AsSpan(8), 83); BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(12), 43); BinaryPrimitives.WriteUInt64LittleEndian(node.AsSpan(16), HOLDER); f.Put(TABLE, node); f.Q(HOLDER + 0x18, DATA);
         f.Type(DATA, 0x2C04110, 0x208AF40, 0x3557780, 0x2C0DC80, 0x20AFB30); f.D(M + 0x2F95CF4, 2); f.D(DATA + 0x20, 200); return f;
     }
-    sealed class Fake : IReadOnlyNativeMemorySession
+    sealed class Fake(bool updated = false) : IReadOnlyNativeMemorySession
     {
         readonly Dictionary<(ulong, int), byte[]> data = []; readonly Dictionary<(ulong, int), int> reads = []; public (ulong, int)? Changed { get; set; }
-        public NativeProcessIdentity Identity { get; } = new(1, 2, "rift.exe", CurrentBuildPlayerLookup.GameSha256, M, 64 * 1024 * 1024);
+        public NativeProcessIdentity Identity { get; } = new(1, 2, "rift.exe",
+            updated ? CurrentBuildPlayerLookup.UpdatedGameSha256 : CurrentBuildPlayerLookup.GameSha256,
+            M, 64 * 1024 * 1024);
         public void Put(ulong a, byte[] b) => data[(a, b.Length)] = b; public void Q(ulong a, ulong v) { var b = new byte[8]; BinaryPrimitives.WriteUInt64LittleEndian(b, v); Put(a, b); }
         public void D(ulong a, int v) { var b = new byte[4]; BinaryPrimitives.WriteInt32LittleEndian(b, v); Put(a, b); }
         public void B(ulong a, byte v) => Put(a, [v]); public void U16(ulong a, ushort v) { var b = new byte[2]; BinaryPrimitives.WriteUInt16LittleEndian(b, v); Put(a, b); }

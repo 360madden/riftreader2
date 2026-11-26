@@ -38,6 +38,7 @@ NATIVE_READS = {
     "selected-target": "sample-current-selected-target",
     "stats": "sample-current-stats",
     "experience-seed": "sample-current-experience-seed",
+    "experience-values": "sample-current-experience-values",
     "zone-context": "sample-current-zone-seed",
     "target-name": "sample-current-target-template-name",
     "unit-names": "sample-current-unit-template-names",
@@ -57,6 +58,7 @@ NATIVE_RECEIPTS = {
     "selected-target": "native-current-selected-target-candidate-summary/1",
     "stats": "native-current-stats-summary/1",
     "experience-seed": "native-current-experience-seed-summary/1",
+    "experience-values": None,  # The existing value sampler emits a legacy summary.
     "zone-context": "native-current-zone-seed-summary/1",
     "target-name": "native-target-template-name-summary/1",
     "unit-names": "native-unit-template-names-summary/1",
@@ -689,6 +691,9 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
     if kind == "experience-seed":
         from scripts.sample_current_native_experience_seed import project_seed
         return project_seed(report)
+    if kind == "experience-values":
+        from scripts.sample_current_native_experience_values import project_values
+        return project_values(report)
     if kind == "stats":
         return _stats_values(report)
     if kind == "unit-levels":
@@ -1782,11 +1787,12 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
         if sha not in POWER_RECIPES:
             return dict(selection, status="blocked", reason="native-power-build-unqualified")
         command.extend(("--sha256", sha))
-    elif kind == "experience-seed":
+    elif kind in ("experience-seed", "experience-values"):
         from scripts.sample_current_native_experience_seed import SEED_BUILDS
         sha = str(target.get("executableSha256", "")).upper()
         if sha not in SEED_BUILDS:
-            return dict(selection, status="blocked", reason="native-experience-seed-build-unqualified")
+            return dict(selection, status="blocked",
+                        reason="native-" + kind + "-build-unqualified")
         command.extend(("--sha256", sha))
     elif str(target.get("executableSha256", "")).casefold() == updated_sha.casefold():
         if kind not in ("position", "facing", "actor-pose", "orientation", "unit-positions", "selected-position", "selected-target", "vitals", "player-context", "stats", "zone-context", "target-name", "unit-names", "unit-levels"):
@@ -1817,7 +1823,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
                * (interval_ms if interval_ms is not None else 500) / 1000
                if kind in ("position", "vitals", "power", "actor-pose", "smoothed-scalar", "orientation", "facing", "player-context", "selected-position") else 30)
     try:
-        timed_read = kind in ("zone-context", "target-name", "unit-names", "unit-levels", "experience-seed")
+        timed_read = kind in ("zone-context", "target-name", "unit-names", "unit-levels", "experience-seed", "experience-values")
         invocation_started = datetime.now(timezone.utc) if timed_read or kind == "power" else None
         completed = subprocess.run(command, cwd=ROOT, capture_output=True,
                                    text=True, timeout=timeout, check=False,
@@ -1849,8 +1855,8 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
                             or summary["samples"] != (1 if samples is None else samples)):
         return dict(selection, status="blocked", reason="invalid-native-reader-receipt")
     try:
-        if kind == "experience-seed" and (path.is_symlink() or not 0 < path.stat().st_size <= 8_000_000):
-            raise ValueError("invalid-native-experience-seed-source")
+        if kind in ("experience-seed", "experience-values") and (path.is_symlink() or not 0 < path.stat().st_size <= 8_000_000):
+            raise ValueError("invalid-native-experience-source")
         report_bytes = path.read_bytes()
         report = _strict_native_json(report_bytes.decode("utf-8"))
         observation = report.get("observation")
@@ -1934,14 +1940,18 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
                     <= _utc_tick_order_key(invocation_completed.isoformat())):
                 raise ValueError("native-power-count-or-invocation-time-mismatch")
         if timed_read:
-            if (kind not in ("unit-names", "unit-levels", "experience-seed") and summary.get("status") != observation["status"]
+            if (kind not in ("unit-names", "unit-levels", "experience-seed", "experience-values") and summary.get("status") != observation["status"]
                     or not _utc_tick_order_key(invocation_started.isoformat()) <= _utc_tick_order_key(observation["startedAtUtc"])
                     <= _utc_tick_order_key(observation["completedAtUtc"]) <= _utc_tick_order_key(invocation_completed.isoformat())):
                 raise ValueError("native-receipt-or-invocation-time-mismatch")
-        if kind == "experience-seed":
-            if (summary.get("branch") != observation["branch"]
+        if kind in ("experience-seed", "experience-values"):
+            if kind == "experience-seed" and (summary.get("branch") != observation["branch"]
                     or summary.get("qualification") != observation["qualification"]):
                 raise ValueError("native-experience-seed-receipt-mismatch")
+            if kind == "experience-values" and (
+                    set(summary) != {"status", "valueStatus", "output"}
+                    or summary.get("valueStatus") != observation["valueStatus"]):
+                raise ValueError("native-experience-values-receipt-mismatch")
             # Preserve the exact executable path when it is supplied by selection.
             if target.get("executablePath") and (
                     not isinstance(identity.get("executablePath"), str) or

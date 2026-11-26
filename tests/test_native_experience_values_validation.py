@@ -102,5 +102,56 @@ class ExperienceValidationTests(unittest.TestCase):
             self.validate(report)
 
 
+def updated_fixture():
+    """Synthetic partial build-1179 evidence; never a live XP result."""
+    report = fixture()
+    o = report["observation"]
+    for value in (o, o["seed"]):
+        value["identity"].update(executableSha256=values.UPDATED_GAME_SHA,
+                                 moduleSize=0x4000000, moduleBaseAddress=0x140000000)
+    o["seed"].update(ownerVtableRva=0x2A31740, ownerGetterRva=0x1C503E0)
+    o["seed"]["selected"].update(vtableRva=0x2BDF520, getterRva=0x201A040)
+    o.update(valueStatus="needed-recipe-unqualified", mode=None, needed=None,
+             accumulatedCandidate=None)
+    return report
+
+
+class UpdatedExperienceValidationTests(unittest.TestCase):
+    def validate(self, report):
+        return values.validate_report(report, pid=123, ticks=456,
+                                      expected_sha=values.UPDATED_GAME_SHA)
+
+    def test_partial_values_preserve_baseline_and_unknown_needed(self):
+        report = updated_fixture()
+        result = values.project_values(report)
+        self.assertEqual("needed-recipe-unqualified", result["valueStatus"])
+        self.assertEqual(1200, result["baselineCandidate"])
+        self.assertEqual(45, result["levelCandidate"])
+        self.assertEqual(65, result["limitCandidate"])
+        self.assertIsNone(result["neededCandidate"])
+        self.assertIsNone(result["accumulatedCandidate"])
+        self.assertEqual(0, result["rawRestedCandidate"])
+        with self.assertRaises(ValueError):
+            values.validate_report(report, pid=123, ticks=456)
+
+    def test_partial_reader_cannot_claim_calculated_experience(self):
+        for change in ({"needed": 100}, {"mode": 2}, {"accumulatedCandidate": 100},
+                       {"valueStatus": "raw-values-candidate"}, {"baseline": None}):
+            with self.subTest(change=change):
+                report = updated_fixture()
+                report["observation"].update(change)
+                with self.assertRaises(ValueError):
+                    self.validate(report)
+
+    def test_uninitialized_cap_provider_preserves_explicit_absence(self):
+        report = updated_fixture()
+        o = report["observation"]
+        o.update(valueStatus="cap-provider-uninitialized", limit=None, baseline=None)
+        self.assertEqual("cap-provider-uninitialized", self.validate(report)["valueStatus"])
+        o["baseline"] = 0
+        with self.assertRaises(ValueError):
+            self.validate(report)
+
+
 if __name__ == "__main__":
     unittest.main()

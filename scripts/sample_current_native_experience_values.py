@@ -7,7 +7,9 @@ sys.path.insert(0, str(ROOT))
 from scripts.lab_codex import LabCodex
 from scripts.inventory_passive_rift_sources import ps_literal
 from scripts.sample_current_native_xyz import digest
-from scripts.sample_current_native_experience_seed import validate_report as validate_seed
+from scripts.sample_current_native_experience_seed import (
+    validate_report as validate_seed, UPDATED_GAME_SHA, SEED_BUILDS,
+)
 GAME_SHA = '1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8'
 READER_SHA = 'A96508FE963E4DFDE6EABD50889FD0432A72C0309AEC562E35CBF87B584F49D9'
 READER = ROOT / 'artifacts/native-zone-provider-fix-20261107/publish/RiftReader2.Live.exe'
@@ -15,24 +17,28 @@ EVIDENCE = ROOT / 'artifacts/native-experience-values-20261107/runs'
 
 QUALIFICATION='candidate-only; API agreement, freshness and restart unverified'
 
-def validate_report(report, *, pid, ticks):
+def validate_report(report, *, pid, ticks, expected_sha=GAME_SHA):
     def integer(v,low,high): return type(v) is int and low<=v<=high
     def invalid(): raise ValueError('invalid experience-values report')
     if not isinstance(report,dict) or type(report.get('schemaVersion')) is not int or report['schemaVersion']!=1 or report.get('contractVersion')!='native-current-experience-values-candidate/1' or report.get('status')!='complete': invalid()
     o=report.get('observation')
     if not isinstance(o,dict) or o.get('qualification')!=QUALIFICATION: invalid()
     identity=o.get('identity')
-    if not isinstance(identity,dict) or not integer(pid,1,2**31-1) or not integer(ticks,1,2**63-1) or type(identity.get('processId')) is not int or identity['processId']!=pid or type(identity.get('processStartUtcTicks')) is not int or identity['processStartUtcTicks']!=ticks or identity.get('executableSha256')!=GAME_SHA: invalid()
+    if not isinstance(identity,dict) or not integer(pid,1,2**31-1) or not integer(ticks,1,2**63-1) or type(identity.get('processId')) is not int or identity['processId']!=pid or type(identity.get('processStartUtcTicks')) is not int or identity['processStartUtcTicks']!=ticks or expected_sha not in SEED_BUILDS or identity.get('executableSha256')!=expected_sha: invalid()
     try: start=datetime.fromisoformat(o['startedAtUtc'].replace('Z','+00:00'));end=datetime.fromisoformat(o['completedAtUtc'].replace('Z','+00:00'))
     except (KeyError,TypeError,AttributeError,ValueError): invalid()
     if start.utcoffset() is None or end.utcoffset() is None or start.utcoffset().total_seconds()!=0 or end.utcoffset().total_seconds()!=0 or end<start: invalid()
     seed=o.get('seed')
-    validate_seed({'schemaVersion':1,'contractVersion':'native-current-experience-seed-candidate/1','status':'complete','observation':seed},pid=pid,ticks=ticks)
+    validate_seed({'schemaVersion':1,'contractVersion':'native-current-experience-seed-candidate/1','status':'complete','observation':seed},pid=pid,ticks=ticks,expected_sha=expected_sha)
     if seed.get('identity')!=identity: invalid()
     try: seed_start=datetime.fromisoformat(seed['startedAtUtc'].replace('Z','+00:00'));seed_end=datetime.fromisoformat(seed['completedAtUtc'].replace('Z','+00:00'))
     except (KeyError,TypeError,AttributeError,ValueError): invalid()
     if seed_start<start or seed_end>end: invalid()
     status=o.get('valueStatus'); level=o.get('level'); limit=o.get('limit'); mode=o.get('mode'); baseline=o.get('baseline'); needed=o.get('needed'); accumulated=o.get('accumulatedCandidate')
+    updated = expected_sha == UPDATED_GAME_SHA
+    # The current build exposes only independently guarded partial values.
+    if updated and (status not in ('seed-unavailable','owner-type-unavailable','progress-type-unavailable','cap-provider-uninitialized','cap-type-unavailable','native-minus-one-level-cap','baseline-unavailable','needed-recipe-unqualified') or any(x is not None for x in (mode,needed,accumulated))): invalid()
+    if not updated and status in ('cap-provider-uninitialized','needed-recipe-unqualified'): invalid()
     for x in (level,limit,mode,needed):
         if x is not None and not integer(x,-2**31,2**31-1): invalid()
     for x in (baseline,accumulated):
@@ -41,18 +47,25 @@ def validate_report(report, *, pid, ticks):
         if seed['branch']=='indexed-raw-candidate' or any(x is not None for x in (level,limit,mode,baseline,needed,accumulated)): invalid()
     elif status in ('owner-type-unavailable','progress-type-unavailable'):
         if seed['branch']!='indexed-raw-candidate' or any(x is not None for x in (level,limit,mode,baseline,needed,accumulated)): invalid()
-    elif status in ('cap-type-unavailable','native-minus-one-level-cap','baseline-unavailable','provider-uninitialized','cold-cache-or-null','needed-type-unavailable','native-minus-one-needed','arithmetic-overflow','raw-values-candidate'):
+    elif status in ('cap-type-unavailable','cap-provider-uninitialized','native-minus-one-level-cap','baseline-unavailable','needed-recipe-unqualified','provider-uninitialized','cold-cache-or-null','needed-type-unavailable','native-minus-one-needed','arithmetic-overflow','raw-values-candidate'):
         if seed['branch']!='indexed-raw-candidate' or level is None or (level & 0xffffffff)!=seed['selected']['rawDword24']: invalid()
-        if status=='cap-type-unavailable':
+        if updated:
+            # The current-build value reader must have passed both exact type guards.
+            if ((seed.get('ownerVtableRva'), seed.get('ownerGetterRva'))
+                    != (0x2A31740, 0x1C503E0)
+                    or (seed['selected'].get('vtableRva'), seed['selected'].get('getterRva'))
+                    != (0x2BDF520, 0x201A040)):
+                invalid()
+        if status in ('cap-type-unavailable','cap-provider-uninitialized'):
             if any(x is not None for x in (limit,mode,baseline,needed,accumulated)): invalid()
         elif limit is None: invalid()
         # Match the producer's level-limit branch before accepting any calculated value.
-        if status not in ('cap-type-unavailable',):
+        if status not in ('cap-type-unavailable','cap-provider-uninitialized'):
             if (level >= limit) != (status == 'native-minus-one-level-cap'): invalid()
             if status in ('native-minus-one-level-cap','baseline-unavailable'):
                 if any(x is not None for x in (mode,baseline,needed,accumulated)): invalid()
             elif baseline is None or level < 1: invalid()
-        if status in ('provider-uninitialized','cold-cache-or-null','needed-type-unavailable') and any(x is not None for x in (mode,needed,accumulated)): invalid()
+        if status in ('needed-recipe-unqualified','provider-uninitialized','cold-cache-or-null','needed-type-unavailable') and any(x is not None for x in (mode,needed,accumulated)): invalid()
         if status in ('native-minus-one-needed','arithmetic-overflow','raw-values-candidate'):
             if mode is None or needed is None: invalid()
             if status=='native-minus-one-needed' and (needed!=-1 or accumulated is not None): invalid()
@@ -79,6 +92,31 @@ def validate_report(report, *, pid, ticks):
         elif in_range or rested is not None: invalid()
     else: invalid()
     return o
+
+
+def project_values(report):
+    """Project only verified raw value candidates; preserve all unavailable states."""
+    o = report.get('observation')
+    identity = o.get('identity') if isinstance(o,dict) else None
+    if not isinstance(identity,dict):
+        raise ValueError('invalid experience-values identity')
+    o = validate_report(report, pid=identity.get('processId'),
+                        ticks=identity.get('processStartUtcTicks'),
+                        expected_sha=identity.get('executableSha256'))
+    return {
+        'status': 'candidate-only',
+        'valueStatus': o['valueStatus'],
+        'unitKey': str(o['seed']['unitKey']),
+        'levelCandidate': o.get('level'),
+        'limitCandidate': o.get('limit'),
+        'baselineCandidate': o.get('baseline'),
+        'neededCandidate': o.get('needed'),
+        'accumulatedCandidate': o.get('accumulatedCandidate'),
+        'restedStatus': o['restedStatus'],
+        'rawRestedCandidate': o.get('restedCandidate'),
+        'sampledAtUtc': o['completedAtUtc'],
+        'qualification': QUALIFICATION,
+    }
 
 
 def run(lab):

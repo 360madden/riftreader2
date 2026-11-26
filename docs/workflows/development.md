@@ -393,6 +393,15 @@ record, record level and float are not calculated accumulated/needed/rested XP.
 & $rr2Python -B scripts/physical_rift.py --expected-host $rr2Host --physical-pid CURRENT_PID --read-native experience-seed --native-reader $rr2PublishedReader --output artifacts/NEW_XP_SEED.json
 ```
 
+Use `experience-values` with the same freshly built reader for typed value
+candidates. Build 1179 currently returns the baseline, level limit and raw
+rested candidate when available; needed and accumulated remain explicitly
+unavailable. Do not infer accumulated XP from the raw record or baseline.
+
+```powershell
+& $rr2Python -B scripts/physical_rift.py --expected-host $rr2Host --physical-pid CURRENT_PID --read-native experience-values --native-reader $rr2PublishedReader --output artifacts/NEW_XP_VALUES.json
+```
+
 The RR2A1 collector compares advancing unbound addon coordinates with native
 position brackets. The RR2R1 probe can retain potential reference frames for
 offline replay. A strict RR2R1 assessment requires the exact active addon nonce.

@@ -519,3 +519,25 @@ Evidence:
 - `artifacts/postpatch-20261127-phase15-experience-seed.json` — SHA-256 `6E57CB69C1E884089E09B10EBF43E25CA96F2D214BD270DB8DD654508304B1A1` (live raw seed).
 
 Focused validation: 15 .NET tests and 95 Python tests passed. Used the newly built Debug reader explicitly; did not replace or register a published physical reader. The existing published reader may not implement the updated command. No gameplay input, memory writes, callbacks or initializers executed. Next: establish the typed required-XP/baseline and rested-source providers before admitting calculated XP on this build.
+
+### Build 1179 partial Experience values recovered (2026-11-27)
+
+Continued exact-SHA archived image analysis with Capstone and Iced x86. The owner/progress and cap type routes have current-build descriptor and vtable references, rather than assumed relocations of the historical values. The initialized cap and baseline sources, level-limit logic and rested-provider source are now admitted in the existing native value reader. The historical needed-cache recipe remains restricted to the historical build; build 1179 returns `needed-recipe-unqualified` after a guarded baseline read. A cold cap provider produces explicit `cap-provider-uninitialized`. Neither initialization nor refcount operations are performed.
+
+The current-build needed-provider and record-type routes were also decoded. Static inspection reached the cache search and its bucket-selection wrapper, but the actual lookup's full key/hash/traversal and runtime cache relationship are still unqualified. No required/accumulated XP values are inferred from the baseline.
+
+Live LEGION PID 24992/start ticks 639313044653553067, exact build 1179: two independently acquired partial value reports (direct C# command and physical wrapper) returned level 45, limit 70, baseline 4393992, raw rested 84398, rested flag 0, and null needed/accumulated XP. The flag-selected raw rested candidate is not independently API-qualified. Both reports use the same process epoch; no changed-state or restart qualification is claimed.
+
+Retained local receipts (SHA-256):
+
+- `artifacts/postpatch-20261127-phase16-xp-provider-helpers.json` — `F1E882EB1AB8003A5E655C0EA39FA8E6ADF36232EBA9827E90873BD54FDBF63E`.
+- `artifacts/postpatch-20261127-phase16-xp-type-getters.json` — `F2719A113FCCADB713C99ACC09661FF7DCB3C080F71BB07787AD7D780C993D9D`.
+- `artifacts/postpatch-20261127-phase16-xp-cache-and-types.json` — `59813B2543A78BCE4E80DE0D22FE18593B41DF1F9D0C24AE7816847BD2EC7CA6`.
+- `artifacts/postpatch-20261127-phase16-xp-cache-lookup.json` — `6724B512FAA3CC660E740F671C7703ED56CD4840EDD3690D791E997F10CC159E`.
+- `artifacts/postpatch-20261127-phase16-xp-cache-search.json` — `067CC7B1C14533481CAF0CD32FE7A17F7BFF92EAD54797BE361384E520EEDB98`.
+- `artifacts/postpatch-20261127-phase16-xp-cache-hash.json` — `BD6AFEB5FB0A9B7EAF5AF33EF0354BB204A322762D00F9549A7BE338E9D8EA2D`.
+- `artifacts/postpatch-20261127-phase16-xp-cache-bucket.json` — `F1A476147FBD21196E4FD228D643DEC9CE482CA4E1982E46318751F6B59D08C9`.
+- `artifacts/postpatch-20261127-phase16-experience-values.json` — `45979A03C74C6EF4082AB3E539FA2D27664A27A1D9F560C110C02467F7A18769`.
+- `artifacts/postpatch-20261127-phase16-experience-values-wrapper.json` — `A26270F3644FCCB16B81E37651E697FBB445C3C1DBEAAD8EF0B0A340450323E0`.
+
+Validation: 18 focused .NET and 106 Python tests passed. The physical wrapper requires the exact supported SHA, matches receipt status, checks source identity/time and digest, and validates the current-build partial-state and type-reference contract. Explicit newly built Debug reader used; published registration untouched. Next: qualify the final required-XP lookup and its live cache before enabling accumulated XP. No gameplay input, game-memory writes, or game-side initializers were performed.
