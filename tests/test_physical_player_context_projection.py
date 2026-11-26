@@ -45,6 +45,12 @@ def report():
 
 
 class PhysicalPlayerContextTests(unittest.TestCase):
+    def setUp(self):
+        # Use the synthetic reader rather than this machine's registered bundle.
+        self.enterContext(patch.dict("os.environ", {
+            "RR2_PHYSICAL_TOOLS_ROOT": "debug", "RR2_NATIVE_READER": "",
+        }))
+
     def test_projects_useful_candidates_without_unqualified_pointers(self):
         result = physical._native_values("player-context", report())
         self.assertEqual(str(UNIT), result["unitKey"])

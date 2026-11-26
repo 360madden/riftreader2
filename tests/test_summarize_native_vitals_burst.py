@@ -60,6 +60,12 @@ def burst():
 
 
 class VitalsBurstTests(unittest.TestCase):
+    def setUp(self):
+        # Use the synthetic reader rather than this machine's registered bundle.
+        self.enterContext(patch.dict("os.environ", {
+            "RR2_PHYSICAL_TOOLS_ROOT": "debug", "RR2_NATIVE_READER": "",
+        }))
+
     def test_physical_vitals_read_exposes_existing_offline_burst_summary(self):
         report = burst()
         selection = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": {

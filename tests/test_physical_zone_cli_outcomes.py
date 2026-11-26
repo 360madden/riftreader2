@@ -14,6 +14,12 @@ from tests.test_physical_zone_context import IDENTITY, SHA_1177, SHA_1179, repor
 
 
 class ZoneCliOutcomes(unittest.TestCase):
+    def setUp(self):
+        # Use the synthetic reader rather than this machine's registered bundle.
+        self.enterContext(patch.dict("os.environ", {
+            "RR2_PHYSICAL_TOOLS_ROOT": "debug", "RR2_NATIVE_READER": "",
+        }))
+
     def invoke(self, selected_sha, source, *, native_code=0, invalid_receipt=False):
         with TemporaryDirectory() as tmp:
             exe, out = Path(tmp) / "reader.exe", Path(tmp) / "zone.json"

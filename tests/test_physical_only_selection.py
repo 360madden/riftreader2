@@ -27,6 +27,10 @@ REPORT_IDENTITY = {
 
 class PhysicalOnlySelectionTests(unittest.TestCase):
     def setUp(self):
+        # Use the synthetic reader rather than this machine's registered bundle.
+        self.enterContext(patch.dict("os.environ", {
+            "RR2_PHYSICAL_TOOLS_ROOT": "debug", "RR2_NATIVE_READER": "",
+        }))
         # Offline synthetic selections target AMD-DESKTOP on every test runner.
         hostname = patch.object(physical.socket, "gethostname", return_value="AMD-DESKTOP")
         hostname.start()

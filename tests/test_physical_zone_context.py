@@ -46,6 +46,12 @@ def typed_report_1179():
 
 
 class ZoneContextTests(unittest.TestCase):
+    def setUp(self):
+        # Use the synthetic reader rather than this machine's registered bundle.
+        self.enterContext(patch.dict("os.environ", {
+            "RR2_PHYSICAL_TOOLS_ROOT": "debug", "RR2_NATIVE_READER": "",
+        }))
+
     def test_actual_shape_nested_identity_exact_zone_and_lossless_self_key(self):
         value = p._native_values("zone-context", report())
         self.assertEqual(value["selfKey"], "18446744073709551615")

@@ -59,6 +59,12 @@ def report():
 
 
 class KeyedNativeLevelProjectionTests(unittest.TestCase):
+    def setUp(self):
+        # Use the synthetic reader rather than this machine's registered bundle.
+        self.enterContext(patch.dict("os.environ", {
+            "RR2_PHYSICAL_TOOLS_ROOT": "debug", "RR2_NATIVE_READER": "",
+        }))
+
     def test_pinned_level_candidate_and_unknowns(self):
         source = report()
         original = deepcopy(source)

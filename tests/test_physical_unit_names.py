@@ -32,6 +32,10 @@ def report(keys=KEYS, timestamp="2026-11-12T22:09:06Z"):
 
 class UnitNameTests(unittest.TestCase):
     def setUp(self):
+        # Use the synthetic reader rather than this machine's registered bundle.
+        self.enterContext(patch.dict("os.environ", {
+            "RR2_PHYSICAL_TOOLS_ROOT": "debug", "RR2_NATIVE_READER": "",
+        }))
         self.selection = dict(status="ready", ownerHost="AMD-DESKTOP", target=deepcopy(IDENTITY))
         self.directory = self.enterContext(TemporaryDirectory())
         self.exe = Path(self.directory) / "reader.exe"

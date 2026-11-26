@@ -43,6 +43,12 @@ def report():
 
 
 class PhysicalUnitPositionsTests(unittest.TestCase):
+    def setUp(self):
+        # Use the synthetic reader rather than this machine's registered bundle.
+        self.enterContext(patch.dict("os.environ", {
+            "RR2_PHYSICAL_TOOLS_ROOT": "debug", "RR2_NATIVE_READER": "",
+        }))
+
     def test_lossless_keys_exact_geometry_and_partial_coverage(self):
         value = p._native_values('unit-positions', report())
         self.assertEqual(2, value['positionsFound'])

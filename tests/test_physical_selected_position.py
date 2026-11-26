@@ -59,6 +59,12 @@ def burst_report():
 
 
 class PhysicalSelectedPositionTests(unittest.TestCase):
+    def setUp(self):
+        # Use the synthetic reader rather than this machine's registered bundle.
+        self.enterContext(patch.dict("os.environ", {
+            "RR2_PHYSICAL_TOOLS_ROOT": "debug", "RR2_NATIVE_READER": "",
+        }))
+
     def test_bounded_burst_accepts_changed_target_and_rejects_forged_rows(self):
         for fault in ("valid", "missing", "identity", "self", "overlap"):
             with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory:
