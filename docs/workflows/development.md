@@ -366,10 +366,22 @@ build, use the cross-epoch comparator. It compares positions, HP and optional
 zone candidates after replaying both source bundles. Raw stat slots are compared
 when both bundles include stats and their player-key candidates and selector
 layouts agree. The report describes numeric agreement across separate epochs.
+Optional Power endpoints are compared only for matching self-key and recipe
+candidates. These are uncorrelated numeric differences, not resource changes.
 Player continuity, action causation and independent Lua agreement remain unverified.
 
 ```powershell
 & $rr2Python -B scripts/compare_physical_player_state_epochs.py --before artifacts/BEFORE_RESTART/summary.json --after artifacts/AFTER_RESTART/summary.json
+```
+
+For an existing RRE saved-snapshot JSON export, the progression-only mode
+reuses the export SHA-256 and player-ID checks without requiring a stat capture.
+It reports saved API Experience fields and native/saved level candidates. A
+missing or empty Experience map does not prove a level cap; the normal-domain
+fraction is historical only. Native XP is not captured by this workflow.
+
+```powershell
+& $rr2Python -B scripts/compare_saved_api_stats.py --state-summary artifacts/NEW_PLAYER_STATE/summary.json --reference EXPORTED_RRE_JSON --reference-sha256 EXPORT_SHA --progression-only --output artifacts/NEW_PROGRESSION.json
 ```
 
 The RR2A1 collector compares advancing unbound addon coordinates with native

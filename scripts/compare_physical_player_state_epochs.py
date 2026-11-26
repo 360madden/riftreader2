@@ -73,6 +73,26 @@ def _compare_stat_candidates(before, after):
     return result
 
 
+def _compare_power_candidates(before, after):
+    """Compare independently replayed endpoints, never infer a cross-epoch resource trace."""
+    if before["selfKeyCandidate"] != after["selfKeyCandidate"]:
+        return {"status": "not-comparable", "reason": "different-self-key-candidates"}
+    a, b = replay._power_burst(before), replay._power_burst(after)
+    if a is None or b is None:
+        return {"status": "not-captured" if a is b is None else "partial-candidate",
+                "before": a, "after": b}
+    if a["recipe"] != b["recipe"]:
+        return {"status": "incompatible-recipe", "before": a, "after": b}
+    return {
+        "status": "comparable-candidate",
+        "before": a, "after": b,
+        "uncorrelatedNumericCurrentDifference": b["lastCurrentCandidate"] - a["lastCurrentCandidate"],
+        "uncorrelatedNumericMaximumDifference": b["lastMaximumCandidate"] - a["lastMaximumCandidate"],
+        "qualification": "Separate process epochs; matching context does not prove player "
+                         "continuity, independent Power identity, spending or regeneration.",
+    }
+
+
 def compare(before_path, after_path):
     a, b = replay.verified_state(before_path), replay.verified_state(after_path)
     require(a["summarySha256"] != b["summarySha256"], "same-source")
@@ -104,6 +124,7 @@ def compare(before_path, after_path):
         "selfKeysNumericallyEqual": a["selfKeyCandidate"] == b["selfKeyCandidate"],
         "crossEpochZoneCandidateComparison": _compare_zone_candidates(a, b),
         "crossEpochNativeStatsComparison": _compare_stat_candidates(a, b),
+        "crossEpochNativePowerComparison": _compare_power_candidates(a, b),
         "beforePositionCandidate": xyz1, "afterPositionCandidate": xyz2,
         "uncorrelatedNumericXYZDifference": diff,
         "uncorrelatedNumericPlanarDifference": math.hypot(diff["x"], diff["z"]),

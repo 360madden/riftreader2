@@ -35,6 +35,18 @@ def add_armor_stats(state, *, ordinary=100, mapped_index=0):
     }
 
 
+def add_power(state, current=100, maximum=100, recipe="test-power"):
+    state["powerBracketCandidate"] = {
+        "status": "matching-warrior-context-candidates",
+        "selfKeyCandidate": state["selfKeyCandidate"],
+        "nativePowerUnitKeyStatus": "unavailable",
+    }
+    state["candidateValues"]["power"] = {
+        "status": "candidate", "recipe": recipe,
+        "samples": [{"current": current, "maximum": maximum}] * 2,
+    }
+
+
 class CrossEpochTests(unittest.TestCase):
     def run_pair(self, mutate=None):
         a, b = sample(100, "A", 0), sample(200, "B", 4, 95)
@@ -130,6 +142,34 @@ class CrossEpochTests(unittest.TestCase):
         self.assertEqual(value["rawValuesCompared"], 1)
         self.assertEqual(value["rawValuesUnavailable"], 1)
         self.assertEqual(value["rawValuesDiffering"], 0)
+
+    def test_power_endpoints_report_only_uncorrelated_numeric_difference(self):
+        def mutate(a, b):
+            add_power(a, 80, 100)
+            add_power(b, 90, 120)
+        result = self.run_pair(mutate)["crossEpochNativePowerComparison"]
+        self.assertEqual("comparable-candidate", result["status"])
+        self.assertEqual(10, result["uncorrelatedNumericCurrentDifference"])
+        self.assertEqual(20, result["uncorrelatedNumericMaximumDifference"])
+        self.assertIn("Separate process epochs", result["qualification"])
+        self.assertNotIn("endpointCurrentDeltaCandidate", result)
+
+    def test_power_missing_or_changed_owner_or_recipe_remain_incomparable(self):
+        def different_player(a, b):
+            add_power(a)
+            b["selfKeyCandidate"] = "456"
+            add_power(b)
+
+        def different_recipe(a, b):
+            add_power(a)
+            add_power(b, recipe="other")
+
+        key = "crossEpochNativePowerComparison"
+        self.assertEqual("not-captured", self.run_pair()[key]["status"])
+        self.assertEqual("partial-candidate", self.run_pair(lambda a, b: add_power(a))[key]["status"])
+        self.assertEqual("not-comparable", self.run_pair(different_player)[key]["status"])
+        self.assertEqual("incompatible-recipe", self.run_pair(different_recipe)[key]["status"])
+
 
     def test_reject_same_epoch(self):
         with self.assertRaisesRegex(ValueError, "same-epoch-use-history"):

@@ -1,6 +1,7 @@
-"""Compare replay-verified native stats with an existing RRECollector JSON export.
+"""Compare replay-verified native stats or level with an existing RRECollector JSON export.
 
 Offline only. The RRE saved-snapshot adapter is the producer-side parser; this
+includes a progression-only projection of saved API experience values. This
 tool never executes Lua, contacts a game process, or claims live API parity.
 """
 from __future__ import annotations
@@ -40,12 +41,8 @@ def valid_hash(value):
     return isinstance(value, str) and re.fullmatch(r"[0-9a-fA-F]{64}", value) is not None
 
 
-def compare_values(native, reference):
-    """Compare exact named values only; absence and zero are distinct."""
-    stats = native.get("candidateValues", {}).get("stats")
-    require(isinstance(stats, dict) and stats.get("status") == "candidate-only"
-            and stats.get("selectorCount") == 20 and isinstance(stats.get("stats"), list)
-            and len(stats["stats"]) == 20, "native-stats-required")
+def reference_context(native, reference):
+    """Check the common saved-export contract and exact player ID."""
     key = native.get("selfKeyCandidate")
     require(isinstance(key, str) and key.isdecimal() and 0 < int(key) < 2**64,
             "invalid-native-player")
@@ -59,10 +56,96 @@ def compare_values(native, reference):
             "invalid-reference-contract")
     ctx = reference.get("context")
     require(isinstance(ctx, dict), "missing-context")
-    player, capabilities, api = (ctx.get(k) for k in ("player", "capabilities", "stats"))
+    player, capabilities = (ctx.get(k) for k in ("player", "capabilities"))
     require(isinstance(player, dict) and player.get("id") == player_id
             and isinstance(capabilities, dict) and capabilities.get("player") is True,
             "player-mismatch-or-unavailable")
+    return player_id, ctx
+
+
+# RRE saved-snapshot adapter's supported Experience producers (SC629 and later).
+# Source: rre/tools/rre-reader-saved-snapshot.mjs, exportSavedSnapshot.
+EXPERIENCE_VERSIONS = frozenset(f"0.4.{version}" for version in range(14, 24))
+EXPERIENCE_FIELDS = ("accumulated", "needed", "rested")
+
+
+def compare_progression(native, reference):
+    """Project historical API experience; native XP is intentionally unavailable.
+
+    Inspect.Experience's needed value describes the next-level requirement.
+    A successful empty map does not establish a level cap. Never infer missing
+    or failed API results from the current native player's level.
+    """
+    player_id, ctx = reference_context(native, reference)
+    capabilities = ctx["capabilities"]
+    has_flag, has_map = "experience" in capabilities, "experience" in ctx
+    if reference["addonVersion"] in EXPERIENCE_VERSIONS:
+        require(has_flag and type(capabilities["experience"]) is bool,
+                "experience-capability-invalid")
+        require(capabilities["experience"] == has_map, "experience-capability-map-contradiction")
+    else:
+        require(not has_flag and not has_map, "experience-version-unqualified")
+    values = ctx.get("experience", {})
+    require(isinstance(values, dict) and set(values) <= set(EXPERIENCE_FIELDS)
+            and all(type(value) in (int, float)
+                    and -sys.float_info.max <= value <= sys.float_info.max
+                    for value in values.values()), "experience-fields-invalid")
+    # A numeric zero is an observation; an absent field is unknown.
+    fields = {name: {"status": "reported-candidate" if name in values else "unavailable",
+                     "value": values.get(name)} for name in EXPERIENCE_FIELDS}
+    if not has_flag:
+        status = "not-captured"
+    elif not has_map:
+        status = "api-unavailable"
+    elif not values:
+        status = "api-empty"
+    elif len(values) < len(EXPERIENCE_FIELDS):
+        status = "api-partial"
+    else:
+        status = "api-values-candidate"
+    accumulated, needed = values.get("accumulated"), values.get("needed")
+    # Only derive a within-level fraction in the documented normal domain.
+    # A zero, negative or anomalous requirement remains a raw value, not a cap.
+    fraction = (accumulated / needed
+                if accumulated is not None and needed is not None
+                and 0 <= accumulated <= needed <= MAX_SAFE_INTEGER and needed > 0
+                else None)
+    level = native.get("candidateValues", {}).get("player-context", {}).get("level", {})
+    native_level = level.get("rawCandidate") if level.get("status") in (
+        "numeric-getter-and-presentation-candidate",
+        "numeric-getter-candidate-presentation-unqualified") else None
+    api_level = ctx["player"].get("level")
+    native_level = native_level if type(native_level) is int and 0 < native_level < 2**31 else None
+    api_level = api_level if type(api_level) is int and 0 < api_level < 2**31 else None
+    level_status = ("not-comparable" if native_level is None or api_level is None
+                    else "matching-candidates" if native_level == api_level else "different-candidates")
+    return {
+        "schemaVersion": 1, "evidenceKind": "rr2-saved-api-progression/1",
+        "status": "historical-progression-candidate", "playerIdCandidate": player_id,
+        "nativeTarget": native["target"], "nativeSummarySha256": native["summarySha256"],
+        "nativePlayerContextSourceSha256": native["sources"]["player-context"]["sha256"],
+        "referenceOriginalSha256Claim": reference["sourceSha256"].upper(),
+        "referenceAddonVersion": reference["addonVersion"], "referenceSequence": reference["sequence"],
+        "levelComparison": {"status": level_status, "nativeLevelCandidate": native_level,
+                            "savedApiLevelCandidate": api_level},
+        "experienceStatus": status, "experienceFields": fields,
+        "savedProgressFractionCandidate": fraction,
+        "nativeExperienceStatus": "not-captured",
+        "qualification": "Historical API export only. The native XP reader is not qualified "
+                         "for build 1179; no XP parity, level-cap inference, current freshness "
+                         "or level-up event is established. Export digest checked, original "
+                         "SavedVariables bytes and capture epoch not independently verified.",
+    }
+
+
+def compare_values(native, reference):
+    """Compare exact named values only; absence and zero are distinct."""
+    stats = native.get("candidateValues", {}).get("stats")
+    require(isinstance(stats, dict) and stats.get("status") == "candidate-only"
+            and stats.get("selectorCount") == 20 and isinstance(stats.get("stats"), list)
+            and len(stats["stats"]) == 20, "native-stats-required")
+    player_id, ctx = reference_context(native, reference)
+    capabilities, api = ctx["capabilities"], ctx.get("stats")
     require(isinstance(api, dict) and capabilities.get("stats") is True
             and type(ctx.get("statsTruncated")) is int and ctx["statsTruncated"] == 0
             and len(api) <= 256, "api-stats-unavailable-or-truncated")
@@ -114,11 +197,12 @@ def compare_values(native, reference):
     }
 
 
-def compare(state_summary, reference_path, reference_sha):
+def compare(state_summary, reference_path, reference_sha, *, progression_only=False):
     require(valid_hash(reference_sha), "reference-sha-required")
     reference, digest = load(reference_path, reference_sha)
     native = verified_state(state_summary)
-    return dict(compare_values(native, reference), referenceExportSha256=digest)
+    result = compare_progression(native, reference) if progression_only else compare_values(native, reference)
+    return dict(result, referenceExportSha256=digest)
 
 
 def main(argv=None):
@@ -128,19 +212,30 @@ def main(argv=None):
                         help="Existing JSON output of RRE's saved-snapshot adapter")
     parser.add_argument("--reference-sha256", required=True,
                         help="Independently retained SHA-256 of that JSON export")
+    parser.add_argument("--progression-only", action="store_true",
+                        help="read saved experience and compare player level without requiring stats")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
         require(not args.output.exists() and not args.output.is_symlink(), "output-exists")
-        result = compare(args.state_summary, args.reference, args.reference_sha256)
+        result = compare(args.state_summary, args.reference, args.reference_sha256,
+                         progression_only=args.progression_only)
         with args.output.open("x", encoding="utf-8", newline="\n") as stream:
             json.dump(result, stream, indent=2, allow_nan=False)
             stream.write("\n")
     except (OSError, ValueError, TypeError, KeyError, OverflowError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:200]}))
         return 2
-    print(json.dumps({"status": result["status"], "counts": result["counts"],
-                      "output": str(args.output)}))
+    brief = {"status": result["status"], "output": str(args.output)}
+    if args.progression_only:
+        brief.update(experienceStatus=result["experienceStatus"],
+                     experienceFields=result["experienceFields"],
+                     levelComparison=result["levelComparison"],
+                     savedProgressFractionCandidate=result["savedProgressFractionCandidate"],
+                     nativeExperienceStatus=result["nativeExperienceStatus"])
+    else:
+        brief["counts"] = result["counts"]
+    print(json.dumps(brief, allow_nan=False))
     return 0
 
 
