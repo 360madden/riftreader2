@@ -39,25 +39,34 @@ def validate_report(report, *, pid, ticks):
         if x is not None and not integer(x,-2**63,2**63-1): invalid()
     if status=='seed-unavailable':
         if seed['branch']=='indexed-raw-candidate' or any(x is not None for x in (level,limit,mode,baseline,needed,accumulated)): invalid()
-    elif status=='progress-type-unavailable':
+    elif status in ('owner-type-unavailable','progress-type-unavailable'):
         if seed['branch']!='indexed-raw-candidate' or any(x is not None for x in (level,limit,mode,baseline,needed,accumulated)): invalid()
     elif status in ('cap-type-unavailable','native-minus-one-level-cap','baseline-unavailable','provider-uninitialized','cold-cache-or-null','needed-type-unavailable','native-minus-one-needed','arithmetic-overflow','raw-values-candidate'):
         if seed['branch']!='indexed-raw-candidate' or level is None or (level & 0xffffffff)!=seed['selected']['rawDword24']: invalid()
         if status=='cap-type-unavailable':
             if any(x is not None for x in (limit,mode,baseline,needed,accumulated)): invalid()
         elif limit is None: invalid()
+        # Match the producer's level-limit branch before accepting any calculated value.
         if status not in ('cap-type-unavailable',):
+            if (level >= limit) != (status == 'native-minus-one-level-cap'): invalid()
             if status in ('native-minus-one-level-cap','baseline-unavailable'):
                 if any(x is not None for x in (mode,baseline,needed,accumulated)): invalid()
-            elif baseline is None: invalid()
+            elif baseline is None or level < 1: invalid()
         if status in ('provider-uninitialized','cold-cache-or-null','needed-type-unavailable') and any(x is not None for x in (mode,needed,accumulated)): invalid()
         if status in ('native-minus-one-needed','arithmetic-overflow','raw-values-candidate'):
             if mode is None or needed is None: invalid()
             if status=='native-minus-one-needed' and (needed!=-1 or accumulated is not None): invalid()
-            if status=='arithmetic-overflow' and (needed==-1 or accumulated is not None): invalid()
-            if status=='raw-values-candidate' and (needed==-1 or accumulated is None or accumulated!=seed['selected']['rawInt64_18']-baseline+needed): invalid()
+            # C# uses checked int64 subtraction followed by checked addition.
+            # Python integers are unbounded, so a final in-range sum alone is insufficient.
+            difference = seed['selected']['rawInt64_18'] - baseline
+            total = difference + needed
+            overflow = not integer(difference,-2**63,2**63-1) or not integer(total,-2**63,2**63-1)
+            if status=='arithmetic-overflow' and (needed==-1 or accumulated is not None or not overflow): invalid()
+            if status=='raw-values-candidate' and (needed==-1 or overflow or accumulated is None or accumulated!=total): invalid()
     else: invalid()
     rested_status=o.get('restedStatus'); rested_flag=o.get('restedFlag'); rested_bits=o.get('restedRawBits'); rested=o.get('restedCandidate')
+    # The producer does not access the rested provider until both type checks pass.
+    if status in ('seed-unavailable','owner-type-unavailable','progress-type-unavailable') and rested_status!='unavailable': invalid()
     if rested_status in ('unavailable','provider-uninitialized'):
         if any(v is not None for v in (rested_flag,rested_bits,rested)): invalid()
     elif rested_status in ('raw-rested-candidate','nonfinite-or-out-of-range'):

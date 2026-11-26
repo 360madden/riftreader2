@@ -490,3 +490,16 @@ Retained local receipts:
 - `artifacts/postpatch-20261126-phase13-experience-producer-window.json` — SHA-256 `439ED5BC81D221246BC71121E8462D43E427B43C74581E4FD1B46D255BDA2100` (five chained ranges).
 
 Static callback and first producer discovery complete. Native XP remains unqualified on 1179: no game process attachment, live acquisition, callback execution, input, process writes, or native reader build-gate changes occurred. Next gate is to resolve the necessary deeper providers and verify read-only ownership before adapting or testing the existing reader.
+
+### Build 1179 Experience helper semantics (2026-11-27)
+
+Reused the exact-SHA archived build-1179 image and the two existing decoders. The three direct helper ranges and shared level-limit range agree across 155 instruction boundaries (58 needed, 18 baseline, 22 rested provider, 57 level limit). These are static helper semantics, not qualified process data.
+
+The needed helper begins with signed -1, attempts a typed level record lookup, and consults the shared limit before returning a mode-selected value. The same limit is consulted by the baseline helper, which returns -1 for a level below one or at/above the limit. The shared limit derives a baseline-vector length and selects a cap record, using the lesser of the record cap and the vector's last index when the vector is populated. The rested-provider helper has a lazy initialization branch: offline/native inspection must not call it or treat an uninitialized provider as zero rested experience. The actual provider/type relationships, including the alternate rested owner, remain unqualified. Preserve the older executable gate.
+
+Two local source receipts:
+
+- `artifacts/postpatch-20261127-phase14-experience-helpers.json` — SHA-256 `DB0DE7F61CFFF5D00F6D657519FC4FFBE9B36B8CBBA41EF09D709BA693963105`.
+- `artifacts/postpatch-20261127-phase14-level-limit.json` — SHA-256 `287868CB246D3FFD173DB0ABB488E8BF5E708B53D14258942ED7FE79B8B4C51F`.
+
+While comparing the existing reader contract, reproduced a legacy Python validation mismatch: the C# producer emits `owner-type-unavailable`, but its validator rejected that status. It also admitted contradictory level-limit and rested-value evidence, false overflow claims, and a final in-range accumulation with an overflowing checked subtraction. Aligned the offline validator with the existing older-build producer's status/checked-arithmetic rules. Seven targeted tests plus adjacent regression coverage passed (61 total); the initial targeted run reproduced one error and four failures. These tests do not establish any live XP values. No C# locator change, current-build admission, game input or process access.

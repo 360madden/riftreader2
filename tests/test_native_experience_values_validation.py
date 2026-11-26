@@ -1,0 +1,106 @@
+"""Offline legacy XP report fixtures; no process or VM access."""
+from copy import deepcopy
+import unittest
+
+from scripts import sample_current_native_experience_seed as seed
+from scripts import sample_current_native_experience_values as values
+
+
+def fixture():
+    identity = {"processId": 123, "processStartUtcTicks": 456,
+                "executableSha256": values.GAME_SHA}
+    seed_report = {
+        "identity": identity.copy(), "qualification": seed.QUALIFICATION,
+        "startedAtUtc": "2026-11-07T12:00:01Z",
+        "completedAtUtc": "2026-11-07T12:00:02Z",
+        "unitKey": 1234, "entity": 0x100000, "component": 0x200000,
+        "owner": 0x300000, "index": 0, "rawDword160": 0, "rawByte24F": 0,
+        "vectorBegin": 0x400000, "vectorEnd": 0x400008,
+        "references": [0x500000], "branch": "indexed-raw-candidate",
+        "selected": {"address": 0x500000, "rawInt64_18": 1000,
+                     "rawDword24": 45, "rawFloat20Bits": 0, "rawFloat20": 0.0},
+    }
+    observation = {
+        "identity": identity, "qualification": values.QUALIFICATION,
+        "startedAtUtc": "2026-11-07T12:00:00Z",
+        "completedAtUtc": "2026-11-07T12:00:03Z", "seed": seed_report,
+        "valueStatus": "raw-values-candidate", "level": 45, "limit": 65,
+        "mode": 2, "baseline": 1200, "needed": 500, "accumulatedCandidate": 300,
+        "restedStatus": "raw-rested-candidate", "restedFlag": 1,
+        "restedRawBits": 0, "restedCandidate": 0,
+    }
+    return {"schemaVersion": 1, "contractVersion": "native-current-experience-values-candidate/1",
+            "status": "complete", "observation": observation}
+
+
+class ExperienceValidationTests(unittest.TestCase):
+    def validate(self, report):
+        return values.validate_report(report, pid=123, ticks=456)
+
+    def test_valid_normal_domain_and_zero_rested(self):
+        self.assertEqual(self.validate(fixture())["accumulatedCandidate"], 300)
+
+    def test_producer_owner_type_refusal_is_valid_missing_evidence(self):
+        report = fixture()
+        o = report["observation"]
+        o.update(valueStatus="owner-type-unavailable", level=None, limit=None,
+                 mode=None, baseline=None, needed=None, accumulatedCandidate=None,
+                 restedStatus="unavailable", restedFlag=None, restedRawBits=None,
+                 restedCandidate=None)
+        self.assertEqual(self.validate(report)["valueStatus"], "owner-type-unavailable")
+        o["restedCandidate"] = 0
+        with self.assertRaises(ValueError):
+            self.validate(report)
+
+    def test_refused_type_cannot_publish_rested_fields(self):
+        for status in ("owner-type-unavailable", "progress-type-unavailable"):
+            with self.subTest(status=status):
+                report = fixture()
+                report["observation"].update(valueStatus=status, level=None, limit=None,
+                                             mode=None, baseline=None, needed=None,
+                                             accumulatedCandidate=None)
+                with self.assertRaises(ValueError):
+                    self.validate(report)
+
+    def test_limit_refusal_must_agree_with_level(self):
+        report = fixture()
+        o = report["observation"]
+        o.update(valueStatus="native-minus-one-level-cap", mode=None, baseline=None,
+                 needed=None, accumulatedCandidate=None)
+        with self.assertRaises(ValueError):
+            self.validate(report)
+        o["limit"] = 45
+        self.assertEqual(self.validate(report)["valueStatus"], "native-minus-one-level-cap")
+        bad = fixture()
+        bad["observation"]["limit"] = 45
+        with self.assertRaises(ValueError):
+            self.validate(bad)
+
+    def test_intermediate_checked_overflow_is_not_valid_accumulation(self):
+        report = fixture()
+        o = report["observation"]
+        # First subtraction overflows int64, even though the final sum fits.
+        o["seed"]["selected"]["rawInt64_18"] = 2**63 - 1
+        o.update(baseline=-1, needed=-2, accumulatedCandidate=2**63 - 2)
+        with self.assertRaises(ValueError):
+            self.validate(report)
+        o.update(valueStatus="arithmetic-overflow", accumulatedCandidate=None)
+        self.assertEqual(self.validate(report)["valueStatus"], "arithmetic-overflow")
+
+    def test_overflow_status_requires_an_overflow(self):
+        report = fixture()
+        report["observation"].update(valueStatus="arithmetic-overflow",
+                                     accumulatedCandidate=None)
+        with self.assertRaises(ValueError):
+            self.validate(report)
+
+    def test_wrong_build_still_rejected(self):
+        report = deepcopy(fixture())
+        for o in (report["observation"], report["observation"]["seed"]):
+            o["identity"]["executableSha256"] = "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"
+        with self.assertRaises(ValueError):
+            self.validate(report)
+
+
+if __name__ == "__main__":
+    unittest.main()
