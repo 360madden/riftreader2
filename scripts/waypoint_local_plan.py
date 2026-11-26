@@ -1,6 +1,8 @@
 """Local, deterministic coordinate-to-route planning using RiftWorld.
 
-No game access or input. A calculated route is not a Waypoints playback route.
+No input is sent. Explicit coordinates require no game access; optional
+current-position mode uses an existing read-only pose session. A calculated
+route is not a Waypoints playback route.
 Supply alternative approach coordinates for the same objective; choose the
 shortest complete, bounded-snap path rather than the closest straight-line goal.
 """
@@ -22,6 +24,7 @@ from scripts import waypoint_destination_plan as shared
 from scripts.waypoint_navigation_candidate import inspect_candidate, _finite_number
 from scripts.waypoint_progress import write_json_atomic
 from scripts.observe_physical import valid_host_name
+from scripts.physical_rift import _utc_tick_order_key
 
 SCHEMA = "rr2.local-path-plan/1"
 MAX_GOALS = 4
@@ -148,19 +151,60 @@ def _obstacle_candidate(candidate, start, goal, layer_ref, area, horizontal, ver
                       connectors["goal"]["snappedXYZ"], horizontal, vertical)
 
 
-def plan_local(*, expected_host, start, goals, output_directory, patch=None, build=None,
+def _scoped_pose(patch_document, observation):
+    """Project a fresh pose only inside a map's explicitly pinned native scope.
+
+    This does not establish current world/instance identity or traversability.
+    Unbounded/global and unknown transforms are intentionally unsupported here.
+    """
+    frame = patch_document.get("coordinates", {}).get("transformToRr2Native")
+    if (not isinstance(frame, dict) or frame.get("kind") != "identity"
+            or frame.get("qualification") not in {"verified", "landmark-reprojection-candidate"}):
+        raise ValueError("current-pose-requires-explicit-identity-transform")
+    owner = frame.get("owner")
+    identity = observation.get("runtimeIdentity")
+    if (not isinstance(owner, dict) or not isinstance(identity, dict)
+            or any(not isinstance(owner.get(k), str) or not owner[k]
+                   or not isinstance(identity.get(k), str) or not identity[k]
+                   or (owner[k] != identity[k] if k == "unitKey"
+                       else owner[k].casefold() != identity[k].casefold())
+                   for k in ("machine", "gameBuildSha256", "unitKey"))):
+        raise ValueError("current-pose-map-owner-mismatch")
+    bounds = frame.get("boundsXYZ")
+    xyz = _xyz(observation.get("nativeXYZ"))
+    if (not isinstance(bounds, list) or len(bounds) != 6
+            or any(not _finite_number(v) for v in bounds)
+            or any(bounds[i] >= bounds[i+3] for i in range(3))
+            or not shared._inside_bounds(xyz, bounds)):
+        raise ValueError("current-pose-outside-qualified-map-scope")
+    return xyz
+
+
+def plan_local(*, expected_host, start=None, goals, output_directory, patch=None, build=None,
                obstacles=None, area=None, search_extent=.55, max_horizontal_snap=.30,
                max_vertical_snap=.50, timeout_seconds=120, riftworld_root=None,
-               riftworld_python=None, riftworld_upstream=None, runner=subprocess.run):
+               riftworld_python=None, riftworld_upstream=None, from_current=False,
+               session=None, runner=subprocess.run):
     """Choose one local geometry candidate; never authorize movement or edit a route."""
     host = platform.node()
     if not valid_host_name(host) or not valid_host_name(expected_host) or host.casefold() != expected_host.casefold():
         raise ValueError("wrong-host")
-    start, goals = _xyz(start), [_xyz(goal) for goal in goals]
+    if type(from_current) is not bool or bool(from_current) == (start is not None):
+        raise ValueError("choose exactly one explicit start or from-current")
+    if from_current:
+        if not isinstance(session, str) or not session.strip():
+            raise ValueError("from-current-requires-exact-session")
+        if obstacles is not None:
+            raise ValueError("current-pose-obstacle-layer-transform-not-qualified")
+    elif session is not None:
+        raise ValueError("session-requires-from-current")
+    goals = [_xyz(goal) for goal in goals]
     if not 1 <= len(goals) <= MAX_GOALS or len({tuple(g) for g in goals}) != len(goals):
         raise ValueError("provide one to four distinct alternative approach coordinates")
-    if any(goal == start for goal in goals):
-        raise ValueError("zero-length requested path")
+    if start is not None:
+        start = _xyz(start)
+        if any(goal == start for goal in goals):
+            raise ValueError("zero-length requested path")
     if (any(not _finite_number(v) or v < 0 for v in (max_horizontal_snap, max_vertical_snap))
             or not _finite_number(search_extent) or not 0 < search_extent <= 10
             or not _finite_number(timeout_seconds) or not 0 < timeout_seconds <= 300):
@@ -174,8 +218,10 @@ def plan_local(*, expected_host, start, goals, output_directory, patch=None, bui
     upstream = shared._configured_riftworld_upstream(riftworld_upstream, registered)
     environment = shared._riftworld_environment(registered)
     output = Path(output_directory).resolve()
-    output.mkdir(exist_ok=False)
+    if output.exists() or output.is_symlink() or not output.parent.is_dir():
+        raise ValueError("new-output-directory-required")
     inputs, rows = {}, []
+    observation = admission = None
     if obstacles is None:
         patch = Path(patch).resolve()
         build = Path(build).resolve()
@@ -183,6 +229,17 @@ def plan_local(*, expected_host, start, goals, output_directory, patch=None, bui
             build /= "navigation.json"
         patch_doc, patch_sha = shared._read(patch)
         build_doc, build_sha = shared._read(build)
+        if from_current:
+            # Reuse the existing input-free, exact-session pose admission.
+            # Do not silently use a different player or a cached location.
+            admission = shared._session_state(session, runner)
+            observation = shared._current_pose(session, admission, runner, allow_latched=False)
+            start = _scoped_pose(patch_doc, observation)
+            if any(goal == start for goal in goals):
+                raise ValueError("zero-length requested path")
+            if shared._hash(patch) != patch_sha or shared._hash(build) != build_sha:
+                raise ValueError("local-planning-input-changed-during-pose")
+        output.mkdir(exist_ok=False)
         inputs = {"patch": {"path": str(patch), "sha256": patch_sha},
                   "build": {"path": str(build), "sha256": build_sha}}
         # Reuse an already-local persisted mesh; relocate only when necessary.
@@ -196,6 +253,7 @@ def plan_local(*, expected_host, start, goals, output_directory, patch=None, bui
         if layer.is_dir():
             layer /= "obstacles.json"
         inputs = {"obstacles": shared._reference(layer)}
+        output.mkdir(exist_ok=False)
 
     def unchanged():
         if any(shared._hash(ref["path"]) != ref["sha256"] for ref in inputs.values()):
@@ -254,10 +312,32 @@ def plan_local(*, expected_host, start, goals, output_directory, patch=None, bui
     unchanged()
     choices = [row for row in rows if row["status"] == "complete-candidate"]
     selected = min(choices, key=lambda row: (row["score"], row["index"])) if choices else None
+    after, blocker = None, None
+    if from_current:
+        try:
+            after = shared._current_pose(session, admission, runner, allow_latched=False)
+            end = _scoped_pose(patch_doc, after)
+            if (not shared._same_runtime(observation["runtimeIdentity"], after["runtimeIdentity"])
+                    or shared._session_state(session, runner) != admission):
+                raise ValueError("current-pose-owner-or-stop-epoch-changed")
+            if _utc_tick_order_key(after["sampledAtUtc"]) <= _utc_tick_order_key(observation["sampledAtUtc"]):
+                raise ValueError("post-planning-pose-did-not-advance")
+            if math.hypot(end[0]-start[0], end[2]-start[2]) > .30 or abs(end[1]-start[1]) > .50:
+                raise ValueError("current-pose-moved-during-local-planning")
+        except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+            selected = None
+            blocker = str(error)[:400]
+        unchanged()
+        for row in rows:
+            if "candidate" in row and shared._hash(row["candidate"]["path"]) != row["candidate"]["sha256"]:
+                raise ValueError("local-candidate-changed-during-pose-recheck")
     result = {"schema": SCHEMA, "host": host,
               "status": "planned-candidate" if selected else "unavailable",
               "backend": "decoded-obstacle" if obstacles is not None else "saved-detour",
               "startXYZ": start, "inputs": inputs, "alternatives": rows, "selected": selected,
+              **({"startSource": "current-native-candidate", "startObservation": observation,
+                  "postPlanningObservation": after, "observationAdmission": admission,
+                  "observationBlocker": blocker} if from_current else {}),
               "movementEligible": False, "inputSent": False, "currentRouteChanged": False,
               "qualification": "Local pathfinding in source coordinates; endpoint connectors, "
                                "native frame/world, live traversal and movement authority are not established."}
@@ -268,7 +348,11 @@ def plan_local(*, expected_host, start, goals, output_directory, patch=None, bui
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--expected-host", required=True)
-    parser.add_argument("--from", dest="start", type=_xyz, required=True)
+    starts = parser.add_mutually_exclusive_group(required=True)
+    starts.add_argument("--from", dest="start", type=_xyz)
+    starts.add_argument("--from-current", action="store_true",
+                        help="fresh input-free pose from an exact idle Waypoints session")
+    parser.add_argument("--session")
     parser.add_argument("--to", dest="goals", type=_xyz, action="append", required=True)
     parser.add_argument("--out-dir", dest="output_directory", type=Path, required=True)
     parser.add_argument("--patch", type=Path)

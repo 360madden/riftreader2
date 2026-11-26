@@ -103,6 +103,96 @@ class LocalPlanTests(unittest.TestCase):
                 self.plan(**override)
         self.assertEqual(0, self.calls)
 
+    def bound_pose(self, *, after=None, change_owner=False):
+        owner = {"machine": "TEST-STATION", "gameBuildSha256": "A"*64, "unitKey": "123"}
+        transform = {"kind": "identity", "qualification": "landmark-reprojection-candidate",
+                     "owner": owner, "boundsXYZ": [-1, -1, -1, 10, 10, 10]}
+        self.patch.write_text(json.dumps({"patchId": "a"*64, "coordinates": {
+            "transformToRr2Native": transform}}), encoding="utf-8")
+        identity = {**owner, "processId": 42, "processStartUtcTicks": 100}
+        before = {"nativeXYZ": self.start, "runtimeIdentity": identity,
+                  "sampledAtUtc": "2026-11-27T00:00:00Z"}
+        end = deepcopy(before)
+        end["sampledAtUtc"] = "2026-11-27T00:00:01Z"
+        if after is not None:
+            end["nativeXYZ"] = after
+        if change_owner:
+            end["runtimeIdentity"]["processStartUtcTicks"] += 1
+        admission = {"sessionId": "test", "stopEpoch": 1, "stopLatched": False}
+        self.enterContext(patch.object(local.shared, "_session_state", return_value=admission))
+        self.pose = self.enterContext(patch.object(local.shared, "_current_pose",
+                                                   side_effect=[before, end]))
+        return before, end
+
+    def test_current_pose_brackets_local_query_without_input(self):
+        before, after = self.bound_pose()
+        result = self.plan(start=None, from_current=True, session="test")
+        self.assertEqual(1, result["selected"]["index"])
+        self.assertEqual(before, result["startObservation"])
+        self.assertEqual(after, result["postPlanningObservation"])
+        self.assertEqual(self.start, result["startXYZ"])
+        self.assertFalse(result["inputSent"])
+        self.assertFalse(result["movementEligible"])
+        self.assertEqual(2, self.pose.call_count)
+        self.assertIsNone(result["observationBlocker"])
+
+    def test_current_pose_drift_invalidates_selection(self):
+        self.bound_pose(after=[.5, 1, 2])
+        result = self.plan(start=None, from_current=True, session="test")
+        self.assertIsNone(result["selected"])
+        self.assertEqual("unavailable", result["status"])
+        self.assertIn("moved-during-local-planning", result["observationBlocker"])
+
+    def test_current_pose_changed_epoch_invalidates_selection(self):
+        self.bound_pose(change_owner=True)
+        result = self.plan(start=None, from_current=True, session="test")
+        self.assertIsNone(result["selected"])
+        self.assertIn("owner-or-stop-epoch-changed", result["observationBlocker"])
+
+    def test_repeated_pose_is_not_fresh_feedback(self):
+        before, after = self.bound_pose()
+        after["sampledAtUtc"] = before["sampledAtUtc"]
+        result = self.plan(start=None, from_current=True, session="test")
+        self.assertIsNone(result["selected"])
+        self.assertIn("did-not-advance", result["observationBlocker"])
+
+    def test_stop_epoch_change_invalidates_selection(self):
+        self.bound_pose()
+        original = local.shared._session_state.return_value
+        local.shared._session_state.side_effect = [original, {**original, "stopEpoch": 2}]
+        result = self.plan(start=None, from_current=True, session="test")
+        self.assertIsNone(result["selected"])
+        self.assertIn("owner-or-stop-epoch-changed", result["observationBlocker"])
+
+    def test_current_pose_outside_scope_refuses_before_query(self):
+        before, _ = self.bound_pose()
+        before["nativeXYZ"] = [20, 1, 2]
+        with self.assertRaisesRegex(ValueError, "outside-qualified-map-scope"):
+            self.plan(start=None, from_current=True, session="test")
+        self.assertEqual(0, self.calls)
+        self.assertFalse(self.output.exists())
+
+    def test_unpinned_frame_and_wrong_map_owner_refuse_current_pose(self):
+        before, _ = self.bound_pose()
+        document = json.loads(self.patch.read_text())
+        frame = document["coordinates"]["transformToRr2Native"]
+        frame["owner"]["unitKey"] = "456"
+        with self.assertRaisesRegex(ValueError, "map-owner-mismatch"):
+            local._scoped_pose(document, before)
+        frame["kind"] = "unknown"
+        with self.assertRaisesRegex(ValueError, "identity-transform"):
+            local._scoped_pose(document, before)
+
+    def test_current_mode_requires_explicit_session_and_saved_mesh(self):
+        for override in ({"start": None, "from_current": True},
+                         {"from_current": True, "session": "test"},
+                         {"session": "test"},
+                         {"start": None, "from_current": True, "session": "test",
+                          "obstacles": self.root/"layer.json"}):
+            with self.subTest(override=override), self.assertRaises(ValueError):
+                self.plan(**override)
+        self.assertEqual(0, self.calls)
+
     def test_obstacle_receipt_and_scope_boundary(self):
         layer = {"path": str(self.root/"obstacles.json"), "sha256": "A"*64}
         points = [self.start, self.goals[0]]

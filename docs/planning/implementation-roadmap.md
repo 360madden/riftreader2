@@ -7,6 +7,10 @@ selects among up to four explicitly supplied approaches, and supports the peer
 mapped-obstacle planner when a complete layer is available. The actual retained
 Watch map queries and changed-origin replan passed; movement remains unqualified.
 Use the same interface for deterministic replanning from updated source coordinates.
+The saved-mesh planner now supports `--from-current --session ID` instead of
+`--from X,Y,Z`, using existing idle-session pose admission, bounded native
+scope, advancing post-query pose, source hash and STOP checks. Synthetic
+feedback plus the actual Watch mesh passed; live helper acceptance is pending.
 
 ```powershell
 python -B scripts/waypoint_local_plan.py --expected-host LEGION --patch PATCH_JSON --build NAVIGATION_JSON --from X,Y,Z --to X,Y,Z --out-dir artifacts/NEW_LOCAL_PLAN
