@@ -360,6 +360,11 @@ Power comparisons distinguish the last-to-last difference from the gap between
 the earlier burst's last sample and the later burst's first sample. History
 preserves within-burst extrema and reports missing Power captures explicitly;
 these differences are not measured spending, regeneration or continuous traces.
+Experience history reports within-level XP and progress-fraction differences
+only for valid endpoints with matching level, baseline, needed XP and limit.
+Level transitions, changed parameters and missing observations remain explicit;
+no XP delta is inferred across them. Raw rested differences are separate,
+and none of these numeric changes establishes an independently verified XP award.
 
 ```powershell
 & $rr2Python -B scripts/replay_physical_player_state.py --summary artifacts/NEW_PLAYER_STATE/summary.json

@@ -313,6 +313,75 @@ def _power_history(captures, edges):
     }
 
 
+def _compare_experience(before, after):
+    """Compare observed XP endpoints, never extrapolate gains across level boundaries.
+
+    The caller has already verified both pinned source bundles and their shared
+    process epoch. A missing/partial source is not a zero-XP sample. Changes in
+    level or the required/baseline/limit candidates invalidate within-level
+    accumulation comparisons even when both fractions are individually valid.
+    """
+    a, b = (capture["candidateValues"].get("experience-values") for capture in (before, after))
+    result = {"before": a, "after": b, "levelDeltaCandidate": None,
+              "withinLevelXpDeltaCandidate": None, "progressFractionDeltaCandidate": None,
+              "rawRestedDeltaCandidate": None,
+              "qualification": "Sequential numeric candidates, not attributed XP awards, "
+                               "continuous progression or independently verified level-up events."}
+    if a is None or b is None:
+        return dict(result, status="not-captured" if a is b is None else "partial-candidate")
+    # Preserve raw rested differences independently of accumulated XP validity.
+    if (a.get("restedStatus") == b.get("restedStatus") == "raw-rested-candidate"
+            and type(a.get("rawRestedCandidate")) is int and type(b.get("rawRestedCandidate")) is int):
+        result["rawRestedDeltaCandidate"] = b["rawRestedCandidate"] - a["rawRestedCandidate"]
+    if (type(a.get("levelCandidate")) is int and a["levelCandidate"] > 0
+            and type(b.get("levelCandidate")) is int and b["levelCandidate"] > 0):
+        result["levelDeltaCandidate"] = b["levelCandidate"] - a["levelCandidate"]
+    if result["levelDeltaCandidate"] not in (None, 0):
+        return dict(result, status="level-transition-candidate")
+    if (result["levelDeltaCandidate"] is None
+            or any(row.get("valueStatus") != "raw-values-candidate"
+                   or row.get("progressFractionCandidate") is None for row in (a, b))):
+        return dict(result, status="partial-candidate")
+    if any(a[field] != b[field] for field in
+           ("baselineCandidate", "neededCandidate", "limitCandidate")):
+        return dict(result, status="progression-parameters-changed")
+    # Only same-level, normal-domain observations with matching parameters
+    # support a within-level numeric difference. Even a positive delta does
+    # not establish which actions produced it.
+    return dict(result, status="comparable-candidate",
+                withinLevelXpDeltaCandidate=b["accumulatedCandidate"] - a["accumulatedCandidate"],
+                progressFractionDeltaCandidate=b["progressFractionCandidate"] - a["progressFractionCandidate"])
+
+
+def _experience_history(captures, edges):
+    """Keep coverage and transition counts separate from comparable XP segments."""
+    observed = [c["candidateValues"].get("experience-values") for c in captures]
+    present = [x for x in observed if x is not None]
+    segments = [e["nativeExperienceComparison"] for e in edges]
+    comparable = [s for s in segments if s["status"] == "comparable-candidate"]
+    transitions = [s for s in segments if s["status"] == "level-transition-candidate"]
+    deltas = [s["withinLevelXpDeltaCandidate"] for s in comparable]
+    complete = len(comparable) == len(segments)
+    return {
+        "status": ("comparable-candidate" if complete else
+                   "partial-candidate" if present else "not-captured"),
+        "capturesWithExperience": len(present),
+        "capturesWithoutExperience": len(captures) - len(present),
+        "capturesWithProgressFraction": sum(x.get("progressFractionCandidate") is not None for x in present),
+        "comparableSegments": len(comparable),
+        "levelTransitionCandidates": len(transitions),
+        "parameterChangeSegments": sum(s["status"] == "progression-parameters-changed" for s in segments),
+        "unavailableSegments": sum(s["status"] in ("not-captured", "partial-candidate") for s in segments),
+        "positiveDeltaSegments": sum(d > 0 for d in deltas),
+        "negativeDeltaSegments": sum(d < 0 for d in deltas),
+        "unchangedSegments": sum(d == 0 for d in deltas),
+        "sumComparableWithinLevelDeltasCandidate": sum(deltas) if deltas else None,
+        "netWithinLevelXpDeltaCandidate": sum(deltas) if complete else None,
+        "qualification": "Only comparable observed same-level segments contribute. "
+                         "No XP totals across level transitions or missing observations.",
+    }
+
+
 def _compare_states(a, b):
     """Compare two previously verified native observations."""
     require(a["summarySha256"] != b["summarySha256"], "same-source")
@@ -349,6 +418,7 @@ def _compare_states(a, b):
         "healthDeltaCandidate": health_delta,
         "nativeStatsComparison": _compare_stats(a, b),
         "nativePowerComparison": _compare_power(a, b),
+        "nativeExperienceComparison": _compare_experience(a, b),
         "qualification": "Same-epoch candidate change only; no movement causation, Lua validation or freshness proof.",
     }
 
@@ -402,6 +472,7 @@ def history(summaries):
         "lastCompletedAtUtc": captures[-1]["lastCompletedAtUtc"],
         "nativeStatsHistory": stats_history,
         "nativePowerHistory": _power_history(captures, edges),
+        "nativeExperienceHistory": _experience_history(captures, edges),
         "segments": [{
             "beforeSummarySha256": edge["beforeSummarySha256"],
             "afterSummarySha256": edge["afterSummarySha256"],
@@ -412,6 +483,7 @@ def history(summaries):
             "healthDeltaCandidate": edge["healthDeltaCandidate"],
             "nativeStatsComparison": edge["nativeStatsComparison"],
             "nativePowerComparison": edge["nativePowerComparison"],
+            "nativeExperienceComparison": edge["nativeExperienceComparison"],
         } for edge in edges],
         "sumPlanarChordsCandidate": sum(e["planarDistanceCandidate"] for e in edges),
         "netPositionDeltaCandidate": delta,
@@ -475,6 +547,8 @@ def main(argv=None):
                                           if k != "changed"})
         if "nativePowerHistory" in result:
             brief["nativePowerHistory"] = result["nativePowerHistory"]
+        if "nativeExperienceHistory" in result:
+            brief["nativeExperienceHistory"] = result["nativeExperienceHistory"]
     else:
         brief.update(beforeCompletedAtUtc=result["beforeCompletedAtUtc"],
                      afterStartedAtUtc=result["afterStartedAtUtc"],
@@ -484,6 +558,8 @@ def main(argv=None):
                      nativeStatsComparison=result["nativeStatsComparison"])
         if "nativePowerComparison" in result:
             brief["nativePowerComparison"] = result["nativePowerComparison"]
+        if "nativeExperienceComparison" in result:
+            brief["nativeExperienceComparison"] = result["nativeExperienceComparison"]
     if args.output:
         brief["output"] = str(args.output)
     print(json.dumps(brief, allow_nan=False))
