@@ -41,7 +41,7 @@ def snapshot(data):
 
 class FakeRunner:
     def __init__(self, *, sequence_offsets=(0, 1, 2), unmatched_header=False, malformed_companion=False,
-                 corrupt_capture_hash=False, scout_exit=3):
+                 corrupt_capture_hash=False, scout_exit=3, unmatched_scouts=0):
         self.calls = []
         self.sequence_offsets = sequence_offsets
         self.unmatched_header = unmatched_header
@@ -49,6 +49,7 @@ class FakeRunner:
         self.corrupt_capture_hash = corrupt_capture_hash
         self.scout_exit = scout_exit
         self.scouts = 0
+        self.unmatched_scouts = unmatched_scouts
 
     def __call__(self, args, **kwargs):
         self.calls.append((args, kwargs))
@@ -69,8 +70,9 @@ class FakeRunner:
                          "view=Inspect.Unit.Detail(player)|status=pass|x=7429.0|y=863.0|z=2935.0|"
                          f"playerId={SELF_ID}|name=Atank\0").encode().ljust(512, b"\0")
             entries = []
-            records = [("readerbridge-prefix", self.current_packet[:512], "0x100000"),
-                       ("coord-prefix", companion, "0x200000")]
+            records = [("readerbridge-prefix", self.current_packet[:512], "0x100000")]
+            if self.scouts > self.unmatched_scouts:
+                records.append(("coord-prefix", companion, "0x200000"))
             if self.unmatched_header:
                 unmatched = packet(BODY, seq=sequence + 1, clock=clock + 1000)
                 records.append(("readerbridge-prefix", unmatched[:512], "0x300000"))
@@ -449,6 +451,49 @@ class CaptureReaderBridgeTests(unittest.TestCase):
                          [item["sequence"] for item in result["generations"]])
         self.assertEqual("readerbridge-generation-not-advancing",
                          result["attempts"][1]["candidateFailure"])
+
+    def test_first_match_on_third_window_gets_one_confirmation_attempt(self):
+        # Reproduce the live case: two unmatched scopes, then one good generation.
+        starts = [16 * capture.MIB, 32 * capture.MIB, 48 * capture.MIB]
+        runner = FakeRunner(sequence_offsets=(0, 1, 2, 3), unmatched_scouts=2)
+        output = self.root / "late-match"
+        with patch.object(capture, "_locate_packet_scopes", return_value=({}, starts)):
+            result = capture.acquire(HOST, TARGET["processId"], None, output,
+                                     runner=runner, sleep=lambda _: None, selector=self.selector,
+                                     native_reader=self.reader, read_context=self.read_context,
+                                     progress=lambda _: None)
+        self.assertEqual(4, runner.scouts)
+        self.assertEqual(4, result["scope"]["maxAttempts"])
+        self.assertEqual([f"0x{x:X}" for x in starts + [starts[-1]]],
+                         [attempt["startAddress"] for attempt in result["attempts"]])
+        self.assertEqual([DECODED["sequence"] + 2, DECODED["sequence"] + 3],
+                         [item["sequence"] for item in result["generations"]])
+        self.assertFalse(result["ready"] or result["inputSent"])
+
+    def test_one_generation_and_stalled_third_gets_bounded_confirmation(self):
+        runner = FakeRunner(sequence_offsets=(0, 1, 1, 3), unmatched_scouts=1)
+        result, _ = self.acquire_two_generations(runner, self.read_context)
+        self.assertEqual(4, runner.scouts)
+        self.assertEqual(4, result["scope"]["maxAttempts"])
+        self.assertEqual([DECODED["sequence"] + 1, DECODED["sequence"] + 3],
+                         [item["sequence"] for item in result["generations"]])
+        self.assertEqual("readerbridge-generation-not-advancing",
+                         result["attempts"][2]["candidateFailure"])
+        self.assertFalse(result["ready"] or result["inputSent"])
+
+    def test_no_generation_does_not_extend_the_original_budget(self):
+        runner = FakeRunner(unmatched_scouts=3)
+        with self.assertRaisesRegex(capture.CaptureError, "two-advancing-generations-not-observed"):
+            self.acquire_two_generations(runner, self.read_context)
+        self.assertEqual(3, runner.scouts)
+        self.assertFalse((self.root / "out/result.json").exists())
+
+    def test_late_match_with_stalled_confirmation_remains_unavailable(self):
+        runner = FakeRunner(sequence_offsets=(0, 1, 2, 2), unmatched_scouts=2)
+        with self.assertRaisesRegex(capture.CaptureError, "two-advancing-generations-not-observed"):
+            self.acquire_two_generations(runner, self.read_context)
+        self.assertEqual(4, runner.scouts)
+        self.assertFalse((self.root / "out/result.json").exists())
 
     def test_clock_rollback_is_not_advancing_even_when_sequence_increases(self):
         retained = [{"sequence": 10, "sourceTimeMs": 2000}]

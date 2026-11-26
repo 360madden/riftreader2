@@ -443,7 +443,9 @@ def acquire(expected_host: str, physical_pid: int, seed_index: Path | None, outp
     generations = []
     attempts = []
     window_index = 0
-    for attempt in range(1, 4):
+    for attempt in range(1, 5):
+        if attempt > scope["maxAttempts"]:
+            break
         if attempt > 1:
             sleep(1.1)
         previous_count = len(generations)
@@ -517,8 +519,15 @@ def acquire(expected_host: str, physical_pid: int, seed_index: Path | None, outp
                 break
             except (CaptureError, ValueError, KeyError, InvalidOperation) as exc:
                 attempt_summary["candidateFailure"] = str(exc)
+                progress({"stage": "candidate-rejected", "attempt": attempt,
+                          "reason": str(exc)})
         if len(generations) == 2 and generations[1]["sequence"] > generations[0]["sequence"]:
             break
+        # Reserve one additional confirmation attempt when there is exactly
+        # one valid generation. A search with no valid data remains capped
+        # at three attempts; two advancing generations are still mandatory.
+        if attempt == 3 and len(generations) == 1:
+            scope["maxAttempts"] = 4
         if len(generations) == previous_count:
             window_index = (window_index + 1) % len(starts)
     if len(generations) != 2 or generations[1]["sequence"] <= generations[0]["sequence"]:
