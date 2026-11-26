@@ -79,8 +79,11 @@ public sealed class CurrentBuildExperienceSeedTests
     public async Task RequestedBuildMustMatchOpenedSessionBeforeReading()
     {
         var path = Path.Combine(Path.GetTempPath(), "rr2-xp-admission-" + Guid.NewGuid() + ".json");
-        var options = new Dictionary<string, string> {
-            ["--pid"] = "1", ["--start-ticks"] = "2", ["--output"] = path,
+        var options = new Dictionary<string, string>
+        {
+            ["--pid"] = "1",
+            ["--start-ticks"] = "2",
+            ["--output"] = path,
             ["--sha256"] = CurrentBuildPlayerLookup.UpdatedGameSha256
         };
         var acquired = 0;
