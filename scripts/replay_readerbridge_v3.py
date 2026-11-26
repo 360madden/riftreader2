@@ -36,8 +36,9 @@ def _json(path, limit=1024 * 1024):
 
 def _generation(directory, generation, number, target, self_id):
     report_name = PureWindowsPath(generation["captureReport"]).name
-    attempt = re.fullmatch(r"(attempt-[1-3])\.capture\.json", report_name)
-    require(attempt is not None, "capture-source-name-invalid")
+    attempt = re.fullmatch(r"(attempt-([1-9]))\.capture\.json", report_name)
+    require(attempt is not None and int(attempt[2]) <= bridge.MAX_SCOUT_ATTEMPTS,
+            "capture-source-name-invalid")
     stem = attempt[1]
     packet_name = f"generation-{number}.bin"
     require(PureWindowsPath(generation["packetFile"]).name == packet_name, "packet-source-name-invalid")
@@ -79,6 +80,7 @@ def _generation(directory, generation, number, target, self_id):
     return {"sequence": decoded["sequence"], "sourceTimeMs": decoded["sourceTimeMs"],
             "packetSha256": decoded["packetSha256"], "level": player["level"],
             "targetPublished": decoded["flags"]["hasTarget"], "luaTarget": decoded["sections"].get("T"),
+            "luaPower": decoded["power"],
             "startedAtUtc": sample["startedAtUtc"], "completedAtUtc": sample["completedAtUtc"]}
 
 
@@ -162,9 +164,14 @@ def _selected_target_levels(directory, references, target, self_id, generations)
     return dict(result, status=status)
 
 
-def replay(summary, *, native_bracket=None):
+def replay(summary, *, native_bracket=None, expected_sha256=None):
     summary = Path(summary)
-    doc = _json(summary)
+    raw = _read(summary, 1024 * 1024)
+    if expected_sha256 is not None:
+        require(isinstance(expected_sha256, str)
+                and hashlib.sha256(raw).hexdigest() == expected_sha256.casefold(),
+                "capture-summary-sha-mismatch")
+    doc = bridge._loads_json(raw, summary.name)
     require(doc.get("schemaVersion") == 1 and doc.get("evidenceKind") == "readerbridge-v3-bounded-acquisition/1"
             and doc.get("status") == "captured" and doc.get("ready") is False and doc.get("inputSent") is False
             and doc.get("guiStateChanged") is False, "capture-summary-unqualified")
@@ -207,13 +214,109 @@ def replay(summary, *, native_bracket=None):
     return result
 
 
+def replay_power_bracket(path):
+    """Rebuild a retained native-before/Lua/native-after Power comparison.
+
+    The historical comparison receipt pins the three original source files.
+    Replaying them does not establish live freshness or independent native
+    per-unit identity, and the addon may supply a default maximum of 100.
+    """
+    path = Path(path)
+    raw = _read(path, 1024 * 1024)
+    saved = bridge._loads_json(raw, path.name)
+    pins = saved["sources"]
+    require(isinstance(pins, dict), "power-source-pins-invalid")
+
+    def read_pinned(name):
+        source = path.parent / name
+        data = _read(source, 1024 * 1024)
+        digest = hashlib.sha256(data).hexdigest()
+        require(isinstance(pins.get(name), str)
+                and pins[name].casefold() == digest, "power-source-sha-mismatch")
+        return bridge._loads_json(data, source.name)
+
+    before = read_pinned("before.json")
+    after = read_pinned("after.json")
+    # Use the original packet replayer, not the old projected stdout receipt.
+    directory = path.parent / "bridge"
+    require(not directory.is_symlink(), "power-bridge-directory-invalid")
+    summary_pin = pins.get(r"bridge\result.json", pins.get("bridge/result.json"))
+    require(isinstance(summary_pin, str) and re.fullmatch(r"[0-9a-fA-F]{64}", summary_pin),
+            "power-source-pins-invalid")
+    observed = replay(directory / "result.json", expected_sha256=summary_pin)
+    target = saved["target"]
+    require(physical_rift.valid_host_name(saved.get("host"))
+            and observed["host"] == saved["host"] == target.get("hostName")
+            and observed["selfId"] == saved["readerBridgeSelfId"]
+            and bridge._same_target(observed["target"], target)
+            and observed["playerLevelComparison"] is not None,
+            "power-bracket-owner-mismatch")
+    identity = before["identity"]
+    require(identity == after["identity"]
+            and bridge._same_target(identity, target)
+            and type(identity.get("processId")) is int
+            and type(identity.get("processStartUtcTicks")) is int
+            and identity.get("executablePath") == target.get("executablePath")
+            and all(type(identity.get(k)) is int and identity[k] > 0
+                    for k in ("moduleBaseAddress", "moduleSize")),
+            "power-native-owner-mismatch")
+    native_before = physical_rift._native_values("power", before)["samples"]
+    native_after = physical_rift._native_values("power", after)["samples"]
+    generations = observed["generations"]
+    stamp = physical_rift._utc_tick_order_key
+    start = stamp(native_before[0]["startedAtUtc"])
+    end = stamp(native_after[-1]["completedAtUtc"])
+    require(start <= stamp(native_before[-1]["completedAtUtc"])
+            <= stamp(generations[0]["startedAtUtc"])
+            <= stamp(generations[-1]["completedAtUtc"])
+            <= stamp(native_after[0]["startedAtUtc"]) <= end
+            <= (start[0] + timedelta(seconds=30), start[1]),
+            "power-native-does-not-bracket-packets")
+    native_samples = [[row["current"], row["maximum"]]
+                      for row in native_before + native_after]
+    lua = [row["luaPower"] for row in generations]
+    require(all(isinstance(row, dict)
+                and type(row.get("current")) is int
+                and type(row.get("publishedMaximum")) is int
+                and 0 <= row["current"] <= row["publishedMaximum"]
+                and row["publishedMaximum"] > 0
+                and type(row.get("maximumMayBeAddonDefault")) is bool
+                for row in lua), "power-lua-unavailable")
+    lua_samples = [[row["current"], row["publishedMaximum"]] for row in lua]
+    maximum_default = any(row["maximumMayBeAddonDefault"] for row in lua)
+    match = all(row == native_samples[0] for row in native_samples + lua_samples)
+    result = {
+        "status": "matching-static-power-candidates" if match else "differing-power-candidates",
+        "nativeSamples": native_samples, "luaSamples": lua_samples,
+        "luaMaximumMayBeDefault": maximum_default,
+        "sequences": [row["sequence"] for row in generations],
+    }
+    # Reject a saved projection inconsistent with the rederived source values.
+    for key, value in result.items():
+        require(json.dumps(saved.get(key), sort_keys=True, allow_nan=False)
+                == json.dumps(value, sort_keys=True, allow_nan=False),
+                "power-comparison-projection-mismatch")
+    return dict(result, host=observed["host"], target=observed["target"],
+                readerBridgeSelfId=observed["selfId"],
+                comparisonSha256=hashlib.sha256(raw).hexdigest(),
+                replayVerified=True, ready=False, inputSent=False,
+                qualification="Same-process sequential candidate agreement only; "
+                              "native per-unit identity, changed-state behavior and "
+                              "restart qualification remain unverified.")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--summary", required=True, type=Path, help="retained ReaderBridge result.json")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--summary", type=Path, help="retained ReaderBridge result.json")
+    mode.add_argument("--power-bracket", type=Path, help="retained native/Lua Power comparison.json")
     parser.add_argument("--native-bracket", type=Path, help="separate native bracket from an older capture")
     args = parser.parse_args(argv)
+    if args.power_bracket and args.native_bracket:
+        parser.error("--native-bracket requires --summary")
     try:
-        result = replay(args.summary, native_bracket=args.native_bracket)
+        result = (replay_power_bracket(args.power_bracket) if args.power_bracket
+                  else replay(args.summary, native_bracket=args.native_bracket))
     except (OSError, ValueError, TypeError, KeyError, AttributeError, InvalidOperation) as error:
         print(json.dumps({"status": "blocked", "reason": str(error), "inputSent": False, "ready": False}))
         return 2

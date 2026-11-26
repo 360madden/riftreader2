@@ -28,6 +28,9 @@ from scripts.capture_physical_telemetry_zone import ReadOnlyWindowsProcess
 from scripts.readerbridge_v3 import CONTROL, MAGIC, PACKET_SIZE, PRODUCER, decode_packet
 
 MIB = 1024 * 1024
+# Shared with offline replay so a permitted capture always has a valid source name.
+INITIAL_SCOUT_ATTEMPTS = 3
+MAX_SCOUT_ATTEMPTS = 4
 SCOUT_COMMAND = "scout-values-native"
 CAPTURE_COMMAND = "capture-native"
 RBRG_PREFIX = "1196573266"
@@ -425,7 +428,8 @@ def acquire(expected_host: str, physical_pid: int, seed_index: Path | None, outp
     if include_selected_target:
         selected_target_refs.update(_retain_selected_target(
             selection, reader, read_context, output, ("selectedBefore", "nameBefore")))
-    scope = {"seedIndex": str(seed_index) if seed_index is not None else None, "maxAttempts": 3}
+    scope = {"seedIndex": str(seed_index) if seed_index is not None else None,
+             "maxAttempts": INITIAL_SCOUT_ATTEMPTS}
     if seed_index is None:
         scan_bytes = scan_mib * MIB
         survey, starts = _locate_packet_scopes(physical_pid, scan_bytes, reader_factory)
@@ -443,7 +447,7 @@ def acquire(expected_host: str, physical_pid: int, seed_index: Path | None, outp
     generations = []
     attempts = []
     window_index = 0
-    for attempt in range(1, 5):
+    for attempt in range(1, MAX_SCOUT_ATTEMPTS + 1):
         if attempt > scope["maxAttempts"]:
             break
         if attempt > 1:
@@ -526,8 +530,8 @@ def acquire(expected_host: str, physical_pid: int, seed_index: Path | None, outp
         # Reserve one additional confirmation attempt when there is exactly
         # one valid generation. A search with no valid data remains capped
         # at three attempts; two advancing generations are still mandatory.
-        if attempt == 3 and len(generations) == 1:
-            scope["maxAttempts"] = 4
+        if attempt == INITIAL_SCOUT_ATTEMPTS and len(generations) == 1:
+            scope["maxAttempts"] = MAX_SCOUT_ATTEMPTS
         if len(generations) == previous_count:
             window_index = (window_index + 1) % len(starts)
     if len(generations) != 2 or generations[1]["sequence"] <= generations[0]["sequence"]:

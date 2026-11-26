@@ -273,18 +273,19 @@ class CaptureReaderBridgeTests(unittest.TestCase):
         self.assertEqual([1, 1], [item["matchedPacketCandidateCount"] for item in result["attempts"]])
         self.assertEqual([1, 1], [item["rejectedCompanionCount"] for item in result["attempts"]])
 
-    def test_replays_copied_packets_companions_and_native_level_sources(self):
-        def native_context(selection, kind, *, native_reader):
-            result = self.read_context(selection, kind, native_reader=native_reader)
-            document = native_context_report()
-            timestamp = result["nativeValues"]["sampledAtUtc"]
-            document["observation"].update(identity=TARGET, startedAtUtc=timestamp, completedAtUtc=timestamp)
-            source = self.root / f"player-context-{len(self.context_reads)}.json"
-            source.write_text(json.dumps(document), encoding="utf-8")
-            return dict(result, nativeOutput=str(source),
-                        nativeValues=capture.physical_rift._native_values(kind, document))
+    def replay_context(self, selection, kind, *, native_reader):
+        """Retain a synthetic context source that the real replayer can verify."""
+        result = self.read_context(selection, kind, native_reader=native_reader)
+        document = native_context_report()
+        timestamp = result["nativeValues"]["sampledAtUtc"]
+        document["observation"].update(identity=TARGET, startedAtUtc=timestamp, completedAtUtc=timestamp)
+        source = self.root / f"player-context-{len(self.context_reads)}.json"
+        source.write_text(json.dumps(document), encoding="utf-8")
+        return dict(result, nativeOutput=str(source),
+                    nativeValues=capture.physical_rift._native_values(kind, document))
 
-        self.acquire_two_generations(FakeRunner(), native_context)
+    def test_replays_copied_packets_companions_and_native_level_sources(self):
+        self.acquire_two_generations(FakeRunner(), self.replay_context)
         copied = shutil.copytree(self.root / "out", self.root / "copied capture")
         (self.root / "out").rename(self.root / "prior capture")
         result = replay.replay(copied / "result.json")
@@ -302,6 +303,22 @@ class CaptureReaderBridgeTests(unittest.TestCase):
                         replay.replay(copied / "result.json")
                 finally:
                     source.write_bytes(raw)
+
+    def test_replays_fourth_attempt_confirmation_with_original_sources(self):
+        runner = FakeRunner(sequence_offsets=(0, 1, 2, 3), unmatched_scouts=2)
+        captured, _ = self.acquire_two_generations(runner, self.replay_context)
+        self.assertEqual(4, captured["scope"]["maxAttempts"])
+        self.assertTrue(captured["generations"][1]["captureReport"].endswith("attempt-4.capture.json"))
+        summary = self.root / "out/result.json"
+        result = replay.replay(summary)
+        self.assertEqual([DECODED["sequence"] + 2, DECODED["sequence"] + 3],
+                         [row["sequence"] for row in result["generations"]])
+        self.assertFalse(result["ready"] or result["inputSent"])
+        # The fourth attempt is bounded; a fifth or arbitrary path remains invalid.
+        captured["generations"][1]["captureReport"] = "attempt-5.capture.json"
+        summary.write_text(json.dumps(captured), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "capture-source-name-invalid"):
+            replay.replay(summary)
 
     def test_selected_target_replay_requires_ordered_hashed_sources_and_matching_names(self):
         references = {}
