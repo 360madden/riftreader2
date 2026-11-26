@@ -473,3 +473,20 @@ Retained local evidence:
 - `artifacts/postpatch-20261126-phase12-experience-registration-neighborhood.json` — SHA-256 `71FFB4E7EECC141F78BD7E12E5E14A9AE1401254C2E8181B6739287DEFECD57C`.
 
 Next evidence gate: independently decode the two bounded code ranges, distinguish the API callback from other consumers, verify its current-build output and sentinel semantics, then separately qualify the underlying native source and ownership. No game process memory acquisition, game input, callback execution, game modification, native locator migration, or live XP claim occurred in this pass.
+
+### Build 1179 Experience callback independently decoded (2026-11-26)
+
+Verified the original archived image SHA-256 `DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01` again. Reused the existing peer RRE Python environment read-only (`capstone` 5.0.7 and `iced-x86` 1.22.0, no dependency installation). Both decoders agreed on all 206 contiguous instruction boundaries across the three previously retained unwind ranges. The exact-build data pointers used in the prologues resolve candidate A to `Inspect.Attunement.Progress` and candidate B to `Inspect.Experience`. Candidate A is not the desired player Experience callback.
+
+Candidate B's complete bounded unwind range is `[0x9A04B0, 0x9A0600)` (72 instructions); its code SHA-256 is `C43A6A11534BAA490710DE6EAC201EC5F8B3A9BA9EF69A409D59566574501D38`. The callback references the previously observed Experience metadata group, invokes the producer, creates a table, checks signed needed `-1`, then branches past all three field writes to the one-result return. The normal branch computes accumulated as raw progress minus baseline plus needed, converts signed integers to Lua numeric values, and emits the three named fields. This independently corroborates the earlier-build emission semantics. It does not imply that a missing table value proves a level cap.
+
+Followed the direct producer call into its first unwind range. That range is only a fragment, not the entire routine. Four adjacent chained unwind records refer back to the initial range (directly or through another fragment); the five contiguous ranges cover `[0x651AB0, 0x651C30)`. Both decoders agree on all 97 instruction boundaries in that window. The observed normal branch has a raw progress source, separate needed and baseline helper calls, and a flag-selected rested source. The indexed progress-owner selection is not itself proof of runtime identity. In particular, the alternate rested expression is rooted through the original input rather than the selected progress component; their owner equivalence has not been independently verified. Do not assume equivalence or transplant the older reader's layout. Deeper provider ownership and branch semantics remain open.
+
+Retained local receipts:
+
+- `artifacts/postpatch-20261126-phase13-experience-disassembly.json` — SHA-256 `B4340C2EF8D1D8346EFA32CB59F355C24FF8C550FFD8DCE97B199F2E30DE75A3`.
+- `artifacts/postpatch-20261126-phase13-experience-crosscheck.json` — SHA-256 `C210C1DF051DF33E1420E39487B4F79709EBBCFBE36B3F9163D5880973B44BB0`.
+- `artifacts/postpatch-20261126-phase13-experience-producer.json` — SHA-256 `9791B9728917C0B59BAF6955D69BA6BDD1BCBC7C8DDF87D6035DFAE58F2D4541` (initial fragment only, superseded in coverage by the following receipt).
+- `artifacts/postpatch-20261126-phase13-experience-producer-window.json` — SHA-256 `439ED5BC81D221246BC71121E8462D43E427B43C74581E4FD1B46D255BDA2100` (five chained ranges).
+
+Static callback and first producer discovery complete. Native XP remains unqualified on 1179: no game process attachment, live acquisition, callback execution, input, process writes, or native reader build-gate changes occurred. Next gate is to resolve the necessary deeper providers and verify read-only ownership before adapting or testing the existing reader.
