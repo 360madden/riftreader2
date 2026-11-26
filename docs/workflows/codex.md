@@ -26,12 +26,14 @@ and failure/skip results. Linux compatibility is not assumed. If needed, fix
 portable test fixtures in a separate branch, not production identity checks.
 
 ```sh
-python -B scripts/validate_cloud_navigation.py --lane all
+python -B scripts/validate_cloud_navigation.py --lane all --jobs 3
 ```
 
 Use `--lane planning`, `--lane adoption`, or `--lane progress` for focused
 worker acceptance. The runner isolates native-reader overrides and invokes
 only explicitly selected repository tests. It is not the full Windows gate.
+Use `--jobs 1` for serial diagnostics; concurrent lanes report in fixed order.
+The progress lane includes deterministic unfinished-leg feedback diagnostics.
 
 ### Initial independent worker assignments
 
