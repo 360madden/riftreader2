@@ -384,6 +384,15 @@ fraction is historical only. Native XP is not captured by this workflow.
 & $rr2Python -B scripts/compare_saved_api_stats.py --state-summary artifacts/NEW_PLAYER_STATE/summary.json --reference EXPORTED_RRE_JSON --reference-sha256 EXPORT_SHA --progression-only --output artifacts/NEW_PROGRESSION.json
 ```
 
+On the two supported executable hashes, the raw Experience seed can also be
+retrieved without input. Use a newly built native reader that supports the
+updated command (the older published bundle may not). Its raw progression
+record, record level and float are not calculated accumulated/needed/rested XP.
+
+```powershell
+& $rr2Python -B scripts/physical_rift.py --expected-host $rr2Host --physical-pid CURRENT_PID --read-native experience-seed --native-reader $rr2PublishedReader --output artifacts/NEW_XP_SEED.json
+```
+
 The RR2A1 collector compares advancing unbound addon coordinates with native
 position brackets. The RR2R1 probe can retain potential reference frames for
 offline replay. A strict RR2R1 assessment requires the exact active addon nonce.

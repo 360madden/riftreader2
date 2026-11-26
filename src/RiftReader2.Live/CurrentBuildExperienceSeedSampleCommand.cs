@@ -20,15 +20,24 @@ internal static class CurrentBuildExperienceSeedCandidateReader
 {
     internal static ExperienceSeedObservation Read(IReadOnlyNativeMemorySession session)
     {
-        var start = DateTimeOffset.UtcNow; var lookup = CurrentBuildPlayerLookup.Resolve(session);
-        var health = lookup.ResolveComponent(0x2F57850); var component = lookup.ResolveComponent(0x2F582E0);
+        // Build 1179 callback and producer were independently decoded against the exact SHA.
+        // Only the raw indexed seed path is admitted here; the calculated-XP reader
+        // still has its original build gate and separate typed provider requirements.
+        var start = DateTimeOffset.UtcNow;
+        var lookup = CurrentBuildPlayerLookup.Resolve(session);
+        var updated = CurrentBuildPlayerLookup.IsUpdatedBuild(session.Identity.ExecutableSha256);
+        var health = lookup.ResolveComponent(updated ? 0x2F68850UL : 0x2F57850UL);
+        var component = lookup.ResolveComponent(updated ? 0x2F692E0UL : 0x2F582E0UL);
         return ReadResolved(session, session.Identity, start, lookup.PlayerKey, lookup.EntityAddress, health, component, lookup.VerifyUnchanged);
     }
     internal static ExperienceSeedObservation ReadResolved(IReadOnlyNativeMemorySession session, NativeProcessIdentity id,
         DateTimeOffset start, ulong key, ulong entity, ulong health, ulong component, Action verifyOwner)
     {
-        if (session.Identity != id || id.ProcessId <= 0 || id.ProcessStartUtcTicks <= 0 || key == 0 || id.ModuleSize < 0x33623E8 ||
-            !string.Equals(id.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256, StringComparison.OrdinalIgnoreCase))
+        var updated = CurrentBuildPlayerLookup.IsUpdatedBuild(id.ExecutableSha256);
+        var systemRva = updated ? 0x3373BA0UL : 0x33623E0UL;
+        if (session.Identity != id || id.ProcessId <= 0 || id.ProcessStartUtcTicks <= 0 ||
+            key == 0 || id.ModuleSize < systemRva + 8 ||
+            !CurrentBuildPlayerLookup.IsCoreBuild(id.ExecutableSha256))
             throw new InvalidDataException("Invalid experience seed identity.");
         ArgumentNullException.ThrowIfNull(verifyOwner);
         var anchors = new Dictionary<(ulong, int), byte[]>(); int budget = 0;
@@ -49,10 +58,18 @@ internal static class CurrentBuildExperienceSeedCandidateReader
             if (rva.HasValue && rva.Value <= id.ModuleSize - 0x48) getter = Rva(Q(checked(vt + 0x40)));
             return (rva, getter);
         }
-        var system = Ptr(Q(checked(id.ModuleBaseAddress + 0x33623E0)), 0x400);
-        if (Q(system + 0x3F8) != entity || Q(checked(Ptr(health, 0x18) + 0x10)) != entity || Q(checked(Ptr(component, 0x50) + 0x10)) != entity)
+        var system = Ptr(Q(checked(id.ModuleBaseAddress + systemRva)), 0x400);
+        // The 1179 callback resolves the cached self entity and its progression
+        // component; its producer traverses the health component back to self.
+        // Verify both component back-references and the current player key.
+        if (Q(system + 0x3F8) != entity ||
+            Q(checked(Ptr(health, 0x18) + 0x10)) != entity ||
+            Q(checked(Ptr(component, 0x50) + 0x10)) != entity ||
+            (updated && (health == component || Q(system + 0x360) != key)))
             throw new InvalidDataException("Experience self entity mismatch.");
         var owner = Ptr(Q(component + 0x48), 0xDF0); var (vt, getter) = Vtable(owner);
+        if (updated && (!vt.HasValue || !getter.HasValue || vt.Value == 0 || getter.Value == 0))
+            throw new InvalidDataException("Experience owner module reference unavailable.");
         var index = unchecked((int)D(owner + 0x1D8)); var d160 = D(owner + 0x160); var flag = Read(owner + 0x24F, 1)[0];
         var begin = Q(owner + 0xDE0); var end = Q(owner + 0xDE8);
         if ((begin == 0) != (end == 0) || end < begin || (end - begin) % 8 != 0 || (end - begin) / 8 > 256) throw new InvalidDataException("Invalid experience vector.");
@@ -69,6 +86,8 @@ internal static class CurrentBuildExperienceSeedCandidateReader
         else
         {
             var address = Ptr(references[index], 0x28); var (rvt, rgetter) = Vtable(address);
+            if (updated && (!rvt.HasValue || !rgetter.HasValue || rvt.Value == 0 || rgetter.Value == 0))
+                throw new InvalidDataException("Experience record module reference unavailable.");
             var i64 = BinaryPrimitives.ReadInt64LittleEndian(Read(address + 0x18, 8)); var bits = D(address + 0x20); var f = BitConverter.Int32BitsToSingle(unchecked((int)bits)); var d24 = D(address + 0x24);
             selected = new(address, rvt, rgetter, i64, d24, bits, float.IsFinite(f) ? f : null); branch = "indexed-raw-candidate";
         }
@@ -79,11 +98,22 @@ internal static class CurrentBuildExperienceSeedCandidateReader
 }
 internal static class CurrentBuildExperienceSeedSampleCommand
 {
-    internal static Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken ct) =>
-        RunAsync(options, output, ct,
-            static async (pid, ticks, token) => await NativeReadFileLease.AcquireAsync(pid, ticks, CurrentBuildPlayerLookup.GameSha256, TimeSpan.FromSeconds(1), token),
-            static async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(pid, ticks, CurrentBuildPlayerLookup.GameSha256, token),
+    internal static Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken ct)
+    {
+        var sha = ExpectedSha(options);
+        return RunAsync(options, output, ct,
+            async (pid, ticks, token) => await NativeReadFileLease.AcquireAsync(pid, ticks, sha, TimeSpan.FromSeconds(1), token),
+            async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(pid, ticks, sha, token),
             CurrentBuildExperienceSeedCandidateReader.Read);
+    }
+
+    private static string ExpectedSha(IReadOnlyDictionary<string, string> options)
+    {
+        var sha = options.TryGetValue("--sha256", out var requested) ? requested : CurrentBuildPlayerLookup.GameSha256;
+        if (!CurrentBuildPlayerLookup.IsCoreBuild(sha))
+            throw new ArgumentException("Unqualified executable SHA256 for raw experience seed.");
+        return sha;
+    }
 
     // Explicit offline test seam; production always supplies the real lease.
     internal static async Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken ct,
@@ -92,9 +122,18 @@ internal static class CurrentBuildExperienceSeedSampleCommand
         Func<IReadOnlyNativeMemorySession, ExperienceSeedObservation> read)
     {
         if (!options.TryGetValue("--pid", out var p) || !int.TryParse(p, NumberStyles.None, CultureInfo.InvariantCulture, out var pid) || pid <= 0 || !options.TryGetValue("--start-ticks", out var t) || !long.TryParse(t, NumberStyles.None, CultureInfo.InvariantCulture, out var ticks) || ticks <= 0 || !options.TryGetValue("--output", out var path) || string.IsNullOrWhiteSpace(path)) throw new ArgumentException("--pid, --start-ticks and --output required.");
+        var expectedSha = ExpectedSha(options);
         if (File.Exists(path)) throw new IOException("Output exists.");
-        await using var lease = await acquireLease(pid, ticks, ct); ct.ThrowIfCancellationRequested(); await using var session = await open(pid, ticks, ct); ct.ThrowIfCancellationRequested();
+        await using var lease = await acquireLease(pid, ticks, ct);
+        ct.ThrowIfCancellationRequested();
+        await using var session = await open(pid, ticks, ct);
+        ct.ThrowIfCancellationRequested();
+        if (session.Identity.ProcessId != pid || session.Identity.ProcessStartUtcTicks != ticks ||
+            !string.Equals(session.Identity.ExecutableSha256, expectedSha, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Experience seed source identity mismatch.");
         var observation = read(session);
+        if (observation.Identity != session.Identity)
+            throw new InvalidDataException("Experience seed observation identity mismatch.");
         if (await session.RevalidateAsync(ct) is not null) throw new InvalidDataException("Process identity invalidated."); ct.ThrowIfCancellationRequested();
         var report = new { schemaVersion = 1, contractVersion = "native-current-experience-seed-candidate/1", status = "complete", observation, limitations = new[] { "Raw inputs do not establish accumulated, needed or rested experience.", "Sequential reads are not atomic and cannot exclude ABA; freshness and restart unverified.", "Executable SHA identifies on-disk bytes; loaded module bytes not independently hashed.", "No getter, initializer, reference-count operation or memory write performed." } };
         await JsonReportWriter.WriteNewAsync(path, report, ct);

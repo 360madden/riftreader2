@@ -8,20 +8,28 @@ from scripts.lab_codex import LabCodex
 from scripts.inventory_passive_rift_sources import ps_literal
 from scripts.sample_current_native_xyz import digest
 GAME_SHA = '1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8'
+UPDATED_GAME_SHA = 'DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01'
+SEED_BUILDS = frozenset((GAME_SHA, UPDATED_GAME_SHA))
 READER_SHA = '723C499D90FA10B02AC22E85441DE132E525650178DA4CF841C73C9B6781448E'
 READER = ROOT / 'artifacts/native-experience-seed-20261107/publish/RiftReader2.Live.exe'
 EVIDENCE = ROOT / 'artifacts/native-experience-seed-20261107/runs'
 
 QUALIFICATION='raw experience inputs; calculated experience, freshness and restart unverified'
 
-def validate_report(report, *, pid, ticks):
+def validate_report(report, *, pid, ticks, expected_sha=GAME_SHA):
     def integer(v,low,high): return type(v) is int and low<=v<=high
     def invalid(): raise ValueError('invalid experience-seed report')
     if not isinstance(report,dict) or type(report.get('schemaVersion')) is not int or report['schemaVersion']!=1 or report.get('contractVersion')!='native-current-experience-seed-candidate/1' or report.get('status')!='complete': invalid()
     o=report.get('observation')
     if not isinstance(o,dict) or o.get('qualification')!=QUALIFICATION: invalid()
     identity=o.get('identity')
-    if not isinstance(identity,dict) or not integer(pid,1,2**31-1) or not integer(ticks,1,2**63-1) or type(identity.get('processId')) is not int or identity['processId']!=pid or type(identity.get('processStartUtcTicks')) is not int or identity['processStartUtcTicks']!=ticks or identity.get('executableSha256')!=GAME_SHA: invalid()
+    if not isinstance(identity,dict) or not integer(pid,1,2**31-1) or not integer(ticks,1,2**63-1) or type(identity.get('processId')) is not int or identity['processId']!=pid or type(identity.get('processStartUtcTicks')) is not int or identity['processStartUtcTicks']!=ticks or expected_sha not in SEED_BUILDS or identity.get('executableSha256')!=expected_sha: invalid()
+    updated = expected_sha == UPDATED_GAME_SHA
+    if updated:
+        module_size = identity.get('moduleSize')
+        module_base = identity.get('moduleBaseAddress')
+        if (not integer(module_size,0x3373BA8,0x7fffffffffff)
+                or not integer(module_base,0x10000,0x7fffffffffff-module_size)): invalid()
     try: start=datetime.fromisoformat(o['startedAtUtc'].replace('Z','+00:00'));end=datetime.fromisoformat(o['completedAtUtc'].replace('Z','+00:00'))
     except (KeyError,TypeError,AttributeError,ValueError): invalid()
     if start.utcoffset() is None or end.utcoffset() is None or start.utcoffset().total_seconds()!=0 or end.utcoffset().total_seconds()!=0 or end<start or not integer(o.get('unitKey'),1,2**64-1): invalid()
@@ -29,12 +37,14 @@ def validate_report(report, *, pid, ticks):
         if not integer(o.get(field),0x10000,0x7fffffffffff): invalid()
     for field in ('ownerVtableRva','ownerGetterRva'):
         if o.get(field) is not None and not integer(o[field],0,2**64-1): invalid()
+        if updated and not integer(o.get(field),1,module_size-1): invalid()
     index=o.get('index');flag=o.get('rawByte24F'); begin=o.get('vectorBegin'); endptr=o.get('vectorEnd'); refs=o.get('references'); branch=o.get('branch');selected=o.get('selected');a=o.get('special7D8');b=o.get('special7E0')
     if not integer(index,-2**31,2**31-1) or not integer(o.get('rawDword160'),0,2**32-1) or not integer(flag,0,255) or not integer(begin,0,2**64-1) or not integer(endptr,0,2**64-1) or not isinstance(refs,list) or len(refs)>256 or (begin==0)!=(endptr==0) or endptr<begin or endptr-begin!=8*len(refs) or (begin!=0 and (begin<0x10000 or begin%8 or endptr>0x7fffffffffff)) or any(not integer(r,0,2**64-1) for r in refs): invalid()
     if branch=='indexed-raw-candidate':
         if not 0<=index<len(refs) or refs[index]==0 or not isinstance(selected,dict) or selected.get('address')!=refs[index] or not integer(selected.get('address'),0x10000,0x7fffffffffff) or any(x is not None for x in (a,b)): invalid()
         for field in ('vtableRva','getterRva'):
             if selected.get(field) is not None and not integer(selected[field],0,2**64-1): invalid()
+            if updated and not integer(selected.get(field),1,module_size-1): invalid()
         if not integer(selected.get('rawInt64_18'),-2**63,2**63-1) or not integer(selected.get('rawDword24'),0,2**32-1) or not integer(selected.get('rawFloat20Bits'),0,2**32-1): invalid()
         bits=selected['rawFloat20Bits']; number=struct.unpack('<f',struct.pack('<I',bits))[0]; value=selected.get('rawFloat20')
         if math.isfinite(number):
@@ -50,6 +60,31 @@ def validate_report(report, *, pid, ticks):
         if not 0<=index<len(refs) or refs[index]!=0 or any(x is not None for x in (selected,a,b)): invalid()
     else: invalid()
     return o
+
+
+def project_seed(report):
+    """Project only raw candidate values from an independently validated seed.
+
+    These are producer inputs, not accumulated/needed/rested API outputs.
+    """
+    observation = report.get('observation')
+    identity = observation.get('identity') if isinstance(observation,dict) else None
+    if not isinstance(identity,dict):
+        raise ValueError('invalid experience-seed identity')
+    o = validate_report(report,pid=identity.get('processId'),
+                        ticks=identity.get('processStartUtcTicks'),
+                        expected_sha=identity.get('executableSha256'))
+    selected = o.get('selected')
+    return {
+        'status': 'raw-seed-candidate' if selected is not None else 'seed-unavailable',
+        'unitKey': str(o['unitKey']),
+        'branch': o['branch'],
+        'rawProgressRecordCandidate': selected['rawInt64_18'] if selected is not None else None,
+        'rawProgressLevelCandidate': selected['rawDword24'] if selected is not None else None,
+        'rawRecordFloatCandidate': selected.get('rawFloat20') if selected is not None else None,
+        'sampledAtUtc': o['completedAtUtc'],
+        'qualification': QUALIFICATION,
+    }
 
 
 def run(lab):

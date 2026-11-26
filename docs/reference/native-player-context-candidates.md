@@ -503,3 +503,19 @@ Two local source receipts:
 - `artifacts/postpatch-20261127-phase14-level-limit.json` — SHA-256 `287868CB246D3FFD173DB0ABB488E8BF5E708B53D14258942ED7FE79B8B4C51F`.
 
 While comparing the existing reader contract, reproduced a legacy Python validation mismatch: the C# producer emits `owner-type-unavailable`, but its validator rejected that status. It also admitted contradictory level-limit and rested-value evidence, false overflow claims, and a final in-range accumulation with an overflowing checked subtraction. Aligned the offline validator with the existing older-build producer's status/checked-arithmetic rules. Seven targeted tests plus adjacent regression coverage passed (61 total); the initial targeted run reproduced one error and four failures. These tests do not establish any live XP values. No C# locator change, current-build admission, game input or process access.
+
+### Build 1179 raw Experience seed recovered (2026-11-27)
+
+Reconfirmed the cached player-system and context getters in the archived executable using both existing x86 decoders, including the chained unwind ranges. The current-build callback selects the progression component of the cached self entity; the producer traverses the health component back to that same entity and selects the progression record. Reused the exact-build player lookup and the existing bounded seed reader. The updated path verifies cached key/entity, both component back-references, module-relative owner/record references, retained bytes and final lookup anchors. The module-reference guard is not a fully qualified type fingerprint.
+
+The C# raw seed command now accepts explicit `--sha256` on the two supported builds, defaulting to the historical build. `physical_rift.py --read-native experience-seed` uses the pinned executable SHA, validates the native report, source digest, receipt and invocation timestamps, and exposes raw values with no calculated XP fields. The calculated experience reader and historical lab commands retain their original admission.
+
+Fresh read-only LEGION capture on build 1179, PID 24992/start ticks 639313044653553067, completed at 2026-11-26T16:10:51.2637497Z. Returned indexed raw seed, 40 reference slots, index 0, raw progression record 4214978, raw record level 45 and raw float 0. Source replay independently rederived these values; process, module, self key and level match the earlier phase-11 state bundle. The two captures are sequential, not atomic or independently API-qualified. The raw progression record is not the accumulated XP within the current level; the raw float is not qualified API rested XP.
+
+Evidence:
+
+- `artifacts/postpatch-20261127-phase15-xp-owner-getters.json` — SHA-256 `48C337B92D1B1703F9EA4E285C7AC7A7067B42F20E64DE939F6041A79D8C4A42` (initial fragments).
+- `artifacts/postpatch-20261127-phase15-xp-owner-getter-chains.json` — SHA-256 `5B2E1BCE982E2A97FCD1C49ED34F75186B80F6F2A944FA99FA931CC229BCA071` (chained windows).
+- `artifacts/postpatch-20261127-phase15-experience-seed.json` — SHA-256 `6E57CB69C1E884089E09B10EBF43E25CA96F2D214BD270DB8DD654508304B1A1` (live raw seed).
+
+Focused validation: 15 .NET tests and 95 Python tests passed. Used the newly built Debug reader explicitly; did not replace or register a published physical reader. The existing published reader may not implement the updated command. No gameplay input, memory writes, callbacks or initializers executed. Next: establish the typed required-XP/baseline and rested-source providers before admitting calculated XP on this build.
