@@ -15,6 +15,10 @@ from tests.test_probe_physical_rr2r1 import HOST, ProbeTests, SELECTION
 
 class UpdatedRr2r1ProbeTests(unittest.TestCase):
     def setUp(self):
+        # Use the synthetic reader rather than this machine's registered bundle.
+        self.enterContext(patch.dict("os.environ", {
+            "RR2_PHYSICAL_TOOLS_ROOT": "debug", "RR2_NATIVE_READER": "",
+        }))
         self.selection = deepcopy(SELECTION)
         self.selection["target"]["executableSha256"] = probe.UPDATED_SHA
 

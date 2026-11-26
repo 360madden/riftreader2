@@ -18,6 +18,10 @@ from tests.test_physical_only_selection import IDENTITY
 
 class CalibrationPreflightTests(unittest.TestCase):
     def setUp(self):
+        # Use the synthetic reader rather than this machine's registered bundle.
+        self.enterContext(patch.dict("os.environ", {
+            "RR2_PHYSICAL_TOOLS_ROOT": "debug", "RR2_NATIVE_READER": "",
+        }))
         temp = TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)

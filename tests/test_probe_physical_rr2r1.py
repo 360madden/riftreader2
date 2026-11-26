@@ -24,6 +24,12 @@ SELECTION = {"status": "ready", "ownerHost": HOST, "target": TARGET}
 
 
 class ProbeTests(unittest.TestCase):
+    def setUp(self):
+        # Use the synthetic reader rather than this machine's registered bundle.
+        self.enterContext(patch.dict("os.environ", {
+            "RR2_PHYSICAL_TOOLS_ROOT": "debug", "RR2_NATIVE_READER": "",
+        }))
+
     def index(self, request, request_path, published=0):
         return {
             "schemaVersion": 1, "evidenceKind": "native-typed-inline-capture/1",

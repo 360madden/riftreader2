@@ -17,6 +17,10 @@ CURSOR = "0x14000000"
 
 class ScopedRr2a1Tests(unittest.TestCase):
     def setUp(self):
+        # Use the synthetic reader rather than this machine's registered bundle.
+        self.enterContext(patch.dict("os.environ", {
+            "RR2_PHYSICAL_TOOLS_ROOT": "debug", "RR2_NATIVE_READER": "",
+        }))
         self.selection = deepcopy(SELECTION)
         self.selection["target"]["executableSha256"] = UPDATED_SHA
 

@@ -40,6 +40,12 @@ def success():
 
 
 class PhysicalRR2A1PairTests(unittest.TestCase):
+    def setUp(self):
+        # Use the synthetic reader rather than this machine's registered bundle.
+        self.enterContext(patch.dict("os.environ", {
+            "RR2_PHYSICAL_TOOLS_ROOT": "debug", "RR2_NATIVE_READER": "",
+        }))
+
     def test_cli_exposes_absolute_positions_as_unbound_candidates(self):
         positions = {
             "firstLua": {"x": 10., "y": 20., "z": 30.},
