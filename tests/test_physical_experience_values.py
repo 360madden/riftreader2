@@ -56,6 +56,18 @@ class PhysicalExperienceValuesTests(unittest.TestCase):
         self.assertIsNone(value["neededCandidate"])
         self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), result["nativeSourceSha256"])
 
+    def test_full_values_and_fraction(self):
+        def complete(report):
+            report["observation"].update(valueStatus="raw-values-candidate", mode=2,
+                                         needed=500, accumulatedCandidate=300)
+        result, path = self.capture(change=complete)
+        self.assertEqual("complete", result["status"])
+        observed = result["nativeValues"]
+        self.assertEqual(500, observed["neededCandidate"])
+        self.assertEqual(300, observed["accumulatedCandidate"])
+        self.assertEqual(0.6, observed["progressFractionCandidate"])
+        self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), result["nativeSourceSha256"])
+
     def test_unqualified_type_stale_capture_and_receipt_mismatch(self):
         stale = (datetime.now(timezone.utc)-timedelta(days=1)).isoformat()
         for change in (

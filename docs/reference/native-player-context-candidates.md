@@ -541,3 +541,18 @@ Retained local receipts (SHA-256):
 - `artifacts/postpatch-20261127-phase16-experience-values-wrapper.json` — `A26270F3644FCCB16B81E37651E697FBB445C3C1DBEAAD8EF0B0A340450323E0`.
 
 Validation: 18 focused .NET and 106 Python tests passed. The physical wrapper requires the exact supported SHA, matches receipt status, checks source identity/time and digest, and validates the current-build partial-state and type-reference contract. Explicit newly built Debug reader used; published registration untouched. Next: qualify the final required-XP lookup and its live cache before enabling accumulated XP. No gameplay input, game-memory writes, or game-side initializers were performed.
+
+### Build 1179 complete native Experience candidates (2026-11-27)
+
+Completed the archived exact-SHA static trace of the final required-XP cache lookup and hash. Capstone and Iced x86 agree on all 83 instruction boundaries in the two final windows. The lookup verifies the selector and level key and traverses tagged bucket chains; the hash applies the existing signed-division transform twice before bucket selection. PE imports confirm the previously identified TLS lookup and signed division helpers. The 1179 registry/cache layout also matches the existing zone-seed reader. Reused the existing bounded read-only XP cache traversal with separately verified current-build provider and record-type references, preserving the historical recipe. The reader still rejects mismatched types, changed source bytes/epochs, and invalid cache layouts; cache misses and uninitialized providers retain explicit unavailable status. No miss handler, initializer or native callback is called.
+
+Fresh LEGION PID 24992/start ticks 639313044653553067, build 1179, source capture completed at 2026-11-26T16:25:13.0058668Z. Native mode 0, level 45, limit 70, raw record 4214978, baseline 4393992, required XP 337592, accumulated candidate 158578, raw rested candidate 84398. The physical wrapper projects the checked calculation (raw minus baseline plus needed) and a normal-domain progress fraction 0.4697326950875613. Missing/sentinel or out-of-range values yield no fraction. Earlier partial receipts remain supported; offline replay of the phase-16 and phase-17 sources matched exact identity, self key, raw record, level, limit, baseline and raw rested candidates, and independently recomputed the new accumulated value. These are sequential native observations, not independent API agreement or changed-state/restart proof.
+
+New local source receipts (SHA-256):
+
+- `artifacts/postpatch-20261127-phase17-xp-cache-final-lookup.json` — `52786A4BC363E886A9D72B48DDC59B13B2A3E6D9B4AB061AA24C9AC8D32AD035`.
+- `artifacts/postpatch-20261127-phase17-xp-hash-import.json` — `32E9C4F0C012FECAD302BE530232261F17C3934D5F1884B29215E0BC2A3D4591`.
+- `artifacts/postpatch-20261127-phase17-cache-imports.json` — `174A60D4CD88AD6786B1D3B8B77AFC0F13B9287E2ED987514D64FF93AE01FE21`.
+- `artifacts/postpatch-20261127-phase17-experience-values.json` — `54991C769B972C5968B09FB8C7F06D96A8EDD44BD64B2DF366A0F13D737171C4`.
+
+Validation: 19 focused .NET and 109 Python tests passed, including a nontrivial independently computed cache bucket fixture, required-value sentinel, missing provider, cache miss, wrong record type, changed payload and invalid arithmetic/fraction tests. Live physical CLI and offline source replay passed. Explicit freshly built Debug reader used; registered published bundle unchanged. No gameplay input or process writes. Independent fresh API XP parity and changed-state behavior remain to be established.

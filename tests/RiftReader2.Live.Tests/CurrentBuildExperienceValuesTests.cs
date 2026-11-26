@@ -35,18 +35,48 @@ public sealed class CurrentBuildExperienceValuesTests
         f = Fixture(); f.Changed = (DATA + 0x20, 4); Assert.Throws<InvalidDataException>(() => Run(f));
     }
     [Fact]
-    public void UpdatedBuildReturnsGuardedBaselineWithoutReadingUnqualifiedNeededCache()
+    public void UpdatedBuildReadsTypedCacheAndCalculatesCandidate()
     {
         var f = UpdatedFixture();
         var result = RunUpdated(f);
-        Assert.Equal("needed-recipe-unqualified", result.ValueStatus);
+        Assert.Equal("raw-values-candidate", result.ValueStatus);
         Assert.Equal(43, result.Level);
         Assert.Equal(51, result.Limit);
-        Assert.Equal(1000L, result.Baseline);
-        Assert.Null(result.Needed);
-        Assert.Null(result.AccumulatedCandidate);
+        Assert.Equal(3700000L, result.Baseline);
+        Assert.Equal(300000, result.Needed);
+        Assert.Equal(107422L, result.AccumulatedCandidate);
         Assert.Equal("provider-uninitialized", result.RestedStatus);
         Assert.Null(result.RestedCandidate);
+    }
+
+    [Fact]
+    public void UpdatedNeededCacheRefusalsPreserveBaselineWithoutGuessing()
+    {
+        var f = UpdatedFixture();
+        f.Q(M + 0x33F2548, 0);
+        var result = RunUpdated(f);
+        Assert.Equal("provider-uninitialized", result.ValueStatus);
+        Assert.Equal(3700000L, result.Baseline);
+        Assert.Null(result.Needed);
+        Assert.Null(result.AccumulatedCandidate);
+
+        f = UpdatedFixture();
+        f.Put(TABLE + 12 * 24, new byte[24]);
+        Assert.Equal("cold-cache-or-null", RunUpdated(f).ValueStatus);
+
+        f = UpdatedFixture();
+        f.Q(DATA, M + 0x2C04110);
+        Assert.Equal("needed-type-unavailable", RunUpdated(f).ValueStatus);
+
+        f = UpdatedFixture();
+        f.D(DATA + 0x20, -1);
+        result = RunUpdated(f);
+        Assert.Equal("native-minus-one-needed", result.ValueStatus);
+        Assert.Null(result.AccumulatedCandidate);
+
+        f = UpdatedFixture();
+        f.Changed = (DATA + 0x20, 4);
+        Assert.Throws<InvalidDataException>(() => RunUpdated(f));
     }
 
     [Fact]
@@ -80,9 +110,7 @@ public sealed class CurrentBuildExperienceValuesTests
         Assert.Equal("progress-type-unavailable", RunUpdated(f).ValueStatus);
     }
 
-    static ExperienceValuesObservation RunUpdated(Fake f) =>
-        CurrentBuildExperienceValuesCandidateReader.Read(f, _ => Seed(f),
-            () => throw new InvalidOperationException("Unqualified cache must not be read."));
+    static ExperienceValuesObservation RunUpdated(Fake f) => Run(f);
 
     static Fake UpdatedFixture()
     {
@@ -94,7 +122,26 @@ public sealed class CurrentBuildExperienceValuesTests
         f.Q(G + 0x870, CV); f.Q(G + 0x878, CV + 8); f.Q(CV, C);
         f.Type(C, 0x2BB7430, 0x1FB15F0, 0x35497F0, 0x2BBD010, 0x1FD09D0);
         f.D(C + 0x34, 51); f.Q(M + 0x33F2458, BV);
-        f.Q(M + 0x33F2460, BV + 52 * 8); f.Q(BV + 43 * 8, 1000);
+        f.Q(M + 0x33F2460, BV + 52 * 8); f.Q(BV + 43 * 8, 3700000);
+        f.Q(M + 0x33F2548, P); f.U16(P + 0x40, 83);
+        f.Q(M + 0x33843D8, W); f.Q(W, REG); f.D(REG + 0x274, 1);
+        var ti = new byte[32]; BinaryPrimitives.WriteUInt64LittleEndian(ti, TEB);
+        BinaryPrimitives.WriteUInt64LittleEndian(ti.AsSpan(16), 1);
+        BinaryPrimitives.WriteUInt64LittleEndian(ti.AsSpan(24), 7);
+        f.Put(TEB + 0x30, ti); f.Q(TEB + 0x1488, 0);
+        // A nontrivial bucket count exercises the actual double-hash route.
+        const ulong buckets = 17;
+        var header = new byte[32]; BinaryPrimitives.WriteUInt64LittleEndian(header, TABLE);
+        BinaryPrimitives.WriteUInt64LittleEndian(header.AsSpan(8), 24);
+        BinaryPrimitives.WriteUInt64LittleEndian(header.AsSpan(16), buckets);
+        f.Put(REG + 0x220, header);
+        var node = new byte[24]; BinaryPrimitives.WriteUInt16LittleEndian(node.AsSpan(8), 83);
+        BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(12), 43);
+        BinaryPrimitives.WriteUInt64LittleEndian(node.AsSpan(16), HOLDER);
+        var bucket = TABLE + 12 * 24;
+        f.Put(bucket, node); f.Q(HOLDER + 0x18, DATA);
+        f.Type(DATA, 0x2C09F28, 0x2087E70, 0x3569260, 0x2C1D700, 0x20B6610);
+        f.D(M + 0x2FA6CF4, 2); f.D(DATA + 0x20, 300000);
         return f;
     }
 

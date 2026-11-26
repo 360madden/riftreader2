@@ -143,6 +143,28 @@ class UpdatedExperienceValidationTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.validate(report)
 
+    def test_full_current_build_values_are_rederived_from_seed(self):
+        report = updated_fixture()
+        report["observation"].update(valueStatus="raw-values-candidate", mode=2,
+                                     needed=500, accumulatedCandidate=300)
+        result = values.project_values(report)
+        self.assertEqual(500, result["neededCandidate"])
+        self.assertEqual(300, result["accumulatedCandidate"])
+        self.assertEqual(0.6, result["progressFractionCandidate"])
+        report["observation"]["accumulatedCandidate"] = 301
+        with self.assertRaises(ValueError):
+            self.validate(report)
+
+    def test_fraction_is_unavailable_for_sentinel_or_outside_level(self):
+        report = updated_fixture()
+        o = report["observation"]
+        o.update(valueStatus="native-minus-one-needed", mode=2, needed=-1)
+        self.assertIsNone(values.project_values(report)["progressFractionCandidate"])
+        o.update(valueStatus="raw-values-candidate", needed=100, accumulatedCandidate=-100)
+        self.assertIsNone(values.project_values(report)["progressFractionCandidate"])
+        o.update(needed=200, accumulatedCandidate=0)
+        self.assertEqual(0.0, values.project_values(report)["progressFractionCandidate"])
+
     def test_uninitialized_cap_provider_preserves_explicit_absence(self):
         report = updated_fixture()
         o = report["observation"]

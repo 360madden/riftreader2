@@ -36,8 +36,8 @@ def validate_report(report, *, pid, ticks, expected_sha=GAME_SHA):
     if seed_start<start or seed_end>end: invalid()
     status=o.get('valueStatus'); level=o.get('level'); limit=o.get('limit'); mode=o.get('mode'); baseline=o.get('baseline'); needed=o.get('needed'); accumulated=o.get('accumulatedCandidate')
     updated = expected_sha == UPDATED_GAME_SHA
-    # The current build exposes only independently guarded partial values.
-    if updated and (status not in ('seed-unavailable','owner-type-unavailable','progress-type-unavailable','cap-provider-uninitialized','cap-type-unavailable','native-minus-one-level-cap','baseline-unavailable','needed-recipe-unqualified') or any(x is not None for x in (mode,needed,accumulated))): invalid()
+    # Retain historical partial receipts alongside the guarded full cache recipe.
+    # The status, exact type references and checked arithmetic still constrain values.
     if not updated and status in ('cap-provider-uninitialized','needed-recipe-unqualified'): invalid()
     for x in (level,limit,mode,needed):
         if x is not None and not integer(x,-2**31,2**31-1): invalid()
@@ -103,6 +103,11 @@ def project_values(report):
     o = validate_report(report, pid=identity.get('processId'),
                         ticks=identity.get('processStartUtcTicks'),
                         expected_sha=identity.get('executableSha256'))
+    needed, accumulated = o.get('needed'), o.get('accumulatedCandidate')
+    # Never derive a fraction from a sentinel, unavailable value or anomalous
+    # native result. The fraction is still a candidate, not live API parity.
+    fraction = (accumulated / needed if o['valueStatus']=='raw-values-candidate'
+                and needed > 0 and 0 <= accumulated <= needed else None)
     return {
         'status': 'candidate-only',
         'valueStatus': o['valueStatus'],
@@ -112,6 +117,7 @@ def project_values(report):
         'baselineCandidate': o.get('baseline'),
         'neededCandidate': o.get('needed'),
         'accumulatedCandidate': o.get('accumulatedCandidate'),
+        'progressFractionCandidate': fraction,
         'restedStatus': o['restedStatus'],
         'rawRestedCandidate': o.get('restedCandidate'),
         'sampledAtUtc': o['completedAtUtc'],

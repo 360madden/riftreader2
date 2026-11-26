@@ -394,9 +394,12 @@ record, record level and float are not calculated accumulated/needed/rested XP.
 ```
 
 Use `experience-values` with the same freshly built reader for typed value
-candidates. Build 1179 currently returns the baseline, level limit and raw
-rested candidate when available; needed and accumulated remain explicitly
-unavailable. Do not infer accumulated XP from the raw record or baseline.
+candidates. Both supported builds can return the initialized baseline, level
+limit, required XP, calculated accumulated XP and raw rested candidate. The
+wrapper derives a progression fraction only for a valid normal-domain result.
+Missing providers, cache misses, sentinels and invalid types do not establish
+zero experience or a level cap. All values remain candidates; independent API
+agreement and changed-state/restart qualification are separate checks.
 
 ```powershell
 & $rr2Python -B scripts/physical_rift.py --expected-host $rr2Host --physical-pid CURRENT_PID --read-native experience-values --native-reader $rr2PublishedReader --output artifacts/NEW_XP_VALUES.json

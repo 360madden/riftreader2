@@ -97,51 +97,47 @@ internal static class CurrentBuildExperienceValuesCandidateReader
                         else
                         {
                             baseline = BinaryPrimitives.ReadInt64LittleEndian(ReadBytes(checked(vb + (ulong)l * 8), 8));
-                            // The 1179 required-XP cache traversal is not yet qualified.
-                            // Retain the independently guarded baseline, not a guessed needed value.
-                            if (updated)
-                            {
-                                status = "needed-recipe-unqualified";
-                            }
+                            // Both exact builds use the independently decoded cache layout,
+                            // composite key, double hash and mode-selected required-XP record.
+                            // Read initialized cache data only; never call the miss/initializer path.
+                            var provider = Q(id.ModuleBaseAddress + (updated ? 0x33F2548UL : 0x33E0D88UL));
+                            if (provider == 0) status = "provider-uninitialized";
                             else
                             {
-                                var provider = Q(id.ModuleBaseAddress + 0x33E0D88);
-                                if (provider == 0) status = "provider-uninitialized";
+                                provider = Ptr(provider, 0x42); var selector = BinaryPrimitives.ReadUInt16LittleEndian(ReadBytes(provider + 0x40, 2));
+                                var wrapper = Ptr(Q(id.ModuleBaseAddress + (updated ? 0x33843D8UL : 0x3372C18UL))); var owner = Ptr(Q(wrapper), 0x278);
+                                var tls = BinaryPrimitives.ReadUInt32LittleEndian(ReadBytes(owner + 0x274, 4)); if (tls > 1087) throw new InvalidDataException("Invalid TLS index.");
+                                epochs = threads(); if (epochs.Count is < 1 or > 256 || epochs.Select(t => t.Id).Distinct().Count() != epochs.Count || epochs.Select(t => t.Teb).Distinct().Count() != epochs.Count) throw new InvalidDataException("Invalid thread set.");
+                                ulong? collection = null;
+                                foreach (var t in epochs)
+                                {
+                                    Ptr(t.Teb, 0x1788); var identity = ReadBytes(t.Teb + 0x30, 32);
+                                    if (t.Id <= 0 || t.Created <= 0 || BinaryPrimitives.ReadUInt64LittleEndian(identity) != t.Teb || BinaryPrimitives.ReadUInt64LittleEndian(identity.AsSpan(16)) != (ulong)id.ProcessId || BinaryPrimitives.ReadUInt64LittleEndian(identity.AsSpan(24)) != (ulong)t.Id) throw new InvalidDataException("TEB identity mismatch.");
+                                    ulong value; if (tls < 64) value = Q(t.Teb + 0x1480 + tls * 8UL); else { var expansion = Q(t.Teb + 0x1780); value = expansion == 0 ? 0 : Q(checked(Ptr(expansion) + (tls - 64) * 8UL)); }
+                                    var c = value == 0 ? checked(owner + 0x200) : Ptr(value); if (collection.HasValue && collection != c) throw new InvalidDataException("TLS collections disagree."); collection = c;
+                                }
+                                var header = ReadBytes(checked(collection!.Value + 0x20), 32); var bucket = Ptr(BinaryPrimitives.ReadUInt64LittleEndian(header)); var stride = BinaryPrimitives.ReadUInt64LittleEndian(header.AsSpan(8)); var countBuckets = BinaryPrimitives.ReadUInt64LittleEndian(header.AsSpan(16));
+                                if (stride != 24 || countBuckets is < 1 or > 4096) throw new InvalidDataException("Invalid cache header."); Ptr(bucket, checked((int)(countBuckets * 24)));
+                                var address = checked(bucket + CurrentBuildAbilityRecordsCandidateReader.Hash(CurrentBuildAbilityRecordsCandidateReader.Hash(unchecked((uint)l))) % countBuckets * 24);
+                                var seen = new HashSet<ulong>(); bool head = true; ulong record = 0;
+                                for (var i = 0; i <= 128; i++)
+                                {
+                                    Ptr(address, 24); if (!seen.Add(address)) throw new InvalidDataException("Cache cycle."); var node = ReadBytes(address, 24); var link = BinaryPrimitives.ReadUInt64LittleEndian(node);
+                                    if ((!head || (link & 1) == 0) && BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(8)) == selector && BinaryPrimitives.ReadUInt32LittleEndian(node.AsSpan(12)) == unchecked((uint)l))
+                                    { var holder = BinaryPrimitives.ReadUInt64LittleEndian(node.AsSpan(16)); if (holder != 0) record = Q(checked(Ptr(holder, 0x20) + 0x18)); break; }
+                                    var next = link & ~1UL; if (next == 0) break; if (i == 128) throw new InvalidDataException("Cache chain budget exceeded."); address = next; head = false;
+                                }
+                                if (record == 0) status = "cold-cache-or-null";
+                                else if (!(updated
+                                    ? Type(Ptr(record, 0x2C), 0x2C09F28, 0x2087E70, 0x3569260, 0x2C1D700, 0x20B6610)
+                                    : Type(Ptr(record, 0x2C), 0x2C04110, 0x208AF40, 0x3557780, 0x2C0DC80, 0x20AFB30))) status = "needed-type-unavailable";
                                 else
                                 {
-                                    provider = Ptr(provider, 0x42); var selector = BinaryPrimitives.ReadUInt16LittleEndian(ReadBytes(provider + 0x40, 2));
-                                    var wrapper = Ptr(Q(id.ModuleBaseAddress + 0x3372C18)); var owner = Ptr(Q(wrapper), 0x278);
-                                    var tls = BinaryPrimitives.ReadUInt32LittleEndian(ReadBytes(owner + 0x274, 4)); if (tls > 1087) throw new InvalidDataException("Invalid TLS index.");
-                                    epochs = threads(); if (epochs.Count is < 1 or > 256 || epochs.Select(t => t.Id).Distinct().Count() != epochs.Count || epochs.Select(t => t.Teb).Distinct().Count() != epochs.Count) throw new InvalidDataException("Invalid thread set.");
-                                    ulong? collection = null;
-                                    foreach (var t in epochs)
-                                    {
-                                        Ptr(t.Teb, 0x1788); var identity = ReadBytes(t.Teb + 0x30, 32);
-                                        if (t.Id <= 0 || t.Created <= 0 || BinaryPrimitives.ReadUInt64LittleEndian(identity) != t.Teb || BinaryPrimitives.ReadUInt64LittleEndian(identity.AsSpan(16)) != (ulong)id.ProcessId || BinaryPrimitives.ReadUInt64LittleEndian(identity.AsSpan(24)) != (ulong)t.Id) throw new InvalidDataException("TEB identity mismatch.");
-                                        ulong value; if (tls < 64) value = Q(t.Teb + 0x1480 + tls * 8UL); else { var expansion = Q(t.Teb + 0x1780); value = expansion == 0 ? 0 : Q(checked(Ptr(expansion) + (tls - 64) * 8UL)); }
-                                        var c = value == 0 ? checked(owner + 0x200) : Ptr(value); if (collection.HasValue && collection != c) throw new InvalidDataException("TLS collections disagree."); collection = c;
-                                    }
-                                    var header = ReadBytes(checked(collection!.Value + 0x20), 32); var bucket = Ptr(BinaryPrimitives.ReadUInt64LittleEndian(header)); var stride = BinaryPrimitives.ReadUInt64LittleEndian(header.AsSpan(8)); var countBuckets = BinaryPrimitives.ReadUInt64LittleEndian(header.AsSpan(16));
-                                    if (stride != 24 || countBuckets is < 1 or > 4096) throw new InvalidDataException("Invalid cache header."); Ptr(bucket, checked((int)(countBuckets * 24)));
-                                    var address = checked(bucket + CurrentBuildAbilityRecordsCandidateReader.Hash(CurrentBuildAbilityRecordsCandidateReader.Hash(unchecked((uint)l))) % countBuckets * 24);
-                                    var seen = new HashSet<ulong>(); bool head = true; ulong record = 0;
-                                    for (var i = 0; i <= 128; i++)
-                                    {
-                                        Ptr(address, 24); if (!seen.Add(address)) throw new InvalidDataException("Cache cycle."); var node = ReadBytes(address, 24); var link = BinaryPrimitives.ReadUInt64LittleEndian(node);
-                                        if ((!head || (link & 1) == 0) && BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(8)) == selector && BinaryPrimitives.ReadUInt32LittleEndian(node.AsSpan(12)) == unchecked((uint)l))
-                                        { var holder = BinaryPrimitives.ReadUInt64LittleEndian(node.AsSpan(16)); if (holder != 0) record = Q(checked(Ptr(holder, 0x20) + 0x18)); break; }
-                                        var next = link & ~1UL; if (next == 0) break; if (i == 128) throw new InvalidDataException("Cache chain budget exceeded."); address = next; head = false;
-                                    }
-                                    if (record == 0) status = "cold-cache-or-null";
-                                    else if (!Type(Ptr(record, 0x2C), 0x2C04110, 0x208AF40, 0x3557780, 0x2C0DC80, 0x20AFB30)) status = "needed-type-unavailable";
-                                    else
-                                    {
-                                        var m = I(id.ModuleBaseAddress + 0x2F95CF4); mode = m; var offset = m switch { 1 => 0x28UL, 2 => 0x20UL, 3 => 0x18UL, 4 => 0x1CUL, _ => 0x24UL }; var nval = I(record + offset); needed = nval;
-                                        if (nval == -1) status = "native-minus-one-needed";
-                                        else { try { accumulated = checked(checked(raw - baseline.Value) + nval); status = "raw-values-candidate"; } catch (OverflowException) { status = "arithmetic-overflow"; } }
-                                    }
+                                    var m = I(id.ModuleBaseAddress + (updated ? 0x2FA6CF4UL : 0x2F95CF4UL)); mode = m; var offset = m switch { 1 => 0x28UL, 2 => 0x20UL, 3 => 0x18UL, 4 => 0x1CUL, _ => 0x24UL }; var nval = I(record + offset); needed = nval;
+                                    if (nval == -1) status = "native-minus-one-needed";
+                                    else { try { accumulated = checked(checked(raw - baseline.Value) + nval); status = "raw-values-candidate"; } catch (OverflowException) { status = "arithmetic-overflow"; } }
                                 }
-                            } // Historical needed-value recipe only.
+                            }
                         }
                     }
                 } // Initialized cap provider.
@@ -196,7 +192,7 @@ internal static class CurrentBuildExperienceValuesSampleCommand
             throw new InvalidDataException("Experience observation identity mismatch.");
         if (await session.RevalidateAsync(ct) is not null) throw new InvalidDataException("Process identity invalidated.");
         ct.ThrowIfCancellationRequested();
-        var report = new { schemaVersion = 1, contractVersion = "native-current-experience-values-candidate/1", status = "complete", observation, limitations = new[] { "Candidate values lack API agreement, freshness and restart proof.", "Sequential reads are non-atomic and cannot exclude ABA.", "Executable hash identifies on-disk bytes, not independently hashed loaded pages.", "No getter, initializer, refcount operation or memory write.", "Build 1179 required and accumulated experience remain unqualified." } };
+        var report = new { schemaVersion = 1, contractVersion = "native-current-experience-values-candidate/1", status = "complete", observation, limitations = new[] { "Candidate values lack API agreement, freshness and restart proof.", "Sequential reads are non-atomic and cannot exclude ABA.", "Executable hash identifies on-disk bytes, not independently hashed loaded pages.", "No getter, initializer, refcount operation or memory write.", "Calculated experience is a native candidate; the raw rested value is not independently API-qualified." } };
         await JsonReportWriter.WriteNewAsync(path, report, ct);
         await output.WriteLineAsync(JsonSerializer.Serialize(new { status = "complete", observation.ValueStatus, output = Path.GetFullPath(path) }, new JsonSerializerOptions(JsonFormat.Options) { WriteIndented = false })); return 0;
     }
