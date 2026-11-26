@@ -5,6 +5,73 @@ Current project state changes as live capabilities are validated; use
 record. To delegate bounded read-only analysis to the existing Codex CLI in a
 RIFT guest, use the [Lab Codex jobs workflow](lab-codex.md).
 
+## OpenAI cloud development (November 27, 2026)
+
+Use a hybrid workflow: OpenAI-managed repository-only coding workers, GitHub
+as the shared handoff, and LEGION for physical Windows integration and any
+separately authorized live acceptance. Cloud tasks must not connect to the
+physical desktop or require installed game assets, private captures, or secrets.
+The root AGENTS.md contains the narrow cloud-work exception.
+
+### One-time environment setup
+
+Open [Codex web](https://chatgpt.com/codex), connect only the RR2 repository
+(`360madden/riftreader2`), and create/publish a reusable cloud environment.
+Select the current development branch `codex/modular-foundation` for tasks;
+do not assume `main` contains the latest implementation. Prefer Python 3.14
+to match the local toolchain, with no extra packages needed for the initial
+allowlisted navigation tests if the cloud environment supports their imports.
+Run the checks below as the environment test, and record actual OS, interpreter
+and failure/skip results. Linux compatibility is not assumed. If needed, fix
+portable test fixtures in a separate branch, not production identity checks.
+
+```sh
+python -B scripts/validate_cloud_navigation.py --lane all
+```
+
+Use `--lane planning`, `--lane adoption`, or `--lane progress` for focused
+worker acceptance. The runner isolates native-reader overrides and invokes
+only explicitly selected repository tests. It is not the full Windows gate.
+
+### Initial independent worker assignments
+
+| Worker | Outcome | Exclusive files and validation |
+| --- | --- | --- |
+| P1 — local planner | Improve bounded coordinate-route selection, input validation and deterministic ranking for standalone synthetic geometry. | `scripts/waypoint_local_plan.py`, `tests/test_waypoint_local_plan.py`; planning lane. |
+| P2 — route evidence | Improve portable receipt and candidate-validation fixtures; preserve scoped adoption and rejection of unqualified routes. | `scripts/waypoint_navigation_candidate.py`, `tests/test_waypoint_navigation_candidate.py`; planning lane. |
+| P3 — progress and simulation | Improve offline progress projection and synthetic route regression coverage, including loop/floor ambiguity. | `scripts/waypoint_progress.py`, `tests/test_waypoint_progress.py`, `tests/test_waypoint_marker_progress.py`; progress lane. |
+
+Start with three independent tasks, each from the same verified base SHA in
+a separate cloud workspace and branch; expand only when useful independent
+work exists. Keep interface changes coordinated. Workers must not change the
+same files or silently merge a sibling's unreviewed work.
+
+Suggested task prompt: Read AGENTS.md, this workflow, and only the files
+assigned to your lane. Work from the current development branch and report
+the starting SHA. Implement one coherent outcome with tests, run its lane,
+record any failures/skips and limitations, and return a diff or PR for
+coordinator review. No native/game access, deployment, or automatic merge.
+
+### Integration and cost
+
+Use ChatGPT Work for coordination, review and cross-repository research;
+Codex Cloud for independent implementations and tests. The coordinator reviews
+each diff, resolves conflicts, runs the relevant lanes, and then uses the
+verified physical host for Windows-specific tests. The full local gate stays
+authoritative for physical acceptance. Publish or merge only reviewed work;
+retain base SHA, final commit, test result, and changed files.
+
+Start with the ChatGPT plan's available cloud capacity. Do not create API
+keys, chargeable API agents, GitHub Actions workflows, recurring tasks, or
+upload raw game installations automatically. A paid Agents API coordinator
+is a later option if measured throughput justifies the additional cost.
+
+Official sources (checked November 27, 2026):
+
+- [Using Codex Cloud](https://help.openai.com/en/articles/20001545-using-codex-cloud)
+- [ChatGPT Work and Codex](https://help.openai.com/en/articles/20001275-chatgpt-work-and-codex)
+- [Agents API multi-agent orchestration](https://developers.openai.com/api/docs/guides/agents-api/multi-agent)
+
 ## Open and orient
 
 Open your local RiftReader2 checkout as the project folder in Codex. Read root
@@ -42,8 +109,8 @@ binary research, use the existing REA registration described in
 
 Inspect current status and preserve unrelated edits. Read the actual branch with
 `git branch --show-current`; do not infer it from an older handoff. Use
-small coherent local commits and explicit paths. Remote publishing is not part
-of the current local foundation work.
+small coherent commits and explicit paths. Push verified milestones when authorized;
+cloud branches are reviewed and integrated by the coordinator.
 
 Run the full repository gate from PowerShell 7:
 

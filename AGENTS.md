@@ -11,6 +11,18 @@ testing, and deployment. Switching or performing any cross-host work requires Jo
 do host-local offline work; never hop to another machine. In all status reports,
 show the actual verified active machine.
 
+## Repository-only OpenAI cloud workers (Joey, 2026-11-27)
+
+Cloud development is explicitly requested for RR2. Codex Cloud and ChatGPT Work
+may use isolated GitHub checkouts and synthetic/offline fixtures for coding,
+review, research and tests. This narrow exception to the physical one-machine
+boundary does not authorize a second physical host, remote desktop, live game
+access, native process reads, credentials, installed game assets or local captures.
+Cloud workers own separate branches and bounded files; the coordinator reviews
+and integrates changes against the current development branch. Do not treat a
+cloud pass as Windows, map, or live acceptance. No new paid API automation or
+scheduled task is enabled by this policy. See docs/workflows/codex.md.
+
 ## Active RIFT target: physical Windows hosts only (Joey, 2026-11-10)
 
 Use physical RIFT on the **verified local Windows host** that owns the selected
