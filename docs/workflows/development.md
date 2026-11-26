@@ -350,10 +350,15 @@ and after the burst is required, but its native unit key remains unavailable.
 Power-enabled bundles must pass source replay before summary publication.
 Unsupported builds or unavailable Power refuse the opt-in collection.
 `--after` compares two ordered captures from the same process on the same host.
+Power comparisons distinguish the last-to-last difference from the gap between
+the earlier burst's last sample and the later burst's first sample. History
+preserves within-burst extrema and reports missing Power captures explicitly;
+these differences are not measured spending, regeneration or continuous traces.
 
 ```powershell
 & $rr2Python -B scripts/replay_physical_player_state.py --summary artifacts/NEW_PLAYER_STATE/summary.json
 & $rr2Python -B scripts/replay_physical_player_state.py --summary artifacts/EARLIER_PLAYER_STATE/summary.json --after artifacts/NEW_PLAYER_STATE/summary.json
+& $rr2Python -B scripts/replay_physical_player_state.py --summary artifacts/EARLIER_PLAYER_STATE/summary.json --history artifacts/NEW_PLAYER_STATE/summary.json
 ```
 
 For captures from distinct RIFT processes on the same host and executable

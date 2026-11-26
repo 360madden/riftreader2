@@ -237,6 +237,74 @@ def _compare_stats(a, b):
             "rawValuesChanged": len(changed), "changed": changed}
 
 
+def _power_burst(capture):
+    """Summarize the already source-verified Power samples, not inferred regeneration."""
+    power = capture["candidateValues"].get("power")
+    if power is None:
+        return None
+    bracket = capture.get("powerBracketCandidate")
+    require(isinstance(bracket, dict)
+            and bracket.get("status") == "matching-warrior-context-candidates"
+            and bracket.get("selfKeyCandidate") == capture["selfKeyCandidate"]
+            and bracket.get("nativePowerUnitKeyStatus") == "unavailable",
+            "power-context-bracket-unavailable")
+    samples = power["samples"]
+    currents = [row["current"] for row in samples]
+    maxima = [row["maximum"] for row in samples]
+    return {
+        "status": "context-bracketed-candidate", "recipe": power["recipe"],
+        "sampleCount": len(samples),
+        "firstCurrentCandidate": currents[0], "lastCurrentCandidate": currents[-1],
+        "firstMaximumCandidate": maxima[0], "lastMaximumCandidate": maxima[-1],
+        "minimumCurrentCandidate": min(currents), "maximumCurrentCandidate": max(currents),
+        "withinBurstCurrentDeltaCandidate": currents[-1] - currents[0],
+        "withinBurstChangedPairs": sum(a != b for a, b in zip(currents, currents[1:])),
+        "withinBurstMaximumChangedPairs": sum(a != b for a, b in zip(maxima, maxima[1:])),
+        "qualification": "Sequential Power samples; no independent unit key, spend or regeneration proof.",
+    }
+
+
+def _compare_power(before, after):
+    """Do not bridge a missing capture or compare different Power recipes."""
+    a, b = _power_burst(before), _power_burst(after)
+    result = {"before": a, "after": b}
+    if a is None or b is None:
+        return dict(result, status="not-captured" if a is b is None else "partial-candidate")
+    if a["recipe"] != b["recipe"]:
+        return dict(result, status="incompatible-recipe")
+    return dict(result, status="comparable-candidate",
+                endpointCurrentDeltaCandidate=b["lastCurrentCandidate"] - a["lastCurrentCandidate"],
+                boundaryCurrentDeltaCandidate=b["firstCurrentCandidate"] - a["lastCurrentCandidate"],
+                boundaryMaximumDeltaCandidate=b["firstMaximumCandidate"] - a["lastMaximumCandidate"],
+                qualification="Numeric differences across a sampling gap; cause and freshness unverified.")
+
+
+def _power_history(captures, edges):
+    """Preserve burst extrema and gaps; never infer a continuous resource trace."""
+    bursts = [_power_burst(capture) for capture in captures]
+    available = [row for row in bursts if row is not None]
+    comparable = [edge["nativePowerComparison"] for edge in edges
+                  if edge["nativePowerComparison"]["status"] == "comparable-candidate"]
+    complete = len(comparable) == len(edges)
+    return {
+        "status": ("comparable-candidate" if complete else
+                   "partial-candidate" if available else "not-captured"),
+        "capturesWithPower": len(available),
+        "capturesWithoutPower": len(captures) - len(available),
+        "sampleCount": sum(row["sampleCount"] for row in available),
+        "minimumCurrentCandidate": min((row["minimumCurrentCandidate"] for row in available), default=None),
+        "maximumCurrentCandidate": max((row["maximumCurrentCandidate"] for row in available), default=None),
+        "withinBurstChangedPairs": sum(row["withinBurstChangedPairs"] for row in available),
+        "withinBurstMaximumChangedPairs": sum(row["withinBurstMaximumChangedPairs"] for row in available),
+        "comparableSegments": len(comparable),
+        "changedBoundaryPairs": sum(row["boundaryCurrentDeltaCandidate"] != 0 for row in comparable),
+        "maximumChangedBoundaryPairs": sum(row["boundaryMaximumDeltaCandidate"] != 0 for row in comparable),
+        "netEndpointCurrentDeltaCandidate": (
+            bursts[-1]["lastCurrentCandidate"] - bursts[0]["lastCurrentCandidate"] if complete else None),
+        "qualification": "Sampled numeric candidates only; no continuous trace or inferred regeneration.",
+    }
+
+
 def _compare_states(a, b):
     """Compare two previously verified native observations."""
     require(a["summarySha256"] != b["summarySha256"], "same-source")
@@ -272,6 +340,7 @@ def _compare_states(a, b):
         "planarDistanceCandidate": math.hypot(delta["x"], delta["z"]),
         "healthDeltaCandidate": health_delta,
         "nativeStatsComparison": _compare_stats(a, b),
+        "nativePowerComparison": _compare_power(a, b),
         "qualification": "Same-epoch candidate change only; no movement causation, Lua validation or freshness proof.",
     }
 
@@ -324,6 +393,7 @@ def history(summaries):
         "firstStartedAtUtc": captures[0]["firstStartedAtUtc"],
         "lastCompletedAtUtc": captures[-1]["lastCompletedAtUtc"],
         "nativeStatsHistory": stats_history,
+        "nativePowerHistory": _power_history(captures, edges),
         "segments": [{
             "beforeSummarySha256": edge["beforeSummarySha256"],
             "afterSummarySha256": edge["afterSummarySha256"],
@@ -333,6 +403,7 @@ def history(summaries):
             "planarDistanceCandidate": edge["planarDistanceCandidate"],
             "healthDeltaCandidate": edge["healthDeltaCandidate"],
             "nativeStatsComparison": edge["nativeStatsComparison"],
+            "nativePowerComparison": edge["nativePowerComparison"],
         } for edge in edges],
         "sumPlanarChordsCandidate": sum(e["planarDistanceCandidate"] for e in edges),
         "netPositionDeltaCandidate": delta,
@@ -377,6 +448,8 @@ def main(argv=None):
                      sourceCount=len(result["sources"]),
                      firstStartedAtUtc=result["firstStartedAtUtc"],
                      lastCompletedAtUtc=result["lastCompletedAtUtc"])
+        if "power" in result["candidateValues"]:
+            brief["nativePowerCandidate"] = _power_burst(result)
     elif "segments" in result:
         brief.update(captureCount=result["captureCount"],
                      firstStartedAtUtc=result["firstStartedAtUtc"],
@@ -390,6 +463,8 @@ def main(argv=None):
                       healthSamplesMaxCandidate=result["healthSamplesMaxCandidate"],
                       nativeStatsHistory={k: v for k, v in result["nativeStatsHistory"].items()
                                           if k != "changed"})
+        if "nativePowerHistory" in result:
+            brief["nativePowerHistory"] = result["nativePowerHistory"]
     else:
         brief.update(beforeCompletedAtUtc=result["beforeCompletedAtUtc"],
                      afterStartedAtUtc=result["afterStartedAtUtc"],
@@ -397,6 +472,8 @@ def main(argv=None):
                      planarDistanceCandidate=result["planarDistanceCandidate"],
                      healthDeltaCandidate=result["healthDeltaCandidate"],
                      nativeStatsComparison=result["nativeStatsComparison"])
+        if "nativePowerComparison" in result:
+            brief["nativePowerComparison"] = result["nativePowerComparison"]
     if args.output:
         brief["output"] = str(args.output)
     print(json.dumps(brief, allow_nan=False))
