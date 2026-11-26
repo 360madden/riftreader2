@@ -19,6 +19,10 @@ UPDATED_SHA = next(sha for sha in state.SUPPORTED_BUILDS if sha != state.BUILD_S
 
 class ZoneBracketTests(unittest.TestCase):
     def setUp(self):
+        # Keep fake acquisitions independent of the host reader registration.
+        self.enterContext(patch.dict("os.environ", {
+            "RR2_PHYSICAL_TOOLS_ROOT": "debug", "RR2_NATIVE_READER": "",
+        }))
         self.selection = deepcopy(baseline.SELECTION)
         self.selection["target"]["executableSha256"] = UPDATED_SHA
         self.fault = None

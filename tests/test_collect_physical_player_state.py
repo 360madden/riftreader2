@@ -24,6 +24,12 @@ SELECTION = {"status": "ready", "ownerHost": HOST, "target": OWNER}
 
 
 class StateTests(unittest.TestCase):
+    def setUp(self):
+        # Keep fake acquisitions independent of the host reader registration.
+        self.enterContext(patch.dict("os.environ", {
+            "RR2_PHYSICAL_TOOLS_ROOT": "debug", "RR2_NATIVE_READER": "",
+        }))
+
     def fake_read(self, selection, kind, path, *, samples, interval_ms,
                   key="239816685251645959", module=123456, epoch=None, native_reader=None):
         identity = {

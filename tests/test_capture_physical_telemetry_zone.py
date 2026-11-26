@@ -57,6 +57,10 @@ class FakeProcess:
 
 class CaptureTests(unittest.TestCase):
     def setUp(self):
+        # Keep fake acquisitions independent of the host reader registration.
+        self.enterContext(patch.dict("os.environ", {
+            "RR2_PHYSICAL_TOOLS_ROOT": "debug", "RR2_NATIVE_READER": "",
+        }))
         self.target = {"hostName":HOST,"processId":PID,
                        "processStartUtcTicks":"638000000000000001",
                        "executableSha256":SHA,"executablePath":r"C:\Games\RIFT\rift_x64.exe","hwnd":123}

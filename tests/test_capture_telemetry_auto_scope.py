@@ -47,6 +47,12 @@ def reader(groups, *, scope_count=4):
 
 
 class AutoScopeTests(unittest.TestCase):
+    def setUp(self):
+        # Keep fake acquisitions independent of the host reader registration.
+        self.enterContext(patch.dict("os.environ", {
+            "RR2_PHYSICAL_TOOLS_ROOT": "debug", "RR2_NATIVE_READER": "",
+        }))
+
     def test_prefers_new_publisher_epoch_over_higher_stale_sequence(self):
         fake = reader({
             0: [wire(115000, epoch=39), wire(115001, epoch=39)],
