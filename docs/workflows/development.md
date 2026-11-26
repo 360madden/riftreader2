@@ -270,6 +270,8 @@ if (!$rr2Python) { $rr2Python = 'python' }
 & $rr2Python scripts/physical_rift.py --expected-host $rr2Host --read-native position --samples 10 --interval-ms 0
 # For repeated HP/resource observations under one native session:
 & $rr2Python scripts/physical_rift.py --expected-host $rr2Host --read-native vitals --samples 10 --interval-ms 0
+# Exact-build Warrior Power candidate, using the existing native C# reader:
+& $rr2Python scripts/physical_rift.py --expected-host $rr2Host --read-native power --samples 5 --interval-ms 200
 # Add --physical-pid PID if more than one local RIFT instance is running.
 ```
 

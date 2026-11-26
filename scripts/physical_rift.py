@@ -27,6 +27,7 @@ from scripts.observe_physical import valid_host_name
 NATIVE_READS = {
     "position": "sample-current-position",
     "vitals": "sample-current-vitals",
+    "power": "sample-power",
     "orientation": "sample-current-orientation",
     "facing": "sample-current-facing",
     "unit-positions": "sample-current-unit-positions",
@@ -44,6 +45,7 @@ NATIVE_READS = {
 NATIVE_RECEIPTS = {
     "position": "native-current-position-candidate-summary/1",
     "vitals": "native-current-vitals-candidate-summary/2",
+    "power": None,  # Existing sample-power summary has no recordType.
     "orientation": "native-current-orientation-summary/1",
     "facing": "native-current-facing-summary/1",
     "unit-positions": "native-current-unit-positions-summary/1",
@@ -630,9 +632,58 @@ def _zone_id_candidate(zone_key, child_key):
 
 
 
+# Keep the native Power locator in the existing C# reader. This wrapper only
+# recognizes its exact-build recipe and projects checked, bounded samples.
+POWER_RECIPES = {
+    "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD": "player-power-7C356C9D-v1",
+    "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01": "player-power-DF954B79-v1",
+}
+
+
+def _power_values(report):
+    identity = report.get("identity")
+    sha = identity.get("executableSha256") if isinstance(identity, dict) else None
+    recipe = POWER_RECIPES.get(sha.upper()) if isinstance(sha, str) else None
+    rows = report.get("samples")
+    count = report.get("requestedSamples")
+    if (recipe is None or report.get("recipe") != recipe
+            or type(report.get("schemaVersion")) is not int or report["schemaVersion"] != 1
+            or report.get("contractVersion") != "native-power-samples/1"
+            or report.get("qualification") != "candidate-only" or report.get("status") != "complete"
+            or type(count) is not int or not 1 <= count <= 30
+            or not isinstance(rows, list) or len(rows) != count):
+        raise ValueError("invalid-native-power-report")
+    projected = []
+    previous_end = None
+    for row in rows:
+        if not isinstance(row, dict) or row.get("status") != "complete" or row.get("reason") is not None:
+            raise ValueError("unavailable-native-power-sample")
+        start, end = (_utc_tick_order_key(row.get(k)) for k in ("startedAtUtc", "completedAtUtc"))
+        if start > end or (previous_end is not None and start < previous_end):
+            raise ValueError("invalid-native-power-time-order")
+        power, maximum, base = (row.get(k) for k in ("power", "maximum", "baseValue"))
+        clock, anchor = (row.get(k) for k in ("clockSeconds", "anchorSeconds"))
+        if (any(type(v) is not int for v in (power, maximum, base))
+                or not 0 < maximum <= 2**31 - 1 or not 0 <= power <= maximum or not 0 <= base <= maximum
+                or any(type(row.get(k)) is not int or not -2**31 <= row[k] < 2**31
+                       for k in ("rate", "sequence"))
+                or any(type(v) not in (int, float) or not -3.4028235e38 <= v <= 3.4028235e38
+                       for v in (clock, anchor))
+                or clock < anchor):
+            raise ValueError("invalid-native-power-value")
+        projected.append({"current": power, "maximum": maximum, "clockSeconds": clock,
+                          "startedAtUtc": row["startedAtUtc"], "completedAtUtc": row["completedAtUtc"]})
+        previous_end = end
+    return {"status": "candidate", "recipe": recipe, "current": projected[-1]["current"],
+            "maximum": projected[-1]["maximum"], "sampleCount": count, "samples": projected,
+            "qualification": "Warrior Power candidate; independent unit identity, changed-state and restart unverified"}
+
+
 def _native_values(kind, report, *, expect_position=False, expect_translation_sources=False,
                    current_acquisition=False):
     """Project immediate useful values; preserve exact large unit keys as text."""
+    if kind == "power":
+        return _power_values(report)
     if kind == "stats":
         return _stats_values(report)
     if kind == "unit-levels":
@@ -1685,7 +1736,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
     if ((unit_limit is not None and (type(unit_limit) is not int or not 1 <= unit_limit <= 512))
             or (start_bucket is not None and (type(start_bucket) is not int or not 0 <= start_bucket < 2**64))):
         return dict(selection, status="blocked", reason="invalid-unit-scan-options")
-    if kind not in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation", "facing", "player-context", "selected-position") and (samples is not None or interval_ms is not None):
+    if kind not in ("position", "vitals", "power", "actor-pose", "smoothed-scalar", "orientation", "facing", "player-context", "selected-position") and (samples is not None or interval_ms is not None):
         return dict(selection, status="blocked", reason="sampling-options-require-supported-native-burst")
     if ((samples is not None and (type(samples) is not int or not 1 <= samples <= 30))
             or (interval_ms is not None and (type(interval_ms) is not int or not 0 <= interval_ms <= 2000))):
@@ -1721,7 +1772,12 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
     # Loaded-unit positions use the exact 1179 manager and position-selector roots.
     # Other older-build native readers must not silently inherit admission.
     updated_sha = "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"
-    if str(target.get("executableSha256", "")).casefold() == updated_sha.casefold():
+    if kind == "power":
+        sha = str(target.get("executableSha256", "")).upper()
+        if sha not in POWER_RECIPES:
+            return dict(selection, status="blocked", reason="native-power-build-unqualified")
+        command.extend(("--sha256", sha))
+    elif str(target.get("executableSha256", "")).casefold() == updated_sha.casefold():
         if kind not in ("position", "facing", "actor-pose", "orientation", "unit-positions", "selected-position", "selected-target", "vitals", "player-context", "stats", "zone-context", "target-name", "unit-names", "unit-levels"):
             return dict(selection, status="blocked", reason="postpatch-native-read-unqualified")
         command.extend(("--sha256", updated_sha))
@@ -1748,14 +1804,14 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
     timeout = (30 + ((samples if samples is not None else
                       (3 if kind == "position" else 1)) - 1)
                * (interval_ms if interval_ms is not None else 500) / 1000
-               if kind in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation", "facing", "player-context", "selected-position") else 30)
+               if kind in ("position", "vitals", "power", "actor-pose", "smoothed-scalar", "orientation", "facing", "player-context", "selected-position") else 30)
     try:
         timed_read = kind in ("zone-context", "target-name", "unit-names", "unit-levels")
-        invocation_started = datetime.now(timezone.utc) if timed_read else None
+        invocation_started = datetime.now(timezone.utc) if timed_read or kind == "power" else None
         completed = subprocess.run(command, cwd=ROOT, capture_output=True,
                                    text=True, timeout=timeout, check=False,
                                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        invocation_completed = datetime.now(timezone.utc) if timed_read else None
+        invocation_completed = datetime.now(timezone.utc) if timed_read or kind == "power" else None
     except (OSError, subprocess.TimeoutExpired) as exc:
         return dict(selection, status="blocked", reason="native-reader-launch-failed",
                     errorType=type(exc).__name__)
@@ -1764,9 +1820,10 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
                     exitCode=completed.returncode,
                     detail=completed.stderr.strip()[-240:])
     try:
-        # Position emits per-sample JSON lines before its final summary receipt.
+        # Power emits one indented JSON object; other readers use a final JSON line.
         lines = completed.stdout.splitlines()
-        summary = _strict_native_json(lines[-1]) if lines else None
+        summary = (_strict_native_json(completed.stdout) if kind == "power" else
+                   _strict_native_json(lines[-1]) if lines else None)
     except (ValueError, TypeError):
         return dict(selection, status="blocked", reason="invalid-native-reader-receipt")
     if (not isinstance(summary, dict) or not path.is_file()
@@ -1775,6 +1832,10 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
             or Path(summary["output"]).resolve() != path.resolve()
             or (kind not in ("stats", "zone-context", "target-name") and summary.get("status") != "complete")
             or (kind == "stats" and summary.get("status") is not None)):
+        return dict(selection, status="blocked", reason="invalid-native-reader-receipt")
+    if kind == "power" and (set(summary) != {"status", "samples", "output"}
+                            or type(summary.get("samples")) is not int
+                            or summary["samples"] != (1 if samples is None else samples)):
         return dict(selection, status="blocked", reason="invalid-native-reader-receipt")
     try:
         report_bytes = path.read_bytes()
@@ -1852,6 +1913,13 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
             raise ValueError("incomplete-native-orientation-burst")
         values = _native_values(kind, report, expect_position=include_position,
                                 expect_translation_sources=include_transform_sources, current_acquisition=True)
+        if kind == "power":
+            if (values["sampleCount"] != (1 if samples is None else samples)
+                    or not _utc_tick_order_key(invocation_started.isoformat())
+                    <= _utc_tick_order_key(values["samples"][0]["startedAtUtc"])
+                    <= _utc_tick_order_key(values["samples"][-1]["completedAtUtc"])
+                    <= _utc_tick_order_key(invocation_completed.isoformat())):
+                raise ValueError("native-power-count-or-invocation-time-mismatch")
         if timed_read:
             if (kind not in ("unit-names", "unit-levels") and summary.get("status") != observation["status"]
                     or not _utc_tick_order_key(invocation_started.isoformat()) <= _utc_tick_order_key(observation["startedAtUtc"])
@@ -1875,7 +1943,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
                 nativeOutput=str(path), nativeSummary=summary, nativeValues=values,
                 qualification="candidate-only; changed-state/freshness/restart-unverified",
                 **({"nativeSourceSha256": hashlib.sha256(report_bytes).hexdigest()}
-                    if timed_read or kind in ("facing", "position", "stats", "selected-target", "selected-position") else {}),
+                    if timed_read or kind in ("power", "facing", "position", "stats", "selected-target", "selected-position") else {}),
                 **({"nativeBurstSummary": burst_summary} if burst_summary is not None else {}),
                 **({"nativeBurstValues": selected_burst_values} if selected_burst_values is not None else {}))
 
@@ -1955,7 +2023,7 @@ def main(argv=None):
     elif (args.unit_limit is not None or args.start_bucket is not None) and args.read_native != "unit-positions":
         result = {"status": "blocked", "workflow": "physical",
                   "reason": "unit-scan-options-require-unit-positions"}
-    elif (args.samples is not None or args.interval_ms is not None) and args.read_native not in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation", "facing", "player-context", "selected-position"):
+    elif (args.samples is not None or args.interval_ms is not None) and args.read_native not in ("position", "vitals", "power", "actor-pose", "smoothed-scalar", "orientation", "facing", "player-context", "selected-position"):
         result = {"status": "blocked", "workflow": "physical",
                   "reason": "sampling-options-require-supported-native-burst"}
     else:
