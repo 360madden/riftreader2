@@ -301,6 +301,10 @@ def _adoption_digest(document):
 
 def reject_review_route(document):
     """Raw review and screenshot candidates are not executable route documents."""
+    if isinstance(document, dict) and document.get("schema") in {
+            "rr2.local-path-plan/1", "riftworld.obstacle-aware-route/1",
+            "riftworld.route-draft-check/1", "riftworld.route-draft/1"}:
+        raise ValueError("local-path-candidate-requires-scoped-adoption")
     if "riftWorldCandidate" in document:
         raise ValueError("review-candidate-requires-scoped-adoption")
     if isinstance(document, dict) and document.get("schema") == "rr2.retained-wgc-composite-candidates/1":

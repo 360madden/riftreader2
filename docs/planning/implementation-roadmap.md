@@ -1,5 +1,24 @@
 # RR2 roadmap
 
+**November 27 navigation priority:** Resume functional local navigation ahead of
+additional player-stat discovery. The coordinate-driven local planner now
+queries the persisted Detour mesh without an LLM or authored destination catalog,
+selects among up to four explicitly supplied approaches, and supports the peer
+mapped-obstacle planner when a complete layer is available. The actual retained
+Watch map queries and changed-origin replan passed; movement remains unqualified.
+Use the same interface for deterministic replanning from updated source coordinates.
+
+```powershell
+python -B scripts/waypoint_local_plan.py --expected-host LEGION --patch PATCH_JSON --build NAVIGATION_JSON --from X,Y,Z --to X,Y,Z --out-dir artifacts/NEW_LOCAL_PLAN
+# Repeat --to only for alternative approaches acceptable for the same objective.
+# For mapped obstacles, replace --patch/--build with --obstacles LAYER_JSON --area AREA.
+```
+
+These are review candidates, not executable Waypoints files. Keep the existing
+scoped adoption, context, input-ownership and STOP boundary. Next: qualify the
+local mapped-obstacle layer, native frame/connector evidence and feedback-driven
+execution through the existing follower.
+
 **November 15 navigation integration milestone:** A CLI/shared destination-plan
 bridge now composes an existing named approach, exact RiftWorld patch/build,
 fresh Detour query and independently walked native-corridor adoption. Optional
@@ -376,9 +395,10 @@ optimal build/rotation or reliable behavior across every class and enemy.
   instead of repeating completed baselines without a reason.
 - **Patch/update recovery:** explicitly deferred. Exact-build checks continue;
   another executable hash requires new evidence.
-- **Terrain/navmesh, obstacle avoidance and automatic stuck detours:** not
-  implemented. Longer routes still require a known clear taught path. Dedicated
-  terrain routing, indefinite patrol and quest automation remain future work.
+- **Terrain/navmesh, obstacle avoidance and automatic stuck detours:** local
+  candidate planning and coordinate-based requery are implemented. Qualified
+  execution of novel paths and automatic stuck detours remain open; longer
+  live routes still require an admitted traversable corridor.
   Combat, level-appropriate encounters and bounded XP/level progression during
   travel are ranked above. Leveling is part of the goal; a general engine for
   every class/build, automatic gear allocation, quests or indefinite
