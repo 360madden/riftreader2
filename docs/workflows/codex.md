@@ -35,6 +35,27 @@ only explicitly selected repository tests. It is not the full Windows gate.
 Use `--jobs 1` for serial diagnostics; concurrent lanes report in fixed order.
 The progress lane includes deterministic unfinished-leg feedback diagnostics.
 
+### Continuous integration
+
+GitHub Actions runs the `RR2 CI` workflow on worker pull requests targeting
+`codex/modular-foundation` and pushes to that integration branch. It runs
+three independent hosted checks: fast Windows navigation lanes, Linux
+progress/link/commit-whitespace checks, and the full Windows offline gate
+(`scripts/validate.ps1`, pinned SDK, locked NuGet restore, build, .NET and Python
+tests, formatting, synthetic native/Lua smoke and deterministic replay).
+All jobs are read-only repository checkouts; no RIFT or physical host access.
+
+Open worker PRs against the integration branch, not the historical `main`.
+Run your focused lane before opening a PR. Review the stable `RR2 required gate`
+check, which succeeds only when all three jobs succeed. Cancel superseded
+runs rather than queueing stale results. Do not integrate failed, skipped,
+cancelled or pending checks; a green hosted run is not live acceptance.
+
+Enable branch protection requiring `RR2 required gate` after the initial
+hosted run is green. Preserve the existing integration branch; do not force
+push or change the default branch. Until enforcement is confirmed, the
+coordinator must check CI manually before merging worker work.
+
 ### Initial independent worker assignments
 
 | Worker | Outcome | Exclusive files and validation |
@@ -64,7 +85,7 @@ authoritative for physical acceptance. Publish or merge only reviewed work;
 retain base SHA, final commit, test result, and changed files.
 
 Start with the ChatGPT plan's available cloud capacity. Do not create API
-keys, chargeable API agents, GitHub Actions workflows, recurring tasks, or
+keys, chargeable API agents, additional billed runners, recurring tasks, or
 upload raw game installations automatically. A paid Agents API coordinator
 is a later option if measured throughput justifies the additional cost.
 

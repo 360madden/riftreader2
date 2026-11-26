@@ -22,6 +22,10 @@ Cloud workers own separate branches and bounded files; the coordinator reviews
 and integrates changes against the current development branch. Do not treat a
 cloud pass as Windows, map, or live acceptance. No new paid API automation or
 scheduled task is enabled by this policy. See docs/workflows/codex.md.
+Worker integration requires green RR2 CI and review of the actual tested SHA.
+Hosted Windows validation may run the existing synthetic-process reader smoke
+test against its own runner process; no RIFT process access is permitted.
+Do not weaken checks to obtain a green result, and never deploy from CI.
 
 ## Active RIFT target: physical Windows hosts only (Joey, 2026-11-10)
 
