@@ -38,6 +38,10 @@ class PostpatchNativeAdmissionTests(unittest.TestCase):
         executable.write_bytes(b"MZ")
         for obj, name, value in (
             (physical_rift, "NATIVE_EXE", executable),
+            # Keep this offline fixture independent of the actual host's reader
+            # registration and RR2_NATIVE_READER override. The fake executable
+            # exercises admission/argument assembly, not tool discovery.
+            (physical_rift, "_configured_native_reader_path", lambda override: None),
             (physical_rift.socket, "gethostname", lambda: "AMD-DESKTOP"),
         ):
             p = patch.object(obj, name, value)
