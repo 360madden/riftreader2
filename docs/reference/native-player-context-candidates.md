@@ -451,3 +451,25 @@ This is a useful historical baseline, not an atomic same-time comparison, change
 ### Experience API sentinel emission
 
 For the retained client SHA-256 `1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8`, the `Inspect.Experience` callback at RVA `0x99FFE0` creates a table, compares the calculated needed value with signed `-1` at `0x9A0098`, and branches at `0x9A009C` past all three field writes to return one empty table at `0x9A0125`. Thus `accumulated`, `needed`, and `rested` are all omitted on that branch; a separately observed raw rested value is not an API-published rested field there. Both the level-cap path and a typed lookup failure can produce the sentinel, so it does not by itself prove a cap. This is exact-build static callback evidence, not a live cap observation or independent API parity result. The source recipe, branch trace, and qualifications are in [experience-api-emission.md](../../artifacts/sammie315-coordination-20261107/experience-api-emission.md).
+
+### Build 1179 experience API migration evidence (2026-11-26)
+
+Read-only static inspection used the retained LEGION executable archive, 60,574,536 bytes, SHA-256 `DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01`. Reused `scripts/find_native_api_xrefs.py` with exact SHA, fields `accumulated needed rested Experience Inspect.Experience`, and `--function-bounds`. The older build's native experience reader remains unchanged.
+
+All three experience result-field names have a single matching literal RVA. The aligned preferred-image-base data words around RVA `0x2F747C0` identify a metadata group containing `Inspect.Experience`, `result@exp`, a zero delimiter, `accumulated`, `needed`, `rested`, a zero delimiter, and the next API name `Inspect.Item.List`. This supports the association of the three field names with the current-build API. This is a static metadata neighborhood, not a verified callback-registration structure.
+
+| Result field | Literal RVA | Candidate A reference RVA | Candidate B reference RVA |
+| --- | --- | --- | --- |
+| accumulated | `0x26E5048` | `0x99A7C7` | `0x9A0592` |
+| needed | `0x26E5054` | `0x99A7F0` | `0x9A05BB` |
+| rested | `0x26E505C` | `0x99A816` | `0x9A05E1` |
+
+Candidate A belongs to a unique PE unwind range `[0x99A6E0, 0x99A8C1)`; candidate B belongs to `[0x9A04B0, 0x9A0600)`. A third unwind range `[0x9AD016, 0x9AD09C)` contains only the `needed` and `accumulated` byte-pattern references. All these RIP-relative LEA matches remain instruction-boundary-unverified. The aligned data-pointer search did not find a direct reference to either candidate's unwind-range start; absence under that search is not proof of absent linkage. Do not infer the current callback identity from relative size or proximity to the older build's callback.
+
+Retained local evidence:
+
+- `artifacts/postpatch-20261126-phase12-experience-xrefs.json` — SHA-256 `9D0E25A3BD48891117CBE4E2C63092F7D6AAEEAD24658D5D709FA24934C4C321`.
+- `artifacts/postpatch-20261126-phase12-experience-data-refs.json` — SHA-256 `8832AEA40BFE50A0B5DB47BE44F91CD3A0C9F33A51927515229CA162A2E7931E`.
+- `artifacts/postpatch-20261126-phase12-experience-registration-neighborhood.json` — SHA-256 `71FFB4E7EECC141F78BD7E12E5E14A9AE1401254C2E8181B6739287DEFECD57C`.
+
+Next evidence gate: independently decode the two bounded code ranges, distinguish the API callback from other consumers, verify its current-build output and sentinel semantics, then separately qualify the underlying native source and ownership. No game process memory acquisition, game input, callback execution, game modification, native locator migration, or live XP claim occurred in this pass.
