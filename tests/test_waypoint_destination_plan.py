@@ -26,7 +26,10 @@ class DestinationPlanTests(unittest.TestCase):
         self.addCleanup(hostname.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        # Windows hosted runners may expose TEMP through an 8.3 alias.
+        # Generate mock receipts from the same canonical path contract as
+        # the real planner rather than weakening its source-path checks.
+        self.root = Path(self.temp.name).resolve()
         self.enterContext(patch.object(bridge, "_registration_path", return_value=self.root / ".local/riftworld-toolchain.json"))
         self.world = self.root / "world with spaces"
         (self.world / "tools").mkdir(parents=True)
@@ -1534,7 +1537,8 @@ class CurrentStartMailboxTests(unittest.TestCase):
 
     def test_current_start_uses_actual_pose_refresh_without_changing_dirty_route(self):
         harness = self.mailbox()
-        self.assertTrue(harness.call("route.add", {"name": "Preserved", "x": 10, "z": 20})["ok"])
+        response = harness.call("route.add", {"name": "Preserved", "x": 10, "z": 20})
+        self.assertTrue(response["ok"], response)
         before = harness.call("route.list")["data"]
         result = self.plan(start=None, from_current=True, session=harness.session["sessionId"],
                            runner=self.mailbox_runner(harness))

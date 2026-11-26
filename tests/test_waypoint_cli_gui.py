@@ -179,7 +179,7 @@ app.launch_window(args)
 class GuiBridgeTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.child = subprocess.Popen([sys.executable, '-c', CHILD, str(self.root)],
                                       cwd=Path(__file__).resolve().parents[1],
                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE,
