@@ -23,12 +23,18 @@ from scripts.compare_physical_player_context_pair import BUILD_SHA
 SUPPORTED_BUILDS = frozenset((BUILD_SHA,
     "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"))
 KINDS = ("player-context", "position", "vitals")
+ONE_SHOT_CONTRACTS = {
+    "stats": "native-current-stats-candidate/1",
+    "zone-context": "native-current-zone-seed-candidate/1",
+    "experience-values": "native-current-experience-values-candidate/1",
+}
 
 
-def source_kinds(*, include_stats, include_zone, include_power):
+def source_kinds(*, include_stats, include_zone, include_power, include_experience=False):
     """Shared acquisition/replay ordering for optional source groups."""
     return ((("zone-before",) if include_zone else ()) + KINDS
             + (("stats",) if include_stats else ())
+            + (("experience-values",) if include_experience else ())
             + (("power", "player-context-after") if include_power else ())
             + (("zone-after",) if include_zone else ()))
 
@@ -95,11 +101,12 @@ def pin(pid, *, expected_host=None):
 
 
 def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False,
-             include_zone=False, include_power=False, expected_host=None, native_reader=None):
+            include_zone=False, include_power=False, include_experience=False,
+            expected_host=None, native_reader=None):
     require(type(samples) is int and 2 <= samples <= 10
             and type(interval_ms) is int and 0 <= interval_ms <= 1000
-             and type(include_stats) is bool and type(include_zone) is bool
-             and type(include_power) is bool,
+            and type(include_stats) is bool and type(include_zone) is bool
+            and type(include_power) is bool and type(include_experience) is bool,
             "invalid-sampling-bounds")
     read = physical_rift.bind_native_reader(physical_rift.read_native, native_reader)
     first = pin(pid, expected_host=expected_host)
@@ -117,13 +124,13 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False,
     output_dir.mkdir()
     results, module, self_key = {}, None, None
     kinds = source_kinds(include_stats=include_stats, include_zone=include_zone,
-                         include_power=include_power)
+                         include_power=include_power, include_experience=include_experience)
     for kind in kinds:
         require(pin(pid, expected_host=host)["target"] == owner, "epoch-changed-before-read")
         path = output_dir / (kind + ".json")
         read_kind = native_kind(kind)
-        # Zone and stats are one-shot readers; other sources support bursts.
-        options = ({} if read_kind in ("stats", "zone-context") else
+        # One-shot sources carry a single observation, not a burst envelope.
+        options = ({} if read_kind in ONE_SHOT_CONTRACTS else
                    {"samples": samples, "interval_ms": interval_ms})
         result = read(first, read_kind, path, **options)
         require(result.get("status") == "complete"
@@ -138,25 +145,22 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False,
         # Never publish a receipt that a subsequent independent replay must refuse.
         report, source_sha = context.load(path)
         observation = report.get("observation")
-        identity = (observation.get("identity") if read_kind in ("stats", "zone-context")
+        identity = (observation.get("identity") if read_kind in ONE_SHOT_CONTRACTS
                     and isinstance(observation, dict) else report.get("identity"))
         require(source_matches_target(identity, owner)
                 and type(identity.get("moduleBaseAddress")) is int
                 and type(identity.get("moduleSize")) is int
                 and identity["moduleBaseAddress"] > 0 and identity["moduleSize"] > 0
                 and report.get("status") == "complete"
-                and ((read_kind == "stats" and report.get("contractVersion") == "native-current-stats-candidate/1"
+                and ((read_kind in ONE_SHOT_CONTRACTS
+                      and report.get("contractVersion") == ONE_SHOT_CONTRACTS[read_kind]
                       and isinstance(observation, dict)
                       and result.get("nativeSourceSha256", "").upper() == source_sha)
-                     or (read_kind == "zone-context"
-                         and report.get("contractVersion") == "native-current-zone-seed-candidate/1"
-                         and isinstance(observation, dict)
-                         and result.get("nativeSourceSha256", "").upper() == source_sha)
                       or (read_kind == "power"
                           and report.get("contractVersion") == "native-power-samples/1"
                           and report.get("requestedSamples") == samples
                           and result.get("nativeSourceSha256", "").upper() == source_sha)
-                      or (read_kind not in ("stats", "zone-context", "power")
+                      or (read_kind not in ONE_SHOT_CONTRACTS and read_kind != "power"
                           and report.get("completedSamples") == samples)),
                 kind + "-source-identity-invalid")
         current_module = (identity["moduleBaseAddress"], identity["moduleSize"])
@@ -180,6 +184,13 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False,
                     and observation.get("rawZoneKey") == values.get("rawZoneKey")
                     and observation.get("zoneIdCandidate") == values.get("zoneIdCandidate"),
                     kind + "-native-zone-values-mismatch")
+        if read_kind == "experience-values":
+            # The seed carries an independent self key and a source-bound identity.
+            # Reproject instead of trusting the wrapper's reported XP arithmetic.
+            require(json.dumps(physical_rift._native_values(read_kind, report),
+                               sort_keys=True, allow_nan=False)
+                    == json.dumps(values, sort_keys=True, allow_nan=False),
+                    "experience-values-native-projection-mismatch")
         if kind == "vitals" and "nativeBurstSummary" in result:
             burst = result["nativeBurstSummary"]
             require(isinstance(burst, dict)
@@ -193,7 +204,7 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False,
         require(pin(pid, expected_host=host)["target"] == owner, "epoch-changed-after-read")
         results[kind] = {
             "path": str(path), "sourceSha256": source_sha,
-            "samples": 1 if read_kind in ("stats", "zone-context") else samples,
+            "samples": 1 if read_kind in ONE_SHOT_CONTRACTS else samples,
             "candidateValues": values,
             **({"burstSummary": result["nativeBurstSummary"]}
                if "nativeBurstSummary" in result else {}),
@@ -236,7 +247,7 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200, include_stats=False,
                           + (" Power is process-scoped and context-bracketed, not independently unit-keyed."
                              if include_power else "")),
     }
-    if include_power:
+    if include_power or include_experience:
         # Run the same strict offline verification before publishing the new bundle.
         from scripts.replay_physical_player_state import verify_receipt
         verify_receipt(summary, None, output_dir)
@@ -259,6 +270,8 @@ def main(argv=None):
                         help="bracket all other reads with two guarded native zone candidates")
     parser.add_argument("--include-power", action="store_true",
                         help="also acquire supported Warrior Power and recheck player context")
+    parser.add_argument("--include-experience", action="store_true",
+                        help="also acquire source-pinned native experience candidates")
     parser.add_argument("--output-dir", type=Path,
                         default=ROOT / "artifacts" / ("physical-state-" + uuid.uuid4().hex))
     args = parser.parse_args(argv)
@@ -267,6 +280,7 @@ def main(argv=None):
                                samples=args.samples, interval_ms=args.interval_ms,
                                include_stats=args.include_stats, include_zone=args.include_zone,
                                 include_power=args.include_power,
+                                include_experience=args.include_experience,
                                expected_host=args.expected_host, native_reader=args.native_reader)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:240]}))
@@ -291,6 +305,8 @@ def main(argv=None):
                if k in vitals},
         },
         **({"statsCandidate": values["stats"]} if "stats" in values else {}),
+        **({"experienceCandidate": values["experience-values"]}
+           if "experience-values" in values else {}),
         **({"powerCandidate": values["power"], "powerBracketCandidate": report["powerBracketCandidate"]}
            if "power" in values else {}),
         **({"zoneBracketCandidate": report["zoneBracketCandidate"]}

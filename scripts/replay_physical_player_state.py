@@ -52,8 +52,10 @@ def verify_receipt(receipt, receipt_sha, directory):
     has_power = (isinstance(sources, dict)
                  and ("power" in sources or "player-context-after" in sources
                       or "powerBracketCandidate" in receipt))
+    has_experience = isinstance(sources, dict) and "experience-values" in sources
     kinds = state.source_kinds(include_stats=isinstance(sources, dict) and "stats" in sources,
-                               include_zone=has_zone, include_power=has_power)
+                               include_zone=has_zone, include_power=has_power,
+                               include_experience=has_experience)
     require(receipt.get("schemaVersion") == 1
             and receipt.get("evidenceKind") == "amd-physical-player-state-candidate/1"
             and receipt.get("status") == "complete-candidate"
@@ -76,9 +78,11 @@ def verify_receipt(receipt, receipt_sha, directory):
     previous_end, first_time, last_time = None, None, None
     for kind in kinds:
         saved = receipt["sources"][kind]
+        read_kind = state.native_kind(kind)
+        one_shot = read_kind in state.ONE_SHOT_CONTRACTS
         require(isinstance(saved, dict)
                 and type(saved.get("samples")) is int
-                and (saved["samples"] == 1 if kind in ("stats", "zone-before", "zone-after")
+                and (saved["samples"] == 1 if one_shot
                      else 2 <= saved["samples"] <= 10)
                 and isinstance(saved.get("sourceSha256"), str)
                 and isinstance(saved.get("path"), str)
@@ -87,7 +91,7 @@ def verify_receipt(receipt, receipt_sha, directory):
         # Resolve fixed local filenames, NOT arbitrary absolute paths from receipts.
         report, actual_sha = context.load(directory / (kind + ".json"),
                                           saved["sourceSha256"])
-        one_shot = kind in ("stats", "zone-before", "zone-after")
+        # One-shot observations, including experience, carry their own identity.
         if one_shot:
             observation = report.get("observation")
             identity = observation.get("identity") if isinstance(observation, dict) else None
@@ -98,9 +102,8 @@ def verify_receipt(receipt, receipt_sha, directory):
         require(state.source_matches_target(identity, owner)
                 and (identity.get("moduleBaseAddress"), identity.get("moduleSize")) == module
                 and report.get("status") == "complete"
-                and ((kind == "stats" and report.get("contractVersion") == "native-current-stats-candidate/1")
-                     or (kind in ("zone-before", "zone-after")
-                         and report.get("contractVersion") == "native-current-zone-seed-candidate/1")
+                and ((one_shot and report.get("contractVersion") ==
+                      state.ONE_SHOT_CONTRACTS[read_kind])
                       or (kind == "power" and report.get("contractVersion") == "native-power-samples/1"
                           and report.get("requestedSamples") == saved["samples"])
                       or (not one_shot and kind != "power"
@@ -114,7 +117,9 @@ def verify_receipt(receipt, receipt_sha, directory):
             require(isinstance(sample, dict)
                     and (kind in ("position", "power") or sample.get("identity") == identity)
                     and (kind == "power" or
-                         str(sample.get("selfKey" if kind.startswith("zone-") else "unitKey"))
+                         str((sample.get("seed") or {}).get("unitKey")
+                             if kind == "experience-values" and isinstance(sample.get("seed"), dict)
+                             else sample.get("selfKey" if kind.startswith("zone-") else "unitKey"))
                          == receipt["selfKeyCandidate"]),
                     kind + "-sample-owner")
             start = _utc_tick_order_key(sample.get("startedAtUtc"))
@@ -138,7 +143,7 @@ def verify_receipt(receipt, receipt_sha, directory):
             if field not in recorded or recorded[field] in (
                     "current-reader-contract-checked", projected[field]):
                 recorded = {**recorded, field: projected[field]}
-        if kind in ("vitals", "power", "player-context-after") or kind.startswith("zone-"):
+        if kind in ("vitals", "power", "player-context-after", "experience-values") or kind.startswith("zone-"):
             # Ordinary dict equality treats 1, 1.0 and True as interchangeable.
             # Compare typed JSON values regardless of object key order.
             def canonical(value):
@@ -148,6 +153,9 @@ def verify_receipt(receipt, receipt_sha, directory):
             matches = projected == recorded
         require(matches,
                 kind + "-candidate-projection-mismatch")
+        if kind == "experience-values":
+            require(projected.get("unitKey") == receipt["selfKeyCandidate"],
+                    "experience-values-projected-self-key")
         if kind == "vitals" and "burstSummary" in saved:
             burst = saved["burstSummary"]
             require(isinstance(burst, dict)
@@ -450,6 +458,8 @@ def main(argv=None):
                      lastCompletedAtUtc=result["lastCompletedAtUtc"])
         if "power" in result["candidateValues"]:
             brief["nativePowerCandidate"] = _power_burst(result)
+        if "experience-values" in result["candidateValues"]:
+            brief["nativeExperienceCandidate"] = result["candidateValues"]["experience-values"]
     elif "segments" in result:
         brief.update(captureCount=result["captureCount"],
                      firstStartedAtUtc=result["firstStartedAtUtc"],

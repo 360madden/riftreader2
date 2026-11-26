@@ -1,4 +1,4 @@
-"""Synthetic complete-bundle tests for opt-in process-scoped Warrior Power."""
+"""Synthetic complete-bundle tests for opt-in Power and native Experience."""
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -12,6 +12,7 @@ from scripts import collect_physical_player_state as state
 from scripts import replay_physical_player_state as replay
 from tests.test_physical_player_context_projection import report as context_report
 from tests.test_summarize_native_vitals_burst import field, unavailable
+from tests.test_native_experience_values_validation import updated_fixture
 
 HOST = "RIFT-STATION"
 KEY = 239816685251645959
@@ -19,7 +20,7 @@ SHA = "DF954B798331E18359BE62A31CC74B49FC3F50B87385EBB080A5448256322C01"
 IDENTITY = {
     "processId": 123, "processStartUtcTicks": 638000000000000001,
     "executableSha256": SHA, "executablePath": r"C:\Games\RIFT\rift_x64.exe",
-    "moduleBaseAddress": 123456, "moduleSize": 654321,
+    "moduleBaseAddress": 0x140000000, "moduleSize": 0x4000000,
 }
 OWNER = {**IDENTITY, "hostName": HOST, "hwnd": 1234,
          "processStartUtcTicks": str(IDENTITY["processStartUtcTicks"])}
@@ -41,12 +42,25 @@ class PowerStateTests(unittest.TestCase):
         self.read = self.enterContext(patch.object(state.physical_rift, "read_native",
                                                    side_effect=self.fake_read))
 
-    def fake_read(self, selection, kind, path, *, samples, interval_ms, **options):
+    def fake_read(self, selection, kind, path, *, samples=None, interval_ms=None, **options):
         # This fixture only writes offline reports; it never starts the reader.
         index = len(self.reads)
         self.reads.append(path.stem)
         rows = []
         start = datetime(2026, 11, 26, 8, 0, tzinfo=timezone.utc)
+        if kind == "experience-values":
+            self.assertIsNone(samples)
+            self.assertIsNone(interval_ms)
+            source = updated_fixture()
+            o = source["observation"]
+            t = start + timedelta(seconds=index*5)
+            for row in (o, o["seed"]):
+                row.update(identity=IDENTITY.copy(), startedAtUtc=t.isoformat(),
+                           completedAtUtc=(t+timedelta(milliseconds=100)).isoformat())
+            o["seed"]["unitKey"] = KEY
+            o.update(valueStatus="raw-values-candidate", mode=2,
+                     needed=500, accumulatedCandidate=300)
+            return self.save_source(selection, kind, path, source)
         for n in range(samples):
             t = start + timedelta(seconds=index*5+n)
             times = {"startedAtUtc": t.isoformat(),
@@ -79,6 +93,9 @@ class PowerStateTests(unittest.TestCase):
             if kind == "player-context":
                 source.update(contractVersion="native-current-player-context-candidate-burst/1",
                               qualification=context_report()["qualification"])
+        return self.save_source(selection, kind, path, source)
+
+    def save_source(self, selection, kind, path, source):
         if self.change:
             self.change(path.stem, source)
         path.write_text(json.dumps(source), encoding="utf-8")
@@ -145,6 +162,80 @@ class PowerStateTests(unittest.TestCase):
         altered["powerBracketCandidate"]["nativePowerUnitKeyStatus"] = "verified"
         path.write_text(json.dumps(altered), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "power-bracket-summary-mismatch"):
+            replay.verified_state(path)
+
+
+    def test_experience_only_is_source_pinned_and_replayable(self):
+        path, summary = state.collect(123, self.output, samples=2, include_experience=True)
+        self.assertEqual(self.reads, ["player-context", "position", "vitals", "experience-values"])
+        source = summary["sources"]["experience-values"]
+        self.assertEqual(1, source["samples"])
+        self.assertEqual(300, source["candidateValues"]["accumulatedCandidate"])
+        self.assertEqual(0.6, source["candidateValues"]["progressFractionCandidate"])
+        self.assertEqual(source["candidateValues"],
+                         replay.verified_state(path)["candidateValues"]["experience-values"])
+
+    def test_power_and_experience_share_the_existing_owner_checks(self):
+        path, summary = state.collect(123, self.output, samples=2,
+                                      include_experience=True, include_power=True)
+        self.assertEqual(self.reads, ["player-context", "position", "vitals",
+                                      "experience-values", "power", "player-context-after"])
+        result = replay.verified_state(path)
+        self.assertEqual(300, result["candidateValues"]["experience-values"]["accumulatedCandidate"])
+        self.assertEqual("unavailable", result["powerBracketCandidate"]["nativePowerUnitKeyStatus"])
+
+    def test_experience_missing_is_not_zero(self):
+        def change(kind, source):
+            if kind == "experience-values":
+                source["observation"].update(valueStatus="provider-uninitialized",
+                                             needed=None, accumulatedCandidate=None, mode=None)
+        self.change = change
+        path, _ = state.collect(123, self.output, samples=2, include_experience=True)
+        xp = replay.verified_state(path)["candidateValues"]["experience-values"]
+        self.assertEqual("provider-uninitialized", xp["valueStatus"])
+        self.assertIsNone(xp["accumulatedCandidate"])
+        self.assertIsNone(xp["progressFractionCandidate"])
+
+    def test_experience_foreign_key_refuses_publication(self):
+        def change(kind, source):
+            if kind == "experience-values":
+                source["observation"]["seed"]["unitKey"] = KEY + 1
+        self.change = change
+        with self.assertRaisesRegex(ValueError, "self-key-changed"):
+            state.collect(123, self.output, samples=2, include_experience=True)
+        self.assertFalse((self.output / "summary.json").exists())
+
+    def test_experience_nested_epoch_mismatch_refuses_publication(self):
+        def change(kind, source):
+            if kind == "experience-values":
+                source["observation"]["seed"]["identity"]["processStartUtcTicks"] += 1
+        self.change = change
+        with self.assertRaises(ValueError):
+            state.collect(123, self.output, samples=2, include_experience=True)
+        self.assertFalse((self.output / "summary.json").exists())
+
+    def test_experience_earlier_timestamp_refuses_publication(self):
+        def change(kind, source):
+            if kind == "experience-values":
+                for row in (source["observation"], source["observation"]["seed"]):
+                    row.update(startedAtUtc="2026-11-26T07:00:00Z",
+                               completedAtUtc="2026-11-26T07:00:01Z")
+        self.change = change
+        with self.assertRaisesRegex(ValueError, "experience-values-sample-time-order"):
+            state.collect(123, self.output, samples=2, include_experience=True)
+        self.assertFalse((self.output / "summary.json").exists())
+
+    def test_experience_replay_rejects_forged_projection_and_source_hash(self):
+        path, summary = state.collect(123, self.output, samples=2, include_experience=True)
+        forged = deepcopy(summary)
+        forged["sources"]["experience-values"]["candidateValues"]["accumulatedCandidate"] = 301
+        path.write_text(json.dumps(forged), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "experience-values-candidate-projection-mismatch"):
+            replay.verified_state(path)
+        path.write_text(json.dumps(summary), encoding="utf-8")
+        raw = self.output / "experience-values.json"
+        raw.write_bytes(raw.read_bytes() + b" ")
+        with self.assertRaises(ValueError):
             replay.verified_state(path)
 
 
