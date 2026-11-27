@@ -5,6 +5,7 @@ using RiftReader2.Infrastructure;
 
 namespace RiftReader2.Live.Tests;
 
+[Collection(WindowsTimingFixtureCollection.Name)]
 public sealed class PointerFollowEpochTests
 {
     [Fact]
@@ -139,12 +140,12 @@ public sealed class PointerFollowEpochTests
                 await File.WriteAllTextAsync(request, RequestJson(
                     processId, processStartUtcTicks, executableSha256));
 
-                child.Kill(entireProcessTree: true);
-                await child.WaitForExitAsync();
+                await DisposableProcessExit.KillAndWaitAsync(child);
 
                 var result = await RunAsync(request, output);
 
-                Assert.Equal(2, result.ExitCode);
+                Assert.True(result.ExitCode == 2,
+                    $"Expected exited-epoch refusal 2; got {result.ExitCode}. stderr: {result.Stderr}");
                 Assert.Empty(result.Stdout);
                 Assert.NotEmpty(result.Stderr);
                 Assert.False(File.Exists(output));

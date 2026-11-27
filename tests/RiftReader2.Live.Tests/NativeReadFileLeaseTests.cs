@@ -2,6 +2,7 @@ using System.Diagnostics;
 
 namespace RiftReader2.Live.Tests;
 
+[Collection(WindowsTimingFixtureCollection.Name)]
 public sealed class NativeReadFileLeaseTests
 {
     const string Sha = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
@@ -81,6 +82,7 @@ public sealed class NativeReadFileLeaseTests
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardInput = true,
+            RedirectStandardError = true,
             CreateNoWindow = true
         };
         ps.ArgumentList.Add("-NoProfile"); ps.ArgumentList.Add("-NonInteractive"); ps.ArgumentList.Add("-Command");
@@ -89,11 +91,10 @@ public sealed class NativeReadFileLeaseTests
         using var child = Process.Start(ps) ?? throw new InvalidOperationException("Cannot start test child.");
         try
         {
-            var line = await child.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(10));
-            Assert.Equal("HELD", line);
+            var line = await child.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(30));
+            Assert.True(line == "HELD", $"Child lock readiness: {line ?? "<EOF>"}");
             await Assert.ThrowsAsync<TimeoutException>(() => Open(dir.Path, 1, 2, Short));
-            child.Kill();
-            await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+            await DisposableProcessExit.KillAndWaitAsync(child);
             await using var recovered = await Open(dir.Path, 1, 2, TimeSpan.FromSeconds(3));
         }
         finally

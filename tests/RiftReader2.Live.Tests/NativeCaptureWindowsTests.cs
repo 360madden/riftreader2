@@ -7,6 +7,7 @@ using RiftReader2.Live;
 
 namespace RiftReader2.Live.Tests;
 
+[Collection(WindowsTimingFixtureCollection.Name)]
 public sealed class NativeCaptureWindowsTests
 {
     [Fact]
@@ -88,9 +89,7 @@ public sealed class NativeCaptureWindowsTests
         {
             await Task.Delay(250);
             await using var session = await WindowsNativeMemorySession.OpenAsync(process.Id, null, null, CancellationToken.None);
-            process.Kill(entireProcessTree: true);
-            await process.WaitForExitAsync();
-            Assert.True(process.HasExited);
+            await DisposableProcessExit.KillAndWaitAsync(process);
 
             var failure = await session.RevalidateAsync(CancellationToken.None);
 

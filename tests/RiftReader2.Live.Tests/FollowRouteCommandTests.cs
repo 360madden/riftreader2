@@ -4,6 +4,7 @@ using RiftReader2.Live.Control;
 
 namespace RiftReader2.Live.Tests;
 
+[Collection(WindowsTimingFixtureCollection.Name)]
 public sealed class FollowRouteCommandTests
 {
     private const ulong Player = 42;
@@ -1281,8 +1282,12 @@ public sealed class FollowRouteCommandTests
         var result = await FollowRouteCommand.FollowWithPausesAsync(options,
             Reader(Pose(0, 0), Pose(0, 1.9), Pose(0, 1.9), Pose(0, 1.9),
                 Pose(0, 1.9), Pose(0, 1.9), Pose(0, 1.9), Pose(0, 3.9), Pose(0, 3.9), Pose(0, 3.9)),
-            input, () => null);
-        Assert.Equal("arrived", result.Status);
+            input, () => null,
+            // Provide a deliberate margin for the minimum 150 ms stationary
+            // evidence window; timers may return slightly before their target.
+            (duration, token) => Task.Delay(duration == TimeSpan.FromMilliseconds(150)
+                ? duration + TimeSpan.FromMilliseconds(25) : duration, token));
+        Assert.True(result.Status == "arrived", result.Reason);
         var pause = Assert.Single(result.ControlPauseReceipts!);
         Assert.True(pause.StationaryAfter.ObservedAtUtc - pause.StationaryBefore.ObservedAtUtc >= TimeSpan.FromMilliseconds(150));
         Assert.Equal("settled-corner", Assert.Single(result.PassedWaypoints!).Source);
