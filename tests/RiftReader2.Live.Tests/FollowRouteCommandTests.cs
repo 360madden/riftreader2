@@ -1282,17 +1282,43 @@ public sealed class FollowRouteCommandTests
         var result = await FollowRouteCommand.FollowWithPausesAsync(options,
             Reader(Pose(0, 0), Pose(0, 1.9), Pose(0, 1.9), Pose(0, 1.9),
                 Pose(0, 1.9), Pose(0, 1.9), Pose(0, 1.9), Pose(0, 3.9), Pose(0, 3.9), Pose(0, 3.9)),
-            input, () => null,
-            // Provide a deliberate margin for the minimum 150 ms stationary
-            // evidence window; timers may return slightly before their target.
-            (duration, token) => Task.Delay(duration == TimeSpan.FromMilliseconds(150)
-                ? duration + TimeSpan.FromMilliseconds(25) : duration, token));
+            input, () => null);
         Assert.True(result.Status == "arrived", result.Reason);
         var pause = Assert.Single(result.ControlPauseReceipts!);
         Assert.True(pause.StationaryAfter.ObservedAtUtc - pause.StationaryBefore.ObservedAtUtc >= TimeSpan.FromMilliseconds(150));
         Assert.Equal("settled-corner", Assert.Single(result.PassedWaypoints!).Source);
         Assert.Equal(new[] { "down:w", "up:w", "down:w", "up:w" }, input.Events);
         Assert.False(result.PathTruncated);
+    }
+
+    [Fact]
+    public async Task ControlPauseWaitsForMinimumIntervalAfterEarlyTimerWake()
+    {
+        var input = new Input();
+        var earlyWake = false;
+        var options = Options(z: 4) with
+        {
+            ControlPauses = true,
+            RoutePoints = [new("turn", 0, 2, 7, true)]
+        };
+        Task Delay(TimeSpan duration, CancellationToken token)
+        {
+            if (!earlyWake && duration == TimeSpan.FromMilliseconds(150))
+            {
+                earlyWake = true;
+                return Task.CompletedTask;
+            }
+            return Task.Delay(duration, token);
+        }
+        var result = await FollowRouteCommand.FollowWithPausesAsync(options,
+            Reader(Pose(0, 0), Pose(0, 1.9), Pose(0, 1.9), Pose(0, 1.9),
+                Pose(0, 1.9), Pose(0, 1.9), Pose(0, 1.9), Pose(0, 3.9), Pose(0, 3.9), Pose(0, 3.9)),
+            input, () => null, Delay);
+        Assert.True(earlyWake);
+        Assert.True(result.Status == "arrived", result.Reason);
+        var pause = Assert.Single(result.ControlPauseReceipts!);
+        Assert.True(pause.StationaryAfter.ObservedAtUtc - pause.StationaryBefore.ObservedAtUtc >= TimeSpan.FromMilliseconds(150));
+        Assert.Equal(new[] { "down:w", "up:w", "down:w", "up:w" }, input.Events);
     }
 
     [Fact]

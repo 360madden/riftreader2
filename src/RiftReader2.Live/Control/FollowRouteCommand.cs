@@ -1282,7 +1282,23 @@ internal static class FollowRouteCommand
                     return pose;
                 }
                 var first = await ReadPauseSample();
-                await delay(TimeSpan.FromMilliseconds(150), token);
+                // A requested delay does not prove the minimum interval elapsed.
+                // Recheck a monotonic clock after every wake; the independent
+                // observation timestamp separation is still checked below.
+                var pauseStarted = Stopwatch.GetTimestamp();
+                var minimumPause = TimeSpan.FromMilliseconds(150);
+                var pauseRemaining = minimumPause;
+                do
+                {
+                    await delay(pauseRemaining, token);
+                    token.ThrowIfCancellationRequested();
+                    if (SharedSafety() is string pauseStop) throw new InvalidOperationException(pauseStop);
+                    if (!input.IsTargetCurrent() || input.ReadPressedInputs().Count != 0)
+                        throw new InvalidOperationException("pause-release-or-target-unavailable");
+                    pauseRemaining = minimumPause - Stopwatch.GetElapsedTime(pauseStarted);
+                    if (pauseRemaining > TimeSpan.Zero && pauseRemaining < TimeSpan.FromMilliseconds(1))
+                        pauseRemaining = TimeSpan.FromMilliseconds(1);
+                } while (pauseRemaining > TimeSpan.Zero);
                 var second = await ReadPauseSample();
                 if (SharedSafety() is string stopAfter) throw new InvalidOperationException(stopAfter);
                 down = input.ReadPressedInputs().ToArray();
