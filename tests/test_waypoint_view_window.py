@@ -217,7 +217,7 @@ class ViewWindowTests(unittest.TestCase):
     def test_open_copied_legacy_scene_uses_the_copied_image_and_recording(self):
         self.prepare()
         original = PureWindowsPath(r"D:\RIFT evidence\Old view")
-        copied = self.path / "Copied view"
+        copied = self.path.resolve() / "Copied view"
         image = copied / "projection" / "waypoints.png"
         image.parent.mkdir(parents=True)
         image.write_bytes(b"png")

@@ -24,7 +24,7 @@ class WindowsLauncherTests(unittest.TestCase):
     def setUp(self):
         temp = TemporaryDirectory(prefix="rr2-launch-")
         self.addCleanup(temp.cleanup)
-        self.root = Path(temp.name) / "cloned checkout"
+        self.root = Path(temp.name).resolve() / "cloned checkout"
         (self.root / "scripts").mkdir(parents=True)
         for path in ("Waypoints.cmd", "rr2-waypoints.cmd", "rr2-check-dependencies.cmd", "rr2-observe.cmd",
                      "rr2-setup-python.cmd",

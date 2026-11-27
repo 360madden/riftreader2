@@ -37,7 +37,7 @@ class PlotTests(unittest.TestCase):
     def setUp(self):
         self.temp = TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.addCleanup(patch.stopall)
         patch.object(socket, "gethostname", return_value="AMD-DESKTOP").start()
         self.image = self.root / "image.png"

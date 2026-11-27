@@ -23,7 +23,7 @@ class PhysicalPythonSetupTests(unittest.TestCase):
         with TemporaryDirectory() as temporary, patch.object(tool.sys, "platform", "win32"), \
                 patch.object(tool, "_run"), patch.object(tool, "_create_environment") as create:
             with self.assertRaises(FileExistsError):
-                tool.setup(Path(temporary), extras=("overlay",))
+                tool.setup(Path(temporary).resolve(), extras=("overlay",))
         create.assert_not_called()
 
     def test_setup_selects_existing_pin_files_and_returns_the_right_interpreters(self):
@@ -38,7 +38,7 @@ class PhysicalPythonSetupTests(unittest.TestCase):
         with TemporaryDirectory() as temporary, patch.object(tool.sys, "platform", "win32"), \
                 patch.object(tool, "_run", return_value="rerun-cli fixture") as run, \
                 patch.object(tool, "_create_environment", side_effect=create_interpreter) as create:
-            root = Path(temporary) / "new environments"
+            root = Path(temporary).resolve() / "new environments"
             result = tool.setup(root, extras=("overlay", "rerun", "validation"))
             self.assertTrue((root / ".ready").is_file())
         self.assertEqual([call.args[1] for call in create.call_args_list], [
@@ -61,7 +61,7 @@ class PhysicalPythonSetupTests(unittest.TestCase):
     def test_failed_optional_install_leaves_the_setup_unmarked(self):
         with TemporaryDirectory() as temporary, patch.object(tool.sys, "platform", "win32"), \
                 patch.object(tool, "_run"), patch.object(tool, "_create_environment") as create:
-            root = Path(temporary) / "failed environments"
+            root = Path(temporary).resolve() / "failed environments"
             create.side_effect = [root / "core/Scripts/python.exe", ValueError("optional install error")]
             with self.assertRaisesRegex(ValueError, "optional install error"):
                 tool.setup(root, extras=("overlay",))
@@ -70,7 +70,7 @@ class PhysicalPythonSetupTests(unittest.TestCase):
     def test_registration_refuses_partial_setup_and_preserves_existing_link_path(self):
         with TemporaryDirectory() as temporary, patch.object(tool.sys, "platform", "win32"), \
                 patch.object(tool, "_run") as run:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             checkout = root / "checkout"
             setup = root / "short setup"
             core = setup / tool.INTERPRETERS["RIFTREADER2_PYTHON"]
@@ -94,7 +94,7 @@ class PhysicalPythonSetupTests(unittest.TestCase):
 
     def test_registration_checks_runtimes_before_creating_a_checkout_link(self):
         with TemporaryDirectory() as temporary, patch.object(tool.sys, "platform", "win32"):
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             checkout = root / "checkout"
             prepared = root / "copied environment"
             core = prepared / tool.INTERPRETERS["RIFTREADER2_PYTHON"]
@@ -119,7 +119,7 @@ class PhysicalPythonSetupTests(unittest.TestCase):
     @unittest.skipUnless(sys.platform == "win32", "Windows directory junctions")
     def test_link_replacement_restores_the_original_if_publication_fails(self):
         with TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             checkout = root / "checkout"
             link = checkout / ".local/physical-python-link"
             link.parent.mkdir(parents=True)

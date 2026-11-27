@@ -152,7 +152,7 @@ class ExactGuestReportTests(unittest.TestCase):
 
     def test_destination_restrictions(self):
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
+            root = Path(folder).resolve()
             allowed = root / "artifacts"
             allowed.mkdir()
             target = allowed / "report.json"
