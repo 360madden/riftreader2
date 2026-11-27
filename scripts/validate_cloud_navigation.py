@@ -28,6 +28,7 @@ LANES = {
         "tests.test_waypoint_route_library",
         "tests.test_waypoint_seed_feedback",
         "tests.test_waypoint_feedback_window",
+        "tests.test_waypoint_feedback_replay",
     ),
 }
 
