@@ -176,6 +176,55 @@ class NativePlayerSeriesTests(unittest.TestCase):
         self.assertEqual(result["vitalsEndpointDeltasCandidate"]["health"]["deltaCurrentCandidate"], -20)
         self.assertTrue(all(s["positionStatus"] == "not-selected" for s in result["segments"]))
 
+    def test_vitals_series_preserves_dip_recovery_and_maximum_changes(self):
+        items = reads(("vitals",))
+        for (readout, _), current, maximum in zip(items, (90, 40, 90), (100, 120, 100)):
+            readout["vitals"]["metrics"]["health"].update(current=current, maximum=maximum)
+        prior = copy.deepcopy(items)
+        result = tool.summarize(items)
+        health = result["vitalsSeriesSummary"]["health"]
+        self.assertEqual(result["vitalsEndpointDeltasCandidate"]["health"]["deltaCurrentCandidate"], 0)
+        self.assertEqual(result["vitalsEndpointDeltasCandidate"]["health"]["deltaMaximumCandidate"], 0)
+        self.assertEqual(health, {
+            "status": "complete-candidate", "validSegmentCount": 2, "segmentCount": 2,
+            "observedCurrentChangeSegmentCount": 2, "observedMaximumChangeSegmentCount": 2,
+            "totalObservedCurrentIncreaseCandidate": 50,
+            "totalObservedCurrentDecreaseCandidate": 50,
+        })
+        self.assertEqual([s["vitalsDeltasCandidate"]["health"]["deltaCurrentCandidate"]
+                          for s in result["segments"]], [-50, 50])
+        self.assertEqual(result["vitalsSeriesSummary"]["energy"]["totalObservedCurrentIncreaseCandidate"], 0)
+        self.assertEqual(result["vitalsSeriesSummary"]["energy"]["totalObservedCurrentDecreaseCandidate"], 0)
+        self.assertEqual(result["vitalsSeriesSummary"]["mana"]["validSegmentCount"], 0)
+        self.assertIsNone(result["vitalsSeriesSummary"]["mana"]["totalObservedCurrentIncreaseCandidate"])
+        self.assertEqual(items, prior)
+
+    def test_missing_middle_vitals_never_yields_complete_window_totals(self):
+        items = reads(("vitals",))
+        items[1][0]["vitals"]["metrics"]["health"]["status"] = "unavailable"
+        result = tool.summarize(items)
+        health = result["vitalsSeriesSummary"]["health"]
+        self.assertEqual(health["status"], "incomplete-segment-candidates")
+        self.assertEqual(health["validSegmentCount"], 0)
+        self.assertIsNone(health["totalObservedCurrentIncreaseCandidate"])
+        self.assertIsNone(health["totalObservedCurrentDecreaseCandidate"])
+        self.assertEqual(result["vitalsEndpointDeltasCandidate"]["health"]["deltaCurrentCandidate"], -20)
+        self.assertEqual(result["segments"][0]["vitalsDeltasCandidate"]["health"]["status"], "unavailable")
+        # The unrelated energy field still has complete coverage.
+        self.assertEqual(result["vitalsSeriesSummary"]["energy"]["status"], "complete-candidate")
+
+    def test_vitals_intervals_use_their_own_clock_and_unselected_is_null(self):
+        items = reads()
+        items[1][0]["vitals"]["observedAtUtc"] = "2026-11-09T17:00:00.250000Z"
+        result = tool.summarize(items)
+        self.assertEqual([s["vitalsObservationIntervalSeconds"] for s in result["segments"]], [.25, 1.75])
+        self.assertEqual([s["positionObservationIntervalSeconds"] for s in result["segments"]], [1, 1])
+        result = tool.summarize(reads(("position",)))
+        self.assertIsNone(result["vitalsSeriesSummary"])
+        self.assertTrue(all(s["vitalsDeltasCandidate"] is None
+                            and s["vitalsObservationIntervalSeconds"] is None
+                            for s in result["segments"]))
+
     def test_missing_middle_anchor_prevents_path_length_without_faking_zero(self):
         items = reads(("position",))
         items[1][0]["position"]["metrics"]["ownerIdentityStatus"] = "unqualified"
