@@ -1,4 +1,5 @@
 """File-only recovery regression tests; no game installation or processes required."""
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -24,17 +25,21 @@ class PatchRecoveryTests(unittest.TestCase):
         path.write_text(json.dumps(value), encoding="utf-8")
         return path, recovery.digest(path)
 
-    def shared_cycle(self, *, changed=False):
+    def shared_cycle(self, *, changed=False, edit_first=None):
         prefix = "fixture"
         before_sha, old_exe, new_exe = "a" * 64, "b" * 64, "c" * 64
         snapshot = {"schema": "update-helper.game-files.v1", "host": self.host,
                     "root": str(self.root / "game"), "phase": "after", "complete": True,
-                    "files": [{"path": "rift_x64.exe", "sha256": new_exe}]}
-        _, a_sha = self.save(f"{prefix}-after-a.json", snapshot)
+                    "files": [{"path": "rift_x64.exe", "size": 10, "sha256": new_exe},
+                              {"path": "asset.dat", "size": 20, "sha256": "e" * 64}]}
+        first = copy.deepcopy(snapshot)
+        if edit_first is not None:
+            edit_first(first)
+        _, a_sha = self.save(f"{prefix}-after-a.json", first)
         _, b_sha = self.save(f"{prefix}-after-b.json", snapshot)
         common = {"schema": "update-helper.comparison.v1", "host": self.host,
                   "root": snapshot["root"],
-                  "counts": {"added": 0, "removed": 0, "modified": int(changed), "unchanged": 1}}
+                  "counts": {"added": 0, "removed": 0, "modified": int(changed), "unchanged": 2}}
         _, consistency_sha = self.save(f"{prefix}-consistency.json",
             dict(common, before_manifest_sha256=a_sha, after_manifest_sha256=b_sha))
         _, changes_sha = self.save(f"{prefix}-changes.json",
@@ -77,6 +82,59 @@ class PatchRecoveryTests(unittest.TestCase):
         prefix, before, old, *_ = self.shared_cycle(changed=True)
         with self.assertRaisesRegex(ValueError, "snapshots disagree"):
             recovery.read_shared_cycle(self.root, prefix, before, old)
+
+    def test_shared_zero_counts_do_not_override_actual_snapshot_disagreement(self):
+        for edit in (
+                lambda s: s["files"][1].update(sha256="f" * 64),
+                lambda s: s["files"][1].update(size=21),
+                lambda s: s["files"].pop()):
+            with self.subTest(edit=edit):
+                prefix, before, old, *_ = self.shared_cycle(edit_first=edit)
+                with self.assertRaisesRegex(ValueError, "contents disagree"):
+                    recovery.read_shared_cycle(self.root, prefix, before, old)
+
+    def test_first_shared_capture_identity_and_completeness_required(self):
+        for edit, reason in (
+                (lambda s: s.update(host="WRONG-HOST"), "host mismatch"),
+                (lambda s: s.update(root="wrong-root"), "root mismatch"),
+                (lambda s: s.update(complete=False), "Incomplete"),
+                (lambda s: s.update(phase="before"), "Incomplete"),
+                (lambda s: s.update(schema="unsupported"), "unsupported")):
+            with self.subTest(reason=reason):
+                prefix, before, old, *_ = self.shared_cycle(edit_first=edit)
+                with self.assertRaisesRegex(ValueError, reason):
+                    recovery.read_shared_cycle(self.root, prefix, before, old)
+
+    def test_shared_inventory_rejects_duplicate_paths_and_invalid_fingerprints(self):
+        for edit, reason in (
+                (lambda s: s["files"].append(copy.deepcopy(s["files"][1])),
+                 "duplicate shared file path"),
+                (lambda s: s["files"][1].update(size=True), "Invalid shared file fingerprint"),
+                (lambda s: s["files"][1].update(size=-1), "Invalid shared file fingerprint"),
+                (lambda s: s["files"][1].update(sha256="invalid"), "Invalid shared file fingerprint")):
+            with self.subTest(reason=reason):
+                prefix, before, old, *_ = self.shared_cycle(edit_first=edit)
+                with self.assertRaisesRegex(ValueError, reason):
+                    recovery.read_shared_cycle(self.root, prefix, before, old)
+
+    def test_shared_content_comparison_ignores_order_and_mtime(self):
+        def edit(s):
+            s["files"].reverse()
+            s["files"][0]["mtime_ns"] = 123
+        prefix, before, old, *_ = self.shared_cycle(edit_first=edit)
+        recovery.read_shared_cycle(self.root, prefix, before, old)
+
+    def test_metadata_rejects_duplicate_rows_and_boolean_size(self):
+        game = self.root / "game"
+        game.mkdir()
+        asset = game / "asset.dat"
+        asset.write_bytes(b"a")
+        row = {"path": asset.name, "size": 1, "mtime_ns": asset.stat().st_mtime_ns}
+        recovery.check_current_metadata(game, {"files": [row]})
+        with self.assertRaisesRegex(ValueError, "duplicate shared file path"):
+            recovery.check_current_metadata(game, {"files": [row, row]})
+        with self.assertRaisesRegex(ValueError, "Invalid shared file metadata"):
+            recovery.check_current_metadata(game, {"files": [dict(row, size=True)]})
 
     def test_stale_data_only_metadata_is_refused(self):
         game = self.root / "game"
