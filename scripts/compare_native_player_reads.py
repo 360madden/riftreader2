@@ -56,18 +56,36 @@ def _sha(value):
     return value.upper()
 
 
+def _unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        _need(key not in result, "duplicate-json-key")
+        result[key] = value
+    return result
+
+
+def _finite_float(text):
+    value = float(text)
+    _need(math.isfinite(value), "nonfinite-json")
+    return value
+
+
 def load(path: Path):
     """Read one saved file with a size bound and preserve its byte-level SHA."""
     path = Path(path)
     _need(not path.is_symlink() and path.is_file(), "source-unavailable")
     size = path.stat().st_size
     _need(0 < size <= MAX_BYTES, "source-size-invalid")
-    raw = path.read_bytes()
+    # Read at most the admitted size plus one byte, even if the file grows.
+    with path.open("rb") as stream:
+        raw = stream.read(size + 1)
     _need(len(raw) == size, "source-changed")
     try:
         data = json.loads(raw.decode("utf-8-sig"),
+                          object_pairs_hook=_unique_object,
+                          parse_float=_finite_float,
                           parse_constant=lambda _: _need(False, "nonfinite-json"))
-    except (UnicodeError, json.JSONDecodeError) as exc:
+    except (UnicodeError, json.JSONDecodeError, RecursionError) as exc:
         raise ValueError("native-player-compare-json-invalid") from exc
     _need(type(data) is dict, "root-invalid")
     return data, hashlib.sha256(raw).hexdigest().upper()
