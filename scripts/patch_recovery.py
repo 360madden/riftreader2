@@ -69,6 +69,26 @@ def exe_fact(snapshot):
     return snapshot["Files"]["game/rift_x64.exe"]["Sha256"].lower()
 
 
+def snapshot_content(snapshot):
+    """Compare recorded content, not capture timestamps or file ordering."""
+    require(isinstance(snapshot, dict) and snapshot.get("schema") == "update-helper.game-files.v1"
+            and snapshot.get("complete") is True and snapshot.get("phase") == "after",
+            "Incomplete or unsupported shared snapshot")
+    rows = snapshot.get("files")
+    require(isinstance(rows, list), "Invalid shared file inventory")
+    content = {}
+    for row in rows:
+        require(isinstance(row, dict), "Invalid shared file record")
+        path, size, sha = row.get("path"), row.get("size"), row.get("sha256")
+        require(isinstance(path, str) and bool(path) and path not in content,
+                "Invalid or duplicate shared file path")
+        require(type(size) is int and size >= 0 and isinstance(sha, str)
+                and re.fullmatch(r"[0-9a-fA-F]{64}", sha) is not None,
+                "Invalid shared file fingerprint")
+        content[path] = (size, sha.lower())
+    return content
+
+
 def read_shared_cycle(shared, prefix, before_sha, old_exe):
     """Require a complete, linked shared capture; no inference from a change list."""
     safe_prefix(prefix)
@@ -82,13 +102,15 @@ def read_shared_cycle(shared, prefix, before_sha, old_exe):
             "Shared installation snapshots disagree")
     a = shared / f"{prefix}-after-a.json"
     b = shared / f"{prefix}-after-b.json"
-    _, a_sha = read_json(a, consistency["before_manifest_sha256"])
+    first, a_sha = read_json(a, consistency["before_manifest_sha256"])
     after, b_sha = read_json(b, consistency["after_manifest_sha256"])
     require(b_sha == changes["after_manifest_sha256"], "Shared after link mismatch")
     require(changes["before_executable_sha256"] == old_exe, "Shared old executable mismatch")
-    require(after["host"] == changes["host"] == consistency["host"], "Shared host mismatch")
-    require(after["root"] == changes["root"] == consistency["root"], "Shared root mismatch")
-    require(after["complete"] is True and after["phase"] == "after", "Incomplete shared snapshot")
+    require(first["host"] == after["host"] == changes["host"] == consistency["host"], "Shared host mismatch")
+    require(first["root"] == after["root"] == changes["root"] == consistency["root"], "Shared root mismatch")
+    # Hash links prove which files were compared, not that the reported result is correct.
+    require(snapshot_content(first) == snapshot_content(after),
+            "Shared installation snapshot contents disagree")
     game = [r for r in after["files"] if r["path"].casefold() == "rift_x64.exe"]
     require(len(game) == 1 and game[0]["sha256"] == changes["after_executable_sha256"],
             "Shared executable fact mismatch")
@@ -97,7 +119,14 @@ def read_shared_cycle(shared, prefix, before_sha, old_exe):
 
 def check_current_metadata(root, manifest):
     """Detect ordinary stale/reused captures without a second full content scan."""
-    expected = {r["path"]: (r["size"], r["mtime_ns"]) for r in manifest["files"]}
+    expected = {}
+    for row in manifest["files"]:
+        path, size, mtime = row["path"], row["size"], row["mtime_ns"]
+        require(isinstance(path, str) and bool(path) and path not in expected,
+                "Invalid or duplicate shared file path")
+        require(type(size) is int and size >= 0 and type(mtime) is int,
+                "Invalid shared file metadata")
+        expected[path] = (size, mtime)
     actual = {}
     def visit(directory):
         with os.scandir(directory) as entries:
