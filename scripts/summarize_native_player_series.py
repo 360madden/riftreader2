@@ -6,7 +6,9 @@ Usage:
 Each adjacent pair must belong to the same game, VM, agent and player, contain
 the same selected fields, and advance its original report timestamps. Derived
 XYZ travel, coordinate-relative travel course and resource deltas are candidates,
-not independent movement or character-facing/turn proof.
+not independent movement or character-facing/turn proof. Adjacent resource
+changes preserve sampled dips and recoveries that endpoint deltas can hide.
+Whole-window resource change totals require every adjacent pair to be comparable.
 This tool never contacts RIFT, VMware, control agents or the network.
 """
 from __future__ import annotations
@@ -44,6 +46,27 @@ def load_saved_readout(path: Path) -> tuple[dict, str]:
     # Hash and compare the original entire file, not reserialized nested JSON.
     # Wrapper controller/postflight metadata is not independent game evidence.
     return value["readout"], file_sha
+
+
+def _summarize_vitals(pairs):
+    """Sum only fully observed adjacent changes, not inferred damage/healing."""
+    summary = {}
+    for resource in comparison.RESOURCES:
+        changes = [pair["comparison"]["vitals"][resource] for pair in pairs]
+        valid = [change for change in changes if change["status"] == "comparable-candidate"]
+        complete = len(valid) == len(changes)
+        deltas = [change["deltaCurrentCandidate"] for change in valid]
+        summary[resource] = {
+            "status": "complete-candidate" if complete else "incomplete-segment-candidates",
+            "validSegmentCount": len(valid),
+            "segmentCount": len(changes),
+            "observedCurrentChangeSegmentCount": sum(delta != 0 for delta in deltas),
+            "observedMaximumChangeSegmentCount": sum(
+                change["deltaMaximumCandidate"] != 0 for change in valid),
+            "totalObservedCurrentIncreaseCandidate": sum(max(0, delta) for delta in deltas) if complete else None,
+            "totalObservedCurrentDecreaseCandidate": sum(max(0, -delta) for delta in deltas) if complete else None,
+        }
+    return summary
 
 
 def summarize(reads: list[tuple[dict, str]]) -> dict:
@@ -96,6 +119,13 @@ def summarize(reads: list[tuple[dict, str]]) -> dict:
         course_change = ((course - previous_course + 180) % 360 - 180
                          if course is not None and previous_course is not None
                          else None)
+        vitals_provenance = result["sourceProvenance"].get("vitals")
+        vitals_interval = None
+        if vitals_provenance is not None:
+            vitals_interval = (
+                comparison._utc(vitals_provenance["afterObservedAtUtc"])
+                - comparison._utc(vitals_provenance["beforeObservedAtUtc"])
+            ).total_seconds()
         segments.append({
             "index": index,
             "beforeSourceSha256": result["beforeSourceSha256"],
@@ -107,6 +137,8 @@ def summarize(reads: list[tuple[dict, str]]) -> dict:
             "observedAverageXZUnitsPerSecondCandidate": observed_rate,
             "travelCourseDegreesCandidate": course,
             "travelCourseChangeDegreesCandidate": course_change,
+            "vitalsObservationIntervalSeconds": vitals_interval,
+            "vitalsDeltasCandidate": result["comparison"].get("vitals"),
         })
         previous_course = course
 
@@ -163,6 +195,7 @@ def summarize(reads: list[tuple[dict, str]]) -> dict:
         "segments": segments,
         "positionSummary": position_summary,
         "vitalsEndpointDeltasCandidate": endpoints["comparison"].get("vitals"),
+        "vitalsSeriesSummary": _summarize_vitals(pairs) if "vitals" in fields else None,
         "qualification": (
             "same VM/game/agent/player and strictly advancing retained source reports; "
             "candidate arithmetic only; observed distance/time, including "
@@ -170,7 +203,9 @@ def summarize(reads: list[tuple[dict, str]]) -> dict:
             "of continuous motion; travel course "
             "is +X toward +Z, NOT "
             "player-facing yaw; NOT independent movement proof or turn proof, "
-            "passive freshness, qualified field semantics, or restart recovery"
+            "passive freshness, qualified field semantics, or restart recovery; "
+            "resource increases/decreases are sums of sampled changes, not total "
+            "damage, healing, regeneration or events between observations"
         ),
     }
 
