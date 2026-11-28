@@ -426,6 +426,55 @@ class CompareNativePlayerReadsTests(unittest.TestCase):
             self.assertEqual(result["unitKey"], UNIT)
             self.assertEqual(json.loads(a.read_bytes()), before)
 
+    def test_loader_rejects_ambiguous_and_nonfinite_json(self):
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / "capture.json"
+            for raw, reason in (
+                    (b'{"unitKey":"7","unitKey":"8"}', "duplicate-json-key"),
+                    (b'{"metrics":{"x":1,"x":2}}', "duplicate-json-key"),
+                    (b'{"x":1,"\\u0078":2}', "duplicate-json-key"),
+                    (b'{"x":1e999}', "nonfinite-json"),
+                    (b'{"x":-1e999}', "nonfinite-json"),
+                    (b'{"x":NaN}', "nonfinite-json"),
+                    (b'{"x":Infinity}', "nonfinite-json"),
+                    (b'{"x":-Infinity}', "nonfinite-json")):
+                with self.subTest(raw=raw):
+                    path.write_bytes(raw)
+                    with self.assertRaisesRegex(ValueError, reason):
+                        tool.load(path)
+
+    def test_loader_preserves_bom_and_exact_large_integer(self):
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / "capture.json"
+            raw = b'\xef\xbb\xbf{"x":1.5,"id":18446744073709551615,"nested":{"x":2}}\n'
+            path.write_bytes(raw)
+            data, sha = tool.load(path)
+            self.assertEqual(data, {"x": 1.5, "id": 18446744073709551615, "nested": {"x": 2}})
+            self.assertEqual(sha, hashlib.sha256(raw).hexdigest().upper())
+
+    def test_loader_limits_read_even_if_file_grows(self):
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / "capture.json"
+            path.write_bytes(b'{}')
+            stream = io.BytesIO(b'{}' + b'x' * 100)
+            with patch.object(Path, "open", return_value=stream), \
+                 patch.object(stream, "read", wraps=stream.read) as read:
+                with self.assertRaisesRegex(ValueError, "source-changed"):
+                    tool.load(path)
+                read.assert_called_once_with(3)
+            with patch.object(tool, "MAX_BYTES", 1), patch.object(Path, "open") as opened:
+                with self.assertRaisesRegex(ValueError, "source-size-invalid"):
+                    tool.load(path)
+                opened.assert_not_called()
+
+    def test_loader_normalizes_parser_recursion_failure(self):
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / "capture.json"
+            path.write_bytes(b'{}')
+            with patch.object(tool.json, "loads", side_effect=RecursionError):
+                with self.assertRaisesRegex(ValueError, "json-invalid"):
+                    tool.load(path)
+
     def test_bad_report_returns_sanitized_block_without_input(self):
         with TemporaryDirectory() as folder:
             a, b = Path(folder) / "a.json", Path(folder) / "b.json"
