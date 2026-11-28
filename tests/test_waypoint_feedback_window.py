@@ -59,6 +59,26 @@ class FeedbackTests(unittest.TestCase):
         self.assertEqual("height-context-mismatch", result["status"])
         self.assertFalse(result["replanSuggested"])
 
+    def test_wrong_floor_and_off_corridor_in_every_sample_refuses_replan(self):
+        result = self.assess([(1, 12, .8)]*4)
+        self.assertEqual("height-context-mismatch", result["status"])
+        self.assertFalse(result["replanSuggested"])
+
+    def test_sloping_leg_height_precedes_corridor_using_interpolated_height(self):
+        document = dict(self.route.document, heights=[10, 14, 10])
+        self.route = RouteProgress(document, identity=self.route.identity)
+        self.route.begin({"x": 0, "y": 10, "z": 0})
+        self.route.confirm_arrival(0, self.route.ordered_points[0])
+        # At x=1 the expected height is 11, not the endpoint height of 14.
+        result = self.assess([(1, 13, .8)]*4)
+        self.assertEqual("height-context-mismatch", result["status"])
+        self.assertFalse(result["replanSuggested"])
+        result = self.assess([(1, 11, .8)]*4)
+        self.assertEqual("off-corridor-candidate", result["status"])
+        self.assertTrue(result["replanSuggested"])
+        result = self.assess([(1, 11, 0)]*4)
+        self.assertEqual("stalled-candidate", result["status"])
+
     def test_height_refusal_wins_over_earlier_off_corridor_sample(self):
         result = self.assess([(1, 10, .8), (1, 12, 0), (1, 10, 0), (1, 10, 0)])
         self.assertEqual("height-context-mismatch", result["status"])

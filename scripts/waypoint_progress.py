@@ -171,14 +171,14 @@ class RouteProgress:
             ((current["x"] - start["x"]) * dx + (current["z"] - start["z"]) * dz) / length2))
         projection = {"x": start["x"] + t * dx, "z": start["z"] + t * dz}
         cross_track = _distance(current, projection)
-        if cross_track > .50 + 1e-9:
-            raise ProgressError("position is too far from the unfinished leg")
         if "y" in goal:
             if "y" not in current:
                 raise ProgressError("height is required for this route")
             expected_y = (start["y"] + t * (goal["y"] - start["y"])) if "y" in start else goal["y"]
             if abs(current["y"] - expected_y) > 1.0:
                 raise ProgressError("position is on a different height")
+        if cross_track > .50 + 1e-9:
+            raise ProgressError("position is too far from the unfinished leg")
         view = self.route_view
         # The initial approach from the saved start to waypoint zero is not
         # part of the route's cumulative geometry.

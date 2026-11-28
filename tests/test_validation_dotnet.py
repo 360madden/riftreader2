@@ -37,7 +37,7 @@ class ValidationDotNetTests(unittest.TestCase):
     def setUp(self):
         temp = TemporaryDirectory(prefix="rr2-validation-")
         self.addCleanup(temp.cleanup)
-        self.folder = Path(temp.name)
+        self.folder = Path(temp.name).resolve()
         self.repository = self.folder / "checkout with spaces"
         self.repository.mkdir()
 

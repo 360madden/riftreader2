@@ -25,7 +25,7 @@ class Client:
 class RouteTests(TestCase):
     def setUp(self):
         self.temp=TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
-        self.root=Path(self.temp.name); (self.root/'artifacts').mkdir()
+        self.root=Path(self.temp.name).resolve(); (self.root/'artifacts').mkdir()
         self.client=Client(); self.mutex=Mutex(); self.stack=ExitStack(); self.addCleanup(self.stack.close)
         def mock(obj, name, value): self.stack.enter_context(patch.object(obj,name,value))
         mock(route,'guest_game_identity',lambda *a: {'pid':1}); mock(route,'_launch_lock',lambda lab: nullcontext()); mock(route,'require_queue_clear',lambda:None); mock(route,'ROOT',self.root); mock(route.native,'validate_config',lambda *a,**k: a[:2]); mock(route.native,'ControlMutex',lambda vmx:self.mutex)

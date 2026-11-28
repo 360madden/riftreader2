@@ -52,6 +52,9 @@ try {
 }
 $status.atUtc = [DateTime]::UtcNow.ToString('o')
 [IO.File]::WriteAllText((Join-Path $out 'status.json'),($status | ConvertTo-Json -Depth 8 -Compress),$utf8)
+# Use the same expanded directory spelling as Get-ChildItem before slicing names.
+# An 8.3 parent alias otherwise gives a different prefix length.
+$out = (Get-Item -LiteralPath $out).FullName
 $files = @(Get-ChildItem -LiteralPath $out -File -Recurse | ForEach-Object {
     Assert-PlainPath $_.FullName
     @{ path=$_.FullName.Substring($out.Length+1).Replace('\','/'); byteLength=$_.Length; sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }

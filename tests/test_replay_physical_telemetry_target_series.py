@@ -108,7 +108,7 @@ class TargetSeriesTests(unittest.TestCase):
                          [first["targetLevelComparison"], second["targetLevelComparison"]])
 
     def test_copied_series_locates_the_verified_rediscovery_window_by_hash(self):
-        root = Path(self.tmp.name) / "copied series"
+        root = Path(self.tmp.name).resolve() / "copied series"
         paths, windows = [], []
         for index, name in enumerate(("capture-01", "capture-02-rediscovery"), 1):
             directory = root / name

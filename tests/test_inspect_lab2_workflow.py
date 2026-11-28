@@ -96,7 +96,7 @@ class InspectionTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         base = patch.object(flow, "OUTPUT_BASE", self.root.parent)
         base.start()
         self.addCleanup(base.stop)

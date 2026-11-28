@@ -17,7 +17,7 @@ class LauncherTests(unittest.TestCase):
     def setUp(self):
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
-        self.root = Path(self.temporary_directory.name)
+        self.root = Path(self.temporary_directory.name).resolve()
         root_patcher = patch.object(launcher, "ROOT", self.root)
         root_patcher.start()
         self.addCleanup(root_patcher.stop)

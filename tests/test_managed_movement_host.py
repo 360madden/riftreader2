@@ -228,7 +228,7 @@ class PreparedTaskVerifierScopeTests(unittest.TestCase):
         import tempfile
         from scripts import managed_controller_receipt as managed
         with tempfile.TemporaryDirectory() as temporary:
-            receipt_path = Path(temporary) / "process.json"
+            receipt_path = Path(temporary).resolve() / "process.json"
             receipt_path.write_text("{}", encoding="utf-8")
             receipt = {"pid": 123}
             verifier = MagicMock()
@@ -266,7 +266,7 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
 
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.scripts = self.root / "scripts"
         self.scripts.mkdir()
         self.source_hashes = {}

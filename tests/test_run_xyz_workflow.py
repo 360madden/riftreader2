@@ -230,7 +230,7 @@ class WorkflowTests(unittest.TestCase):
         (phase/'lua/frame.json').write_text('{"frame":1}')
         source=(workflow.ROOT/'scripts/xyz_capture.ps1').read_text()
         function=source[source.index('function Assert-PlainPath'):source.index('Assert-PlainPath $root')]
-        fragment=source[source.index('$files = @'):]
+        fragment=source[source.index('$out = (Get-Item'):]
         root=str(self.root).replace("'","''")
         script=("$ErrorActionPreference='Stop'; $root='"+root+"'; $out=Join-Path $root 'baseline'; "
                 "$settings=[pscustomobject]@{phase='baseline'}; $status=@{completed=$true}; "

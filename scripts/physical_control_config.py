@@ -97,6 +97,9 @@ def create_config(host, pid, local_ip, agent_port, ui_port, output_root,
     root = Path(output_root)
     require(root.is_absolute() and root.is_dir() and not root.is_symlink(),
             "output root must be an existing absolute directory")
+    # Both programs must persist the canonical path used by HostConfig.load,
+    # including when Windows supplies an 8.3 alias for the existing root.
+    root = root.resolve(strict=True)
     # Fresh selection before creating any private configuration.
     require(selected_identity(observe(), host, pid) == identity,
             "physical process epoch changed during config creation")

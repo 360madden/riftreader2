@@ -21,6 +21,7 @@ LANES = {
     "adoption": (
         "tests.test_waypoint_destination_plan",
         "tests.test_waypoint_candidate_adoption",
+        "tests.test_waypoint_cli_gui.StartupReadinessTests",
     ),
     "progress": (
         "tests.test_waypoint_progress",
@@ -28,6 +29,7 @@ LANES = {
         "tests.test_waypoint_route_library",
         "tests.test_waypoint_seed_feedback",
         "tests.test_waypoint_feedback_window",
+        "tests.test_waypoint_feedback_replay",
     ),
 }
 

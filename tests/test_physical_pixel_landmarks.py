@@ -39,7 +39,7 @@ def digest(path):
 
 class PortableLandmarkProofTests(unittest.TestCase):
     def setUp(self):
-        self.root = Path(self.enterContext(TemporaryDirectory(prefix="rr2-portable-landmarks-")))
+        self.root = Path(self.enterContext(TemporaryDirectory(prefix="rr2-portable-landmarks-"))).resolve()
         self.original = self.root / "capture sources"
         self.original.mkdir()
         self.bundle = self.root / "saved bundle"

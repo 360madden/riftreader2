@@ -176,6 +176,52 @@ app.launch_window(args)
 '''
 
 
+def wait_for_initial_refresh(call, *, timeout=5, clock=time.monotonic, wait=time.sleep):
+    """Wait for a published initial pose and released action ownership."""
+    deadline = clock() + timeout
+    status = None
+    while clock() < deadline:
+        status = call('status')
+        if not status.get('ok'):
+            raise AssertionError(status)
+        data = status['data']
+        pose = data['pose']
+        # launch_window services its first mailbox poll before start("refresh").
+        # busy=False alone can therefore describe the pre-refresh startup state.
+        if (not data['app']['busy'] and data.get('activeRequestId') is None
+                and pose.get('position') is not None and pose.get('sampledAtUtc') is not None):
+            return status
+        wait(.05)
+    raise AssertionError(f'Initial GUI refresh did not become idle: {status}')
+
+
+class StartupReadinessTests(unittest.TestCase):
+    def test_pre_refresh_idle_and_active_request_are_not_ready(self):
+        states = [
+            (False, None, None),  # First mailbox poll precedes startup refresh.
+            (True, {'x': 1}, None),
+            (False, {'x': 1}, 'finishing-request'),
+            (False, {'x': 1}, None),
+        ]
+        calls, waits = [], []
+        def call(command):
+            calls.append(command)
+            busy, position, request = states.pop(0)
+            return {'ok': True, 'data': {'app': {'busy': busy}, 'activeRequestId': request,
+                    'pose': {'position': position, 'sampledAtUtc': 'fixture' if position else None}}}
+        result = wait_for_initial_refresh(call, clock=lambda: 0, wait=waits.append)
+        self.assertEqual(['status'] * 4, calls)
+        self.assertEqual([.05] * 3, waits)
+        self.assertIsNone(result['data']['activeRequestId'])
+
+    def test_missing_refresh_fails_at_bounded_deadline(self):
+        ticks = iter((0, 0, 5))
+        response = {'ok': True, 'data': {'app': {'busy': False},
+                    'pose': {'position': None, 'sampledAtUtc': None}}}
+        with self.assertRaisesRegex(AssertionError, 'Initial GUI refresh did not become idle'):
+            wait_for_initial_refresh(lambda _: response, clock=lambda: next(ticks), wait=lambda _: None)
+
+
 class GuiBridgeTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -196,14 +242,8 @@ class GuiBridgeTests(unittest.TestCase):
             time.sleep(.02)
         else:
             self.fail('GUI session did not start')
-        # Initial background refresh must finish before mutations.
-        end = time.monotonic() + 5
-        while time.monotonic() < end:
-            status = self.call('status')
-            self.assertTrue(status['ok'], status)
-            if not status['data']['app']['busy']:
-                break
-            time.sleep(.05)
+        # Synchronize with publication and completion, not the first false busy bit.
+        wait_for_initial_refresh(self.call)
 
     def cleanup_child(self):
         if self.child.poll() is None:

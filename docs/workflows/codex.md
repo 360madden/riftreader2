@@ -2,8 +2,9 @@
 
 Current project state changes as live capabilities are validated; use
 [the status handoff](../status.md) rather than this workflow as the capability
-record. To delegate bounded read-only analysis to the existing Codex CLI in a
-RIFT guest, use the [Lab Codex jobs workflow](lab-codex.md).
+record. Use repository-only cloud workers for parallel development and the
+verified local Windows host for physical integration. Retired lab workflows
+remain archival references.
 
 ## OpenAI cloud development (November 27, 2026)
 
@@ -33,7 +34,33 @@ Use `--lane planning`, `--lane adoption`, or `--lane progress` for focused
 worker acceptance. The runner isolates native-reader overrides and invokes
 only explicitly selected repository tests. It is not the full Windows gate.
 Use `--jobs 1` for serial diagnostics; concurrent lanes report in fixed order.
-The progress lane includes deterministic unfinished-leg feedback diagnostics.
+The progress lane includes deterministic unfinished-leg feedback diagnostics
+and source-pinned retained-receipt replay.
+
+### Replay a retained local leg
+
+`scripts/waypoint_feedback_replay.py` diagnoses one historical continuous
+`go` outcome from four explicitly hash-pinned sources. It requires an externally
+pinned two-point route with measured constant height, its checkpoint at the
+second point, the outer run receipt, and that receipt's exact single-record
+native input file. Current `play`/`resume` receipts do not retain the required
+external route-byte hash and are refused.
+
+```powershell
+python -B scripts/waypoint_feedback_replay.py `
+  --route ROUTE_JSON --route-sha256 ROUTE_SHA256 `
+  --checkpoint CHECKPOINT_JSON --checkpoint-sha256 CHECKPOINT_SHA256 `
+  --run-receipt RUN_JSON --run-receipt-sha256 RUN_SHA256 `
+  --native-receipt INPUT_JSONL --native-receipt-sha256 INPUT_SHA256
+```
+
+Only a complete, released, single W-hold window with matching historical
+process/build/player identity is assessed. Turns, STOP, survival interruptions,
+passed guides, control pauses, truncated paths and ambiguous input evidence
+refuse. Output is JSON; a valid diagnosis exits 0 and a refusal exits 2.
+Historical UTC differences do not prove monotonic timing or current freshness.
+A replan suggestion is review-only: the command leaves the checkpoint intact
+and does not plan, adopt, retry or send input.
 
 ### Continuous integration
 

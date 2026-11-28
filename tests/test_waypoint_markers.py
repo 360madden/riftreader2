@@ -22,7 +22,7 @@ class OwnedMarkerTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.enterContext(patch.object(os, "environ", dict(os.environ, RR2_OVERLAY_PYTHON="")))
         (self.root / "artifacts").mkdir()
         self.child = FakeChild()
@@ -93,7 +93,9 @@ class OwnedMarkerTests(unittest.TestCase):
         executable.parent.mkdir(parents=True)
         executable.touch()
         (setup / ".ready").touch()
-        self.markers.start(self.route, self.adapter)
+        with patch("scripts.physical_view_tools._python_starts", return_value=True) as starts:
+            self.markers.start(self.route, self.adapter)
+        starts.assert_called_once_with(executable)
         command = self.popen.call_args.args[0]
         self.assertEqual(str(executable), command[0])
         self.assertEqual("qt", command[command.index("--presenter") + 1])
