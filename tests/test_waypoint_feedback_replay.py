@@ -187,7 +187,10 @@ class ReplayTests(unittest.TestCase):
             paths["run_receipt"].write_text(json.dumps(data[2]), encoding="utf-8")
             args["run_receipt_sha256"] = hashlib.sha256(paths["run_receipt"].read_bytes()).hexdigest()
             original = {p: p.read_bytes() for p in paths.values()}
-            self.assertEqual("stalled-candidate", replay(**args)["status"])
+            result = replay(**args)
+            self.assertEqual("stalled-candidate", result["status"])
+            self.assertEqual({"recordedPath": str(paths["native_receipt"]),
+                              "mode": "original-path"}, result["nativeReceiptReference"])
             cli = [item for key, value in args.items() for item in ("--"+key.replace("_", "-"), str(value))]
             output = io.StringIO()
             with redirect_stdout(output):
@@ -199,6 +202,59 @@ class ReplayTests(unittest.TestCase):
                 replay(**args)
             with redirect_stdout(io.StringIO()):
                 self.assertEqual(2, main(cli))
+
+
+    def test_relocated_receipt_requires_exact_original_path_and_unchanged_bytes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = {key: Path(tmp) / (key + ".json") for key in
+                     ("route", "checkpoint", "run_receipt", "native_receipt")}
+            data = fixture()
+            args = {}
+            for key, doc in zip(paths, data):
+                paths[key].write_text(json.dumps(doc), encoding="utf-8")
+                args[key] = paths[key]
+                args[key + "_sha256"] = hashlib.sha256(paths[key].read_bytes()).hexdigest()
+            data[2]["externalRouteSha256"] = args["route_sha256"]
+
+            def pin_run(recorded):
+                data[2]["inputReceiptPath"] = recorded
+                paths["run_receipt"].write_text(json.dumps(data[2]), encoding="utf-8")
+                args["run_receipt_sha256"] = hashlib.sha256(paths["run_receipt"].read_bytes()).hexdigest()
+
+            # Original paths from either operating system need no old filesystem.
+            for recorded in (r"C:\RR2\retained\input.jsonl", "/rr2-archive/input.jsonl"):
+                with self.subTest(recorded=recorded):
+                    pin_run(recorded)
+                    before = {p: p.read_bytes() for p in paths.values()}
+                    with self.assertRaisesRegex(ValueError, "native-receipt-reference-mismatch"):
+                        replay(**args)
+                    with self.assertRaisesRegex(ValueError, "relocation-reference-mismatch"):
+                        replay(**args, recorded_native_receipt_path=recorded + ".other")
+                    result = replay(**args, recorded_native_receipt_path=recorded)
+                    self.assertEqual("stalled-candidate", result["status"])
+                    self.assertEqual({"recordedPath": recorded, "mode": "explicit-relocation"},
+                                     result["nativeReceiptReference"])
+                    self.assertEqual(str(paths["native_receipt"].resolve()),
+                                     result["sources"]["nativeReceipt"]["path"])
+                    self.assertFalse(result["currentFreshnessVerified"])
+                    self.assertFalse(result["inputSent"])
+                    cli = [item for key, value in args.items()
+                           for item in ("--" + key.replace("_", "-"), str(value))]
+                    output = io.StringIO()
+                    with redirect_stdout(output):
+                        self.assertEqual(0, main(cli + ["--recorded-native-receipt-path", recorded]))
+                    self.assertEqual(result["nativeReceiptReference"],
+                                     json.loads(output.getvalue())["nativeReceiptReference"])
+                    self.assertEqual(before, {p: p.read_bytes() for p in paths.values()})
+
+            pin_run("relative/input.jsonl")
+            with self.assertRaisesRegex(ValueError, "relocation-reference-mismatch"):
+                replay(**args, recorded_native_receipt_path="relative/input.jsonl")
+            recorded = r"C:\RR2\retained\input.jsonl"
+            pin_run(recorded)
+            paths["native_receipt"].write_text("{}", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "source-hash-mismatch"):
+                replay(**args, recorded_native_receipt_path=recorded)
 
 
 if __name__ == "__main__":

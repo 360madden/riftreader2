@@ -10,7 +10,7 @@ from datetime import datetime
 import hashlib
 import json
 import math
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
 import sys
 
@@ -199,19 +199,43 @@ def assess_retained_leg(route, checkpoint, run, native, *, route_sha256):
                               "No current admission, collision proof, route promotion or action authority.")
 
 
+def _native_reference_mode(retained, supplied, recorded_path):
+    """Check the original reference without opening it on a different host.
+
+    A relocated file needs an explicit, exact acknowledgement of the original
+    absolute path. Its bytes must still pass the separately supplied hash;
+    relocation does not establish a new capture identity or freshness.
+    """
+    if not isinstance(retained, str) or not retained.strip() or "\0" in retained:
+        raise ValueError("native-receipt-reference-mismatch")
+    if recorded_path is not None:
+        # Pure paths deliberately avoid filesystem/network access to the old
+        # Windows or POSIX location (which may no longer exist).
+        if (recorded_path != retained
+                or not (PureWindowsPath(retained).is_absolute()
+                        or PurePosixPath(retained).is_absolute())):
+            raise ValueError("native-receipt-relocation-reference-mismatch")
+        return "explicit-relocation"
+    if Path(retained).resolve() != Path(supplied).resolve():
+        raise ValueError("native-receipt-reference-mismatch")
+    return "original-path"
+
+
 def replay(*, route, route_sha256, checkpoint, checkpoint_sha256,
-           run_receipt, run_receipt_sha256, native_receipt, native_receipt_sha256):
+           run_receipt, run_receipt_sha256, native_receipt, native_receipt_sha256,
+           recorded_native_receipt_path=None):
     refs = {"route": (route, route_sha256), "checkpoint": (checkpoint, checkpoint_sha256),
             "runReceipt": (run_receipt, run_receipt_sha256),
             "nativeReceipt": (native_receipt, native_receipt_sha256)}
     docs = {key: read_pinned(*ref) for key, ref in refs.items()}
     retained = docs["runReceipt"].get("inputReceiptPath")
-    if not isinstance(retained, str) or Path(retained).resolve() != Path(native_receipt).resolve():
-        raise ValueError("native-receipt-reference-mismatch")
+    reference_mode = _native_reference_mode(
+        retained, native_receipt, recorded_native_receipt_path)
     result = assess_retained_leg(docs["route"], docs["checkpoint"], docs["runReceipt"],
                                  docs["nativeReceipt"], route_sha256=route_sha256)
     result["sources"] = {key: {"path": str(Path(path).resolve()), "sha256": sha.lower()}
                          for key, (path, sha) in refs.items()}
+    result["nativeReceiptReference"] = {"recordedPath": retained, "mode": reference_mode}
     return result
 
 
@@ -220,6 +244,8 @@ def main(argv=None):
     for name in ("route", "checkpoint", "run-receipt", "native-receipt"):
         parser.add_argument("--" + name, required=True, type=Path)
         parser.add_argument("--" + name + "-sha256", required=True)
+    parser.add_argument("--recorded-native-receipt-path",
+                        help="Exact original absolute inputReceiptPath for an explicitly relocated file")
     args = parser.parse_args(argv)
     try:
         result = replay(**vars(args))

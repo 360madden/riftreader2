@@ -54,6 +54,16 @@ python -B scripts/waypoint_feedback_replay.py `
   --native-receipt INPUT_JSONL --native-receipt-sha256 INPUT_SHA256
 ```
 
+For a copied archive on another drive, machine or operating system, append
+`--recorded-native-receipt-path 'C:\original\input.jsonl'`
+(using the exact absolute
+`inputReceiptPath` string from the pinned outer receipt). Supply the actual
+local copy through `--native-receipt` and its independently known SHA-256
+through `--native-receipt-sha256`. The default still requires the original path;
+relocation never opens the recorded old location. JSON includes the original
+reference, the match mode and the resolved local source path. The four source
+hashes and all historical identity/geometry checks remain mandatory.
+
 Only a complete, released, single W-hold window with matching historical
 process/build/player identity is assessed. Turns, STOP, survival interruptions,
 passed guides, control pauses, truncated paths and ambiguous input evidence
